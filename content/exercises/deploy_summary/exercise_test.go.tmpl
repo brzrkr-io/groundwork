@@ -1,0 +1,99 @@
+package deploy
+
+import "testing"
+
+func TestRelease(t *testing.T) {
+	tests := []struct {
+		name    string
+		service string
+		version string
+		want    string
+	}{
+		{name: "spaces and capitals", service: " API ", version: "v1.4.2", want: "api v1.4.2"},
+		{name: "capital letter", service: "Billing", version: "v2.0.0", want: "billing v2.0.0"},
+		{name: "already clean", service: "worker", version: "v0.9.1", want: "worker v0.9.1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Release(tt.service, tt.version)
+			if got != tt.want {
+				t.Errorf("Release(%q, %q) = %q, want %q", tt.service, tt.version, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReplicasNeeded(t *testing.T) {
+	tests := []struct {
+		name          string
+		peakRPS       int
+		rpsPerReplica int
+		want          int
+	}{
+		{name: "rounds up", peakRPS: 1000, rpsPerReplica: 300, want: 4},
+		{name: "exact fit", peakRPS: 900, rpsPerReplica: 300, want: 3},
+		{name: "light load", peakRPS: 50, rpsPerReplica: 300, want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ReplicasNeeded(tt.peakRPS, tt.rpsPerReplica)
+			if got != tt.want {
+				t.Errorf("ReplicasNeeded(%d, %d) = %d, want %d", tt.peakRPS, tt.rpsPerReplica, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSummary(t *testing.T) {
+	tests := []struct {
+		name      string
+		service   string
+		version   string
+		env       string
+		replicas  int
+		memoryMiB int
+		want      string
+	}{
+		{
+			name: "api to production", service: "api", version: "v1.4.2", env: "production",
+			replicas: 3, memoryMiB: 256,
+			want: "api v1.4.2 -> production: 3 replicas x 256 MiB = 768 MiB",
+		},
+		{
+			name: "worker to staging", service: " Worker ", version: "v0.9.1", env: "staging",
+			replicas: 2, memoryMiB: 512,
+			want: "worker v0.9.1 -> staging: 2 replicas x 512 MiB = 1024 MiB",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Summary(tt.service, tt.version, tt.env, tt.replicas, tt.memoryMiB)
+			if got != tt.want {
+				t.Errorf("Summary(%q, %q, %q, %d, %d) = %q, want %q",
+					tt.service, tt.version, tt.env, tt.replicas, tt.memoryMiB, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMonthlyCost(t *testing.T) {
+	tests := []struct {
+		name          string
+		replicas      int
+		memoryMiB     int
+		dollarsPerGiB float64
+		want          string
+	}{
+		{name: "one and a half GiB", replicas: 3, memoryMiB: 512, dollarsPerGiB: 4, want: "$6.00/month"},
+		{name: "one GiB", replicas: 4, memoryMiB: 256, dollarsPerGiB: 3.5, want: "$3.50/month"},
+		{name: "seven and a half GiB", replicas: 10, memoryMiB: 768, dollarsPerGiB: 2.2, want: "$16.50/month"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MonthlyCost(tt.replicas, tt.memoryMiB, tt.dollarsPerGiB)
+			if got != tt.want {
+				t.Errorf("MonthlyCost(%d, %d, %v) = %q, want %q", tt.replicas, tt.memoryMiB, tt.dollarsPerGiB, got, tt.want)
+			}
+		})
+	}
+}

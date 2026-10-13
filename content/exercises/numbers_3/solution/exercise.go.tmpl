@@ -1,0 +1,24 @@
+// Package numbers is the Gopherlings exercise "Numbers: plan the capacity".
+package numbers
+
+// RequestsPerDay returns how many requests arrive in a day at a steady rate
+// of rps requests per second.
+func RequestsPerDay(rps int) int {
+	return rps * 60 * 60 * 24
+}
+
+// NodesNeeded returns how many nodes are needed to fit replicas replicas,
+// given the CPU each replica requests and the CPU each node offers.
+func NodesNeeded(replicas, millicoresPerReplica, millicoresPerNode int) int {
+	total := replicas * millicoresPerReplica
+	return (total + millicoresPerNode - 1) / millicoresPerNode
+}
+
+// HoursPerMonth is the number of hours in a month for cost reports.
+const HoursPerMonth = 730
+
+// MonthlyCost returns the cost of running instances instances for a month
+// at hourlyPrice each.
+func MonthlyCost(hourlyPrice, instances float64) float64 {
+	return hourlyPrice * instances * HoursPerMonth
+}

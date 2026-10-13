@@ -1,0 +1,56 @@
+// Package objects is the Gopherlings exercise "Kubernetes objects: Services and selectors".
+package objects
+
+import (
+	"fmt"
+	"maps"
+	"slices"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+// NewService builds a ClusterIP Service for Deployment d. The Service has the
+// Deployment's name and namespace, selects the Deployment's Pods, and sends
+// traffic arriving on port 80 to containerPort on those Pods.
+func NewService(d *appsv1.Deployment, containerPort int32) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      d.Name,
+			Namespace: d.Namespace,
+			Labels:    d.Labels,
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: d.Spec.Selector.MatchLabels,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					Protocol:   corev1.ProtocolTCP,
+					Port:       80,
+					TargetPort: intstr.FromInt32(containerPort),
+				},
+			},
+		},
+	}
+}
+
+// CheckSelector returns an error if Deployment d has no selector, or if its
+// Pod template is missing a label that the selector asks for. It returns nil
+// when the selector matches the template.
+func CheckSelector(d *appsv1.Deployment) error {
+	if d.Spec.Selector == nil || len(d.Spec.Selector.MatchLabels) == 0 {
+		return fmt.Errorf("deployment %s/%s: selector is empty", d.Namespace, d.Name)
+	}
+	want := d.Spec.Selector.MatchLabels
+	// Sorted keys make the error the same on every run.
+	for _, key := range slices.Sorted(maps.Keys(want)) {
+		if got := d.Spec.Template.Labels[key]; got != want[key] {
+			return fmt.Errorf("deployment %s/%s: template label %s is %q, selector wants %q",
+				d.Namespace, d.Name, key, got, want[key])
+		}
+	}
+	return nil
+}

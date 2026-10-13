@@ -1,0 +1,106 @@
+package maintenance
+
+import (
+	"slices"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+// recorder remembers which names were handled. Many goroutines call add at
+// once, so it uses a mutex (you'll learn about those in Mutexes).
+type recorder struct {
+	mu    sync.Mutex
+	names []string
+}
+
+func (r *recorder) add(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.names = append(r.names, name)
+}
+
+// sorted returns the names handled so far, in alphabetical order.
+func (r *recorder) sorted() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	sorted := slices.Clone(r.names)
+	slices.Sort(sorted)
+	return sorted
+}
+
+func TestDrainNodes(t *testing.T) {
+	tests := []struct {
+		name  string
+		nodes []string
+	}{
+		{"three nodes", []string{"node-a", "node-b", "node-c"}},
+		{"four nodes", []string{"node-a", "node-b", "node-c", "node-d"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// synctest.Test gives the test a fake clock: sleeps finish
+			// instantly, but time.Now still moves forward.
+			synctest.Test(t, func(t *testing.T) {
+				var drained recorder
+				drain := func(node string) {
+					time.Sleep(time.Second) // each drain takes 1 second
+					drained.add(node)
+				}
+
+				start := time.Now()
+				DrainNodes(tt.nodes, drain)
+				elapsed := time.Since(start)
+
+				if got := drained.sorted(); !slices.Equal(got, tt.nodes) {
+					t.Errorf("when DrainNodes returned, drained = %q, want %q", got, tt.nodes)
+				}
+				if elapsed != time.Second {
+					t.Errorf("DrainNodes took %v, want 1s: the drains should run at the same time", elapsed)
+				}
+
+				// Let any goroutine that is still running finish before the test ends.
+				time.Sleep(time.Minute)
+			})
+		})
+	}
+}
+
+func TestPingAll(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+		want  []bool
+	}{
+		{"three hosts", []string{"db-1", "db-2", "db-3"}, []bool{true, false, true}},
+		{"reversed", []string{"db-3", "db-2", "db-1"}, []bool{true, false, true}},
+		{"all down", []string{"db-2", "db-4"}, []bool{false, false}},
+	}
+	up := map[string]bool{"db-1": true, "db-2": false, "db-3": true, "db-4": false}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ping := func(host string) bool {
+					time.Sleep(time.Second) // each ping takes 1 second
+					return up[host]
+				}
+
+				start := time.Now()
+				got := PingAll(tt.hosts, ping)
+				elapsed := time.Since(start)
+
+				if !slices.Equal(got, tt.want) {
+					t.Errorf("PingAll(%q) = %v, want %v", tt.hosts, got, tt.want)
+				}
+				if elapsed != time.Second {
+					t.Errorf("PingAll(%q) took %v, want 1s: the pings should run at the same time", tt.hosts, elapsed)
+				}
+
+				// Let any goroutine that is still running finish before the test ends.
+				time.Sleep(time.Minute)
+			})
+		})
+	}
+}

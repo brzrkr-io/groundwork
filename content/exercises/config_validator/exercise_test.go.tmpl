@@ -1,0 +1,242 @@
+package config
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"testing"
+)
+
+func TestFieldError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *FieldError
+		want string
+		kind error
+	}{
+		{
+			name: "required",
+			err:  &FieldError{Field: "name", Err: ErrRequired},
+			want: "name: required",
+			kind: ErrRequired,
+		},
+		{
+			name: "with detail",
+			err:  &FieldError{Field: "port", Err: fmt.Errorf("%w: 0 is not between 1 and 65535", ErrOutOfRange)},
+			want: "port: out of range: 0 is not between 1 and 65535",
+			kind: ErrOutOfRange,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.err.Error(); got != tt.want {
+				t.Errorf("Error() = %q, want %q", got, tt.want)
+			}
+			if !errors.Is(tt.err, tt.kind) {
+				t.Errorf("errors.Is(%q, %q) = false, want true (does Unwrap return e.Err?)", tt.err, tt.kind)
+			}
+			if errors.Is(tt.err, ErrInvalid) {
+				t.Errorf("errors.Is(%q, ErrInvalid) = true, want false", tt.err)
+			}
+		})
+	}
+}
+
+func TestValidateBasics(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string // "" means Validate must return nil
+	}{
+		{
+			name: "valid",
+			cfg:  Config{Name: "api", Image: "nginx:1.27", Port: 8080, Replicas: 3},
+			want: "",
+		},
+		{
+			name: "edges are valid",
+			cfg:  Config{Name: "db", Image: "postgres:17", Port: 65535, Replicas: 50},
+			want: "",
+		},
+		{
+			name: "missing name",
+			cfg:  Config{Image: "nginx:1.27", Port: 8080, Replicas: 3},
+			want: "name: required",
+		},
+		{
+			name: "port too high",
+			cfg:  Config{Name: "api", Image: "nginx:1.27", Port: 70000, Replicas: 3},
+			want: "port: out of range: 70000 is not between 1 and 65535",
+		},
+		{
+			name: "replicas zero",
+			cfg:  Config{Name: "api", Image: "nginx:1.27", Port: 8080, Replicas: 0},
+			want: "replicas: out of range: 0 is not between 1 and 50",
+		},
+		{
+			name: "three problems",
+			cfg:  Config{Image: "nginx:1.27", Port: 0, Replicas: 51},
+			want: "name: required\n" +
+				"port: out of range: 0 is not between 1 and 65535\n" +
+				"replicas: out of range: 51 is not between 1 and 50",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkValidate(t, tt.cfg, tt.want)
+		})
+	}
+}
+
+func TestValidateImageAndEnv(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string // "" means Validate must return nil
+	}{
+		{
+			name: "valid env",
+			cfg: Config{Name: "api", Image: "nginx:1.27", Port: 8080, Replicas: 3,
+				Env: map[string]string{"LOG_LEVEL": "info", "DB_HOST": "db.internal"}},
+			want: "",
+		},
+		{
+			name: "missing image",
+			cfg:  Config{Name: "api", Image: "", Port: 8080, Replicas: 3},
+			want: "image: required",
+		},
+		{
+			name: "image without tag",
+			cfg:  Config{Name: "api", Image: "nginx", Port: 8080, Replicas: 3},
+			want: `image: invalid: "nginx" has no tag`,
+		},
+		{
+			name: "image with empty tag",
+			cfg:  Config{Name: "api", Image: "nginx:", Port: 8080, Replicas: 3},
+			want: `image: invalid: "nginx:" has no tag`,
+		},
+		{
+			name: "bad env names in sorted order",
+			cfg: Config{Name: "api", Image: "nginx:1.27", Port: 8080, Replicas: 3,
+				Env: map[string]string{"log-level": "info", "PORT": "8080", "db_host": "db", "": "x"}},
+			want: "env.: invalid: use only A-Z, 0-9 and _\n" +
+				"env.db_host: invalid: use only A-Z, 0-9 and _\n" +
+				"env.log-level: invalid: use only A-Z, 0-9 and _",
+		},
+		{
+			name: "everything wrong",
+			cfg: Config{Image: "redis", Port: -1, Replicas: 0,
+				Env: map[string]string{"api key": "secret"}},
+			want: "name: required\n" +
+				`image: invalid: "redis" has no tag` + "\n" +
+				"port: out of range: -1 is not between 1 and 65535\n" +
+				"replicas: out of range: 0 is not between 1 and 50\n" +
+				"env.api key: invalid: use only A-Z, 0-9 and _",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkValidate(t, tt.cfg, tt.want)
+		})
+	}
+}
+
+// checkValidate calls Validate(cfg) and compares the error message with want.
+// An empty want means Validate must return nil.
+func checkValidate(t *testing.T, cfg Config, want string) {
+	t.Helper()
+	err := Validate(cfg)
+	if want == "" {
+		if err != nil {
+			t.Errorf("Validate(%+v) = %q, want nil", cfg, err)
+		}
+		return
+	}
+	if err == nil {
+		t.Errorf("Validate(%+v) = nil, want %q", cfg, want)
+		return
+	}
+	if got := err.Error(); got != want {
+		t.Errorf("Validate(%+v) =\n%s\nwant\n%s", cfg, got, want)
+	}
+}
+
+func TestFieldNames(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want []string
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: nil,
+		},
+		{
+			name: "joined field errors",
+			err: errors.Join(
+				&FieldError{Field: "name", Err: ErrRequired},
+				&FieldError{Field: "port", Err: ErrOutOfRange},
+				&FieldError{Field: "env.db_host", Err: ErrInvalid},
+			),
+			want: []string{"name", "port", "env.db_host"},
+		},
+		{
+			name: "from Validate",
+			err:  Validate(Config{Name: "api", Image: "nginx", Port: 8080, Replicas: 0}),
+			want: []string{"image", "replicas"},
+		},
+		{
+			name: "single field error",
+			err:  &FieldError{Field: "replicas", Err: ErrOutOfRange},
+			want: []string{"replicas"},
+		},
+		{
+			name: "other errors are skipped",
+			err:  errors.Join(errors.New("disk full"), &FieldError{Field: "image", Err: ErrRequired}),
+			want: []string{"image"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FieldNames(tt.err)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("FieldNames(err) = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFieldsWith(t *testing.T) {
+	err := errors.Join(
+		&FieldError{Field: "name", Err: ErrRequired},
+		&FieldError{Field: "image", Err: ErrRequired},
+		&FieldError{Field: "port", Err: fmt.Errorf("%w: 0 is not between 1 and 65535", ErrOutOfRange)},
+		&FieldError{Field: "env.db_host", Err: fmt.Errorf("%w: use only A-Z, 0-9 and _", ErrInvalid)},
+	)
+	tests := []struct {
+		name string
+		err  error
+		kind error
+		want []string
+	}{
+		{name: "required", err: err, kind: ErrRequired, want: []string{"name", "image"}},
+		{name: "out of range", err: err, kind: ErrOutOfRange, want: []string{"port"}},
+		{name: "invalid", err: err, kind: ErrInvalid, want: []string{"env.db_host"}},
+		{
+			name: "from Validate",
+			err:  Validate(Config{Image: "nginx:1.27", Port: 80, Replicas: 99}),
+			kind: ErrOutOfRange,
+			want: []string{"replicas"},
+		},
+		{name: "nil error", err: nil, kind: ErrRequired, want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FieldsWith(tt.err, tt.kind)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("FieldsWith(err, %q) = %q, want %q", tt.kind, got, tt.want)
+			}
+		})
+	}
+}

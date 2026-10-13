@@ -1,0 +1,164 @@
+package pods
+
+import (
+	"encoding/json"
+	"maps"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestDecodePods(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want []string
+	}{
+		{
+			name: "two pods",
+			data: `{"kind":"List","items":[{"metadata":{"name":"api-7d9f"}},{"metadata":{"name":"worker-1"}}]}`,
+			want: []string{"api-7d9f", "worker-1"},
+		},
+		{
+			name: "three pods",
+			data: `{"items":[{"metadata":{"name":"redis-0"}},{"metadata":{"name":"redis-1"}},{"metadata":{"name":"redis-2"}}]}`,
+			want: []string{"redis-0", "redis-1", "redis-2"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pods, err := DecodePods([]byte(tt.data))
+			if err != nil {
+				t.Fatalf("DecodePods(%q) error = %v, want nil", tt.data, err)
+			}
+			var got []string
+			for _, p := range pods {
+				got = append(got, p.Metadata.Name)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("DecodePods(%q) names = %q, want %q", tt.data, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("broken JSON", func(t *testing.T) {
+		data := `{"items":[}`
+		_, err := DecodePods([]byte(data))
+		if err == nil {
+			t.Fatalf("DecodePods(%q) error = nil, want an error", data)
+		}
+		if !strings.HasPrefix(err.Error(), "decode pods: ") {
+			t.Errorf("DecodePods(%q) error = %q, want it to start with %q", data, err, "decode pods: ")
+		}
+	})
+}
+
+func TestPodFields(t *testing.T) {
+	tests := []struct {
+		data      string
+		wantRef   string
+		wantPhase string
+	}{
+		{
+			data:      `{"metadata":{"name":"api-7d9f","namespace":"shop"},"status":{"phase":"Running"}}`,
+			wantRef:   "shop/api-7d9f",
+			wantPhase: "Running",
+		},
+		{
+			data:      `{"metadata":{"name":"coredns-5d","namespace":"kube-system"},"status":{"phase":"Pending"}}`,
+			wantRef:   "kube-system/coredns-5d",
+			wantPhase: "Pending",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.wantRef, func(t *testing.T) {
+			var p Pod
+			if err := json.Unmarshal([]byte(tt.data), &p); err != nil {
+				t.Fatalf("json.Unmarshal(%q) error = %v, want nil", tt.data, err)
+			}
+			if got := p.Ref(); got != tt.wantRef {
+				t.Errorf("Ref() of %q = %q, want %q", tt.data, got, tt.wantRef)
+			}
+			if got := p.Status.Phase; got != tt.wantPhase {
+				t.Errorf("Status.Phase of %q = %q, want %q", tt.data, got, tt.wantPhase)
+			}
+		})
+	}
+}
+
+func TestCountPhases(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  map[string]int
+	}{
+		{
+			name: "one pod per line",
+			input: `{"metadata":{"name":"api-1"},"status":{"phase":"Running"}}
+{"metadata":{"name":"api-2"},"status":{"phase":"Running"}}
+{"metadata":{"name":"job-1"},"status":{"phase":"Failed"}}
+{"metadata":{"name":"web-1"},"status":{"phase":"Pending"}}
+`,
+			want: map[string]int{"Running": 2, "Failed": 1, "Pending": 1},
+		},
+		{
+			name: "pods spread over several lines",
+			input: `{
+  "metadata": {"name": "batch-1"},
+  "status": {"phase": "Succeeded"}
+}
+{
+  "metadata": {"name": "batch-2"},
+  "status": {"phase": "Succeeded"}
+}`,
+			want: map[string]int{"Succeeded": 2},
+		},
+		{
+			name:  "empty stream",
+			input: "",
+			want:  map[string]int{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := CountPhases(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("CountPhases(%q) error = %v, want nil", tt.input, err)
+			}
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("CountPhases(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+
+	broken := []struct {
+		name       string
+		input      string
+		wantPrefix string
+	}{
+		{
+			name: "third pod is broken",
+			input: `{"status":{"phase":"Running"}}
+{"status":{"phase":"Running"}}
+{"status":{"phase": Running}}
+`,
+			wantPrefix: "pod 3: ",
+		},
+		{
+			name:       "first pod is broken",
+			input:      `{"status":`,
+			wantPrefix: "pod 1: ",
+		},
+	}
+	for _, tt := range broken {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := CountPhases(strings.NewReader(tt.input))
+			if err == nil {
+				t.Fatalf("CountPhases(%q) error = nil, want an error", tt.input)
+			}
+			if !strings.HasPrefix(err.Error(), tt.wantPrefix) {
+				t.Errorf("CountPhases(%q) error = %q, want it to start with %q", tt.input, err, tt.wantPrefix)
+			}
+		})
+	}
+}

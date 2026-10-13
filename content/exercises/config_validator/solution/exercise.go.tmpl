@@ -1,0 +1,143 @@
+// Package config is the Gopherlings exercise "Practice: config validator".
+package config
+
+import (
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+)
+
+// Config describes one service to deploy.
+type Config struct {
+	Name     string
+	Image    string
+	Port     int
+	Replicas int
+	Env      map[string]string
+}
+
+// Error categories. A FieldError wraps one of these, so callers can ask
+// errors.Is(err, ErrRequired) without parsing messages.
+var (
+	ErrRequired   = errors.New("required")
+	ErrOutOfRange = errors.New("out of range")
+	ErrInvalid    = errors.New("invalid")
+)
+
+// FieldError reports a problem with one field of a Config.
+type FieldError struct {
+	Field string // which field is wrong, such as "port" or "env.LOG_LEVEL"
+	Err   error  // what is wrong; wraps one of the Err* categories
+}
+
+// Error returns the field name and the problem, such as "name: required".
+func (e *FieldError) Error() string {
+	return e.Field + ": " + e.Err.Error()
+}
+
+// Unwrap returns the error inside e, so errors.Is and errors.AsType can see it.
+func (e *FieldError) Unwrap() error {
+	return e.Err
+}
+
+// Validate checks every field of c and reports all problems at once, joined
+// with errors.Join. It returns nil when c is valid.
+func Validate(c Config) error {
+	var errs []error
+
+	if c.Name == "" {
+		errs = append(errs, &FieldError{Field: "name", Err: ErrRequired})
+	}
+
+	if c.Image == "" {
+		errs = append(errs, &FieldError{Field: "image", Err: ErrRequired})
+	} else if _, tag, found := strings.Cut(c.Image, ":"); !found || tag == "" {
+		errs = append(errs, &FieldError{
+			Field: "image",
+			Err:   fmt.Errorf("%w: %q has no tag", ErrInvalid, c.Image),
+		})
+	}
+
+	if c.Port < 1 || c.Port > 65535 {
+		errs = append(errs, &FieldError{
+			Field: "port",
+			Err:   fmt.Errorf("%w: %d is not between 1 and 65535", ErrOutOfRange, c.Port),
+		})
+	}
+
+	if c.Replicas < 1 || c.Replicas > 50 {
+		errs = append(errs, &FieldError{
+			Field: "replicas",
+			Err:   fmt.Errorf("%w: %d is not between 1 and 50", ErrOutOfRange, c.Replicas),
+		})
+	}
+
+	// Map order is random, so sort the keys to report problems in a stable order.
+	for _, key := range slices.Sorted(maps.Keys(c.Env)) {
+		if !ValidEnvName(key) {
+			errs = append(errs, &FieldError{
+				Field: "env." + key,
+				Err:   fmt.Errorf("%w: use only A-Z, 0-9 and _", ErrInvalid),
+			})
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// ValidEnvName reports whether name is a valid environment variable name.
+func ValidEnvName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		ok := r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_'
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// FieldNames returns the Field of every *FieldError in err, in order.
+func FieldNames(err error) []string {
+	var names []string
+	for _, fe := range fieldErrors(err) {
+		names = append(names, fe.Field)
+	}
+	return names
+}
+
+// FieldsWith returns the Field of every *FieldError in err whose error
+// matches kind according to errors.Is.
+func FieldsWith(err error, kind error) []string {
+	var names []string
+	for _, fe := range fieldErrors(err) {
+		if errors.Is(fe, kind) {
+			names = append(names, fe.Field)
+		}
+	}
+	return names
+}
+
+// fieldErrors returns every *FieldError in err. A joined error is opened up
+// with its Unwrap() []error method; any other error is checked on its own.
+func fieldErrors(err error) []*FieldError {
+	if err == nil {
+		return nil
+	}
+	list := []error{err}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		list = joined.Unwrap()
+	}
+
+	var found []*FieldError
+	for _, e := range list {
+		if fe, ok := errors.AsType[*FieldError](e); ok {
+			found = append(found, fe)
+		}
+	}
+	return found
+}

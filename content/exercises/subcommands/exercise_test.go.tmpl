@@ -1,0 +1,177 @@
+package subcommands
+
+import (
+	"io"
+	"strings"
+	"testing"
+)
+
+// handler is the shape shared by Run, runStatus, runDeploy and runRollback.
+type handler func(args []string, stdout, stderr io.Writer) int
+
+// call runs fn with args and returns its exit code and what it printed.
+func call(fn handler, args []string) (code int, stdout, stderr string) {
+	var out, errOut strings.Builder
+	code = fn(args, &out, &errOut)
+	return code, out.String(), errOut.String()
+}
+
+// testCase is one command line and the exact result we expect from it.
+type testCase struct {
+	name       string
+	args       []string
+	wantCode   int
+	wantStdout string
+	wantStderr string
+}
+
+// check runs one testCase against fn, which the messages call fnName.
+func check(t *testing.T, fnName string, fn handler, tc testCase) {
+	t.Helper()
+	code, stdout, stderr := call(fn, tc.args)
+	if code != tc.wantCode {
+		t.Errorf("%s(%q) = %d, want %d", fnName, tc.args, code, tc.wantCode)
+	}
+	if stdout != tc.wantStdout {
+		t.Errorf("%s(%q) stdout = %q, want %q", fnName, tc.args, stdout, tc.wantStdout)
+	}
+	if stderr != tc.wantStderr {
+		t.Errorf("%s(%q) stderr = %q, want %q", fnName, tc.args, stderr, tc.wantStderr)
+	}
+}
+
+// checkFlagError checks that a bad flag is a usage error. The flag package
+// writes its own message to stderr, so we only check that stderr is not empty.
+func checkFlagError(t *testing.T, fnName string, fn handler, args []string) {
+	t.Helper()
+	code, stdout, stderr := call(fn, args)
+	if code != 2 {
+		t.Errorf("%s(%q) = %d, want 2", fnName, args, code)
+	}
+	if stdout != "" {
+		t.Errorf("%s(%q) stdout = %q, want nothing", fnName, args, stdout)
+	}
+	if stderr == "" {
+		t.Errorf("%s(%q) stderr is empty, want the flag package's error message", fnName, args)
+	}
+}
+
+func TestRun(t *testing.T) {
+	tests := []testCase{
+		{"help", []string{"help"}, 0, usage, ""},
+		{"-h", []string{"-h"}, 0, usage, ""},
+		{"--help", []string{"--help"}, 0, usage, ""},
+		{"no arguments", []string{}, 2, "", usage},
+		{"unknown command", []string{"restart", "api"}, 2, "",
+			"shipctl: unknown command \"restart\"\n" + usage},
+		{"typo in command", []string{"deplyo"}, 2, "",
+			"shipctl: unknown command \"deplyo\"\n" + usage},
+		{"status", []string{"status", "api"}, 0,
+			"checking status of api in staging\n", ""},
+		{"status with flag", []string{"status", "-env", "production", "web"}, 0,
+			"checking status of web in production\n", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			check(t, "Run", Run, tc)
+		})
+	}
+
+	// Run must hand "deploy" and "rollback" to their handlers, without the
+	// command name. These checks only compare Run with the handler, so they
+	// pass before you finish tasks 2 and 3.
+	routes := []struct {
+		command string
+		fnName  string
+		fn      handler
+		rest    []string
+	}{
+		{"deploy", "runDeploy", runDeploy, []string{"-version", "v1.4.2", "api"}},
+		{"rollback", "runRollback", runRollback, []string{"-steps", "2", "api"}},
+	}
+	for _, r := range routes {
+		t.Run("routes "+r.command, func(t *testing.T) {
+			args := append([]string{r.command}, r.rest...)
+			code, stdout, stderr := call(Run, args)
+			wantCode, wantStdout, wantStderr := call(r.fn, r.rest)
+			if code != wantCode || stdout != wantStdout || stderr != wantStderr {
+				t.Errorf("Run(%q) = %d, stdout %q, stderr %q; want the same as %s(%q): %d, stdout %q, stderr %q",
+					args, code, stdout, stderr, r.fnName, r.rest, wantCode, wantStdout, wantStderr)
+			}
+		})
+	}
+}
+
+func TestDeploy(t *testing.T) {
+	tests := []testCase{
+		{"default env", []string{"-version", "v1.4.2", "api"}, 0,
+			"deploying api v1.4.2 to staging\n", ""},
+		{"production", []string{"-env", "production", "-version", "v2.0.0", "payments"}, 0,
+			"deploying payments v2.0.0 to production\n", ""},
+		{"missing version", []string{"api"}, 2, "",
+			"shipctl: deploy needs -version\n"},
+		{"missing version with env", []string{"-env", "production", "web"}, 2, "",
+			"shipctl: deploy needs -version\n"},
+		{"no service", []string{"-version", "v1.4.2"}, 2, "",
+			"shipctl: deploy needs exactly one SERVICE\n"},
+		{"two services", []string{"-version", "v1.4.2", "api", "web"}, 2, "",
+			"shipctl: deploy needs exactly one SERVICE\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			check(t, "runDeploy", runDeploy, tc)
+		})
+	}
+
+	for _, args := range [][]string{
+		{"-steps", "2", "-version", "v1", "api"}, // -steps belongs to rollback
+		{"-version"},                             // flag without a value
+	} {
+		t.Run("bad flag", func(t *testing.T) {
+			checkFlagError(t, "runDeploy", runDeploy, args)
+		})
+	}
+
+	t.Run("-h", func(t *testing.T) {
+		if code, _, _ := call(runDeploy, []string{"-h"}); code != 0 {
+			t.Errorf("runDeploy([\"-h\"]) = %d, want 0", code)
+		}
+	})
+}
+
+func TestRollback(t *testing.T) {
+	tests := []testCase{
+		{"default steps", []string{"api"}, 0,
+			"rolling back api by 1 release(s)\n", ""},
+		{"three steps", []string{"-steps", "3", "payments"}, 0,
+			"rolling back payments by 3 release(s)\n", ""},
+		{"zero steps", []string{"-steps", "0", "api"}, 2, "",
+			"shipctl: -steps must be at least 1\n"},
+		{"negative steps", []string{"-steps", "-2", "web"}, 2, "",
+			"shipctl: -steps must be at least 1\n"},
+		{"no service", []string{}, 2, "",
+			"shipctl: rollback needs exactly one SERVICE\n"},
+		{"two services", []string{"api", "web"}, 2, "",
+			"shipctl: rollback needs exactly one SERVICE\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			check(t, "runRollback", runRollback, tc)
+		})
+	}
+
+	for _, args := range [][]string{
+		{"-steps", "many", "api"},     // not a number
+		{"-version", "v1.4.2", "api"}, // -version belongs to deploy
+	} {
+		t.Run("bad flag", func(t *testing.T) {
+			checkFlagError(t, "runRollback", runRollback, args)
+		})
+	}
+
+	t.Run("-h", func(t *testing.T) {
+		if code, _, _ := call(runRollback, []string{"-h"}); code != 0 {
+			t.Errorf("runRollback([\"-h\"]) = %d, want 0", code)
+		}
+	})
+}

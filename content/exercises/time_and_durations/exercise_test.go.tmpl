@@ -1,0 +1,124 @@
+package timing
+
+import (
+	"testing"
+	"time"
+)
+
+// at builds a UTC time on a given day in October 2026.
+func at(day, hour, minute int) time.Time {
+	return time.Date(2026, 10, day, hour, minute, 0, 0, time.UTC)
+}
+
+func TestDaysUntilExpiry(t *testing.T) {
+	now := at(11, 9, 0)
+	tests := []struct {
+		name     string
+		notAfter string
+		want     int
+	}{
+		{"22 days 23 hours left", "2026-11-03T08:00:00Z", 22},
+		{"exactly 30 days left", "2026-11-10T09:00:00Z", 30},
+		{"less than a day left", "2026-10-12T08:59:00Z", 0},
+		{"expired 6 hours ago", "2026-10-11T03:00:00Z", 0},
+		{"expired 36 hours ago", "2026-10-09T21:00:00Z", -1},
+		{"expired 3 days ago", "2026-10-08T09:00:00Z", -3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := DaysUntilExpiry(now, tt.notAfter)
+			if err != nil {
+				t.Fatalf("DaysUntilExpiry(now, %q) returned error %v, want nil", tt.notAfter, err)
+			}
+			if got != tt.want {
+				t.Errorf("DaysUntilExpiry(now, %q) = %d, want %d", tt.notAfter, got, tt.want)
+			}
+		})
+	}
+
+	for _, bad := range []string{"2026-11-03", "next tuesday"} {
+		t.Run("bad input "+bad, func(t *testing.T) {
+			got, err := DaysUntilExpiry(now, bad)
+			if err == nil {
+				t.Errorf("DaysUntilExpiry(now, %q) returned nil error, want a parse error", bad)
+			}
+			if got != 0 {
+				t.Errorf("DaysUntilExpiry(now, %q) = %d, want 0", bad, got)
+			}
+		})
+	}
+}
+
+func TestUptimeLine(t *testing.T) {
+	plusTwo := time.FixedZone("UTC+2", 2*60*60)
+	tests := []struct {
+		name   string
+		booted time.Time
+		now    time.Time
+		want   string
+	}{
+		{"days and hours", at(8, 5, 30), at(11, 9, 45), "up 3d4h since 2026-10-08 05:30 UTC"},
+		{"under a day", at(11, 4, 0), at(11, 9, 45), "up 0d5h since 2026-10-11 04:00 UTC"},
+		{"exact days", at(1, 12, 0), at(11, 12, 0), "up 10d0h since 2026-10-01 12:00 UTC"},
+		{"just booted", at(11, 9, 20), at(11, 9, 45), "up 0d0h since 2026-10-11 09:20 UTC"},
+		{"booted in UTC+2", time.Date(2026, 10, 8, 7, 30, 0, 0, plusTwo), at(11, 9, 45), "up 3d4h since 2026-10-08 05:30 UTC"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := UptimeLine(tt.booted, tt.now)
+			if got != tt.want {
+				t.Errorf("UptimeLine(%v, %v) = %q, want %q", tt.booted, tt.now, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInWindow(t *testing.T) {
+	tests := []struct {
+		name   string
+		now    time.Time
+		start  string
+		length string
+		want   bool
+	}{
+		{"exactly at start", at(11, 2, 0), "2026-10-11T02:00:00Z", "2h", true},
+		{"in the middle", at(11, 3, 15), "2026-10-11T02:00:00Z", "2h", true},
+		{"one minute before end", at(11, 3, 59), "2026-10-11T02:00:00Z", "2h", true},
+		{"exactly at end", at(11, 4, 0), "2026-10-11T02:00:00Z", "2h", false},
+		{"not open yet", at(11, 1, 59), "2026-10-11T02:00:00Z", "2h", false},
+		{"short window over", at(11, 2, 45), "2026-10-11T02:00:00Z", "30m", false},
+		{"short window open", at(11, 2, 29), "2026-10-11T02:00:00Z", "30m", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := InWindow(tt.now, tt.start, tt.length)
+			if err != nil {
+				t.Fatalf("InWindow(%v, %q, %q) returned error %v, want nil", tt.now, tt.start, tt.length, err)
+			}
+			if got != tt.want {
+				t.Errorf("InWindow(%v, %q, %q) = %t, want %t", tt.now, tt.start, tt.length, got, tt.want)
+			}
+		})
+	}
+
+	bad := []struct {
+		name   string
+		start  string
+		length string
+	}{
+		{"bad start", "tonight", "2h"},
+		{"bad length", "2026-10-11T02:00:00Z", "two hours"},
+	}
+	for _, tt := range bad {
+		t.Run(tt.name, func(t *testing.T) {
+			now := at(11, 3, 0)
+			got, err := InWindow(now, tt.start, tt.length)
+			if err == nil {
+				t.Errorf("InWindow(%v, %q, %q) returned nil error, want a parse error", now, tt.start, tt.length)
+			}
+			if got {
+				t.Errorf("InWindow(%v, %q, %q) = true, want false", now, tt.start, tt.length)
+			}
+		})
+	}
+}

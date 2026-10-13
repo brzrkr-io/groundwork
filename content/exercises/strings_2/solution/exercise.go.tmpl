@@ -1,0 +1,20 @@
+// Package text is the Gopherlings exercise "Strings: fix the log and host checks".
+package text
+
+import "strings"
+
+// IsProdHost reports whether host is in the production domain.
+func IsProdHost(host string) bool {
+	return strings.HasSuffix(host, ".prod.example.com")
+}
+
+// MetricName returns the Prometheus request counter name for a service.
+func MetricName(service string) string {
+	return strings.ReplaceAll(service, "-", "_") + "_requests_total"
+}
+
+// MentionsTimeout reports whether a log line mentions a timeout, in any mix
+// of capitals.
+func MentionsTimeout(line string) bool {
+	return strings.Contains(strings.ToLower(line), "timeout")
+}

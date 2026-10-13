@@ -1,0 +1,52 @@
+// Package generics3 is the Gopherlings exercise "Generics: a Ring of recent deploys".
+package generics3
+
+import "slices"
+
+// Deploy is one deploy of a service.
+type Deploy struct {
+	Service string
+	Version string
+}
+
+// Ring keeps the most recent items, oldest first, up to limit.
+type Ring[T any] struct {
+	items []T
+	limit int
+}
+
+// NewRing returns an empty ring that holds at most limit items.
+func NewRing[T any](limit int) *Ring[T] {
+	return &Ring[T]{limit: limit}
+}
+
+// Len returns how many items the ring holds.
+func (r *Ring[T]) Len() int {
+	return len(r.items)
+}
+
+// Latest returns the newest item and true, or the zero value of T and false
+// when the ring is empty.
+func (r *Ring[T]) Latest() (T, bool) {
+	if len(r.items) == 0 {
+		var zero T
+		return zero, false
+	}
+	return r.items[len(r.items)-1], true
+}
+
+// Push adds v as the newest item. When the ring is full, the oldest item is
+// dropped.
+func (r *Ring[T]) Push(v T) {
+	r.items = append(r.items, v)
+	if len(r.items) > r.limit {
+		// Re-slicing is enough: once append runs out of room it copies the
+		// kept items into a fresh array, and the dropped ones can be freed.
+		r.items = r.items[1:]
+	}
+}
+
+// Items returns a copy of the items, oldest first.
+func (r *Ring[T]) Items() []T {
+	return slices.Clone(r.items)
+}

@@ -1,0 +1,24 @@
+// Package waves is the Gopherlings exercise "Slice gotchas: two bugs from one buffer".
+package waves
+
+import "strings"
+
+// Split returns the first n hosts as the canary wave and the remaining hosts
+// as rest. Appending to canary never changes rest or hosts.
+func Split(hosts []string, n int) (canary, rest []string) {
+	// TODO(1): Appending to canary overwrites rest[0]. Fix the slicing.
+	return hosts[:n], hosts[n:]
+}
+
+// RestartCommands returns the kubectl commands that restart the canary and
+// the main version of deployment in namespace.
+func RestartCommands(namespace, deployment string) (canaryCmd, mainCmd string) {
+	args := make([]string, 0, 8) // room for every argument, to avoid copying
+	args = append(args, "kubectl", "rollout", "restart", "-n", namespace)
+
+	// TODO(2): The second append overwrites the first one's last argument. Fix it.
+	canary := append(args, "deployment/"+deployment+"-canary")
+	main := append(args, "deployment/"+deployment)
+
+	return strings.Join(canary, " "), strings.Join(main, " ")
+}

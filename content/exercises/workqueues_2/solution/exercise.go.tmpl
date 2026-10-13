@@ -1,0 +1,55 @@
+// Package queues retries failing keys from a workqueue, up to a limit.
+package queues
+
+import (
+	"log/slog"
+
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
+)
+
+// MaxRetries is how many times a failing key goes back into the queue before
+// the worker gives up on it.
+const MaxRetries = 3
+
+// SyncFunc does the real work for one object. It returns an error when the
+// work failed and is worth trying again.
+type SyncFunc func(namespace, name string) error
+
+// ProcessNextItem takes one key from q, syncs it, and lets HandleResult
+// decide what happens next. It returns false once q has been shut down.
+func ProcessNextItem(q workqueue.TypedRateLimitingInterface[string], sync SyncFunc) bool {
+	key, shutdown := q.Get()
+	if shutdown {
+		return false
+	}
+	defer q.Done(key)
+
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		q.Forget(key)
+		return true
+	}
+
+	err = sync(namespace, name)
+	if HandleResult(q, key, err) {
+		slog.Warn("giving up on key", "key", key, "retries", MaxRetries, "err", err)
+	}
+	return true
+}
+
+// HandleResult updates q after one attempt at key, where err is the result of
+// that attempt. It reports whether the key was dropped.
+func HandleResult(q workqueue.TypedRateLimitingInterface[string], key string, err error) (dropped bool) {
+	if err == nil {
+		q.Forget(key)
+		return false
+	}
+
+	if q.NumRequeues(key) < MaxRetries {
+		q.AddRateLimited(key)
+		return false
+	}
+	q.Forget(key)
+	return true
+}

@@ -1,0 +1,110 @@
+// Package subcommands is the Gopherlings exercise "Subcommands: dispatching git-style commands".
+package subcommands
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+)
+
+// usage is the help text for shipctl. It ends with a newline.
+const usage = `usage: shipctl <command> [flags] SERVICE
+
+commands:
+  status    show what a service is running
+  deploy    deploy a new version of a service
+  rollback  roll a service back to an earlier release
+`
+
+// Run is the whole shipctl program. args is os.Args[1:], so args[0] is the
+// command name. Run returns the exit code: 0 for success, 1 for a runtime
+// failure and 2 for a usage error.
+func Run(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprint(stderr, usage)
+		return 2
+	}
+	switch args[0] {
+	case "help", "-h", "--help":
+		fmt.Fprint(stdout, usage)
+		return 0
+	case "status":
+		return runStatus(args[1:], stdout, stderr)
+	case "deploy":
+		return runDeploy(args[1:], stdout, stderr)
+	case "rollback":
+		return runRollback(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "shipctl: unknown command %q\n", args[0])
+		fmt.Fprint(stderr, usage)
+		return 2
+	}
+}
+
+// runStatus handles "shipctl status [-env ENV] SERVICE".
+// It is finished: use it as the example for the other two handlers.
+func runStatus(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("status", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	env := fs.String("env", "staging", "environment to check")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0 // "shipctl status -h" asked for help
+		}
+		return 2 // the flag package has already printed the problem
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "shipctl: status needs exactly one SERVICE")
+		return 2
+	}
+	fmt.Fprintf(stdout, "checking status of %s in %s\n", fs.Arg(0), *env)
+	return 0
+}
+
+// runDeploy handles "shipctl deploy -version VERSION [-env ENV] SERVICE".
+func runDeploy(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("deploy", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	version := fs.String("version", "", "version to deploy (required)")
+	env := fs.String("env", "staging", "environment to deploy to")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "shipctl: deploy needs exactly one SERVICE")
+		return 2
+	}
+	if *version == "" {
+		fmt.Fprintln(stderr, "shipctl: deploy needs -version")
+		return 2
+	}
+	fmt.Fprintf(stdout, "deploying %s %s to %s\n", fs.Arg(0), *version, *env)
+	return 0
+}
+
+// runRollback handles "shipctl rollback [-steps N] SERVICE".
+func runRollback(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	steps := fs.Int("steps", 1, "how many releases to roll back")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "shipctl: rollback needs exactly one SERVICE")
+		return 2
+	}
+	if *steps < 1 {
+		fmt.Fprintln(stderr, "shipctl: -steps must be at least 1")
+		return 2
+	}
+	fmt.Fprintf(stdout, "rolling back %s by %d release(s)\n", fs.Arg(0), *steps)
+	return 0
+}

@@ -1,0 +1,223 @@
+package toolrun
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// TestMain lets this test binary double as a fake kubectl.
+// When TOOLRUN_HELPER=1 is in the environment, it acts as kubectl and exits
+// instead of running the tests.
+func TestMain(m *testing.M) {
+	if os.Getenv("TOOLRUN_HELPER") == "1" {
+		os.Exit(fakeKubectlMain(os.Args[1:]))
+	}
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
+		// Started as fake kubectl, but TOOLRUN_HELPER=1 got lost on the way.
+		fmt.Fprintln(os.Stderr, "fake kubectl: TOOLRUN_HELPER=1 is missing from the environment (did cmd.Env leave out os.Environ()?)")
+		os.Exit(2)
+	}
+	os.Exit(m.Run())
+}
+
+// fakeKubectlMain is the pretend kubectl the tests run. It understands:
+//
+//	rollout status deployment/NAME [-n NAMESPACE]
+//	    needs KUBECONFIG set; prints: deployment "NAME" successfully rolled out
+//	apply -f -
+//	    reads a manifest from stdin and prints "<kind>/<name> configured" for
+//	    each object. Warns on stderr when the manifest has no namespace.
+//	    Fails with "error: no objects passed to apply" when there are none.
+func fakeKubectlMain(args []string) int {
+	switch {
+	case len(args) >= 3 && args[0] == "rollout" && args[1] == "status":
+		return fakeRolloutStatus(args)
+	case len(args) == 3 && args[0] == "apply" && args[1] == "-f" && args[2] == "-":
+		return fakeApply()
+	}
+	fmt.Fprintf(os.Stderr, "error: unknown command %q\n", args)
+	return 1
+}
+
+func fakeRolloutStatus(args []string) int {
+	validNamespace := len(args) == 5 && args[3] == "-n" && args[4] != ""
+	if len(args) != 3 && !validNamespace {
+		fmt.Fprintf(os.Stderr, "error: unexpected arguments %q\n", args[3:])
+		return 1
+	}
+	if os.Getenv("KUBECONFIG") == "" {
+		fmt.Fprintln(os.Stderr, "error: KUBECONFIG is not set")
+		return 1
+	}
+	name, ok := strings.CutPrefix(args[2], "deployment/")
+	if !ok {
+		fmt.Fprintf(os.Stderr, "error: %q is not a deployment\n", args[2])
+		return 1
+	}
+	fmt.Printf("deployment %q successfully rolled out\n", name)
+	return 0
+}
+
+func fakeApply() int {
+	var kind string
+	objects, namespaced := 0, false
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if v, ok := strings.CutPrefix(line, "kind:"); ok {
+			kind = strings.ToLower(strings.TrimSpace(v))
+		}
+		if v, ok := strings.CutPrefix(line, "name:"); ok && kind != "" {
+			fmt.Printf("%s/%s configured\n", kind, strings.TrimSpace(v))
+			kind = ""
+			objects++
+		}
+		if strings.HasPrefix(line, "namespace:") {
+			namespaced = true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, "error: reading stdin:", err)
+		return 1
+	}
+	if objects == 0 {
+		fmt.Fprintln(os.Stderr, "error: no objects passed to apply")
+		return 1
+	}
+	if !namespaced {
+		fmt.Fprintln(os.Stderr, `Warning: no namespace set, using "default"`)
+	}
+	return 0
+}
+
+// fakeKubectl switches on fake-kubectl mode for this test and returns the
+// program name to run: the test binary itself.
+func fakeKubectl(t *testing.T) string {
+	t.Helper()
+	t.Setenv("TOOLRUN_HELPER", "1")
+	return os.Args[0]
+}
+
+// describe formats err, adding the command's stderr when there is some.
+func describe(err error) string {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && len(exitErr.Stderr) > 0 {
+		return fmt.Sprintf("%v (stderr: %q)", err, exitErr.Stderr)
+	}
+	return fmt.Sprint(err)
+}
+
+func TestRolloutStatus(t *testing.T) {
+	kubectl := fakeKubectl(t)
+	kubeconfig := filepath.Join(t.TempDir(), "config")
+	tests := []struct {
+		namespace  string
+		deployment string
+		want       string
+	}{
+		{"kube-system", "coredns", `deployment "coredns" successfully rolled out`},
+		{"monitoring", "prometheus", `deployment "prometheus" successfully rolled out`},
+		{"", "api", `deployment "api" successfully rolled out`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.deployment, func(t *testing.T) {
+			got, err := RolloutStatus(kubectl, kubeconfig, tt.namespace, tt.deployment)
+			if err != nil {
+				t.Fatalf("RolloutStatus(kubectl, kubeconfig, %q, %q) returned error: %s", tt.namespace, tt.deployment, describe(err))
+			}
+			if got != tt.want {
+				t.Errorf("RolloutStatus(kubectl, kubeconfig, %q, %q) = %q, want %q", tt.namespace, tt.deployment, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApply(t *testing.T) {
+	kubectl := fakeKubectl(t)
+	tests := []struct {
+		name       string
+		manifest   string
+		wantStdout string
+		wantStderr string
+		wantErr    bool
+	}{
+		{
+			name:       "two objects",
+			manifest:   "kind: Deployment\nmetadata:\n  name: web\n  namespace: shop\n---\nkind: Service\nmetadata:\n  name: web\n  namespace: shop\n",
+			wantStdout: "deployment/web configured\nservice/web configured\n",
+			wantStderr: "",
+		},
+		{
+			name:       "warning on stderr",
+			manifest:   "kind: ConfigMap\nmetadata:\n  name: app-settings\n",
+			wantStdout: "configmap/app-settings configured\n",
+			wantStderr: "Warning: no namespace set, using \"default\"\n",
+		},
+		{
+			name:       "empty manifest",
+			manifest:   "",
+			wantStdout: "",
+			wantStderr: "error: no objects passed to apply\n",
+			wantErr:    true,
+		},
+		{
+			name:       "only comments",
+			manifest:   "# TODO: add the redis deployment\n",
+			wantStdout: "",
+			wantStderr: "error: no objects passed to apply\n",
+			wantErr:    true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, stderr, err := Apply(kubectl, tt.manifest)
+			if stdout != tt.wantStdout {
+				t.Errorf("Apply(kubectl, %q) stdout = %q, want %q", tt.manifest, stdout, tt.wantStdout)
+			}
+			if stderr != tt.wantStderr {
+				t.Errorf("Apply(kubectl, %q) stderr = %q, want %q", tt.manifest, stderr, tt.wantStderr)
+			}
+			if gotErr := err != nil; gotErr != tt.wantErr {
+				t.Errorf("Apply(kubectl, %q) error = %v, want error: %v", tt.manifest, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestInstalled(t *testing.T) {
+	// A private PATH holding one executable, fake-helm, and one plain file.
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "fake-helm"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	notes := filepath.Join(bin, "notes.txt")
+	if err := os.WriteFile(notes, []byte("not a program\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	tests := []struct {
+		name    string
+		want    bool
+		wantErr bool
+	}{
+		{"fake-helm", true, false},
+		{os.Args[0], true, false},
+		{"kubectl", false, false},
+		{"gopherlings-no-such-tool", false, false},
+		{notes, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(filepath.Base(tt.name), func(t *testing.T) {
+			got, err := Installed(tt.name)
+			if got != tt.want || (err != nil) != tt.wantErr {
+				t.Errorf("Installed(%q) = %v, %v; want %v, error: %v", tt.name, got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}

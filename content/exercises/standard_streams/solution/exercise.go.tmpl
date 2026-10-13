@@ -1,0 +1,48 @@
+// Package streams is the Gopherlings exercise "Standard streams: stdin, stdout, stderr and exit codes".
+package streams
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"strings"
+)
+
+// Run is the whole hostfilter program. args is os.Args[1:]. It reads
+// hostnames from stdin, writes the ones that start with the prefix to stdout,
+// writes problems to stderr, and returns the exit code: 0 for success, 1 if
+// any line was bad or stdin could not be read, 2 for a usage error.
+func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "usage: hostfilter PREFIX")
+		return 2
+	}
+	return Filter(args[0], stdin, stdout, stderr)
+}
+
+// Filter does the real work of Run once the arguments are known to be good.
+func Filter(prefix string, stdin io.Reader, stdout, stderr io.Writer) int {
+	code := 0
+	sc := bufio.NewScanner(stdin)
+	lineNo := 0
+	for sc.Scan() {
+		lineNo++
+		host := strings.TrimSpace(sc.Text())
+		if host == "" || strings.HasPrefix(host, "#") {
+			continue
+		}
+		if strings.ContainsAny(host, " \t") {
+			fmt.Fprintf(stderr, "hostfilter: line %d: invalid host %q\n", lineNo, host)
+			code = 1 // keep going: one bad line should not hide the good ones
+			continue
+		}
+		if strings.HasPrefix(host, prefix) {
+			fmt.Fprintln(stdout, host)
+		}
+	}
+	if err := sc.Err(); err != nil {
+		fmt.Fprintf(stderr, "hostfilter: reading stdin: %v\n", err)
+		return 1
+	}
+	return code
+}

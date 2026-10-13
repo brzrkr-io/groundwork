@@ -1,0 +1,94 @@
+package customtypes3
+
+import "testing"
+
+func TestHuman(t *testing.T) {
+	tests := []struct {
+		size Bytes
+		want string
+	}{
+		{0, "0 B"},
+		{900, "900 B"},
+		{1023, "1023 B"},
+		{1024, "1.0 KiB"},
+		{1536, "1.5 KiB"},
+		{1100, "1.1 KiB"},
+		{256 * MiB, "256.0 MiB"},
+		{1536 * MiB, "1.5 GiB"},
+		{4 * GiB, "4.0 GiB"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.want, func(t *testing.T) {
+			if got := tc.size.Human(); got != tc.want {
+				t.Errorf("Bytes(%d).Human() = %q, want %q", tc.size, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseMemory(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    Bytes
+		wantErr bool
+	}{
+		{"64Ki", 65536, false},
+		{"512Mi", 536870912, false},
+		{"2Gi", 2147483648, false},
+		{"1000", 1000, false},
+		{"0", 0, false},
+		{"lotsMi", 0, true},
+		{"1.5Gi", 0, true},
+		{"Mi", 0, true},
+		{"", 0, true},
+		{"-5Mi", 0, true},
+		{"2G", 0, true},
+		{"512MB", 0, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			got, err := ParseMemory(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("ParseMemory(%q) = %d, nil, want an error", tc.input, got)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Errorf("ParseMemory(%q) = %d, %v, want %d, nil", tc.input, got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestFitsOnNode(t *testing.T) {
+	tests := []struct {
+		name     string
+		requests []string
+		free     Bytes
+		want     bool
+		wantErr  bool
+	}{
+		{"room to spare", []string{"512Mi", "1Gi"}, 2 * GiB, true, false},
+		{"exactly full", []string{"1Gi", "1Gi"}, 2 * GiB, true, false},
+		{"too big", []string{"3Gi"}, 2 * GiB, false, false},
+		{"many small pods overflow", []string{"768Mi", "768Mi", "768Mi"}, 2 * GiB, false, false},
+		{"no pods", []string{}, 0, true, false},
+		{"bad request", []string{"1Gi", "huge"}, 2 * GiB, false, true},
+		{"bad request that would fit", []string{"1Gi", "1G"}, 8 * GiB, false, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := FitsOnNode(tc.requests, tc.free)
+			if tc.wantErr {
+				if got || err == nil {
+					t.Errorf("FitsOnNode(%q, %d) = %t, %v, want false, an error", tc.requests, tc.free, got, err)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Errorf("FitsOnNode(%q, %d) = %t, %v, want %t, nil", tc.requests, tc.free, got, err, tc.want)
+			}
+		})
+	}
+}

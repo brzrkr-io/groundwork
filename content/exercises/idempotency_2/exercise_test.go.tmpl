@@ -1,0 +1,166 @@
+package idempotency
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+// vmHandler pretends to create a VM from the request body. Every call
+// creates a new VM with the next number, so a handler that runs twice is easy
+// to spot. It echoes the body, so a lost body is easy to spot too.
+func vmHandler(calls *int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*calls++
+		body, _ := io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprintf(w, "vm-%d created from %s", *calls, body)
+	})
+}
+
+// request describes one POST /vms call made by a test.
+type request struct {
+	client string // X-Client-ID header
+	key    string // Idempotency-Key header
+	body   string
+}
+
+func (req request) send(h http.Handler) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(http.MethodPost, "/vms", strings.NewReader(req.body))
+	r.Header.Set("X-Client-ID", req.client)
+	r.Header.Set("Idempotency-Key", req.key)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+
+// fixedNow is the fake clock's starting time.
+var fixedNow = time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
+
+// check sends req and compares the status and body of the response.
+func check(t *testing.T, h http.Handler, req request, wantStatus int, wantBody string) {
+	t.Helper()
+	w := req.send(h)
+	got := strings.TrimSpace(w.Body.String())
+	if w.Code != wantStatus || got != wantBody {
+		t.Errorf("POST /vms %+v = %d %q, want %d %q", req, w.Code, got, wantStatus, wantBody)
+	}
+}
+
+func TestKeysPerClient(t *testing.T) {
+	t.Run("storeKey", func(t *testing.T) {
+		tests := []struct {
+			method, path, client, key string
+			want                      string
+		}{
+			{"POST", "/vms", "ci-payments", "abc", "ci-payments|POST /vms|abc"},
+			{"DELETE", "/vms/web-1", "ci-search", "k-17", "ci-search|DELETE /vms/web-1|k-17"},
+		}
+		for _, tt := range tests {
+			r := httptest.NewRequest(tt.method, tt.path, nil)
+			r.Header.Set("X-Client-ID", tt.client)
+			if got := storeKey(r, tt.key); got != tt.want {
+				t.Errorf("storeKey(%s %s, client %q, key %q) = %q, want %q",
+					tt.method, tt.path, tt.client, tt.key, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("same key from two clients", func(t *testing.T) {
+		calls := 0
+		h := Middleware(NewStore(24*time.Hour, func() time.Time { return fixedNow }), vmHandler(&calls))
+		payments := request{client: "ci-payments", key: "abc", body: "web"}
+		search := request{client: "ci-search", key: "abc", body: "web"}
+
+		check(t, h, payments, 201, "vm-1 created from web")
+		check(t, h, search, 201, "vm-2 created from web")
+		check(t, h, payments, 201, "vm-1 created from web")
+		check(t, h, search, 201, "vm-2 created from web")
+		if calls != 2 {
+			t.Errorf("handler ran %d times, want 2", calls)
+		}
+	})
+}
+
+func TestExpiry(t *testing.T) {
+	t.Run("Store", func(t *testing.T) {
+		tests := []struct {
+			ttl    time.Duration
+			age    time.Duration // how long after Put we call Get
+			wantOK bool
+		}{
+			{24 * time.Hour, 0, true},
+			{24 * time.Hour, 23*time.Hour + 59*time.Minute, true},
+			{24 * time.Hour, 24 * time.Hour, false},
+			{24 * time.Hour, 72 * time.Hour, false},
+			{10 * time.Minute, 9 * time.Minute, true},
+			{10 * time.Minute, 10 * time.Minute, false},
+		}
+		for _, tt := range tests {
+			now := fixedNow
+			s := NewStore(tt.ttl, func() time.Time { return now })
+			s.Put("k", Entry{Response: Response{Status: 201}})
+			now = now.Add(tt.age)
+			if _, ok := s.Get("k"); ok != tt.wantOK {
+				t.Errorf("ttl %v: Get %v after Put: ok = %t, want %t", tt.ttl, tt.age, ok, tt.wantOK)
+			}
+		}
+	})
+
+	t.Run("Middleware runs again after expiry", func(t *testing.T) {
+		calls := 0
+		now := fixedNow
+		h := Middleware(NewStore(24*time.Hour, func() time.Time { return now }), vmHandler(&calls))
+		req := request{client: "ci-payments", key: "abc", body: "db"}
+
+		check(t, h, req, 201, "vm-1 created from db")
+		now = fixedNow.Add(time.Hour)
+		check(t, h, req, 201, "vm-1 created from db") // replay
+		now = fixedNow.Add(25 * time.Hour)
+		check(t, h, req, 201, "vm-2 created from db") // expired: runs again
+		now = fixedNow.Add(26 * time.Hour)
+		check(t, h, req, 201, "vm-2 created from db") // replay of the new one
+		if calls != 2 {
+			t.Errorf("handler ran %d times, want 2", calls)
+		}
+	})
+}
+
+func TestDifferentBodyRejected(t *testing.T) {
+	t.Run("Fingerprint", func(t *testing.T) {
+		tests := []struct {
+			body string
+			want string
+		}{
+			{"", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+			{`{"name":"web-1"}`, "c170d260c5801ebdc0dc96b0bce790fa3fb88bc151f3d6efc215e57fd008eff0"},
+		}
+		for _, tt := range tests {
+			if got := Fingerprint([]byte(tt.body)); got != tt.want {
+				t.Errorf("Fingerprint(%q) = %q, want %q", tt.body, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("Middleware", func(t *testing.T) {
+		calls := 0
+		h := Middleware(NewStore(24*time.Hour, func() time.Time { return fixedNow }), vmHandler(&calls))
+		web1 := request{client: "ci-payments", key: "abc", body: `{"name":"web-1"}`}
+		web2 := request{client: "ci-payments", key: "abc", body: `{"name":"web-2"}`}
+		web2NewKey := request{client: "ci-payments", key: "def", body: `{"name":"web-2"}`}
+		reused := "Idempotency-Key reused with a different request body"
+
+		check(t, h, web1, 201, `vm-1 created from {"name":"web-1"}`) // the handler still sees the body
+		check(t, h, web1, 201, `vm-1 created from {"name":"web-1"}`) // same body: replay
+		check(t, h, web2, 422, reused)                               // same key, new body
+		check(t, h, web2NewKey, 201, `vm-2 created from {"name":"web-2"}`)
+		check(t, h, web1, 201, `vm-1 created from {"name":"web-1"}`) // the first entry is untouched
+		if calls != 2 {
+			t.Errorf("handler ran %d times, want 2", calls)
+		}
+	})
+}

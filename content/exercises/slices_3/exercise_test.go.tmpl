@@ -1,0 +1,82 @@
+package rollout
+
+import (
+	"fmt"
+	"slices"
+	"testing"
+)
+
+var fleet = []string{"web-1", "web-2", "web-3", "web-4", "web-5"}
+
+func TestBatchCount(t *testing.T) {
+	cases := []struct {
+		hosts []string
+		size  int
+		want  int
+	}{
+		{fleet, 2, 3},
+		{fleet[:4], 2, 2},
+		{fleet, 1, 5},
+		{fleet, 5, 1},
+		{fleet, 10, 1},
+		{[]string{}, 3, 0},
+		{nil, 1, 0},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_hosts_size_%d", len(c.hosts), c.size), func(t *testing.T) {
+			if got := BatchCount(c.hosts, c.size); got != c.want {
+				t.Errorf("BatchCount(%q, %d) = %d, want %d", c.hosts, c.size, got, c.want)
+			}
+		})
+	}
+}
+
+func TestBatch(t *testing.T) {
+	// slices.Equal reports whether two slices have the same elements in the
+	// same order. A nil slice and an empty slice count as equal.
+	cases := []struct {
+		hosts   []string
+		size, n int
+		want    []string
+	}{
+		{fleet, 2, 0, []string{"web-1", "web-2"}},
+		{fleet, 2, 1, []string{"web-3", "web-4"}},
+		{fleet, 2, 2, []string{"web-5"}},
+		{fleet, 2, 3, []string{}},
+		{fleet, 3, 1, []string{"web-4", "web-5"}},
+		{fleet, 10, 0, fleet},
+		{fleet, 10, 1, []string{}},
+		{nil, 2, 0, []string{}},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_hosts_size_%d_batch_%d", len(c.hosts), c.size, c.n), func(t *testing.T) {
+			if got := Batch(c.hosts, c.size, c.n); !slices.Equal(got, c.want) {
+				t.Errorf("Batch(%q, %d, %d) = %q, want %q", c.hosts, c.size, c.n, got, c.want)
+			}
+		})
+	}
+}
+
+func TestPlan(t *testing.T) {
+	cases := []struct {
+		hosts []string
+		size  int
+		want  [][]string
+	}{
+		{fleet, 2, [][]string{{"web-1", "web-2"}, {"web-3", "web-4"}, {"web-5"}}},
+		{fleet, 3, [][]string{{"web-1", "web-2", "web-3"}, {"web-4", "web-5"}}},
+		{fleet[:2], 5, [][]string{{"web-1", "web-2"}}},
+		{fleet[:3], 1, [][]string{{"web-1"}, {"web-2"}, {"web-3"}}},
+		{[]string{}, 2, [][]string{}},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_hosts_size_%d", len(c.hosts), c.size), func(t *testing.T) {
+			got := Plan(c.hosts, c.size)
+			// slices.EqualFunc compares the batches one by one, using
+			// slices.Equal on each pair.
+			if !slices.EqualFunc(got, c.want, slices.Equal) {
+				t.Errorf("Plan(%q, %d) = %q, want %q", c.hosts, c.size, got, c.want)
+			}
+		})
+	}
+}

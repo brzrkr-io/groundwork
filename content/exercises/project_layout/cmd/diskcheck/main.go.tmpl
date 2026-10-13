@@ -1,0 +1,73 @@
+// Command diskcheck reports disk usage per host and exits with 1 when a disk
+// is full:
+//
+//	diskcheck web-1=72 db-1=85 web-2=91
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+	"strings"
+)
+
+// TODO(3): Once run works, replace this whole body with
+// os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)).
+func main() {
+	args := os.Args[1:]
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: diskcheck HOST=PERCENT...")
+		os.Exit(2)
+	}
+
+	type reading struct {
+		host    string
+		percent int
+	}
+	var readings []reading
+	for _, arg := range args {
+		host, value, found := strings.Cut(arg, "=")
+		if !found || host == "" {
+			fmt.Fprintf(os.Stderr, "diskcheck: bad reading %q: want HOST=PERCENT\n", arg)
+			os.Exit(2)
+		}
+		percent, err := strconv.Atoi(value)
+		if err != nil || percent < 0 || percent > 100 {
+			fmt.Fprintf(os.Stderr, "diskcheck: bad percent in %q: want 0-100\n", arg)
+			os.Exit(2)
+		}
+		readings = append(readings, reading{host: host, percent: percent})
+	}
+
+	exitCode := 0
+	for _, r := range readings {
+		status := "ok"
+		if r.percent >= 90 {
+			status = "full"
+			exitCode = 1
+		} else if r.percent >= 80 {
+			status = "warn"
+		}
+		fmt.Printf("%s %d%% %s\n", r.host, r.percent, status)
+	}
+	os.Exit(exitCode)
+}
+
+// run does the work of diskcheck. It reads the arguments (without the
+// program name), writes the report to stdout and problems to stderr, and
+// returns the exit code.
+func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "usage: diskcheck HOST=PERCENT...")
+		return 2
+	}
+
+	for _, arg := range args {
+		// TODO(3): Parse arg with disk.Parse and print its report line,
+		// using disk.Status. Return 1 if any disk is full.
+		// TODO(4): Handle bad arguments.
+		fmt.Fprintln(stdout, arg)
+	}
+	return 0
+}

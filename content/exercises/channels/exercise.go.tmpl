@@ -1,0 +1,26 @@
+// Package channels is the Gopherlings exercise "Channels".
+package channels
+
+// CollectLines receives lines until the channel is closed and returns them
+// in the order they arrived.
+func CollectLines(lines chan string) []string {
+	var collected []string
+	// TODO(1): Receive every line from lines until it is closed.
+	return collected
+}
+
+// QueueAlerts returns a closed, buffered channel that already holds every
+// alert in order.
+func QueueAlerts(alerts []string) chan string {
+	// TODO(2): Make a buffered channel with room for every alert, send the
+	// alerts into it, close it and return it.
+	return nil
+}
+
+// StreamLines returns an unbuffered channel. A goroutine sends each line on
+// it in order and then closes it.
+func StreamLines(lines []string) chan string {
+	// TODO(3): Make an unbuffered channel, start a goroutine that sends every
+	// line and then closes the channel, and return the channel.
+	return nil
+}

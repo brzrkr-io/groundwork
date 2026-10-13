@@ -1,0 +1,69 @@
+// Package buckettags is the Gopherlings exercise "Tag compliance: untagged S3 buckets and bad values".
+package buckettags
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+// RequiredTags lists the tag keys every bucket must carry, in report order.
+var RequiredTags = []string{"CostCenter", "Env", "Owner"}
+
+// AllowedEnvs lists the only values the Env tag may have.
+var AllowedEnvs = []string{"prod", "staging", "dev"}
+
+// TaggingAPI is the one S3 call the audit needs. *s3.Client satisfies it.
+type TaggingAPI interface {
+	GetBucketTagging(ctx context.Context, params *s3.GetBucketTaggingInput, optFns ...func(*s3.Options)) (*s3.GetBucketTaggingOutput, error)
+}
+
+var _ TaggingAPI = (*s3.Client)(nil)
+
+// BucketTags returns the tags of bucket as a map. A bucket without any tags
+// gives an empty map and no error.
+func BucketTags(ctx context.Context, api TaggingAPI, bucket string) (map[string]string, error) {
+	out, err := api.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{Bucket: aws.String(bucket)})
+	if err != nil {
+		// TODO(1): Fix the bug: an untagged bucket fails with the API error
+		// code "NoSuchTagSet". Return an empty map and nil for that code.
+		return nil, fmt.Errorf("get tags for bucket %q: %w", bucket, err)
+	}
+	tags := make(map[string]string, len(out.TagSet))
+	for _, t := range out.TagSet {
+		tags[aws.ToString(t.Key)] = aws.ToString(t.Value)
+	}
+	return tags, nil
+}
+
+// Problems describes what is wrong with one bucket's tags, one line per
+// problem: first the missing keys in RequiredTags order, then a bad Env.
+func Problems(bucket string, tags map[string]string) []string {
+	var lines []string
+	for _, key := range RequiredTags {
+		if tags[key] == "" {
+			lines = append(lines, fmt.Sprintf("%s: missing %s", bucket, key))
+		}
+	}
+
+	// TODO(2): If Env is set but not one of AllowedEnvs, add the line
+	// <bucket>: Env "<value>" is not prod, staging or dev
+	return lines
+}
+
+// Audit checks every bucket and returns all problem lines, sorted.
+func Audit(ctx context.Context, api TaggingAPI, buckets []string) ([]string, error) {
+	var lines []string
+	for _, b := range buckets {
+		tags, err := BucketTags(ctx, api, b)
+		if err != nil {
+			return nil, err
+		}
+		lines = append(lines, Problems(b, tags)...)
+	}
+
+	// TODO(3): Sort the lines so the report is the same on every run.
+	return lines, nil
+}

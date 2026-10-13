@@ -1,0 +1,121 @@
+// Package registry is the Gopherlings exercise "Practice: service registry".
+package registry
+
+import (
+	"cmp"
+	"errors"
+	"fmt"
+	"slices"
+)
+
+// Status is the health of a registered service.
+type Status int
+
+// The possible health states. A service starts as StatusUnknown until
+// it has been checked.
+const (
+	StatusUnknown Status = iota
+	StatusHealthy
+	StatusUnhealthy
+)
+
+// String returns the status as a lower-case word.
+func (s Status) String() string {
+	switch s {
+	case StatusUnknown:
+		return "unknown"
+	case StatusHealthy:
+		return "healthy"
+	case StatusUnhealthy:
+		return "unhealthy"
+	default:
+		// %d prints the number. %v would call String again, forever.
+		return fmt.Sprintf("Status(%d)", int(s))
+	}
+}
+
+// Service is one running service that other services can find by name.
+type Service struct {
+	Name    string   // unique name, for example "billing-api"
+	Address string   // host and port, for example "10.0.0.5:8080"
+	Tags    []string // free-form labels, for example "prod" or "eu-west-1"
+	Status  Status
+}
+
+// HealthChecker reports whether the service at an address is healthy.
+type HealthChecker interface {
+	Check(address string) bool
+}
+
+// Registry keeps track of services by name.
+type Registry struct {
+	services map[string]Service
+}
+
+// NewRegistry returns an empty registry that is ready to use.
+func NewRegistry() *Registry {
+	return &Registry{services: map[string]Service{}}
+}
+
+// Register adds s to the registry with its Status set to StatusUnknown.
+// It returns an error if the name is empty or already registered.
+func (r *Registry) Register(s Service) error {
+	if s.Name == "" {
+		return errors.New("service name is empty")
+	}
+	if _, ok := r.services[s.Name]; ok {
+		return fmt.Errorf("service %q is already registered", s.Name)
+	}
+	s.Status = StatusUnknown
+	r.services[s.Name] = s
+	return nil
+}
+
+// Lookup returns the service with the given name and true, or the zero
+// Service and false if there is no such service.
+func (r *Registry) Lookup(name string) (Service, bool) {
+	s, ok := r.services[name]
+	return s, ok
+}
+
+// Deregister removes the named service. It reports whether the service
+// was registered.
+func (r *Registry) Deregister(name string) bool {
+	if _, ok := r.services[name]; !ok {
+		return false
+	}
+	delete(r.services, name)
+	return true
+}
+
+// ByTag returns every service that has the given tag, sorted by name.
+func (r *Registry) ByTag(tag string) []Service {
+	var found []Service
+	for _, s := range r.services {
+		if slices.Contains(s.Tags, tag) {
+			found = append(found, s)
+		}
+	}
+	// Map order is random, so sort to give callers a stable result.
+	slices.SortFunc(found, func(a, b Service) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+	return found
+}
+
+// CheckAll asks hc about every service, stores the new Status of each
+// one, and returns how many services are healthy.
+func (r *Registry) CheckAll(hc HealthChecker) int {
+	healthy := 0
+	for name, s := range r.services {
+		if hc.Check(s.Address) {
+			s.Status = StatusHealthy
+			healthy++
+		} else {
+			s.Status = StatusUnhealthy
+		}
+		// s is a copy, so write it back into the map.
+		r.services[name] = s
+	}
+	return healthy
+}

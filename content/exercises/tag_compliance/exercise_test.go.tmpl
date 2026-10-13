@@ -1,0 +1,268 @@
+package tagaudit
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+// tags builds a []types.Tag from key, value pairs.
+func tags(kv ...string) []types.Tag {
+	var out []types.Tag
+	for i := 0; i < len(kv); i += 2 {
+		out = append(out, types.Tag{Key: aws.String(kv[i]), Value: aws.String(kv[i+1])})
+	}
+	return out
+}
+
+// tagString prints tags as [Key=Value ...], for readable failures.
+func tagString(ts []types.Tag) string {
+	var parts []string
+	for _, t := range ts {
+		parts = append(parts, aws.ToString(t.Key)+"="+aws.ToString(t.Value))
+	}
+	return "[" + strings.Join(parts, " ") + "]"
+}
+
+// instance builds an EC2 instance with an ID and tags.
+func instance(id string, kv ...string) types.Instance {
+	return types.Instance{InstanceId: aws.String(id), Tags: tags(kv...)}
+}
+
+// fakeEC2 serves pages of instances. Each page is one reservation. The
+// NextToken is the index of the next page as a string ("1", "2", ...).
+type fakeEC2 struct {
+	pages   [][]types.Instance
+	errPage int // when > 0, asking for this page (1-based) fails with err
+	err     error
+	calls   int
+}
+
+func (f *fakeEC2) DescribeInstances(ctx context.Context, in *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	f.calls++
+	i := 0
+	if tok := aws.ToString(in.NextToken); tok != "" {
+		i, _ = strconv.Atoi(tok)
+	}
+	if f.errPage == i+1 {
+		return nil, f.err
+	}
+	out := &ec2.DescribeInstancesOutput{
+		Reservations: []types.Reservation{{Instances: f.pages[i]}},
+	}
+	if i+1 < len(f.pages) {
+		out.NextToken = aws.String(strconv.Itoa(i + 1))
+	}
+	return out, nil
+}
+
+func TestMissingTags(t *testing.T) {
+	tests := []struct {
+		name string
+		tags []types.Tag
+		want []string
+	}{
+		{
+			name: "all required tags",
+			tags: tags("Owner", "platform-team", "Env", "prod", "CostCenter", "CC-1042", "Name", "web-1"),
+			want: nil,
+		},
+		{
+			name: "no tags at all",
+			tags: nil,
+			want: []string{"CostCenter", "Env", "Owner"},
+		},
+		{
+			name: "Owner missing",
+			tags: tags("Env", "staging", "CostCenter", "CC-2001"),
+			want: []string{"Owner"},
+		},
+		{
+			name: "empty values count as missing",
+			tags: tags("CostCenter", "", "Env", "dev", "Owner", ""),
+			want: []string{"CostCenter", "Owner"},
+		},
+		{
+			name: "keys are case-sensitive",
+			tags: tags("owner", "payments", "env", "prod", "CostCenter", "CC-3300"),
+			want: []string{"Env", "Owner"},
+		},
+		{
+			name: "nil Value counts as missing",
+			tags: []types.Tag{{Key: aws.String("Env"), Value: nil}},
+			want: []string{"CostCenter", "Env", "Owner"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MissingTags(tt.tags)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("MissingTags(%s) = %q, want %q", tagString(tt.tags), got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAudit(t *testing.T) {
+	t.Run("several pages", func(t *testing.T) {
+		api := &fakeEC2{pages: [][]types.Instance{
+			{
+				instance("i-0c3", "Env", "prod", "CostCenter", "CC-1042"),
+				instance("i-0a1", "Env", "prod", "CostCenter", "CC-1042", "Owner", "web-team"),
+			},
+			{
+				instance("i-0b2"),
+				instance("i-099", "Env", "", "CostCenter", "CC-2001", "Owner", "data-team"),
+			},
+			{
+				instance("i-0a0", "Env", "dev", "Owner", "ci-team"),
+			},
+		}}
+		want := []Finding{
+			{InstanceID: "i-099", Missing: []string{"Env"}},
+			{InstanceID: "i-0a0", Missing: []string{"CostCenter"}},
+			{InstanceID: "i-0b2", Missing: []string{"CostCenter", "Env", "Owner"}},
+			{InstanceID: "i-0c3", Missing: []string{"Owner"}},
+		}
+		got, err := Audit(context.Background(), api)
+		if err != nil {
+			t.Fatalf("Audit() error = %v, want nil", err)
+		}
+		if !equalFindings(got, want) {
+			t.Errorf("Audit() = %v, want %v", got, want)
+		}
+		if api.calls != 3 {
+			t.Errorf("Audit() called DescribeInstances %d times, want 3 (one per page)", api.calls)
+		}
+	})
+
+	t.Run("every instance compliant", func(t *testing.T) {
+		api := &fakeEC2{pages: [][]types.Instance{
+			{
+				instance("i-0d4", "Env", "prod", "CostCenter", "CC-1042", "Owner", "web-team"),
+				instance("i-0e5", "Env", "dev", "CostCenter", "CC-7000", "Owner", "ci-team"),
+			},
+		}}
+		got, err := Audit(context.Background(), api)
+		if err != nil {
+			t.Fatalf("Audit() error = %v, want nil", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("Audit() = %v, want no findings", got)
+		}
+	})
+
+	t.Run("API error on page 2", func(t *testing.T) {
+		errThrottled := errors.New("api error Throttling: Rate exceeded")
+		api := &fakeEC2{
+			pages: [][]types.Instance{
+				{instance("i-0f6")},
+				{instance("i-0f7")},
+			},
+			errPage: 2,
+			err:     errThrottled,
+		}
+		got, err := Audit(context.Background(), api)
+		if !errors.Is(err, errThrottled) {
+			t.Fatalf("Audit() error = %v, want it to wrap %v", err, errThrottled)
+		}
+		if !strings.HasPrefix(err.Error(), "describe instances: ") {
+			t.Errorf("Audit() error = %q, want it to start with %q", err, "describe instances: ")
+		}
+		if got != nil {
+			t.Errorf("Audit() findings = %v, want nil on error", got)
+		}
+	})
+}
+
+func equalFindings(a, b []Finding) bool {
+	return slices.EqualFunc(a, b, func(x, y Finding) bool {
+		return x.InstanceID == y.InstanceID && slices.Equal(x.Missing, y.Missing)
+	})
+}
+
+// describe prints a CreateTags request in one line, for readable failures.
+func describe(in *ec2.CreateTagsInput) string {
+	if in == nil {
+		return "<nil>"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Resources=%v Tags=[", in.Resources)
+	for i, t := range in.Tags {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		fmt.Fprintf(&b, "%s=%s", aws.ToString(t.Key), aws.ToString(t.Value))
+	}
+	b.WriteString("] DryRun=")
+	if in.DryRun == nil {
+		b.WriteString("nil")
+	} else {
+		fmt.Fprintf(&b, "%t", *in.DryRun)
+	}
+	return b.String()
+}
+
+func TestBuildFixes(t *testing.T) {
+	tests := []struct {
+		name     string
+		findings []Finding
+		defaults map[string]string
+		dryRun   bool
+		want     []string
+	}{
+		{
+			name: "dry run",
+			findings: []Finding{
+				{InstanceID: "i-01", Missing: []string{"CostCenter", "Owner"}},
+				{InstanceID: "i-02", Missing: []string{"Env"}},
+			},
+			defaults: map[string]string{"Owner": "platform-team", "CostCenter": "CC-1000"},
+			dryRun:   true,
+			want: []string{
+				"Resources=[i-01] Tags=[CostCenter=CC-1000 Owner=platform-team] DryRun=true",
+			},
+		},
+		{
+			name: "apply",
+			findings: []Finding{
+				{InstanceID: "i-03", Missing: []string{"CostCenter", "Env", "Owner"}},
+				{InstanceID: "i-04", Missing: []string{"Owner"}},
+			},
+			defaults: map[string]string{"Owner": "platform-team", "Env": "dev"},
+			dryRun:   false,
+			want: []string{
+				"Resources=[i-03] Tags=[Env=dev Owner=platform-team] DryRun=false",
+				"Resources=[i-04] Tags=[Owner=platform-team] DryRun=false",
+			},
+		},
+		{
+			name: "no defaults for anything missing",
+			findings: []Finding{
+				{InstanceID: "i-05", Missing: []string{"CostCenter"}},
+			},
+			defaults: map[string]string{"Owner": "platform-team"},
+			dryRun:   true,
+			want:     nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, in := range BuildFixes(tt.findings, tt.defaults, tt.dryRun) {
+				got = append(got, describe(in))
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("BuildFixes(%v, %v, %t) =\n  %q\nwant\n  %q", tt.findings, tt.defaults, tt.dryRun, got, tt.want)
+			}
+		})
+	}
+}

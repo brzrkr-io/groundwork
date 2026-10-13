@@ -1,0 +1,175 @@
+package lines
+
+import (
+	"errors"
+	"io"
+	"slices"
+	"strings"
+	"testing"
+	"testing/iotest"
+)
+
+// errDisk stands in for a read failure, such as a disk error.
+var errDisk = errors.New("disk read failed")
+
+// failingReader returns a reader that yields text and then fails with errDisk.
+func failingReader(text string) io.Reader {
+	return io.MultiReader(strings.NewReader(text), iotest.ErrReader(errDisk))
+}
+
+func TestCountLines(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  int
+	}{
+		{"three lines", "web01\nweb02\nweb03\n", 3},
+		{"blank lines count", "web01\n\nweb02\n", 3},
+		{"no trailing newline", "web01\nweb02", 2},
+		{"empty input", "", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := CountLines(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("CountLines(%q) error = %v, want nil", tt.input, err)
+			}
+			if got != tt.want {
+				t.Errorf("CountLines(%q) = %d, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("read error", func(t *testing.T) {
+		_, err := CountLines(failingReader("web01\n"))
+		if !errors.Is(err, errDisk) {
+			t.Errorf("CountLines(failing reader) error = %v, want %v", err, errDisk)
+		}
+	})
+}
+
+func TestReadHosts(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"plain list", "web01\nweb02\n", []string{"web01", "web02"}},
+		{"trims spaces", "  web01  \n\tdb01\t\n", []string{"web01", "db01"}},
+		{"skips blank lines", "web01\n\n   \nweb02\n", []string{"web01", "web02"}},
+		{"skips comments", "# web tier\nweb01\n  # old: web09\nweb02\n", []string{"web01", "web02"}},
+		{"only comments", "# nothing here\n\n", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReadHosts(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("ReadHosts(%q) error = %v, want nil", tt.input, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ReadHosts(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("read error", func(t *testing.T) {
+		got, err := ReadHosts(failingReader("web01\nweb02\n"))
+		if !errors.Is(err, errDisk) {
+			t.Errorf("ReadHosts(failing reader) error = %v, want %v", err, errDisk)
+		}
+		if got != nil {
+			t.Errorf("ReadHosts(failing reader) = %q, want nil", got)
+		}
+	})
+}
+
+func TestParseTargets(t *testing.T) {
+	good := []struct {
+		name  string
+		input string
+		want  []Target
+	}{
+		{
+			name:  "two targets",
+			input: "web01:80\ndb01:5432\n",
+			want:  []Target{{Host: "web01", Port: 80}, {Host: "db01", Port: 5432}},
+		},
+		{
+			name:  "skips blanks and comments",
+			input: "# probes\n\n  cache01:6379  \n# end\n",
+			want:  []Target{{Host: "cache01", Port: 6379}},
+		},
+		{
+			name:  "port limits",
+			input: "a:1\nb:65535\n",
+			want:  []Target{{Host: "a", Port: 1}, {Host: "b", Port: 65535}},
+		},
+	}
+	for _, tt := range good {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseTargets(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("ParseTargets(%q) error = %v, want nil", tt.input, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ParseTargets(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+
+	bad := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{
+			name:    "missing port",
+			input:   "web01:80\n# databases\n\ndb01.internal\nweb02:80\n",
+			wantErr: `line 4: missing port in "db01.internal"`,
+		},
+		{
+			name:    "missing port on first line",
+			input:   "  cache01  \n",
+			wantErr: `line 1: missing port in "cache01"`,
+		},
+		{
+			name:    "port is not a number",
+			input:   "web01:80\nweb02:80\n\n# api\napi01:8080\napi02:http\n",
+			wantErr: `line 6: invalid port "http"`,
+		},
+		{
+			name:    "port too big",
+			input:   "web01:80\n\nweb02:70000\n",
+			wantErr: `line 3: invalid port "70000"`,
+		},
+		{
+			name:    "port zero",
+			input:   "web01:0\n",
+			wantErr: `line 1: invalid port "0"`,
+		},
+	}
+	for _, tt := range bad {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseTargets(strings.NewReader(tt.input))
+			if err == nil {
+				t.Fatalf("ParseTargets(%q) error = nil, want %q", tt.input, tt.wantErr)
+			}
+			if err.Error() != tt.wantErr {
+				t.Errorf("ParseTargets(%q) error = %q, want %q", tt.input, err.Error(), tt.wantErr)
+			}
+			if got != nil {
+				t.Errorf("ParseTargets(%q) = %v, want nil", tt.input, got)
+			}
+		})
+	}
+
+	t.Run("read error", func(t *testing.T) {
+		got, err := ParseTargets(failingReader("web01:80\n"))
+		if !errors.Is(err, errDisk) {
+			t.Errorf("ParseTargets(failing reader) error = %v, want %v", err, errDisk)
+		}
+		if got != nil {
+			t.Errorf("ParseTargets(failing reader) = %v, want nil", got)
+		}
+	})
+}

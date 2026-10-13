@@ -1,0 +1,82 @@
+// Package portcheck is the Gopherlings exercise "Port checks: open, closed or filtered".
+package portcheck
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"strings"
+	"syscall"
+	"time"
+)
+
+// Status is the outcome of checking one port.
+type Status string
+
+// The possible outcomes of a port check.
+const (
+	Open    Status = "open"
+	Closed  Status = "closed"
+	Timeout Status = "timeout"
+	Failed  Status = "error"
+)
+
+// DialFunc opens a network connection. (&net.Dialer{}).DialContext has this
+// shape, and tests pass in fakes.
+type DialFunc func(ctx context.Context, network, address string) (net.Conn, error)
+
+// Result is the outcome of checking one address.
+type Result struct {
+	Addr   string
+	Status Status
+}
+
+// Classify turns the error from a dial into a Status.
+func Classify(err error) Status {
+	if err == nil {
+		return Open
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return Closed
+	}
+	if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
+		return Timeout
+	}
+	return Failed
+}
+
+// Checker checks whether TCP ports accept connections.
+type Checker struct {
+	Dial DialFunc
+}
+
+// NewChecker returns a Checker that gives up on each dial after timeout.
+func NewChecker(timeout time.Duration) *Checker {
+	d := &net.Dialer{Timeout: timeout}
+	return &Checker{Dial: d.DialContext}
+}
+
+// Check dials addr over TCP and reports what happened.
+func (c *Checker) Check(addr string) Result {
+	conn, err := c.Dial(context.Background(), "tcp", addr)
+	if err == nil {
+		conn.Close()
+	}
+	return Result{Addr: addr, Status: Classify(err)}
+}
+
+// Report formats results as a table followed by a summary line.
+func Report(results []Result) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-21s %s\n", "ADDRESS", "STATUS")
+	open := 0
+	for _, r := range results {
+		fmt.Fprintf(&b, "%-21s %s\n", r.Addr, r.Status)
+		if r.Status == Open {
+			open++
+		}
+	}
+	fmt.Fprintf(&b, "%d of %d ports open\n", open, len(results))
+	return b.String()
+}

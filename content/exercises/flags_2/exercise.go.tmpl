@@ -1,0 +1,43 @@
+// Package silence is the Gopherlings exercise "Flags: repeatable and validated flags".
+package silence
+
+import (
+	"flag"
+	"io"
+	"time"
+)
+
+// Options describes one alert silence.
+type Options struct {
+	Env    string
+	Labels map[string]string
+	For    time.Duration
+	Author string
+}
+
+// ParseArgs parses the silence flags from args (os.Args[1:]).
+// flag's own messages go to stderr.
+func ParseArgs(args []string, stderr io.Writer) (Options, error) {
+	fs := flag.NewFlagSet("silence", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
+	duration := fs.Duration("for", time.Hour, "how long the silence lasts")
+	author := fs.String("author", "oncall", "who created the silence")
+
+	// TODO(1): Bug! This copies the values before fs.Parse has run.
+	opts := Options{
+		For:    *duration,
+		Author: *author,
+	}
+
+	// TODO(2): Define a repeatable -label flag with fs.Func that adds
+	// key=value pairs to a labels map. (You'll need "errors" and "strings".)
+
+	// TODO(3): Define a -env flag with fs.Func that accepts only dev, staging
+	// or prod. The default is dev.
+
+	if err := fs.Parse(args); err != nil {
+		return Options{}, err
+	}
+	return opts, nil
+}

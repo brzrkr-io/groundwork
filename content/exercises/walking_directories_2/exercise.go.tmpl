@@ -1,0 +1,53 @@
+// Package diskwalk is the Gopherlings exercise "Walking directories: fix the backup cleaner".
+package diskwalk
+
+import (
+	"io/fs"
+	"path/filepath"
+	"slices"
+	"time"
+)
+
+// StaleFiles returns the files under root that are more than maxAge old at
+// time now, as sorted slash-separated paths relative to root. Directories
+// named "pinned" are skipped.
+func StaleFiles(root string, now time.Time, maxAge time.Duration) ([]string, error) {
+	var stale []string
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		// TODO(1): This callback never looks at err, so a missing root
+		// crashes on the next line. Handle err first.
+		if d.IsDir() {
+			if d.Name() == "pinned" {
+				// TODO(2): This doesn't keep the walk out of the directory.
+				return nil
+			}
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if now.Sub(info.ModTime()) <= maxAge {
+			return nil
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		stale = append(stale, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.Sort(stale)
+	return stale, nil
+}
+
+// DirSizes returns the total size in bytes of the files inside each
+// top-level directory under root. Files directly in root count under ".".
+func DirSizes(root string) (map[string]int64, error) {
+	// TODO(3): Walk root and add each file's size to the entry for its
+	// top-level directory.
+	return nil, nil
+}

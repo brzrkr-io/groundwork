@@ -1,0 +1,621 @@
+package server
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"gopherlings.local/inventory_service/internal/hosts"
+)
+
+// newTestServer returns a Server with an empty store whose JSON logs go into
+// the returned buffer.
+func newTestServer() (*Server, *bytes.Buffer) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	return New(hosts.NewStore(), logger), &logs
+}
+
+// do runs one request through h and returns the recorded response.
+// header is a list of name, value pairs.
+func do(h http.Handler, method, target, body string, header ...string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	for i := 0; i+1 < len(header); i += 2 {
+		req.Header.Set(header[i], header[i+1])
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// errorMessage returns the "error" field of a JSON error body.
+func errorMessage(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body %q is not a JSON object: %v", rec.Body.String(), err)
+	}
+	return body["error"]
+}
+
+// decodeHost decodes a JSON host body.
+func decodeHost(t *testing.T, rec *httptest.ResponseRecorder) hosts.Host {
+	t.Helper()
+	var h hosts.Host
+	if err := json.Unmarshal(rec.Body.Bytes(), &h); err != nil {
+		t.Fatalf("body %q is not a JSON host: %v", rec.Body.String(), err)
+	}
+	return h
+}
+
+const web1JSON = `{"name":"web-1","env":"prod","region":"eu-west-1","port":443}`
+
+var web1 = hosts.Host{Name: "web-1", Env: "prod", Region: "eu-west-1", Port: 443}
+
+func TestHostAPI(t *testing.T) {
+	t.Run("create", func(t *testing.T) {
+		s, _ := newTestServer()
+		h := s.Handler()
+		for _, id := range []string{"h1", "h2"} {
+			rec := do(h, "POST", "/hosts", web1JSON)
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("POST /hosts status = %d, want %d (body %q)", rec.Code, http.StatusCreated, rec.Body.String())
+			}
+			if got, want := rec.Header().Get("Location"), "/hosts/"+id; got != want {
+				t.Errorf("POST /hosts Location = %q, want %q", got, want)
+			}
+			want := web1
+			want.ID = id
+			if got := decodeHost(t, rec); got != want {
+				t.Errorf("POST /hosts body = %+v, want %+v", got, want)
+			}
+		}
+		if s.store.Len() != 2 {
+			t.Errorf("store.Len() = %d, want 2", s.store.Len())
+		}
+	})
+
+	t.Run("create errors", func(t *testing.T) {
+		tests := []struct {
+			name, body, want string
+		}{
+			{"bad JSON", `{"name":`, "invalid JSON body"},
+			{"not JSON", `hello`, "invalid JSON body"},
+			{"invalid host", `{"name":"","env":"prod","port":443}`, "invalid host: name is required"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				s, _ := newTestServer()
+				rec := do(s.Handler(), "POST", "/hosts", tt.body)
+				if rec.Code != http.StatusBadRequest {
+					t.Fatalf("POST /hosts %s status = %d, want %d", tt.body, rec.Code, http.StatusBadRequest)
+				}
+				if got := errorMessage(t, rec); got != tt.want {
+					t.Errorf("POST /hosts %s error = %q, want %q", tt.body, got, tt.want)
+				}
+				if s.store.Len() != 0 {
+					t.Errorf("store.Len() = %d, want 0", s.store.Len())
+				}
+			})
+		}
+	})
+
+	t.Run("update", func(t *testing.T) {
+		s, _ := newTestServer()
+		s.store.Create(web1)
+		rec := do(s.Handler(), "PUT", "/hosts/h1", `{"name":"web-1","env":"prod","region":"us-east-1","port":8443}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("PUT /hosts/h1 status = %d, want %d (body %q)", rec.Code, http.StatusOK, rec.Body.String())
+		}
+		want := hosts.Host{ID: "h1", Name: "web-1", Env: "prod", Region: "us-east-1", Port: 8443}
+		if got := decodeHost(t, rec); got != want {
+			t.Errorf("PUT /hosts/h1 body = %+v, want %+v", got, want)
+		}
+		if got, _ := s.store.Get("h1"); got != want {
+			t.Errorf("store.Get(%q) after PUT = %+v, want %+v", "h1", got, want)
+		}
+	})
+
+	t.Run("update errors", func(t *testing.T) {
+		tests := []struct {
+			name, target, body string
+			status             int
+			want               string
+		}{
+			{"bad JSON", "/hosts/h1", `{"port":`, http.StatusBadRequest, "invalid JSON body"},
+			{"unknown ID", "/hosts/h99", web1JSON, http.StatusNotFound, "host not found"},
+			{"invalid host", "/hosts/h1", `{"name":"web-1","env":"prod","port":0}`, http.StatusBadRequest, "invalid host: port must be between 1 and 65535"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				s, _ := newTestServer()
+				s.store.Create(web1)
+				rec := do(s.Handler(), "PUT", tt.target, tt.body)
+				if rec.Code != tt.status {
+					t.Fatalf("PUT %s status = %d, want %d", tt.target, rec.Code, tt.status)
+				}
+				if got := errorMessage(t, rec); got != tt.want {
+					t.Errorf("PUT %s error = %q, want %q", tt.target, got, tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		s, _ := newTestServer()
+		s.store.Create(web1)
+		h := s.Handler()
+		rec := do(h, "DELETE", "/hosts/h1", "")
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("DELETE /hosts/h1 status = %d, want %d", rec.Code, http.StatusNoContent)
+		}
+		if rec.Body.Len() != 0 {
+			t.Errorf("DELETE /hosts/h1 body = %q, want empty", rec.Body.String())
+		}
+		if rec := do(h, "GET", "/hosts/h1", ""); rec.Code != http.StatusNotFound {
+			t.Errorf("GET /hosts/h1 after DELETE status = %d, want %d", rec.Code, http.StatusNotFound)
+		}
+	})
+
+	t.Run("delete unknown ID", func(t *testing.T) {
+		s, _ := newTestServer()
+		rec := do(s.Handler(), "DELETE", "/hosts/h7", "")
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("DELETE /hosts/h7 status = %d, want %d", rec.Code, http.StatusNotFound)
+		}
+		if got := errorMessage(t, rec); got != "host not found" {
+			t.Errorf("DELETE /hosts/h7 error = %q, want %q", got, "host not found")
+		}
+	})
+}
+
+// logLines decodes every JSON log line in logs.
+func logLines(t *testing.T, logs *bytes.Buffer) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	for raw := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+		if raw == "" {
+			continue
+		}
+		var line map[string]any
+		if err := json.Unmarshal([]byte(raw), &line); err != nil {
+			t.Fatalf("log line %q is not JSON: %v", raw, err)
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// checkLogLine compares the fields of one log line with want. JSON numbers
+// decode as float64, so statuses are compared as float64.
+func checkLogLine(t *testing.T, line map[string]any, want map[string]any) {
+	t.Helper()
+	for key, w := range want {
+		if got := line[key]; got != w {
+			t.Errorf("log field %q = %#v, want %#v (line %v)", key, got, w, line)
+		}
+	}
+}
+
+func TestRequestLogging(t *testing.T) {
+	t.Run("uses the client's request ID", func(t *testing.T) {
+		s, logs := newTestServer()
+		rec := do(s.Handler(), "GET", "/hosts", "", "X-Request-ID", "abc-123")
+		if got := rec.Header().Get("X-Request-ID"); got != "abc-123" {
+			t.Errorf("X-Request-ID response header = %q, want %q", got, "abc-123")
+		}
+		lines := logLines(t, logs)
+		if len(lines) != 1 {
+			t.Fatalf("got %d log lines, want 1:\n%s", len(lines), logs)
+		}
+		checkLogLine(t, lines[0], map[string]any{
+			"level": "INFO", "msg": "request", "request_id": "abc-123",
+			"method": "GET", "path": "/hosts", "status": float64(200),
+		})
+	})
+
+	t.Run("makes IDs when the header is missing", func(t *testing.T) {
+		s, logs := newTestServer()
+		h := s.Handler()
+		first := do(h, "GET", "/hosts", "")
+		second := do(h, "GET", "/hosts/h9", "")
+		for i, tt := range []struct {
+			rec  *httptest.ResponseRecorder
+			id   string
+			path string
+			code int
+		}{
+			{first, "req-1", "/hosts", 200},
+			{second, "req-2", "/hosts/h9", 404},
+		} {
+			if got := tt.rec.Header().Get("X-Request-ID"); got != tt.id {
+				t.Errorf("GET %s X-Request-ID = %q, want %q", tt.path, got, tt.id)
+			}
+			lines := logLines(t, logs)
+			if len(lines) != 2 {
+				t.Fatalf("got %d log lines, want 2:\n%s", len(lines), logs)
+			}
+			checkLogLine(t, lines[i], map[string]any{
+				"level": "INFO", "msg": "request", "request_id": tt.id,
+				"method": "GET", "path": tt.path, "status": float64(tt.code),
+			})
+		}
+	})
+
+	t.Run("handlers can read the ID", func(t *testing.T) {
+		s, _ := newTestServer()
+		echo := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, RequestID(r.Context()))
+		})
+		rec := do(s.requestID(echo), "GET", "/", "", "X-Request-ID", "deploy-7")
+		if got := rec.Body.String(); got != "deploy-7" {
+			t.Errorf("RequestID(ctx) inside the handler = %q, want %q", got, "deploy-7")
+		}
+	})
+
+	t.Run("logs 5xx at error level", func(t *testing.T) {
+		s, logs := newTestServer()
+		boom := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "database down", http.StatusServiceUnavailable)
+		})
+		do(s.requestID(s.observe(boom)), "POST", "/boom", "", "X-Request-ID", "r-500")
+		lines := logLines(t, logs)
+		if len(lines) != 1 {
+			t.Fatalf("got %d log lines, want 1:\n%s", len(lines), logs)
+		}
+		checkLogLine(t, lines[0], map[string]any{
+			"level": "ERROR", "msg": "request", "request_id": "r-500",
+			"method": "POST", "path": "/boom", "status": float64(503),
+		})
+	})
+}
+
+const requestsHeader = `# HELP inventory_http_requests_total HTTP requests handled, by method and status code.
+# TYPE inventory_http_requests_total counter
+`
+
+func TestMetrics(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		var out bytes.Buffer
+		NewMetrics().Write(&out)
+		if got := out.String(); got != requestsHeader {
+			t.Errorf("Write with no requests =\n%s\nwant\n%s", got, requestsHeader)
+		}
+	})
+
+	t.Run("counts and sorts", func(t *testing.T) {
+		m := NewMetrics()
+		m.Inc("POST", 201)
+		m.Inc("GET", 404)
+		m.Inc("GET", 200)
+		m.Inc("DELETE", 204)
+		m.Inc("GET", 200)
+		var out bytes.Buffer
+		m.Write(&out)
+		want := requestsHeader +
+			`inventory_http_requests_total{method="DELETE",code="204"} 1
+inventory_http_requests_total{method="GET",code="200"} 2
+inventory_http_requests_total{method="GET",code="404"} 1
+inventory_http_requests_total{method="POST",code="201"} 1
+`
+		if got := out.String(); got != want {
+			t.Errorf("Write =\n%s\nwant\n%s", got, want)
+		}
+	})
+
+	t.Run("concurrent", func(t *testing.T) {
+		m := NewMetrics()
+		var wg sync.WaitGroup
+		for range 50 {
+			wg.Go(func() { m.Inc("GET", 200) })
+		}
+		wg.Wait()
+		var out bytes.Buffer
+		m.Write(&out)
+		want := requestsHeader + `inventory_http_requests_total{method="GET",code="200"} 50` + "\n"
+		if got := out.String(); got != want {
+			t.Errorf("Write after 50 concurrent Inc calls =\n%s\nwant\n%s", got, want)
+		}
+	})
+
+	t.Run("GET /metrics", func(t *testing.T) {
+		s, _ := newTestServer()
+		s.store.Create(web1)
+		h := s.Handler()
+		do(h, "GET", "/hosts", "")
+		do(h, "GET", "/hosts", "")
+		do(h, "GET", "/hosts/h9", "")
+		do(h, "PATCH", "/hosts", "") // no PATCH route: the mux answers 405
+		rec := do(h, "GET", "/metrics", "")
+
+		if got, want := rec.Header().Get("Content-Type"), "text/plain; version=0.0.4; charset=utf-8"; got != want {
+			t.Errorf("GET /metrics Content-Type = %q, want %q", got, want)
+		}
+		want := requestsHeader +
+			`inventory_http_requests_total{method="GET",code="200"} 2
+inventory_http_requests_total{method="GET",code="404"} 1
+inventory_http_requests_total{method="PATCH",code="405"} 1
+# HELP inventory_hosts Hosts in the inventory.
+# TYPE inventory_hosts gauge
+inventory_hosts 1
+`
+		if got := rec.Body.String(); got != want {
+			t.Errorf("GET /metrics body =\n%s\nwant\n%s", got, want)
+		}
+	})
+}
+
+func TestIdempotentCreate(t *testing.T) {
+	t.Run("a repeat is replayed", func(t *testing.T) {
+		s, _ := newTestServer()
+		h := s.Handler()
+		first := do(h, "POST", "/hosts", web1JSON, "Idempotency-Key", "deploy-42")
+		second := do(h, "POST", "/hosts", web1JSON, "Idempotency-Key", "deploy-42")
+
+		if first.Code != http.StatusCreated || second.Code != http.StatusCreated {
+			t.Fatalf("statuses = %d, %d, want 201, 201", first.Code, second.Code)
+		}
+		if got := first.Header().Get("Idempotent-Replayed"); got != "" {
+			t.Errorf("first response Idempotent-Replayed = %q, want no header", got)
+		}
+		if got := second.Header().Get("Idempotent-Replayed"); got != "true" {
+			t.Errorf("repeat Idempotent-Replayed = %q, want %q", got, "true")
+		}
+		if first.Body.String() != second.Body.String() {
+			t.Errorf("repeat body = %q, want the first body %q", second.Body.String(), first.Body.String())
+		}
+		for _, name := range []string{"Content-Type", "Location"} {
+			if got, want := second.Header().Get(name), first.Header().Get(name); got != want {
+				t.Errorf("repeat %s = %q, want %q", name, got, want)
+			}
+		}
+		if s.store.Len() != 1 {
+			t.Errorf("store.Len() = %d, want 1: the repeat must not create a second host", s.store.Len())
+		}
+	})
+
+	t.Run("different keys or no key create again", func(t *testing.T) {
+		s, _ := newTestServer()
+		h := s.Handler()
+		do(h, "POST", "/hosts", web1JSON, "Idempotency-Key", "a")
+		do(h, "POST", "/hosts", web1JSON, "Idempotency-Key", "b")
+		do(h, "POST", "/hosts", web1JSON)
+		do(h, "POST", "/hosts", web1JSON)
+		if s.store.Len() != 4 {
+			t.Errorf("store.Len() = %d, want 4", s.store.Len())
+		}
+	})
+
+	t.Run("client errors are saved", func(t *testing.T) {
+		s, _ := newTestServer()
+		h := s.Handler()
+		do(h, "POST", "/hosts", `{"name":`, "Idempotency-Key", "k1")
+		rec := do(h, "POST", "/hosts", web1JSON, "Idempotency-Key", "k1")
+		if rec.Code != http.StatusBadRequest || rec.Header().Get("Idempotent-Replayed") != "true" {
+			t.Errorf("repeat of a 400 = %d with Idempotent-Replayed %q, want 400 with %q",
+				rec.Code, rec.Header().Get("Idempotent-Replayed"), "true")
+		}
+	})
+
+	t.Run("server errors are not saved", func(t *testing.T) {
+		s, _ := newTestServer()
+		calls := 0
+		flaky := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if calls == 1 {
+				http.Error(w, "database down", http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+		})
+		h := s.idempotent(flaky)
+		codes := []int{
+			do(h, "POST", "/hosts", "", "Idempotency-Key", "k2").Code,
+			do(h, "POST", "/hosts", "", "Idempotency-Key", "k2").Code,
+			do(h, "POST", "/hosts", "", "Idempotency-Key", "k2").Code,
+		}
+		if codes[0] != 503 || codes[1] != 201 || codes[2] != 201 {
+			t.Errorf("statuses = %v, want [503 201 201]", codes)
+		}
+		if calls != 2 {
+			t.Errorf("handler ran %d times, want 2 (the 503 is retried, the 201 is replayed)", calls)
+		}
+	})
+
+	t.Run("a duplicate while the first is running gets 409", func(t *testing.T) {
+		s, _ := newTestServer()
+		entered := make(chan struct{}, 2) // one value per handler run
+		release := make(chan struct{})
+		slow := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			entered <- struct{}{}
+			<-release
+			w.WriteHeader(http.StatusCreated)
+		})
+		h := s.idempotent(slow)
+
+		firstDone := make(chan *httptest.ResponseRecorder, 1)
+		go func() { firstDone <- do(h, "POST", "/hosts", "", "Idempotency-Key", "k3") }()
+		<-entered // the first request is now inside the handler
+
+		dupDone := make(chan *httptest.ResponseRecorder, 1)
+		go func() { dupDone <- do(h, "POST", "/hosts", "", "Idempotency-Key", "k3") }()
+		var dup *httptest.ResponseRecorder
+		select {
+		case dup = <-dupDone:
+		case <-entered:
+			close(release)
+			t.Fatal("the duplicate ran the handler while the first request was still running, want an immediate 409")
+		}
+		if dup.Code != http.StatusConflict {
+			t.Errorf("duplicate status = %d, want %d", dup.Code, http.StatusConflict)
+		}
+		if got, want := errorMessage(t, dup), "a request with this Idempotency-Key is still in progress"; got != want {
+			t.Errorf("duplicate error = %q, want %q", got, want)
+		}
+
+		close(release)
+		if first := <-firstDone; first.Code != http.StatusCreated {
+			t.Errorf("first status = %d, want %d", first.Code, http.StatusCreated)
+		}
+	})
+}
+
+// runInBackground starts s.Run and returns a channel that receives its
+// result.
+func runInBackground(ctx context.Context, s *Server, ln net.Listener, grace time.Duration) <-chan error {
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx, ln, grace) }()
+	return done
+}
+
+// waitFor returns Run's result, failing the test if it takes over 2s.
+func waitFor(t *testing.T, done <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return within 2s")
+		return nil
+	}
+}
+
+// waitReady polls GET /readyz on addr until it answers 200. It fails the
+// test if Run returns first or if that takes over 2s.
+func waitReady(t *testing.T, addr string, done <-chan error) {
+	t.Helper()
+	client := &http.Client{Timeout: time.Second}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		select {
+		case err := <-done:
+			t.Fatalf("Run returned early (error: %v), want it to keep serving until ctx is cancelled", err)
+		default:
+		}
+		resp, err := client.Get("http://" + addr + "/readyz")
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("GET /readyz never answered 200 while Run was serving (last error %v)", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestRun(t *testing.T) {
+	quiet := slog.New(slog.DiscardHandler)
+
+	t.Run("not ready before Run", func(t *testing.T) {
+		s := New(hosts.NewStore(), quiet)
+		rec := do(s.Handler(), "GET", "/readyz", "")
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("GET /readyz before Run status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+		}
+	})
+
+	t.Run("serves until ctx is cancelled", func(t *testing.T) {
+		s := New(hosts.NewStore(), quiet)
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		addr := ln.Addr().String()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := runInBackground(ctx, s, ln, time.Second)
+
+		waitReady(t, addr, done)
+		if !s.Ready() {
+			t.Error("Ready() while serving = false, want true")
+		}
+
+		cancel()
+		if err := waitFor(t, done); err != nil {
+			t.Errorf("Run after cancel = %v, want nil", err)
+		}
+		if s.Ready() {
+			t.Error("Ready() after shutdown = true, want false")
+		}
+		if conn, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
+			conn.Close()
+			t.Error("a new connection succeeded after Run returned, want it refused")
+		}
+	})
+
+	t.Run("returns Serve errors", func(t *testing.T) {
+		s := New(hosts.NewStore(), quiet)
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ln.Close() // Serve fails straight away on a closed listener
+		err = waitFor(t, runInBackground(context.Background(), s, ln, time.Second))
+		if err == nil {
+			t.Error("Run on a closed listener = nil, want an error")
+		}
+		if s.Ready() {
+			t.Error("Ready() after Serve failed = true, want false")
+		}
+	})
+
+	t.Run("force-closes after the grace period", func(t *testing.T) {
+		s := New(hosts.NewStore(), quiet)
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		addr := ln.Addr().String()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := runInBackground(ctx, s, ln, 20*time.Millisecond)
+		waitReady(t, addr, done)
+
+		// A stuck client: it sends a POST that promises 100 bytes of body
+		// but only sends a few, so its request never finishes.
+		stuck, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stuck.Close()
+		fmt.Fprint(stuck, "POST /hosts HTTP/1.1\r\nHost: test\r\nContent-Length: 100\r\n\r\n{\"na")
+
+		// The server accepts connections in order, so once a later
+		// connection gets an answer, the stuck one has been accepted too.
+		client := &http.Client{Timeout: time.Second}
+		resp, err := client.Get("http://" + addr + "/healthz")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+
+		cancel()
+		err = waitFor(t, done)
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("Run with a stuck request = %v, want an error wrapping context.DeadlineExceeded", err)
+		}
+
+		// After the grace period Run must close the stuck connection.
+		stuck.SetReadDeadline(time.Now().Add(time.Second))
+		if _, err := io.ReadAll(stuck); err != nil {
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				t.Error("the stuck connection was still open after Run returned, want it closed")
+			}
+		}
+	})
+}

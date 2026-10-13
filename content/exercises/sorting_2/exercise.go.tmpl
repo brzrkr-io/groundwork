@@ -1,0 +1,41 @@
+// Package nodes is the Gopherlings exercise "Sorting: fix the node report".
+package nodes
+
+import (
+	"cmp"
+	"maps"
+	"slices"
+)
+
+// SortedNodes returns a copy of nodes in alphabetical order. The caller's
+// slice keeps its original order.
+func SortedNodes(nodes []string) []string {
+	// TODO(1): Fix the bug: the caller's slice must not change.
+	slices.Sort(nodes)
+	return nodes
+}
+
+// FullestFirst returns the node names in usage, highest disk usage first.
+// Nodes with the same usage are in alphabetical order.
+func FullestFirst(usage map[string]int) []string {
+	names := slices.Sorted(maps.Keys(usage))
+	slices.SortFunc(names, func(a, b string) int {
+		// TODO(2): Fix the bug: the fullest disks must come first.
+		if c := cmp.Compare(usage[a], usage[b]); c != 0 {
+			return c
+		}
+		return cmp.Compare(a, b)
+	})
+	return names
+}
+
+// LeastBusy returns a copy of nodes ordered by pod count, fewest pods first.
+// Nodes with the same pod count are in alphabetical order.
+func LeastBusy(nodes []string, pods map[string]int) []string {
+	out := slices.Clone(nodes)
+	slices.SortFunc(out, func(a, b string) int {
+		// TODO(3): Fix the bug: nodes with the same pod count must be alphabetical.
+		return cmp.Compare(pods[a], pods[b])
+	})
+	return out
+}

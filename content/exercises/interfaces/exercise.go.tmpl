@@ -1,0 +1,53 @@
+// Package interfaces is the Gopherlings exercise "Interfaces".
+package interfaces
+
+import "fmt"
+
+// Alert describes a problem with one service.
+type Alert struct {
+	Service string
+	Message string
+}
+
+// Notifier is anything that can send an alert somewhere. Notify returns the
+// line it sent.
+type Notifier interface {
+	Notify(a Alert) string
+}
+
+// Slack sends alerts to a Slack channel.
+type Slack struct {
+	Channel string // the channel name without "#", like "ops"
+}
+
+// Notify formats a for Slack, like "slack #ops: [api] disk full".
+func (s Slack) Notify(a Alert) string {
+	// TODO(1): Add " [<Service>] <Message>" after the colon.
+	return fmt.Sprintf("slack #%s:", s.Channel)
+}
+
+// Email sends alerts to an email address.
+type Email struct {
+	To string
+}
+
+// Notify formats a for email, like "email oncall@example.com: [api] disk full".
+func (e Email) Notify(a Alert) string {
+	// TODO(1): Return "email <To>: [<Service>] <Message>".
+	return ""
+}
+
+// NotifyAll sends a to every notifier in ns and returns the lines they sent,
+// in the same order.
+func NotifyAll(ns []Notifier, a Alert) []string {
+	// TODO(2): Call Notify on each notifier and collect the results.
+	return nil
+}
+
+// PagerDuty pages the on-call engineer through a PagerDuty service key.
+type PagerDuty struct {
+	ServiceKey string
+}
+
+// TODO(3): Write a Notify method for PagerDuty so that it satisfies Notifier.
+// It returns "pagerduty <ServiceKey>: [<Service>] <Message>".

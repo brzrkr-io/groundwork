@@ -1,0 +1,57 @@
+// Package queues feeds Kubernetes object events through a workqueue.
+package queues
+
+import (
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
+)
+
+// NewQueue returns an empty workqueue of "namespace/name" keys that uses the
+// default controller rate limiter.
+func NewQueue() workqueue.TypedRateLimitingInterface[string] {
+	return workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
+}
+
+// KeyFor returns the queue key for a Kubernetes object: "namespace/name", or
+// just "name" for objects that don't live in a namespace.
+func KeyFor(obj any) (string, error) {
+	return cache.MetaNamespaceKeyFunc(obj)
+}
+
+// EnqueueAll adds the key of every object in objs to q. It stops at the
+// first object that has no key and returns that error.
+func EnqueueAll(q workqueue.TypedRateLimitingInterface[string], objs []any) error {
+	for _, obj := range objs {
+		key, err := KeyFor(obj)
+		if err != nil {
+			return err
+		}
+		q.Add(key)
+	}
+	return nil
+}
+
+// ProcessNextItem takes one key from q, splits it into namespace and name,
+// and calls handle with them. It returns false once q has been shut down.
+func ProcessNextItem(q workqueue.TypedRateLimitingInterface[string], handle func(namespace, name string)) bool {
+	key, shutdown := q.Get()
+	if shutdown {
+		return false
+	}
+	// Done runs however this function returns, so the key is never stuck.
+	defer q.Done(key)
+
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		// A malformed key will never work. Skip it and move on.
+		return true
+	}
+	handle(namespace, name)
+	return true
+}
+
+// RunWorker processes keys from q until q is shut down.
+func RunWorker(q workqueue.TypedRateLimitingInterface[string], handle func(namespace, name string)) {
+	for ProcessNextItem(q, handle) {
+	}
+}

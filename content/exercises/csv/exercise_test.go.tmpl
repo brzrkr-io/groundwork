@@ -1,0 +1,187 @@
+package inventory
+
+import (
+	"encoding/csv"
+	"errors"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestReadHosts(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []Host
+	}{
+		{
+			name:  "standard column order",
+			input: "hostname,region,owner\napi-1,us-east-1,payments\ndb-1,eu-west-1,data\n",
+			want: []Host{
+				{Name: "api-1", Region: "us-east-1", Owner: "payments"},
+				{Name: "db-1", Region: "eu-west-1", Owner: "data"},
+			},
+		},
+		{
+			name:  "shuffled columns and an extra env column",
+			input: "env,owner,hostname,region\nprod,payments,api-1,us-east-1\nstaging,sre,web-2,ap-south-1\n",
+			want: []Host{
+				{Name: "api-1", Region: "us-east-1", Owner: "payments"},
+				{Name: "web-2", Region: "ap-south-1", Owner: "sre"},
+			},
+		},
+		{
+			name:  "quoted field with a comma",
+			input: "hostname,region,owner\nweb-1,eu-west-1,\"platform, sre\"\n",
+			want: []Host{
+				{Name: "web-1", Region: "eu-west-1", Owner: "platform, sre"},
+			},
+		},
+		{
+			name:  "header only",
+			input: "hostname,region,owner\n",
+			want:  nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReadHosts(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("ReadHosts(%q) returned error %q, want nil", tt.input, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ReadHosts(%q) = %+v, want %+v", tt.input, got, tt.want)
+			}
+		})
+	}
+
+	errTests := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{name: "empty input", input: "", wantErr: "empty inventory"},
+		{name: "missing owner", input: "hostname,region\napi-1,us-east-1\n", wantErr: `missing column "owner"`},
+		{name: "missing region and owner", input: "hostname,env\napi-1,prod\n", wantErr: `missing column "region"`},
+		{name: "missing hostname", input: "owner,region\nsre,eu-west-1\n", wantErr: `missing column "hostname"`},
+	}
+	for _, tt := range errTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReadHosts(strings.NewReader(tt.input))
+			if err == nil {
+				t.Fatalf("ReadHosts(%q) = %+v, nil, want error %q", tt.input, got, tt.wantErr)
+			}
+			if err.Error() != tt.wantErr {
+				t.Errorf("ReadHosts(%q) error = %q, want %q", tt.input, err, tt.wantErr)
+			}
+		})
+	}
+
+	t.Run("row with too few fields", func(t *testing.T) {
+		input := "hostname,region,owner\napi-1,us-east-1\n"
+		_, err := ReadHosts(strings.NewReader(input))
+		if !errors.Is(err, csv.ErrFieldCount) {
+			t.Errorf("ReadHosts(%q) error = %v, want an error wrapping csv.ErrFieldCount", input, err)
+		}
+	})
+}
+
+func TestWriteHosts(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []Host
+		want  string
+	}{
+		{
+			name: "two hosts, one owner needs quotes",
+			hosts: []Host{
+				{Name: "web-1", Region: "eu-west-1", Owner: "platform, sre"},
+				{Name: "db-1", Region: "us-east-1", Owner: "data"},
+			},
+			want: "hostname,region,owner\nweb-1,eu-west-1,\"platform, sre\"\ndb-1,us-east-1,data\n",
+		},
+		{
+			name: "one host",
+			hosts: []Host{
+				{Name: "cache-3", Region: "ap-south-1", Owner: "sre"},
+			},
+			want: "hostname,region,owner\ncache-3,ap-south-1,sre\n",
+		},
+		{
+			name:  "no hosts",
+			hosts: nil,
+			want:  "hostname,region,owner\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sb strings.Builder
+			if err := WriteHosts(&sb, tt.hosts); err != nil {
+				t.Fatalf("WriteHosts(%+v) returned error %q, want nil", tt.hosts, err)
+			}
+			if got := sb.String(); got != tt.want {
+				t.Errorf("WriteHosts(%+v) wrote %q, want %q", tt.hosts, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFilterCSV(t *testing.T) {
+	inventory := "owner,hostname,region\n" +
+		"payments,api-1,us-east-1\n" +
+		"data,db-1,eu-west-1\n" +
+		"\"platform, sre\",web-1,us-east-1\n"
+
+	tests := []struct {
+		name   string
+		region string
+		want   string
+	}{
+		{
+			name:   "two hosts in us-east-1",
+			region: "us-east-1",
+			want:   "hostname,region,owner\napi-1,us-east-1,payments\nweb-1,us-east-1,\"platform, sre\"\n",
+		},
+		{
+			name:   "one host in eu-west-1",
+			region: "eu-west-1",
+			want:   "hostname,region,owner\ndb-1,eu-west-1,data\n",
+		},
+		{
+			name:   "no hosts in ap-south-1",
+			region: "ap-south-1",
+			want:   "hostname,region,owner\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sb strings.Builder
+			if err := FilterCSV(strings.NewReader(inventory), &sb, tt.region); err != nil {
+				t.Fatalf("FilterCSV(inventory, %q) returned error %q, want nil", tt.region, err)
+			}
+			if got := sb.String(); got != tt.want {
+				t.Errorf("FilterCSV(inventory, %q) wrote %q, want %q", tt.region, got, tt.want)
+			}
+		})
+	}
+
+	badTests := []struct {
+		name  string
+		input string
+	}{
+		{name: "missing owner column", input: "hostname,region\napi-1,us-east-1\n"},
+		{name: "empty input", input: ""},
+	}
+	for _, tt := range badTests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sb strings.Builder
+			err := FilterCSV(strings.NewReader(tt.input), &sb, "us-east-1")
+			if err == nil {
+				t.Errorf("FilterCSV(%q, %q) returned nil error, want an error", tt.input, "us-east-1")
+			}
+			if got := sb.String(); got != "" {
+				t.Errorf("FilterCSV(%q, %q) wrote %q, want nothing", tt.input, "us-east-1", got)
+			}
+		})
+	}
+}

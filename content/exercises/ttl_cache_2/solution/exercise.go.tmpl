@@ -1,0 +1,106 @@
+// Package cache is the Gopherlings exercise "TTL caching: collapse concurrent loads".
+package cache
+
+import (
+	"sync"
+	"time"
+)
+
+// entry is one stored value and the moment it stops being fresh.
+type entry[V any] struct {
+	value     V
+	expiresAt time.Time
+}
+
+// call is one load that is running right now. Callers that want the same key
+// wait for done to be closed, then read val and err.
+type call[V any] struct {
+	done chan struct{}
+	val  V
+	err  error
+}
+
+// Cache stores values for a fixed time to live (TTL) and can load missing
+// values. It is safe for concurrent use.
+type Cache[K comparable, V any] struct {
+	mu       sync.Mutex
+	ttl      time.Duration
+	now      func() time.Time
+	items    map[K]entry[V]
+	inflight map[K]*call[V] // loads running right now, by key
+}
+
+// New returns an empty Cache whose entries live for ttl.
+func New[K comparable, V any](ttl time.Duration, now func() time.Time) *Cache[K, V] {
+	return &Cache[K, V]{
+		ttl:      ttl,
+		now:      now,
+		items:    make(map[K]entry[V]),
+		inflight: make(map[K]*call[V]),
+	}
+}
+
+// Set stores v under k. It expires ttl from now.
+func (c *Cache[K, V]) Set(k K, v V) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.items[k] = entry[V]{value: v, expiresAt: c.now().Add(c.ttl)}
+}
+
+// Get returns the value stored under k and true, or the zero value and false
+// if k is missing or expired. An entry is expired once now >= expiresAt.
+func (c *Cache[K, V]) Get(k K) (V, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.items[k]
+	if !ok || !c.now().Before(e.expiresAt) {
+		delete(c.items, k)
+		var zero V
+		return zero, false
+	}
+	return e.value, true
+}
+
+// GetOrLoad returns the fresh cached value for k if there is one. Otherwise
+// it calls load(k), caches the result if load succeeded, and returns load's
+// result. Concurrent callers asking for the same key share one load.
+func (c *Cache[K, V]) GetOrLoad(k K, load func(K) (V, error)) (V, error) {
+	if v, ok := c.Get(k); ok {
+		return v, nil
+	}
+	cl, leader := c.startCall(k)
+	if !leader {
+		<-cl.done // another goroutine is loading k; wait for its result
+		return cl.val, cl.err
+	}
+	v, err := load(k)
+	if err == nil {
+		c.Set(k, v)
+	}
+	c.finishCall(k, cl, v, err)
+	return v, err
+}
+
+// startCall returns the running load for k and false if there is one.
+// Otherwise it registers a new call for k in c.inflight and returns it and
+// true: the caller is then responsible for loading and calling finishCall.
+func (c *Cache[K, V]) startCall(k K) (*call[V], bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cl, ok := c.inflight[k]; ok {
+		return cl, false
+	}
+	cl := &call[V]{done: make(chan struct{})}
+	c.inflight[k] = cl
+	return cl, true
+}
+
+// finishCall hands v and err to everyone waiting on cl and removes cl from
+// c.inflight.
+func (c *Cache[K, V]) finishCall(k K, cl *call[V], v V, err error) {
+	cl.val, cl.err = v, err
+	c.mu.Lock()
+	delete(c.inflight, k)
+	c.mu.Unlock()
+	close(cl.done) // wakes every waiter
+}

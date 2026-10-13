@@ -1,0 +1,17 @@
+package hello
+
+import "testing"
+
+func TestGreeting(t *testing.T) {
+	want := "Hello, Gopher!"
+	if got := Greeting(); got != want {
+		t.Errorf("Greeting() = %q, want %q", got, want)
+	}
+}
+
+func TestStatus(t *testing.T) {
+	want := "ready to deploy"
+	if got := Status(); got != want {
+		t.Errorf("Status() = %q, want %q", got, want)
+	}
+}

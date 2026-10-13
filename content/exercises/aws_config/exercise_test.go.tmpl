@@ -1,0 +1,173 @@
+package awsconfig
+
+import (
+	"context"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+)
+
+// isolateAWS stops the SDK from reading your real ~/.aws files, AWS_* env vars,
+// or the EC2 metadata service.
+func isolateAWS(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{"AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION",
+		"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+		"AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+		"AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_ENDPOINT_URL"} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("AWS_CONFIG_FILE", filepath.Join("testdata", "config"))
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join("testdata", "credentials"))
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+}
+
+// retrieve returns the credentials stored in cfg, failing the test if there
+// are none.
+func retrieve(t *testing.T, cfg aws.Config) aws.Credentials {
+	t.Helper()
+	if cfg.Credentials == nil {
+		t.Fatal("cfg.Credentials is nil, want a credentials provider")
+	}
+	creds, err := cfg.Credentials.Retrieve(context.Background())
+	if err != nil {
+		t.Fatalf("cfg.Credentials.Retrieve() error: %v", err)
+	}
+	return creds
+}
+
+func TestStaticConfig(t *testing.T) {
+	tests := []struct {
+		name, region, keyID, secret string
+	}{
+		{"us-east-1", "us-east-1", "AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"},
+		{"ap-southeast-2", "ap-southeast-2", "AKIACIDEPLOY0EXAMPLE", "ciDeploySecretKey/EXAMPLEKEY"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateAWS(t)
+			cfg, err := StaticConfig(context.Background(), tt.region, tt.keyID, tt.secret)
+			if err != nil {
+				t.Fatalf("StaticConfig(%q, ...) error: %v", tt.region, err)
+			}
+			if cfg.Region != tt.region {
+				t.Errorf("StaticConfig(%q, ...).Region = %q, want %q", tt.region, cfg.Region, tt.region)
+			}
+			creds := retrieve(t, cfg)
+			if creds.AccessKeyID != tt.keyID {
+				t.Errorf("AccessKeyID = %q, want %q", creds.AccessKeyID, tt.keyID)
+			}
+			if creds.SecretAccessKey != tt.secret {
+				t.Errorf("SecretAccessKey = %q, want %q", creds.SecretAccessKey, tt.secret)
+			}
+		})
+	}
+}
+
+func TestLoad(t *testing.T) {
+	tests := []struct {
+		name       string
+		profile    string
+		region     string // Settings.Region
+		envRegion  string // value of AWS_REGION, "" means unset
+		wantRegion string
+		wantKeyID  string
+	}{
+		{"staging uses its profile region", "staging", "", "", "eu-west-1", "AKIASTAGING000EXAMPLE"},
+		{"prod uses its profile region", "prod", "", "", "us-west-2", "AKIAPROD00000EXAMPLE"},
+		{"override beats profile", "prod", "ca-central-1", "", "ca-central-1", "AKIAPROD00000EXAMPLE"},
+		{"env beats profile", "staging", "", "ap-northeast-1", "ap-northeast-1", "AKIASTAGING000EXAMPLE"},
+		{"override beats env", "staging", "sa-east-1", "ap-northeast-1", "sa-east-1", "AKIASTAGING000EXAMPLE"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateAWS(t)
+			t.Setenv("AWS_REGION", tt.envRegion)
+			s := Settings{
+				Profile:         tt.profile,
+				Region:          tt.region,
+				ConfigFile:      filepath.Join("testdata", "team", "config"),
+				CredentialsFile: filepath.Join("testdata", "team", "credentials"),
+			}
+			cfg, err := Load(context.Background(), s)
+			if err != nil {
+				t.Fatalf("Load(%+v) error: %v", s, err)
+			}
+			if cfg.Region != tt.wantRegion {
+				t.Errorf("Load(%+v).Region = %q, want %q", s, cfg.Region, tt.wantRegion)
+			}
+			creds := retrieve(t, cfg)
+			if creds.AccessKeyID != tt.wantKeyID {
+				t.Errorf("Load(%+v) AccessKeyID = %q, want %q", s, creds.AccessKeyID, tt.wantKeyID)
+			}
+		})
+	}
+
+	for _, profile := range []string{"qa", "dev"} {
+		t.Run("unknown profile "+profile, func(t *testing.T) {
+			isolateAWS(t)
+			s := Settings{
+				Profile:         profile,
+				ConfigFile:      filepath.Join("testdata", "team", "config"),
+				CredentialsFile: filepath.Join("testdata", "team", "credentials"),
+			}
+			if _, err := Load(context.Background(), s); err == nil {
+				t.Errorf("Load(%+v) error = nil, want an error for an unknown profile", s)
+			}
+		})
+	}
+}
+
+func TestDescribe(t *testing.T) {
+	redactTests := []struct {
+		secret, want string
+	}{
+		{"AKIAIOSFODNN7EXAMPLE", "AKIA****"},
+		{"ASIAXYZ", "ASIA****"},
+		{"abcd", "****"},
+		{"ab", "****"},
+		{"", "****"},
+	}
+	for _, tt := range redactTests {
+		if got := Redact(tt.secret); got != tt.want {
+			t.Errorf("Redact(%q) = %q, want %q", tt.secret, got, tt.want)
+		}
+	}
+
+	tests := []struct {
+		region, keyID, secret, want string
+	}{
+		{"eu-west-1", "AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "region=eu-west-1 access_key=AKIA****"},
+		{"us-east-2", "ASIAQUEUE0WORKEREXAMPLE", "queueWorkerSecret/EXAMPLEKEY", "region=us-east-2 access_key=ASIA****"},
+	}
+	for _, tt := range tests {
+		cfg := aws.Config{
+			Region:      tt.region,
+			Credentials: credentials.NewStaticCredentialsProvider(tt.keyID, tt.secret, ""),
+		}
+		got, err := Describe(context.Background(), cfg)
+		if err != nil {
+			t.Errorf("Describe(%s) error: %v", tt.region, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("Describe(%s) = %q, want %q", tt.region, got, tt.want)
+		}
+		if strings.Contains(got, tt.secret) {
+			t.Errorf("Describe(%s) = %q, which leaks the secret key", tt.region, got)
+		}
+	}
+
+	t.Run("empty credentials", func(t *testing.T) {
+		cfg := aws.Config{
+			Region:      "us-east-1",
+			Credentials: credentials.NewStaticCredentialsProvider("", "", ""),
+		}
+		if _, err := Describe(context.Background(), cfg); err == nil {
+			t.Error("Describe(empty credentials) error = nil, want the Retrieve error")
+		}
+	})
+}

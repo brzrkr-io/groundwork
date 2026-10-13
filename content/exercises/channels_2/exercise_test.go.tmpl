@@ -1,0 +1,123 @@
+package logship
+
+import (
+	"slices"
+	"testing"
+	"time"
+)
+
+// within runs f and fails the test if f has not returned after 2 seconds,
+// so a deadlock shows up as a clear failure instead of a frozen test.
+func within(t *testing.T, call string, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s did not return within 2s: it is probably stuck on a channel (deadlock)", call)
+	}
+}
+
+func TestCheckHosts(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+		want  []string
+	}{
+		{"two hosts", []string{"web-1", "web-2"}, []string{"web-1 ok", "web-2 ok"}},
+		{"four hosts", []string{"db-1", "web-2", "db-2", "web-1"}, []string{"db-1 ok", "db-2 ok", "web-1 ok", "web-2 ok"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			check := func(host string) string { return host + " ok" }
+
+			var got []string
+			within(t, "CheckHosts", func() {
+				got = CheckHosts(tt.hosts, check)
+			})
+
+			slices.Sort(got) // any order is fine
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("CheckHosts(%q) = %q (sorted), want %q", tt.hosts, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrefixLines(t *testing.T) {
+	tests := []struct {
+		name  string
+		host  string
+		lines []string
+		want  []string
+	}{
+		{"two lines", "web-1", []string{"boot", "ready"}, []string{"web-1: boot", "web-1: ready"}},
+		{"three lines", "db-2", []string{"start", "replica ok", "stop"}, []string{"db-2: start", "db-2: replica ok", "db-2: stop"}},
+		{"no lines", "web-3", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := make(chan string, len(tt.lines))
+			for _, line := range tt.lines {
+				in <- line
+			}
+			close(in)
+			out := make(chan string, len(tt.lines)+1) // room for every line, plus one spare
+
+			within(t, "PrefixLines", func() {
+				PrefixLines(tt.host, in, out)
+			})
+
+			var got []string
+			for line := range out { // ends because PrefixLines closed out
+				got = append(got, line)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("PrefixLines(%q, %q) sent %q, want %q", tt.host, tt.lines, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTake(t *testing.T) {
+	tests := []struct {
+		name       string
+		jobs       []string
+		closed     bool // is the jobs channel closed?
+		n          int
+		want       []string
+		wantClosed bool
+	}{
+		{"fewer than queued", []string{"a", "b", "c"}, false, 2, []string{"a", "b"}, false},
+		{"exactly queued, open", []string{"a", "b", "c"}, false, 3, []string{"a", "b", "c"}, false},
+		{"more than queued, closed", []string{"a", "b", "c"}, true, 5, []string{"a", "b", "c"}, true},
+		{"exactly queued, closed", []string{"a", "b", "c"}, true, 3, []string{"a", "b", "c"}, false},
+		{"empty and closed", nil, true, 1, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jobs := make(chan string, len(tt.jobs))
+			for _, job := range tt.jobs {
+				jobs <- job
+			}
+			if tt.closed {
+				close(jobs)
+			}
+
+			var got []string
+			var gotClosed bool
+			within(t, "Take", func() {
+				got, gotClosed = Take(jobs, tt.n)
+			})
+
+			if !slices.Equal(got, tt.want) || gotClosed != tt.wantClosed {
+				t.Errorf("Take(jobs holding %q, closed=%t, %d) = %q, %t, want %q, %t",
+					tt.jobs, tt.closed, tt.n, got, gotClosed, tt.want, tt.wantClosed)
+			}
+		})
+	}
+}

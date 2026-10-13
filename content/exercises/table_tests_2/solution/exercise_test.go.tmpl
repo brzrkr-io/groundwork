@@ -1,0 +1,40 @@
+package memory
+
+import "testing"
+
+func TestParseMemory(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    int
+		wantErr bool
+	}{
+		{"mebibytes", "512Mi", 512, false},
+		{"gibibytes", "2Gi", 2048, false},
+
+		{"no unit", "512", 0, true},
+		{"unsupported unit", "512Ki", 0, true},
+
+		{"no number", "Gi", 0, true},
+		{"not a number", "lotsMi", 0, true},
+		{"zero", "0Mi", 0, true},
+		{"negative", "-1Gi", 0, true},
+	}
+
+	for _, tc := range tests {
+		got, err := ParseMemory(tc.input)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("%s: ParseMemory(%q) returned no error, want an error", tc.name, tc.input)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: ParseMemory(%q) returned error: %v", tc.name, tc.input, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("%s: ParseMemory(%q) = %d, want %d", tc.name, tc.input, got, tc.want)
+		}
+	}
+}

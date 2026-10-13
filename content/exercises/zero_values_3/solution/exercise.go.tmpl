@@ -1,0 +1,33 @@
+// Package zerovalues is the Gopherlings exercise "Zero values: layered timeouts and probes".
+package zerovalues
+
+import "fmt"
+
+// EffectiveTimeout returns the first non-zero timeout of request, service and
+// global, or 30 when none is set.
+func EffectiveTimeout(requestSeconds, serviceSeconds, globalSeconds int) int {
+	if requestSeconds != 0 {
+		return requestSeconds
+	}
+	if serviceSeconds != 0 {
+		return serviceSeconds
+	}
+	if globalSeconds != 0 {
+		return globalSeconds
+	}
+	return 30
+}
+
+// ProbeConfig describes an HTTP health probe, filling in defaults.
+func ProbeConfig(path string, port, periodSeconds int) string {
+	if path == "" {
+		path = "/healthz"
+	}
+	if port == 0 {
+		port = 8080
+	}
+	if periodSeconds == 0 {
+		periodSeconds = 10
+	}
+	return fmt.Sprintf("GET %s on :%d every %ds", path, port, periodSeconds)
+}

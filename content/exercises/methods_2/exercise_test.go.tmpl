@@ -1,0 +1,70 @@
+package methods2
+
+import "testing"
+
+func TestExpired(t *testing.T) {
+	tests := []struct {
+		name     string
+		daysLeft int
+		want     bool
+	}{
+		{"expired last week", -7, true},
+		{"expired yesterday", -1, true},
+		{"last day", 0, true},
+		{"one day left", 1, false},
+		{"plenty of time", 90, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Certificate{Domain: "api.example.com", DaysLeft: tc.daysLeft}
+			if got := c.Expired(); got != tc.want {
+				t.Errorf("Certificate{DaysLeft: %d}.Expired() = %v, want %v", tc.daysLeft, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNeedsRenewal(t *testing.T) {
+	tests := []struct {
+		name     string
+		daysLeft int
+		want     bool
+	}{
+		{"expired", -4, true},
+		{"last day", 0, true},
+		{"one week left", 7, true},
+		{"exactly 30 days", 30, true},
+		{"31 days", 31, false},
+		{"plenty of time", 85, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Certificate{Domain: "api.example.com", DaysLeft: tc.daysLeft}
+			if got := c.NeedsRenewal(); got != tc.want {
+				t.Errorf("Certificate{DaysLeft: %d}.NeedsRenewal() = %v, want %v", tc.daysLeft, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSummary(t *testing.T) {
+	tests := []struct {
+		name string
+		cert Certificate
+		want string
+	}{
+		{"expired", Certificate{Domain: "api.example.com", DaysLeft: -2}, "api.example.com: EXPIRED"},
+		{"renew soon", Certificate{Domain: "shop.example.com", DaysLeft: 12}, "shop.example.com: renew soon (12d left)"},
+		{"renew at 30 days", Certificate{Domain: "api.example.com", DaysLeft: 30}, "api.example.com: renew soon (30d left)"},
+		{"ok at 31 days", Certificate{Domain: "grafana.example.com", DaysLeft: 31}, "grafana.example.com: ok (31d left)"},
+		{"ok", Certificate{Domain: "shop.example.com", DaysLeft: 85}, "shop.example.com: ok (85d left)"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cert.Summary(); got != tc.want {
+				t.Errorf("Certificate{Domain: %q, DaysLeft: %d}.Summary() = %q, want %q",
+					tc.cert.Domain, tc.cert.DaysLeft, got, tc.want)
+			}
+		})
+	}
+}

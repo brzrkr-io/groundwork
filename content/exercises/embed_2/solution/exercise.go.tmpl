@@ -1,0 +1,57 @@
+// Package migrate ships the inventory database's schema migrations inside
+// the program.
+package migrate
+
+import (
+	"embed"
+	"strings"
+)
+
+// schemaVersion holds the contents of version.txt.
+//
+//go:embed version.txt
+var schemaVersion string
+
+// migrations holds the migration files. The pattern leaves out NOTES.txt.
+//
+//go:embed migrations/*.sql
+var migrations embed.FS
+
+// SchemaVersion returns the schema version from version.txt, such as "2.3.0".
+func SchemaVersion() string {
+	return strings.TrimSpace(schemaVersion)
+}
+
+// Names returns the file names of the embedded migrations, sorted.
+func Names() ([]string, error) {
+	entries, err := migrations.ReadDir("migrations")
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names, nil
+}
+
+// Pending returns the SQL of every migration after the first applied ones,
+// in file-name order.
+func Pending(applied int) ([]string, error) {
+	names, err := Names()
+	if err != nil {
+		return nil, err
+	}
+	var pending []string
+	for i, name := range names {
+		if i < applied {
+			continue
+		}
+		data, err := migrations.ReadFile("migrations/" + name)
+		if err != nil {
+			return nil, err
+		}
+		pending = append(pending, string(data))
+	}
+	return pending, nil
+}

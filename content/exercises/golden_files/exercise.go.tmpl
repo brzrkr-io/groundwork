@@ -1,0 +1,40 @@
+// Package report is the Gopherlings exercise "Test fixtures and golden files".
+package report
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Host is one machine in the fleet inventory.
+type Host struct {
+	Name   string
+	IP     string
+	Region string
+}
+
+// RenderInventory renders hosts as a text table with a header line and one
+// line per host, in the order given. Columns are padded with spaces so they
+// line up, and every line ends with a newline.
+//
+// This code is correct. Your job in this exercise is to write a test for it.
+func RenderInventory(hosts []Host) string {
+	return renderInventory(hosts)
+}
+
+// renderInventory points at the real implementation. Gopherlings' grader swaps
+// in broken versions to check that your test catches them.
+var renderInventory = realRenderInventory
+
+// inventoryLine is the layout of every line: NAME padded to 12 characters,
+// IP padded to 15 (the longest IPv4 address), then REGION.
+const inventoryLine = "%-12s %-15s %s\n"
+
+func realRenderInventory(hosts []Host) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, inventoryLine, "NAME", "IP", "REGION")
+	for _, h := range hosts {
+		fmt.Fprintf(&b, inventoryLine, h.Name, h.IP, h.Region)
+	}
+	return b.String()
+}

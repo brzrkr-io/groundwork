@@ -1,0 +1,20 @@
+// Package numbers is the Gopherlings exercise "Numbers and arithmetic".
+package numbers
+
+// TotalMemoryMiB returns the memory, in MiB, needed by replicas replicas
+// that each need perReplicaMiB.
+func TotalMemoryMiB(replicas, perReplicaMiB int) int {
+	return replicas * perReplicaMiB
+}
+
+// ReplicasNeeded returns how many replicas serve requestsPerSec when each
+// replica handles perReplica requests per second.
+func ReplicasNeeded(requestsPerSec, perReplica int) int {
+	// Adding perReplica-1 before dividing rounds up instead of down.
+	return (requestsPerSec + perReplica - 1) / perReplica
+}
+
+// CPUPercent returns CPU usage as a percentage of the CPU limit.
+func CPUPercent(usedMillicores, limitMillicores float64) float64 {
+	return usedMillicores / limitMillicores * 100
+}

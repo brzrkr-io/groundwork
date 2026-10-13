@@ -1,0 +1,120 @@
+// Package endpoints is the Gopherlings exercise "Practice: endpoint health checker".
+package endpoints
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Endpoint is one URL to check and the status code it should return.
+type Endpoint struct {
+	Name   string
+	URL    string
+	Expect int
+}
+
+// Result is the outcome of checking one Endpoint.
+type Result struct {
+	Name     string
+	Expect   int
+	Status   int           // status code of the last attempt; 0 if the request failed
+	Latency  time.Duration // time taken by all attempts together
+	Attempts int           // 1, or 2 when the check was retried
+	Err      error         // the request error, if the request failed
+	OK       bool          // true when Err is nil and Status equals Expect
+}
+
+// Checker checks endpoints with an HTTP client. Now is the clock used to
+// measure latency; tests replace it with a fake.
+type Checker struct {
+	Client *http.Client
+	Now    func() time.Time
+}
+
+// NewChecker returns a Checker whose client gives up after timeout and
+// whose clock is time.Now.
+func NewChecker(timeout time.Duration) *Checker {
+	return &Checker{
+		Client: &http.Client{Timeout: timeout},
+		Now:    time.Now,
+	}
+}
+
+// Probe sends one GET request to url and returns the response status code.
+// If the request fails, it returns 0 and the error.
+func (c *Checker) Probe(url string) (int, error) {
+	resp, err := c.Client.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode, nil
+}
+
+// Check probes ep once, retries once if the status is 500 or higher, and
+// returns the Result. It calls c.Now exactly twice to measure the latency.
+func (c *Checker) Check(ep Endpoint) Result {
+	start := c.Now()
+	status, err := c.Probe(ep.URL)
+	attempts := 1
+	if err == nil && status >= 500 {
+		status, err = c.Probe(ep.URL)
+		attempts = 2
+	}
+	return Result{
+		Name:     ep.Name,
+		Expect:   ep.Expect,
+		Status:   status,
+		Latency:  c.Now().Sub(start),
+		Attempts: attempts,
+		Err:      err,
+		OK:       err == nil && status == ep.Expect,
+	}
+}
+
+// rowFormat lays out one line of the report table.
+const rowFormat = "%-10s %-7s %-8s %s\n"
+
+// Report renders results as a table followed by a summary line.
+func Report(results []Result) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, rowFormat, "NAME", "STATUS", "LATENCY", "RESULT")
+	ok := 0
+	for _, r := range results {
+		status := strconv.Itoa(r.Status)
+		var verdict string
+		switch {
+		case r.Err != nil:
+			status = "-"
+			verdict = "error: " + r.Err.Error()
+		case r.OK:
+			verdict = "ok"
+			ok++
+		default:
+			verdict = fmt.Sprintf("want %d", r.Expect)
+		}
+		fmt.Fprintf(&b, rowFormat, r.Name, status, r.Latency, verdict)
+	}
+	fmt.Fprintf(&b, "%d of %d endpoints ok\n", ok, len(results))
+	return b.String()
+}
+
+// Run checks every endpoint in order, writes the report to out, and returns
+// the exit code: 0 if every endpoint is OK, 1 otherwise.
+func Run(c *Checker, endpoints []Endpoint, out io.Writer) int {
+	code := 0
+	var results []Result
+	for _, ep := range endpoints {
+		r := c.Check(ep)
+		if !r.OK {
+			code = 1
+		}
+		results = append(results, r)
+	}
+	fmt.Fprint(out, Report(results))
+	return code
+}

@@ -1,0 +1,43 @@
+// Package memory is the Gopherlings exercise "Table-driven tests: error cases".
+package memory
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// ParseMemory converts a Kubernetes-style memory request into MiB. The text
+// must be a whole number of at least 1 followed by a unit: "Mi" (MiB) or
+// "Gi" (GiB, 1024 MiB). So "512Mi" gives 512 and "2Gi" gives 2048. Anything
+// else returns an error.
+//
+// This code is correct. Your job in this exercise is to write a test for it.
+func ParseMemory(s string) (int, error) {
+	return parseMemory(s)
+}
+
+// parseMemory points at the real implementation. Gopherlings' grader swaps in
+// broken versions to check that your test catches them.
+var parseMemory = realParseMemory
+
+func realParseMemory(s string) (int, error) {
+	var number string
+	var mib int
+	switch {
+	case strings.HasSuffix(s, "Mi"):
+		number, mib = strings.TrimSuffix(s, "Mi"), 1
+	case strings.HasSuffix(s, "Gi"):
+		number, mib = strings.TrimSuffix(s, "Gi"), 1024
+	default:
+		return 0, fmt.Errorf("memory %q: unit must be Mi or Gi", s)
+	}
+	n, err := strconv.Atoi(number)
+	if err != nil {
+		return 0, fmt.Errorf("memory %q: %q is not a whole number", s, number)
+	}
+	if n < 1 {
+		return 0, fmt.Errorf("memory %q: must be at least 1", s)
+	}
+	return n * mib, nil
+}

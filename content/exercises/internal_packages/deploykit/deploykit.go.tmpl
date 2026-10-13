@@ -1,0 +1,29 @@
+// Package deploykit is the shared library other teams import to name their
+// releases.
+package deploykit
+
+import "strings"
+
+// ReleaseName returns the Kubernetes-safe name for a release of service at
+// version, such as "payments-api-v1-4-2".
+func ReleaseName(service, version string) string {
+	// TODO(3): Call slug.Make instead.
+	return Slugify(service + "-" + version)
+}
+
+// Slugify lower-cases s and replaces every character that isn't a letter or
+// digit with "-".
+//
+// TODO(1): Move this helper into internal/slug and call it Make.
+// TODO(3): Then delete it from here.
+func Slugify(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
+}

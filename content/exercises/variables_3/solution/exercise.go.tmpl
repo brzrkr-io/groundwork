@@ -1,0 +1,23 @@
+// Package variables is the Gopherlings exercise "Variables: build ops commands".
+package variables
+
+// PodName returns the name of a pod created by a deployment, such as
+// "checkout-7d9f8b6c5-x2k4p".
+func PodName(deployment, hash, suffix string) string {
+	return deployment + "-" + hash + "-" + suffix
+}
+
+// SSHTarget returns a user@host target for ssh, such as
+// "deploy@web-01.prod.example.com".
+func SSHTarget(user, host, domain string) string {
+	return user + "@" + host + "." + domain
+}
+
+// SetImageCommand returns the kubectl command that rolls a deployment out to
+// a new image.
+func SetImageCommand(namespace, deployment, image string) string {
+	cmd := "kubectl -n " + namespace
+	cmd += " set image deployment/" + deployment
+	cmd += " " + deployment + "=" + image
+	return cmd
+}

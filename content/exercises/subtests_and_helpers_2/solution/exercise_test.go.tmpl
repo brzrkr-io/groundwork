@@ -1,0 +1,52 @@
+package inventory
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+)
+
+// writeFile writes content to a new file in a temporary directory and
+// returns the file's path. The directory is deleted when the test ends.
+func writeFile(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "hosts.txt")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestLoadHosts(t *testing.T) {
+	t.Run("reads hosts", func(t *testing.T) {
+		path := writeFile(t, "# web tier\nweb-1\n\n  web-2\n")
+		got, err := LoadHosts(path)
+		if err != nil {
+			t.Fatalf("LoadHosts returned error: %v", err)
+		}
+		want := []string{"web-1", "web-2"}
+		if !slices.Equal(got, want) {
+			t.Errorf("LoadHosts = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("no trailing newline", func(t *testing.T) {
+		path := writeFile(t, "web-1\ndb-1")
+		got, err := LoadHosts(path)
+		if err != nil {
+			t.Fatalf("LoadHosts returned error: %v", err)
+		}
+		want := []string{"web-1", "db-1"}
+		if !slices.Equal(got, want) {
+			t.Errorf("LoadHosts = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("missing file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "missing.txt")
+		if _, err := LoadHosts(path); err == nil {
+			t.Errorf("LoadHosts(%q) returned no error, want an error", path)
+		}
+	})
+}

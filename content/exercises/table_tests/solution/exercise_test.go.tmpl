@@ -1,0 +1,32 @@
+package disk
+
+import "testing"
+
+func TestDiskAlert(t *testing.T) {
+	tests := []struct {
+		name string
+		used int
+		want string
+	}{
+		{"half full", 50, "ok"},
+		{"warning", 85, "warning"},
+		{"critical", 95, "critical"},
+
+		{"just below warning", 79, "ok"},
+		{"warning starts", 80, "warning"},
+		{"just below critical", 89, "warning"},
+		{"critical starts", 90, "critical"},
+
+		{"empty", 0, "ok"},
+		{"full", 100, "critical"},
+		{"negative", -1, "invalid"},
+		{"over 100", 101, "invalid"},
+	}
+
+	for _, tc := range tests {
+		got := DiskAlert(tc.used)
+		if got != tc.want {
+			t.Errorf("%s: DiskAlert(%d) = %q, want %q", tc.name, tc.used, got, tc.want)
+		}
+	}
+}

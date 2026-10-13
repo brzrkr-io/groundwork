@@ -1,0 +1,50 @@
+// Package pipelines is the Gopherlings exercise "Pipelines".
+package pipelines
+
+import "strings"
+
+// Entry is one parsed log line.
+type Entry struct {
+	Level   string
+	Message string
+}
+
+// Generate returns a channel that carries every line in order, then closes.
+func Generate(lines []string) <-chan string {
+	out := make(chan string)
+	go func() {
+		defer close(out)
+		for _, line := range lines {
+			out <- line
+		}
+	}()
+	return out
+}
+
+// Parse turns every line from in into an Entry: Level is the text before the
+// first space, Message is the rest.
+func Parse(in <-chan string) <-chan Entry {
+	out := make(chan Entry)
+	go func() {
+		defer close(out)
+		for line := range in {
+			level, message, _ := strings.Cut(line, " ")
+			out <- Entry{Level: level, Message: message}
+		}
+	}()
+	return out
+}
+
+// OnlyLevel passes on only the entries from in whose Level equals level.
+func OnlyLevel(in <-chan Entry, level string) <-chan Entry {
+	out := make(chan Entry)
+	go func() {
+		defer close(out)
+		for entry := range in {
+			if entry.Level == level {
+				out <- entry
+			}
+		}
+	}()
+	return out
+}

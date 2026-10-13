@@ -1,0 +1,118 @@
+package structs
+
+import "testing"
+
+func TestNewDeployment(t *testing.T) {
+	tests := []struct {
+		name  string
+		image string
+	}{
+		{"api", "registry.local/api:1.4.0"},
+		{"web", "nginx:1.27"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := NewDeployment(tt.name, tt.image)
+			if d.Name != tt.name {
+				t.Errorf("NewDeployment(%q, %q).Name = %q, want %q", tt.name, tt.image, d.Name, tt.name)
+			}
+			if d.Image != tt.image {
+				t.Errorf("NewDeployment(%q, %q).Image = %q, want %q", tt.name, tt.image, d.Image, tt.image)
+			}
+			if d.Replicas != 1 {
+				t.Errorf("NewDeployment(%q, %q).Replicas = %d, want 1", tt.name, tt.image, d.Replicas)
+			}
+			if d.Env == nil {
+				t.Errorf("NewDeployment(%q, %q).Env = nil, want an empty map", tt.name, tt.image)
+			} else if len(d.Env) != 0 {
+				t.Errorf("NewDeployment(%q, %q).Env = %v, want an empty map", tt.name, tt.image, d.Env)
+			}
+			want := Resources{CPUMillis: 250, MemoryMB: 128}
+			if d.Limits != want {
+				t.Errorf("NewDeployment(%q, %q).Limits = %+v, want %+v", tt.name, tt.image, d.Limits, want)
+			}
+		})
+	}
+}
+
+func TestApplyDefaults(t *testing.T) {
+	// Each case is the deployment we pass in, then the replica count and
+	// limits we want back.
+	tests := []struct {
+		in           Deployment
+		wantReplicas int
+		wantLimits   Resources
+	}{
+		{
+			in:           Deployment{Name: "worker"},
+			wantReplicas: 1,
+			wantLimits:   Resources{CPUMillis: 0, MemoryMB: 128},
+		},
+		{
+			in:           Deployment{Name: "db", Replicas: 3, Limits: Resources{CPUMillis: 1000, MemoryMB: 2048}},
+			wantReplicas: 3,
+			wantLimits:   Resources{CPUMillis: 1000, MemoryMB: 2048},
+		},
+		{
+			in:           Deployment{Name: "cron", Limits: Resources{CPUMillis: 500}},
+			wantReplicas: 1,
+			wantLimits:   Resources{CPUMillis: 500, MemoryMB: 128},
+		},
+		{
+			in:           Deployment{Name: "web", Image: "nginx:1.27", Replicas: 5},
+			wantReplicas: 5,
+			wantLimits:   Resources{CPUMillis: 0, MemoryMB: 128},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in.Name, func(t *testing.T) {
+			got := ApplyDefaults(tt.in)
+			if got.Replicas != tt.wantReplicas {
+				t.Errorf("ApplyDefaults(%+v).Replicas = %d, want %d", tt.in, got.Replicas, tt.wantReplicas)
+			}
+			if got.Limits != tt.wantLimits {
+				t.Errorf("ApplyDefaults(%+v).Limits = %+v, want %+v", tt.in, got.Limits, tt.wantLimits)
+			}
+			if got.Name != tt.in.Name || got.Image != tt.in.Image {
+				t.Errorf("ApplyDefaults(%+v) changed Name or Image: got %q %q, want %q %q",
+					tt.in, got.Name, got.Image, tt.in.Name, tt.in.Image)
+			}
+		})
+	}
+}
+
+func TestFindDeployment(t *testing.T) {
+	ds := []Deployment{
+		{Name: "api", Image: "api:1.4.0", Replicas: 3},
+		{Name: "web", Image: "web:2.0.1", Replicas: 2},
+		{Name: "cache", Image: "redis:7.4", Replicas: 1},
+	}
+	// Each case is the name we look for, then the deployment and the bool
+	// we want back. When the name is missing we want the zero Deployment.
+	tests := []struct {
+		name   string
+		want   Deployment
+		wantOK bool
+	}{
+		{"api", Deployment{Name: "api", Image: "api:1.4.0", Replicas: 3}, true},
+		{"web", Deployment{Name: "web", Image: "web:2.0.1", Replicas: 2}, true},
+		{"cache", Deployment{Name: "cache", Image: "redis:7.4", Replicas: 1}, true},
+		{"db", Deployment{}, false},
+		{"", Deployment{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := FindDeployment(ds, tt.name)
+			if got.Name != tt.want.Name || got.Image != tt.want.Image || got.Replicas != tt.want.Replicas || ok != tt.wantOK {
+				t.Errorf("FindDeployment(ds, %q) = %+v, %t, want %+v, %t", tt.name, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+
+	t.Run("empty slice", func(t *testing.T) {
+		got, ok := FindDeployment(nil, "api")
+		if got.Name != "" || ok {
+			t.Errorf("FindDeployment(nil, %q) = %+v, %t, want %+v, false", "api", got, ok, Deployment{})
+		}
+	})
+}

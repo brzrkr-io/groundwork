@@ -1,0 +1,84 @@
+package returns
+
+import "testing"
+
+func TestSplitUptime(t *testing.T) {
+	// Each line is one case: the input, then the two answers we want.
+	tests := []struct {
+		name         string
+		totalMinutes int
+		wantHours    int
+		wantMinutes  int
+	}{
+		{"two and a quarter hours", 135, 2, 15},
+		{"under an hour", 59, 0, 59},
+		{"exact hours", 120, 2, 0},
+		{"a full day", 1441, 24, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hours, minutes := SplitUptime(tt.totalMinutes)
+			if hours != tt.wantHours || minutes != tt.wantMinutes {
+				t.Errorf("SplitUptime(%d) = %d, %d, want %d, %d",
+					tt.totalMinutes, hours, minutes, tt.wantHours, tt.wantMinutes)
+			}
+		})
+	}
+}
+
+func TestSplitHostPort(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     string
+		wantHost string
+		wantPort string
+		wantOK   bool
+	}{
+		{"database", "db.internal:5432", "db.internal", "5432", true},
+		{"web", "Web-1:80", "Web-1", "80", true},
+		{"no colon", "localhost", "", "", false},
+		{"empty", "", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			host, port, ok := SplitHostPort(tt.addr)
+			if host != tt.wantHost || port != tt.wantPort || ok != tt.wantOK {
+				t.Errorf("SplitHostPort(%q) = %q, %q, %t, want %q, %q, %t",
+					tt.addr, host, port, ok, tt.wantHost, tt.wantPort, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestParseAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     string
+		wantHost string
+		wantPort int
+		wantErr  bool
+	}{
+		{"api", "api.internal:8080", "api.internal", 8080, false},
+		{"ssh", "bastion:22", "bastion", 22, false},
+		{"highest port", "cache:65535", "cache", 65535, false},
+		{"no colon", "api.internal", "", 0, true},
+		{"port is a word", "api.internal:http", "", 0, true},
+		{"port zero", "api.internal:0", "", 0, true},
+		{"port too big", "api.internal:65536", "", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			host, port, err := ParseAddress(tt.addr)
+			if tt.wantErr && err == nil {
+				t.Fatalf("ParseAddress(%q) returned a nil error, want an error", tt.addr)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("ParseAddress(%q) returned error %v, want nil", tt.addr, err)
+			}
+			if host != tt.wantHost || port != tt.wantPort {
+				t.Errorf("ParseAddress(%q) = %q, %d, want %q, %d",
+					tt.addr, host, port, tt.wantHost, tt.wantPort)
+			}
+		})
+	}
+}

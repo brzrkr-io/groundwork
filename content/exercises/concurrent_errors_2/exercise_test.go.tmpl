@@ -1,0 +1,205 @@
+package rollout
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+var (
+	errA     = errors.New("task A failed")
+	errB     = errors.New("task B failed")
+	errQuota = errors.New("eu-west-1: quota exceeded")
+)
+
+// work waits for d and then returns result. If ctx is cancelled first, it
+// returns ctx.Err() instead.
+func work(ctx context.Context, d time.Duration, result error) error {
+	select {
+	case <-time.After(d):
+		return result
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func TestWithContextAndWait(t *testing.T) {
+	t.Run("child of the parent", func(t *testing.T) {
+		parent, cancelParent := context.WithCancel(context.Background())
+		_, ctx := WithContext(parent)
+		if ctx.Err() != nil {
+			t.Fatalf("a new group's ctx.Err() = %v, want nil", ctx.Err())
+		}
+		cancelParent()
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			t.Errorf("after cancelling the parent, the group's ctx.Err() = %v, want %v", ctx.Err(), context.Canceled)
+		}
+	})
+
+	t.Run("Wait cancels the context", func(t *testing.T) {
+		g, ctx := WithContext(context.Background())
+		if err := g.Wait(); err != nil {
+			t.Errorf("Wait() with no tasks = %v, want nil", err)
+		}
+		if !errors.Is(ctx.Err(), context.Canceled) {
+			t.Errorf("after Wait(), the group's ctx.Err() = %v, want %v", ctx.Err(), context.Canceled)
+		}
+	})
+}
+
+func TestGo(t *testing.T) {
+	// synctest.Test gives the test a fake clock: sleeps and timers finish
+	// instantly, but time.Now moves forward by the right amount.
+	t.Run("all succeed", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			start := time.Now()
+			g, ctx := WithContext(context.Background())
+			for range 3 {
+				g.Go(func() error { return work(ctx, time.Second, nil) })
+			}
+
+			err := g.Wait()
+			elapsed := time.Since(start)
+
+			if err != nil {
+				t.Errorf("Wait() = %v, want nil", err)
+			}
+			if elapsed != time.Second {
+				t.Errorf("three 1s tasks took %v, want 1s: Go should run each task in its own goroutine", elapsed)
+			}
+		})
+	})
+
+	t.Run("keeps the first error", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			start := time.Now()
+			g, _ := WithContext(context.Background())
+			g.Go(func() error {
+				time.Sleep(2 * time.Second)
+				return errB // fails second
+			})
+			g.Go(func() error {
+				time.Sleep(1 * time.Second)
+				return errA // fails first
+			})
+
+			err := g.Wait()
+			elapsed := time.Since(start)
+
+			if err != errA {
+				t.Errorf("Wait() = %v, want %v (the first error)", err, errA)
+			}
+			if elapsed != 2*time.Second {
+				t.Errorf("Wait() returned after %v, want 2s (when the last task finished)", elapsed)
+			}
+		})
+	})
+
+	t.Run("cancels the others", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			start := time.Now()
+			g, ctx := WithContext(context.Background())
+			g.Go(func() error { return work(ctx, 1*time.Second, errA) })
+			g.Go(func() error { return work(ctx, 5*time.Second, nil) })
+			g.Go(func() error { return work(ctx, 5*time.Second, nil) })
+
+			err := g.Wait()
+			elapsed := time.Since(start)
+
+			if err != errA {
+				t.Errorf("Wait() = %v, want %v", err, errA)
+			}
+			if elapsed != time.Second {
+				t.Errorf("Wait() returned after %v, want 1s: the first error should cancel the group's ctx", elapsed)
+			}
+		})
+	})
+}
+
+func TestDeployRegions(t *testing.T) {
+	regions := []string{"us-east-1", "eu-west-1", "ap-south-1"}
+
+	t.Run("one region fails", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			var mu sync.Mutex
+			var cancelled []string
+			deploy := func(ctx context.Context, region string) error {
+				if region == "eu-west-1" {
+					return work(ctx, 1*time.Second, errQuota)
+				}
+				err := work(ctx, 5*time.Second, nil)
+				if errors.Is(err, context.Canceled) {
+					mu.Lock()
+					cancelled = append(cancelled, region)
+					mu.Unlock()
+				}
+				return err
+			}
+
+			start := time.Now()
+			err := DeployRegions(context.Background(), regions, deploy)
+			elapsed := time.Since(start)
+
+			if err != errQuota {
+				t.Errorf("DeployRegions = %v, want %v", err, errQuota)
+			}
+			if elapsed != time.Second {
+				t.Errorf("DeployRegions returned after %v, want 1s", elapsed)
+			}
+			slices.Sort(cancelled)
+			if want := []string{"ap-south-1", "us-east-1"}; !slices.Equal(cancelled, want) {
+				t.Errorf("cancelled deploys = %q, want %q: pass deploy the group's ctx", cancelled, want)
+			}
+		})
+	})
+
+	t.Run("all succeed", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			deploy := func(ctx context.Context, region string) error {
+				return work(ctx, 2*time.Second, nil)
+			}
+
+			start := time.Now()
+			err := DeployRegions(context.Background(), regions, deploy)
+			elapsed := time.Since(start)
+
+			if err != nil {
+				t.Errorf("DeployRegions = %v, want nil", err)
+			}
+			if elapsed != 2*time.Second {
+				t.Errorf("DeployRegions took %v, want 2s: the regions should deploy at the same time", elapsed)
+			}
+		})
+	})
+
+	t.Run("caller cancels", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go func() {
+				time.Sleep(time.Second)
+				cancel()
+			}()
+			deploy := func(ctx context.Context, region string) error {
+				return work(ctx, 5*time.Second, nil)
+			}
+
+			start := time.Now()
+			err := DeployRegions(ctx, regions, deploy)
+			elapsed := time.Since(start)
+
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("DeployRegions = %v, want %v", err, context.Canceled)
+			}
+			if elapsed != time.Second {
+				t.Errorf("DeployRegions returned after %v, want 1s (when the caller cancelled)", elapsed)
+			}
+
+			time.Sleep(time.Minute) // let the cancel goroutine finish before the test ends
+		})
+	})
+}

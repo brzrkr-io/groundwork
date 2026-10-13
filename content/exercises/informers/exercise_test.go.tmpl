@@ -1,0 +1,203 @@
+package informers
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"testing"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
+)
+
+func deployment(ns, name string) *appsv1.Deployment {
+	return &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name}}
+}
+
+// startFactory starts the factory and waits for its caches, without using
+// your StartAndSync. When the test ends it cancels ctx and calls Shutdown.
+func startFactory(t *testing.T, factory informers.SharedInformerFactory) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		factory.Shutdown()
+	})
+	factory.StartWithContext(ctx)
+	if err := factory.WaitForCacheSyncWithContext(ctx).AsError(); err != nil {
+		t.Fatalf("caches did not sync: %v", err)
+	}
+	return ctx
+}
+
+// cachedKeys returns "namespace/name" for every Deployment, sorted.
+func cachedKeys(deployments []*appsv1.Deployment) []string {
+	keys := []string{}
+	for _, d := range deployments {
+		keys = append(keys, d.Namespace+"/"+d.Name)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func TestNewFactory(t *testing.T) {
+	tests := []struct {
+		name  string
+		seeds []runtime.Object
+		want  []string
+	}{
+		{"two in shop", []runtime.Object{deployment("shop", "web"), deployment("shop", "api")}, []string{"shop/api", "shop/web"}},
+		{"one in payments", []runtime.Object{deployment("payments", "checkout")}, []string{"payments/checkout"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cs := fake.NewClientset(tt.seeds...)
+			factory := NewFactory(cs)
+			if factory == nil {
+				t.Fatal("NewFactory(cs) = nil, want a SharedInformerFactory")
+			}
+			lister := factory.Apps().V1().Deployments().Lister()
+			startFactory(t, factory)
+
+			cached, err := lister.List(labels.Everything())
+			if err != nil {
+				t.Fatalf("List() error = %v", err)
+			}
+			if got := cachedKeys(cached); !slices.Equal(got, tt.want) {
+				t.Errorf("cached Deployments = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// waitForEvent polls rec until it has recorded want, for up to 5 seconds.
+func waitForEvent(t *testing.T, ctx context.Context, rec *Recorder, want string) {
+	t.Helper()
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Millisecond, 5*time.Second, true, func(context.Context) (bool, error) {
+		return slices.Contains(rec.Events(), want), nil
+	})
+	if err != nil {
+		t.Fatalf("Events() = %q, want it to include %q", rec.Events(), want)
+	}
+}
+
+func TestWatchDeployments(t *testing.T) {
+	cs := fake.NewClientset(deployment("shop", "web"), deployment("payments", "checkout"))
+	factory := informers.NewSharedInformerFactory(cs, 0)
+	rec := &Recorder{}
+	if err := WatchDeployments(factory, rec); err != nil {
+		t.Fatalf("WatchDeployments() error = %v, want nil", err)
+	}
+	ctx := startFactory(t, factory)
+	apps := cs.AppsV1()
+
+	steps := []struct {
+		name   string
+		action func() error // nil: the informer finds the object in its first list
+		want   string
+	}{
+		{"already there: shop/web", nil, "added shop/web"},
+		{"already there: payments/checkout", nil, "added payments/checkout"},
+		{"create staging/worker", func() error {
+			_, err := apps.Deployments("staging").Create(ctx, deployment("staging", "worker"), metav1.CreateOptions{})
+			return err
+		}, "added staging/worker"},
+		{"update shop/web", func() error {
+			d := deployment("shop", "web")
+			d.Labels = map[string]string{"tier": "web"}
+			_, err := apps.Deployments("shop").Update(ctx, d, metav1.UpdateOptions{})
+			return err
+		}, "updated shop/web"},
+		{"update staging/worker", func() error {
+			d := deployment("staging", "worker")
+			d.Labels = map[string]string{"tier": "backend"}
+			_, err := apps.Deployments("staging").Update(ctx, d, metav1.UpdateOptions{})
+			return err
+		}, "updated staging/worker"},
+		{"delete payments/checkout", func() error {
+			return apps.Deployments("payments").Delete(ctx, "checkout", metav1.DeleteOptions{})
+		}, "deleted payments/checkout"},
+		{"delete staging/worker", func() error {
+			return apps.Deployments("staging").Delete(ctx, "worker", metav1.DeleteOptions{})
+		}, "deleted staging/worker"},
+	}
+	for _, step := range steps {
+		// The steps build on each other, so stop at the first failure.
+		ok := t.Run(step.name, func(t *testing.T) {
+			if step.action != nil {
+				if err := step.action(); err != nil {
+					t.Fatalf("fake API call failed: %v", err)
+				}
+			}
+			waitForEvent(t, ctx, rec, step.want)
+		})
+		if !ok {
+			return
+		}
+	}
+}
+
+func TestStartAndSync(t *testing.T) {
+	tests := []struct {
+		name        string
+		seeds       []runtime.Object
+		unreachable bool // every list and watch call fails
+	}{
+		{"two deployments", []runtime.Object{deployment("shop", "web"), deployment("shop", "api")}, false},
+		{"one deployment", []runtime.Object{deployment("monitoring", "prometheus")}, false},
+		{"API server unreachable", nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cs := fake.NewClientset(tt.seeds...)
+			ctx, cancel := context.WithCancel(context.Background())
+			if tt.unreachable {
+				refused := errors.New("connection refused")
+				cs.PrependReactor("list", "deployments", func(k8stesting.Action) (bool, runtime.Object, error) {
+					return true, nil, refused
+				})
+				cs.PrependWatchReactor("deployments", func(k8stesting.Action) (bool, watch.Interface, error) {
+					return true, nil, refused
+				})
+				cancel() // the caller gave up before the caches could sync
+			}
+			factory := informers.NewSharedInformerFactory(cs, 0)
+			deployments := factory.Apps().V1().Deployments()
+			informer := deployments.Informer() // request it before starting
+			t.Cleanup(func() {
+				cancel()
+				factory.Shutdown()
+			})
+
+			err := StartAndSync(ctx, factory)
+
+			if tt.unreachable {
+				if !errors.Is(err, context.Canceled) {
+					t.Errorf("StartAndSync() error = %v, want an error wrapping context.Canceled", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("StartAndSync() error = %v, want nil", err)
+			}
+			if !informer.HasSynced() {
+				t.Fatal("after StartAndSync() returned, HasSynced() = false, want true")
+			}
+			cached, err := deployments.Lister().List(labels.Everything())
+			if err != nil {
+				t.Fatalf("List() error = %v", err)
+			}
+			if len(cached) != len(tt.seeds) {
+				t.Errorf("cache holds %d Deployments, want %d", len(cached), len(tt.seeds))
+			}
+		})
+	}
+}

@@ -1,0 +1,193 @@
+package cancellation
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+func TestSleep(t *testing.T) {
+	const never = -1 // cancelAfter value for "nobody calls cancel"
+	tests := []struct {
+		name        string
+		d           time.Duration
+		cancelAfter time.Duration
+		timeout     time.Duration // 0 means no timeout
+		want        error
+		wantElapsed time.Duration
+	}{
+		{"not cancelled", 5 * time.Second, never, 0, nil, 5 * time.Second},
+		{"cancelled early", 5 * time.Second, 2 * time.Second, 0, context.Canceled, 2 * time.Second},
+		{"already cancelled", 5 * time.Second, 0, 0, context.Canceled, 0},
+		{"timeout first", 5 * time.Second, never, 1 * time.Second, context.DeadlineExceeded, 1 * time.Second},
+		{"sleep shorter than timeout", 2 * time.Second, never, 10 * time.Second, nil, 2 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// synctest.Test gives the test a fake clock: sleeps and timeouts
+			// finish instantly, but time.Now moves forward by the right amount.
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				if tt.timeout > 0 {
+					ctx, cancel = context.WithTimeout(ctx, tt.timeout)
+					defer cancel()
+				}
+				switch tt.cancelAfter {
+				case never:
+				case 0:
+					cancel()
+				default:
+					go func() {
+						time.Sleep(tt.cancelAfter)
+						cancel()
+					}()
+				}
+
+				start := time.Now()
+				err := Sleep(ctx, tt.d)
+				elapsed := time.Since(start)
+
+				if !errors.Is(err, tt.want) {
+					t.Errorf("Sleep(ctx, %v) = %v, want %v", tt.d, err, tt.want)
+				}
+				if elapsed != tt.wantElapsed {
+					t.Errorf("Sleep(ctx, %v) returned after %v, want %v", tt.d, elapsed, tt.wantElapsed)
+				}
+
+				time.Sleep(time.Minute) // let a late cancel finish before the test ends
+			})
+		})
+	}
+}
+
+func TestRunWorker(t *testing.T) {
+	const never = -1
+	tests := []struct {
+		name        string
+		jobs        []string
+		closeJobs   bool
+		cancelAfter time.Duration
+		timeout     time.Duration // 0 means no timeout
+		want        error
+		wantElapsed time.Duration
+	}{
+		{"jobs closed", []string{"deploy api", "deploy web"}, true, never, 0, nil, 0},
+		{"cancelled", []string{"deploy api", "deploy web"}, false, 1 * time.Second, 0, context.Canceled, 1 * time.Second},
+		{"timed out", []string{"restart db"}, false, never, 3 * time.Second, context.DeadlineExceeded, 3 * time.Second},
+		{"no jobs, closed", nil, true, never, 0, nil, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				if tt.timeout > 0 {
+					ctx, cancel = context.WithTimeout(ctx, tt.timeout)
+					defer cancel()
+				}
+				if tt.cancelAfter != never {
+					go func() {
+						time.Sleep(tt.cancelAfter)
+						cancel()
+					}()
+				}
+
+				jobs := make(chan string, len(tt.jobs))
+				for _, job := range tt.jobs {
+					jobs <- job
+				}
+				if tt.closeJobs {
+					close(jobs)
+				}
+
+				var handled []string
+				handle := func(job string) { handled = append(handled, job) }
+
+				start := time.Now()
+				returned := make(chan error)
+				go func() { returned <- RunWorker(ctx, jobs, handle) }()
+
+				var err error
+				select {
+				case err = <-returned:
+				case <-time.After(time.Hour):
+					if !tt.closeJobs {
+						close(jobs) // unstick the worker so the test can end
+					}
+					<-returned
+					t.Fatalf("RunWorker was still running an hour later: does your select have a case for <-ctx.Done()?")
+				}
+				elapsed := time.Since(start)
+
+				if !errors.Is(err, tt.want) {
+					t.Errorf("RunWorker = %v, want %v", err, tt.want)
+				}
+				if !slices.Equal(handled, tt.jobs) {
+					t.Errorf("RunWorker handled %q, want %q", handled, tt.jobs)
+				}
+				if elapsed != tt.wantElapsed {
+					t.Errorf("RunWorker returned after %v, want %v", elapsed, tt.wantElapsed)
+				}
+
+				time.Sleep(time.Minute) // let a late cancel finish before the test ends
+			})
+		})
+	}
+}
+
+func TestCheckWithTimeout(t *testing.T) {
+	errDisk := errors.New("disk full")
+	tests := []struct {
+		name        string
+		timeout     time.Duration
+		result      error // what check returns; nil with waits=true means "wait for ctx"
+		waits       bool  // does check wait for the context to end?
+		want        error
+		wantElapsed time.Duration
+	}{
+		{"times out", 3 * time.Second, nil, true, context.DeadlineExceeded, 3 * time.Second},
+		{"times out sooner", 500 * time.Millisecond, nil, true, context.DeadlineExceeded, 500 * time.Millisecond},
+		{"check succeeds", 3 * time.Second, nil, false, nil, 0},
+		{"check fails", 3 * time.Second, errDisk, false, errDisk, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				start := time.Now()
+				var deadline time.Time
+				var hasDeadline bool
+				check := func(ctx context.Context) error {
+					deadline, hasDeadline = ctx.Deadline()
+					if !tt.waits {
+						return tt.result
+					}
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-time.After(time.Hour):
+						return errors.New("check waited an hour: the context never timed out")
+					}
+				}
+
+				err := CheckWithTimeout(tt.timeout, check)
+				elapsed := time.Since(start)
+
+				if !errors.Is(err, tt.want) {
+					t.Errorf("CheckWithTimeout(%v) = %v, want %v", tt.timeout, err, tt.want)
+				}
+				if elapsed != tt.wantElapsed {
+					t.Errorf("CheckWithTimeout(%v) returned after %v, want %v", tt.timeout, elapsed, tt.wantElapsed)
+				}
+				if !hasDeadline {
+					t.Errorf("check got a context with no deadline; create it with context.WithTimeout")
+				} else if got := deadline.Sub(start); got != tt.timeout {
+					t.Errorf("check got a context whose deadline is %v away, want %v", got, tt.timeout)
+				}
+			})
+		})
+	}
+}

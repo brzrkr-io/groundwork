@@ -1,0 +1,105 @@
+package imagepull
+
+import (
+	"errors"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+)
+
+var errManifest = errors.New("manifest unknown")
+
+// pullFails fails for redis images and succeeds for everything else.
+func pullFails(image string) error {
+	if strings.HasPrefix(image, "redis:") {
+		return errManifest
+	}
+	return nil
+}
+
+// within runs f and fails the test if f has not returned after 1 second.
+func within(t *testing.T, call string, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatalf("%s did not return within 1s: is results ever closed?", call)
+	}
+}
+
+func TestPullAllFinishes(t *testing.T) {
+	tests := []struct {
+		name    string
+		images  []string
+		workers int
+	}{
+		{"two images, two workers", []string{"nginx:1.27", "redis:7"}, 2},
+		{"five images, two workers", []string{"nginx:1.27", "redis:7", "postgres:16", "busybox:1.36", "redis:6"}, 2},
+		{"more workers than images", []string{"postgres:16", "redis:7"}, 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []Result
+			within(t, "PullAll", func() { got = PullAll(tt.images, tt.workers, pullFails) })
+
+			var want []Result
+			for _, image := range tt.images {
+				want = append(want, Result{Image: image, Err: pullFails(image)})
+			}
+			// Order is task 2, so compare sorted by image name here.
+			byImage := func(a, b Result) int { return strings.Compare(a.Image, b.Image) }
+			slices.SortFunc(got, byImage)
+			slices.SortFunc(want, byImage)
+			if !slices.Equal(got, want) {
+				t.Errorf("PullAll(%q, %d) = %v (sorted), want %v", tt.images, tt.workers, got, want)
+			}
+		})
+	}
+}
+
+func TestPullAllOrder(t *testing.T) {
+	tests := []struct {
+		name    string
+		images  []string
+		workers int
+	}{
+		{"slow first image", []string{"postgres:16", "nginx:1.27", "redis:7"}, 2},
+		{"slow first image, three workers", []string{"postgres:16", "nginx:1.27", "busybox:1.36", "redis:7"}, 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The first image's pull only finishes after the last image's
+			// pull has started, so it never finishes first.
+			lastStarted := make(chan struct{})
+			pull := func(image string) error {
+				switch image {
+				case tt.images[0]:
+					select {
+					case <-lastStarted:
+					case <-time.After(2 * time.Second):
+					}
+				case tt.images[len(tt.images)-1]:
+					close(lastStarted)
+				}
+				return pullFails(image)
+			}
+
+			var got []Result
+			within(t, "PullAll", func() { got = PullAll(tt.images, tt.workers, pull) })
+
+			var want []Result
+			for _, image := range tt.images {
+				want = append(want, Result{Image: image, Err: pullFails(image)})
+			}
+			if !slices.Equal(got, want) {
+				t.Errorf("PullAll(%q, %d) = %v, want %v (same order as the images)", tt.images, tt.workers, got, want)
+			}
+		})
+	}
+}

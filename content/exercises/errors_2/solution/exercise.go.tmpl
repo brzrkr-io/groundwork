@@ -1,0 +1,31 @@
+// Package errvalues2 is the Gopherlings exercise "Errors are values: fix the replica scaler".
+package errvalues2
+
+import (
+	"fmt"
+	"strconv"
+)
+
+// ParseReplicas converts text like "4" into a replica count of 0 or more.
+func ParseReplicas(s string) (int, error) {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("replicas %q is not a number", s)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("replicas %d must not be negative", n)
+	}
+	return n, nil
+}
+
+// Scale describes scaling a service from current replicas to the count in input.
+func Scale(current int, input string) (string, error) {
+	n, err := ParseReplicas(input)
+	if err != nil {
+		return "", fmt.Errorf("scale: %v", err)
+	}
+	if n == current {
+		return fmt.Sprintf("already at %d replicas", n), nil
+	}
+	return fmt.Sprintf("scaled from %d to %d replicas", current, n), nil
+}

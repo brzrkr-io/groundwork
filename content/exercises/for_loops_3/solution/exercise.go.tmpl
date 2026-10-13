@@ -1,0 +1,38 @@
+// Package loops is the Gopherlings exercise "For loops: plan a rollout".
+package loops
+
+import (
+	"strconv"
+	"strings"
+)
+
+// RolloutPlan splits hosts 1..hosts into batches like "1-3,4-6,7-7".
+func RolloutPlan(hosts, batchSize int) string {
+	var b strings.Builder
+	for first := 1; first <= hosts; first += batchSize {
+		last := min(first+batchSize-1, hosts)
+		if first > 1 {
+			b.WriteString(",")
+		}
+		b.WriteString(strconv.Itoa(first))
+		b.WriteString("-")
+		b.WriteString(strconv.Itoa(last))
+	}
+	return b.String()
+}
+
+// RetrySchedule lists doubling retry delays capped at maxSeconds, like
+// "1s 2s 4s 8s 8s".
+func RetrySchedule(attempts, baseSeconds, maxSeconds int) string {
+	var b strings.Builder
+	delay := baseSeconds
+	for i := range attempts {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString(strconv.Itoa(min(delay, maxSeconds)))
+		b.WriteString("s")
+		delay *= 2
+	}
+	return b.String()
+}

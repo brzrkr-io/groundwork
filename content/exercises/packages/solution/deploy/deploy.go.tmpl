@@ -1,0 +1,14 @@
+// Package deploy plans which addresses a deploy will touch.
+package deploy
+
+import "gopherlings.local/packages/inventory"
+
+// Targets returns the "host:port" address of every host, in the same order.
+// Host names are cleaned up with inventory.NormalizeHost first.
+func Targets(hosts []string, port int) []string {
+	targets := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		targets = append(targets, inventory.Address(inventory.NormalizeHost(host), port))
+	}
+	return targets
+}

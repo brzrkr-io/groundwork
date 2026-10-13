@@ -1,0 +1,27 @@
+// Package placement decides which cloud a region name belongs to.
+package placement
+
+// TODO(1): Both packages are called region. Import them as awsregion and gcpregion.
+import (
+	"gopherlings.local/packages_2/aws/region"
+	"gopherlings.local/packages_2/gcp/region"
+)
+
+// Provider returns "aws", "gcp" or "unknown" for a region name.
+func Provider(name string) string {
+	switch {
+	case region.Valid(name):
+		return "aws"
+	case region.Valid(name):
+		return "gcp"
+	default:
+		return "unknown"
+	}
+}
+
+// Describe returns a one-line description of a region for the on-call
+// dashboard, such as "eu-west-2 is AWS, partition aws".
+func Describe(name string) string {
+	// TODO(3): Build the sentence from Provider and awsregion.Partition.
+	return ""
+}

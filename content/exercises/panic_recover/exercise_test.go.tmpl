@@ -1,0 +1,197 @@
+package recovery
+
+import (
+	"errors"
+	"slices"
+	"testing"
+)
+
+// mustPortPanic calls MustPort and returns the port plus the value it
+// panicked with. panicValue is nil when MustPort did not panic.
+func mustPortPanic(s string) (port int, panicValue any) {
+	defer func() {
+		panicValue = recover()
+	}()
+	return MustPort(s), nil
+}
+
+func TestMustPort(t *testing.T) {
+	valid := []struct {
+		in   string
+		want int
+	}{
+		{"8080", 8080},
+		{"443", 443},
+		{"1", 1},
+		{"65535", 65535},
+	}
+	for _, tc := range valid {
+		t.Run(tc.in, func(t *testing.T) {
+			got, p := mustPortPanic(tc.in)
+			if p != nil {
+				t.Fatalf("MustPort(%q) panicked with %v, want %d", tc.in, p, tc.want)
+			}
+			if got != tc.want {
+				t.Errorf("MustPort(%q) = %d, want %d", tc.in, got, tc.want)
+			}
+		})
+	}
+
+	invalid := []struct {
+		in   string
+		want string
+	}{
+		{"abc", `invalid port "abc"`},
+		{"", `invalid port ""`},
+		{"0", `invalid port "0"`},
+		{"70000", `invalid port "70000"`},
+		{"-22", `invalid port "-22"`},
+	}
+	for _, tc := range invalid {
+		t.Run(tc.in, func(t *testing.T) {
+			_, p := mustPortPanic(tc.in)
+			if p == nil {
+				t.Fatalf("MustPort(%q) did not panic, want panic %q", tc.in, tc.want)
+			}
+			msg, ok := p.(string)
+			if !ok {
+				t.Fatalf("MustPort(%q) panicked with %v (%T), want the string %q", tc.in, p, p, tc.want)
+			}
+			if msg != tc.want {
+				t.Errorf("MustPort(%q) panicked with %q, want %q", tc.in, msg, tc.want)
+			}
+		})
+	}
+}
+
+// safeRun calls SafeRun. If a panic escapes from SafeRun, it reports a test
+// failure instead of crashing the whole test run.
+func safeRun(t *testing.T, job func() error) error {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("SafeRun let a panic escape: %v", r)
+		}
+	}()
+	return SafeRun(job)
+}
+
+func TestSafeRun(t *testing.T) {
+	t.Run("job succeeds", func(t *testing.T) {
+		if err := safeRun(t, func() error { return nil }); err != nil {
+			t.Errorf("SafeRun(job returning nil) = %v, want nil", err)
+		}
+	})
+
+	t.Run("job returns an error", func(t *testing.T) {
+		jobErr := errors.New("disk full")
+		err := safeRun(t, func() error { return jobErr })
+		if err != jobErr {
+			t.Errorf("SafeRun(job returning %q) = %v, want the same error back", jobErr, err)
+		}
+	})
+
+	panics := []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{"a string", "boom", "job panicked: boom"},
+		{"an error", errors.New("connection reset"), "job panicked: connection reset"},
+		{"a number", 42, "job panicked: 42"},
+	}
+	for _, tc := range panics {
+		t.Run("job panics with "+tc.name, func(t *testing.T) {
+			err := safeRun(t, func() error { panic(tc.value) })
+			if err == nil {
+				t.Fatalf("SafeRun(job panicking with %v) = nil, want %q", tc.value, tc.want)
+			}
+			if err.Error() != tc.want {
+				t.Errorf("SafeRun(job panicking with %v) = %q, want %q", tc.value, err.Error(), tc.want)
+			}
+			if !errors.Is(err, ErrPanic) {
+				t.Errorf("errors.Is(SafeRun(job panicking with %v), ErrPanic) = false, want true", tc.value)
+			}
+		})
+	}
+}
+
+// runAll calls RunAll. If a panic escapes from RunAll, it reports a test
+// failure instead of crashing the whole test run.
+func runAll(t *testing.T, jobs []Job) []string {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("RunAll let a panic escape: %v", r)
+		}
+	}()
+	return RunAll(jobs)
+}
+
+func ok() error { return nil }
+
+func TestRunAll(t *testing.T) {
+	tests := []struct {
+		name string
+		jobs []Job
+		want []string
+	}{
+		{
+			name: "no jobs",
+			jobs: nil,
+			want: nil,
+		},
+		{
+			name: "all ok",
+			jobs: []Job{
+				{Name: "backup", Run: ok},
+				{Name: "rotate", Run: ok},
+			},
+			want: []string{"backup: ok", "rotate: ok"},
+		},
+		{
+			name: "one error",
+			jobs: []Job{
+				{Name: "prune", Run: func() error { return errors.New("no space left on device") }},
+				{Name: "backup", Run: ok},
+			},
+			want: []string{"prune: no space left on device", "backup: ok"},
+		},
+		{
+			name: "panic in the middle",
+			jobs: []Job{
+				{Name: "backup", Run: ok},
+				{Name: "rotate", Run: func() error { panic("log dir missing") }},
+				{Name: "prune", Run: func() error { return errors.New("no space left on device") }},
+			},
+			want: []string{
+				"backup: ok",
+				"rotate: job panicked: log dir missing",
+				"prune: no space left on device",
+			},
+		},
+		{
+			name: "panic first",
+			jobs: []Job{
+				{Name: "vacuum", Run: func() error {
+					tables := []string{}
+					_ = tables[2] // index out of range: Go panics
+					return nil
+				}},
+				{Name: "backup", Run: ok},
+			},
+			want: []string{
+				"vacuum: job panicked: runtime error: index out of range [2] with length 0",
+				"backup: ok",
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runAll(t, tc.jobs)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("RunAll(...) = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

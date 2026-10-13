@@ -1,0 +1,16 @@
+// Package report formats the deploy status report for the on-call channel.
+package report
+
+// TODO(1): report is outside deploy/, so it may not import deploy/internal.
+// Import the public deploy package instead.
+import "gopherlings.local/internal_packages_2/deploy/internal/naming"
+
+// Line returns one report line: the release name, a colon, and "healthy" or
+// "DOWN".
+func Line(service, version string, healthy bool) string {
+	status := "DOWN"
+	if healthy {
+		status = "healthy"
+	}
+	return naming.Release(service, version) + ": " + status
+}

@@ -1,0 +1,20 @@
+package server
+
+import "net/http"
+
+// handleHealthz serves GET /healthz, the liveness probe. It answers 200
+// {"status":"ok"} whenever the process can answer at all.
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleReadyz serves GET /readyz, the readiness probe. It answers 200
+// {"status":"ready"} while Run is serving, and 503 {"status":"not ready"}
+// before Run starts and once shutdown begins.
+func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	if !s.Ready() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not ready"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}

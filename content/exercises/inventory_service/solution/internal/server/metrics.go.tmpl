@@ -1,0 +1,70 @@
+package server
+
+import (
+	"cmp"
+	"fmt"
+	"io"
+	"maps"
+	"net/http"
+	"slices"
+	"sync"
+)
+
+// requestKey is one combination of labels for the request counter.
+type requestKey struct {
+	Method string
+	Code   int
+}
+
+// Metrics counts handled requests by method and status code. It is safe for
+// concurrent use.
+type Metrics struct {
+	mu       sync.Mutex
+	requests map[requestKey]int
+}
+
+// NewMetrics returns Metrics with every count at zero.
+func NewMetrics() *Metrics {
+	return &Metrics{requests: map[requestKey]int{}}
+}
+
+// Inc adds one to the count for method and code.
+func (m *Metrics) Inc(method string, code int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.requests[requestKey{Method: method, Code: code}]++
+}
+
+// Write renders the request counter in the Prometheus text format, one line
+// per method and code, sorted by method and then by code:
+//
+//	# HELP inventory_http_requests_total HTTP requests handled, by method and status code.
+//	# TYPE inventory_http_requests_total counter
+//	inventory_http_requests_total{method="GET",code="200"} 2
+//	inventory_http_requests_total{method="GET",code="404"} 1
+//	inventory_http_requests_total{method="POST",code="201"} 1
+//
+// The HELP and TYPE lines are written even when nothing has been counted.
+func (m *Metrics) Write(w io.Writer) {
+	fmt.Fprintln(w, "# HELP inventory_http_requests_total HTTP requests handled, by method and status code.")
+	fmt.Fprintln(w, "# TYPE inventory_http_requests_total counter")
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	keys := slices.SortedFunc(maps.Keys(m.requests), func(a, b requestKey) int {
+		return cmp.Or(cmp.Compare(a.Method, b.Method), cmp.Compare(a.Code, b.Code))
+	})
+	for _, k := range keys {
+		fmt.Fprintf(w, "inventory_http_requests_total{method=\"%s\",code=\"%d\"} %d\n", k.Method, k.Code, m.requests[k])
+	}
+}
+
+// handleMetrics serves GET /metrics for Prometheus to scrape: the request
+// counter, then a gauge with the number of hosts in the store.
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	s.metrics.Write(w)
+	fmt.Fprintln(w, "# HELP inventory_hosts Hosts in the inventory.")
+	fmt.Fprintln(w, "# TYPE inventory_hosts gauge")
+	fmt.Fprintf(w, "inventory_hosts %d\n", s.store.Len())
+}

@@ -1,0 +1,61 @@
+package httptesting
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// postDeploy sends body to POST /deploys and returns the recorded response.
+func postDeploy(body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("POST", "/deploys", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	NewHandler().ServeHTTP(rec, req)
+	return rec
+}
+
+func TestDeployAccepted(t *testing.T) {
+	rec := postDeploy(`{"service": "api", "version": "v1.2.0"}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /deploys: status = %d, want %d", rec.Code, http.StatusAccepted)
+	}
+
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Errorf("POST /deploys: Content-Type = %q, want %q", got, "application/json")
+	}
+	var got DeployResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("POST /deploys: body %q is not valid JSON: %v", rec.Body.String(), err)
+	}
+	want := DeployResponse{Service: "api", Version: "v1.2.0", Status: "queued"}
+	if got != want {
+		t.Errorf("POST /deploys: response = %+v, want %+v", got, want)
+	}
+}
+
+func TestDeployRejectsEmptyService(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"empty service", `{"service": "", "version": "v1.2.0"}`},
+		{"missing service", `{"version": "v1.2.0"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := postDeploy(tt.body)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("POST /deploys %s: status = %d, want %d", tt.body, rec.Code, http.StatusBadRequest)
+			}
+			var got ErrorResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("POST /deploys %s: body %q is not valid JSON: %v", tt.body, rec.Body.String(), err)
+			}
+			if want := "service is required"; got.Error != want {
+				t.Errorf("POST /deploys %s: error = %q, want %q", tt.body, got.Error, want)
+			}
+		})
+	}
+}

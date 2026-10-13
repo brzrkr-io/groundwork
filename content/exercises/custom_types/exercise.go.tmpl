@@ -1,0 +1,46 @@
+// Package customtypes is the Gopherlings exercise "Custom types and enums".
+package customtypes
+
+// Environment names a deployment environment, such as "staging".
+type Environment string
+
+// The environments your company deploys to.
+const (
+	Dev        Environment = "dev"
+	Staging    Environment = "staging"
+	Production Environment = "production"
+)
+
+// Severity ranks how serious an alert is. Higher values are more serious.
+type Severity int
+
+// The alert severities, from least to most serious.
+const (
+	Debug    Severity = iota // 0
+	Info                     // 1
+	Warning                  // 2
+	Error                    // 3
+	Critical                 // 4
+)
+
+// IsValid reports whether e is one of Dev, Staging or Production.
+func (e Environment) IsValid() bool {
+	// TODO(1): Return true for Dev, Staging and Production, false otherwise.
+	return false
+}
+
+// ShouldPage reports whether an alert with severity s in environment env
+// should page the on-call engineer.
+func (s Severity) ShouldPage(env Environment) bool {
+	// TODO(2): Critical always pages. Error pages only in Production.
+	// Everything else never pages.
+	return false
+}
+
+// ParseSeverity converts a severity name such as "warning" into a Severity.
+// It reports false if the name is unknown.
+func ParseSeverity(s string) (Severity, bool) {
+	// TODO(3): Match the five names in any letter case. Unknown names
+	// return Debug and false. Add the "strings" import if you use it.
+	return Debug, false
+}

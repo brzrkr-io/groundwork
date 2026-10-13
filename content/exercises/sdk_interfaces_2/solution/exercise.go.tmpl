@@ -1,0 +1,77 @@
+// Package shutdown is the Gopherlings exercise "SDK clients: spy on StopInstances".
+package shutdown
+
+import (
+	"context"
+	"fmt"
+	"slices"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+// InstanceStopper is the one EC2 method the nightly shutdown job needs.
+type InstanceStopper interface {
+	StopInstances(ctx context.Context, params *ec2.StopInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error)
+}
+
+// The real EC2 client must satisfy InstanceStopper.
+var _ InstanceStopper = (*ec2.Client)(nil)
+
+// RecordingStopper is a fake EC2 client for tests. Instead of stopping
+// anything, it records every call it gets.
+type RecordingStopper struct {
+	Calls   int      // how many times StopInstances was called
+	Stopped []string // every instance ID it was asked to stop, in order
+	Err     error    // if set, StopInstances records the call, then returns Err
+}
+
+// The fake must satisfy InstanceStopper too.
+var _ InstanceStopper = (*RecordingStopper)(nil)
+
+// StopInstances records the call and the instance IDs in params.
+func (r *RecordingStopper) StopInstances(ctx context.Context, params *ec2.StopInstancesInput, optFns ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error) {
+	r.Calls++
+	r.Stopped = append(r.Stopped, params.InstanceIds...)
+	if r.Err != nil {
+		return nil, r.Err
+	}
+	return &ec2.StopInstancesOutput{}, nil
+}
+
+// TagValue returns the value of the tag with the given key, or "" if there
+// is no such tag.
+func TagValue(tags []ec2types.Tag, key string) string {
+	for _, t := range tags {
+		if aws.ToString(t.Key) == key {
+			return aws.ToString(t.Value)
+		}
+	}
+	return ""
+}
+
+// StopDevInstances stops every running instance tagged Env=dev with a single
+// StopInstances call, and returns the stopped IDs, sorted.
+func StopDevInstances(ctx context.Context, api InstanceStopper, instances []ec2types.Instance) ([]string, error) {
+	var ids []string
+	for _, inst := range instances {
+		if inst.State == nil || inst.State.Name != ec2types.InstanceStateNameRunning {
+			continue
+		}
+		if TagValue(inst.Tags, "Env") == "dev" {
+			ids = append(ids, aws.ToString(inst.InstanceId))
+		}
+	}
+	slices.Sort(ids)
+
+	// AWS rejects a StopInstances call with no IDs, so skip it.
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	_, err := api.StopInstances(ctx, &ec2.StopInstancesInput{InstanceIds: ids})
+	if err != nil {
+		return nil, fmt.Errorf("stop instances: %w", err)
+	}
+	return ids, nil
+}

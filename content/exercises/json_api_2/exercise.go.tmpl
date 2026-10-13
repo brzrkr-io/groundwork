@@ -1,0 +1,70 @@
+// Package jsonapi is the Gopherlings exercise "JSON APIs: fix the alerts API".
+package jsonapi
+
+import (
+	"encoding/json"
+	"net/http"
+)
+
+// API serves the alerts over HTTP.
+type API struct {
+	store *Store
+}
+
+// NewAPI returns an API backed by store.
+func NewAPI(store *Store) *API {
+	return &API{store: store}
+}
+
+// Routes returns a handler with every endpoint registered.
+func (a *API) Routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /alerts", a.handleList)
+	mux.HandleFunc("POST /alerts", a.handleCreate)
+	return mux
+}
+
+// writeJSON sends v as a JSON body with the given status code.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	// TODO(1): Fix the bug: clients never see this Content-Type.
+	w.WriteHeader(status)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeError sends {"error": msg} with the given status code.
+func writeError(w http.ResponseWriter, status int, msg string) {
+	// TODO(1): Fix the bug: the error body must be JSON, not plain text.
+	http.Error(w, msg, status)
+}
+
+// handleCreate serves POST /alerts.
+func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	dec := json.NewDecoder(r.Body)
+
+	// TODO(2): Fix the two bugs: a misspelled field is silently accepted,
+	// and a new alert is answered with the wrong status code.
+	var alert Alert
+	if err := dec.Decode(&alert); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := alert.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := a.store.Create(alert); err != nil {
+		writeError(w, http.StatusConflict, "alert already exists: "+alert.Name)
+		return
+	}
+	writeJSON(w, http.StatusOK, alert)
+}
+
+// handleList serves GET /alerts.
+func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
+	alerts := a.store.All()
+	// TODO(3): Sort the alerts by name, and send an empty list instead of
+	// null when there are none. Add the "cmp" and "slices" imports.
+	writeJSON(w, http.StatusOK, alerts)
+}

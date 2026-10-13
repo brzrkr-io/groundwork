@@ -1,0 +1,27 @@
+// Package variables is the Gopherlings exercise "Variables: fix the broken builders".
+package variables
+
+// FQDN returns the fully qualified domain name of a host, such as
+// "web-01.prod.example.com".
+func FQDN(host, domain string) string {
+	name := host
+	// TODO(1): This line does not compile. Fix it.
+	name := name + "." + domain
+	return name
+}
+
+// LogPath returns the log file for a service on a given date, such as
+// "/var/log/nginx/2026-10-11.log".
+func LogPath(service, date string) string {
+	// TODO(2): This returns the wrong path. Fix it.
+	return "/var/log/" + service + date + ".log"
+}
+
+// AlertTitle returns a one-line alert title, such as
+// "[critical] api: disk almost full".
+func AlertTitle(severity, service, summary string) string {
+	var title string
+	title += "[" + severity + "]"
+	// TODO(3): Add a space, the service, ": ", then the summary.
+	return title
+}

@@ -1,0 +1,114 @@
+// Package idempotency is the Gopherlings exercise "Idempotency keys: replay retried requests".
+package idempotency
+
+import (
+	"bytes"
+	"maps"
+	"net/http"
+	"sync"
+)
+
+// Response is a captured HTTP response: everything needed to send it again.
+type Response struct {
+	Status int
+	Header http.Header
+	Body   []byte
+}
+
+// Store remembers responses by idempotency key. It is safe for concurrent use.
+type Store struct {
+	mu         sync.Mutex
+	responses  map[string]Response // finished requests
+	inProgress map[string]bool     // keys whose first request is still running
+}
+
+// NewStore returns an empty Store.
+func NewStore() *Store {
+	return &Store{
+		responses:  map[string]Response{},
+		inProgress: map[string]bool{},
+	}
+}
+
+// Get returns the response stored under key, and whether there was one.
+func (s *Store) Get(key string) (Response, bool) {
+	// TODO(1): Lock s.mu, look key up in s.responses and return what you find.
+	return Response{}, false
+}
+
+// Put stores resp under key.
+func (s *Store) Put(key string, resp Response) {
+	// TODO(1): Lock s.mu and save resp in s.responses under key.
+	// TODO(3): Also remove key from s.inProgress.
+}
+
+// Begin claims key for a new request. If key has no stored response and no
+// request in progress, Begin marks it as in progress and returns true.
+// Otherwise it returns false.
+func (s *Store) Begin(key string) bool {
+	// TODO(3): Lock s.mu, check both maps, and mark key as in progress.
+	return true
+}
+
+// Middleware makes POST-style handlers safe to retry. Requests that carry an
+// Idempotency-Key header run next once; repeats get the saved response.
+func Middleware(store *Store, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("Idempotency-Key")
+		if key == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// TODO(2): If store has a response for key, set the header
+		// Idempotent-Replayed: true, write the stored response and return.
+
+		// TODO(3): If store.Begin(key) returns false, respond 409 Conflict
+		// and return.
+
+		resp := record(next, r)
+		// TODO(2): Save resp under key, so repeats can replay it.
+		writeResponse(w, resp)
+	})
+}
+
+// record runs next with a recorder instead of the real ResponseWriter and
+// returns everything next wrote.
+func record(next http.Handler, r *http.Request) Response {
+	rec := &recorder{header: http.Header{}}
+	next.ServeHTTP(rec, r)
+	rec.WriteHeader(http.StatusOK) // a handler that wrote nothing means 200 OK
+	return Response{Status: rec.status, Header: rec.header, Body: rec.body.Bytes()}
+}
+
+// writeResponse sends a captured response to the client.
+func writeResponse(w http.ResponseWriter, resp Response) {
+	maps.Copy(w.Header(), resp.Header.Clone())
+	w.WriteHeader(resp.Status)
+	w.Write(resp.Body)
+}
+
+// recorder is an http.ResponseWriter that keeps the response in memory
+// instead of sending it over the network.
+type recorder struct {
+	header http.Header
+	status int
+	body   bytes.Buffer
+}
+
+func (rec *recorder) Header() http.Header {
+	return rec.header
+}
+
+// WriteHeader keeps the first status code, like a real ResponseWriter.
+func (rec *recorder) WriteHeader(status int) {
+	if rec.status == 0 {
+		rec.status = status
+	}
+}
+
+// Write sends 200 OK first if no status was set, like a real ResponseWriter.
+func (rec *recorder) Write(b []byte) (int, error) {
+	rec.WriteHeader(http.StatusOK)
+	return rec.body.Write(b)
+}

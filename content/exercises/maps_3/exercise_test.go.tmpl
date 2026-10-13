@@ -1,0 +1,148 @@
+package catalog
+
+import (
+	"maps"
+	"slices"
+	"testing"
+)
+
+func TestServicesPerTeam(t *testing.T) {
+	tests := []struct {
+		name   string
+		owners map[string]string
+		want   map[string]int
+	}{
+		{
+			"two teams",
+			map[string]string{"checkout": "payments", "invoices": "payments", "search": "discovery"},
+			map[string]int{"payments": 2, "discovery": 1},
+		},
+		{
+			"three teams",
+			map[string]string{
+				"ingress": "platform", "dns": "platform", "certs": "platform",
+				"search": "discovery", "ads": "growth",
+			},
+			map[string]int{"platform": 3, "discovery": 1, "growth": 1},
+		},
+		{
+			"one service",
+			map[string]string{"billing": "payments"},
+			map[string]int{"payments": 1},
+		},
+		{
+			"empty catalog",
+			nil,
+			map[string]int{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ServicesPerTeam(tt.owners)
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("ServicesPerTeam(%v) = %v, want %v", tt.owners, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnowned(t *testing.T) {
+	owners := map[string]string{
+		"checkout":    "payments",
+		"search":      "discovery",
+		"legacy-cron": "",
+	}
+	tests := []struct {
+		name     string
+		services []string
+		want     []string
+	}{
+		{"missing and empty team", []string{"checkout", "legacy-cron", "metrics"}, []string{"legacy-cron", "metrics"}},
+		{"keeps the order", []string{"zookeeper", "search", "auth"}, []string{"zookeeper", "auth"}},
+		{"only missing", []string{"metrics"}, []string{"metrics"}},
+		{"all owned", []string{"checkout", "search"}, nil},
+		{"no services", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Unowned(tt.services, owners)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Unowned(%q, %v) = %q, want %q", tt.services, owners, got, tt.want)
+			}
+		})
+	}
+	t.Run("nil catalog", func(t *testing.T) {
+		services := []string{"checkout", "search"}
+		got := Unowned(services, nil)
+		if !slices.Equal(got, services) {
+			t.Errorf("Unowned(%q, nil) = %q, want %q", services, got, services)
+		}
+	})
+}
+
+func TestDiff(t *testing.T) {
+	tests := []struct {
+		name                                string
+		before, after                       map[string]string
+		wantAdded, wantRemoved, wantChanged int
+	}{
+		{
+			"one of each",
+			map[string]string{"checkout": "payments", "search": "discovery", "legacy": "platform"},
+			map[string]string{"checkout": "payments", "search": "growth", "billing": "payments"},
+			1, 1, 1,
+		},
+		{
+			"no change",
+			map[string]string{"checkout": "payments", "search": "discovery"},
+			map[string]string{"checkout": "payments", "search": "discovery"},
+			0, 0, 0,
+		},
+		{
+			"only added",
+			map[string]string{"checkout": "payments"},
+			map[string]string{"checkout": "payments", "billing": "payments", "ads": "growth"},
+			2, 0, 0,
+		},
+		{
+			"only removed",
+			map[string]string{"checkout": "payments", "billing": "payments", "ads": "growth"},
+			map[string]string{"ads": "growth"},
+			0, 2, 0,
+		},
+		{
+			"only changed",
+			map[string]string{"dns": "platform", "certs": "platform", "ingress": "platform"},
+			map[string]string{"dns": "network", "certs": "security", "ingress": "platform"},
+			0, 0, 2,
+		},
+		{
+			"from nothing",
+			nil,
+			map[string]string{"dns": "platform", "certs": "security"},
+			2, 0, 0,
+		},
+		{
+			"to nothing",
+			map[string]string{"dns": "platform"},
+			nil,
+			0, 1, 0,
+		},
+		{
+			"both empty",
+			nil,
+			nil,
+			0, 0, 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			added, removed, changed := Diff(tt.before, tt.after)
+			if added != tt.wantAdded || removed != tt.wantRemoved || changed != tt.wantChanged {
+				t.Errorf("Diff(%v, %v) = %d, %d, %d, want %d, %d, %d",
+					tt.before, tt.after, added, removed, changed,
+					tt.wantAdded, tt.wantRemoved, tt.wantChanged)
+			}
+		})
+	}
+}

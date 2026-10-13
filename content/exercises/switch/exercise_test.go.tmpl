@@ -1,0 +1,75 @@
+package switches
+
+import "testing"
+
+func TestInstanceSize(t *testing.T) {
+	// Each line is one case: the input, then the answer we want.
+	tests := []struct {
+		env  string
+		want string
+	}{
+		{"production", "large"},
+		{"staging", "medium"},
+		{"dev", "small"},
+		{"test", "small"},
+		{"prod", "unknown"},
+		{"", "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.env, func(t *testing.T) {
+			if got := InstanceSize(tt.env); got != tt.want {
+				t.Errorf("InstanceSize(%q) = %q, want %q", tt.env, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMethodKind(t *testing.T) {
+	// Each line is one case: the input, then the answer we want.
+	tests := []struct {
+		method string
+		want   string
+	}{
+		{"GET", "read"},
+		{"get", "read"},
+		{"Head", "read"},
+		{"OPTIONS", "read"},
+		{"POST", "write"},
+		{"put", "write"},
+		{"PATCH", "write"},
+		{"Delete", "write"},
+		{"TRACE", "unknown"},
+		{"", "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method, func(t *testing.T) {
+			if got := MethodKind(tt.method); got != tt.want {
+				t.Errorf("MethodKind(%q) = %q, want %q", tt.method, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLatencyRating(t *testing.T) {
+	// Each line is one case: the input, then the answer we want.
+	tests := []struct {
+		ms   int
+		want string
+	}{
+		{0, "fast"},
+		{99, "fast"},
+		{100, "ok"},
+		{499, "ok"},
+		{500, "slow"},
+		{1999, "slow"},
+		{2000, "critical"},
+		{30000, "critical"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := LatencyRating(tt.ms); got != tt.want {
+				t.Errorf("LatencyRating(%d) = %q, want %q", tt.ms, got, tt.want)
+			}
+		})
+	}
+}

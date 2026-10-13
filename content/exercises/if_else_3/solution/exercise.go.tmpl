@@ -1,0 +1,28 @@
+// Package ifelse is the Gopherlings exercise "if and else: the deploy gate".
+package ifelse
+
+import "fmt"
+
+// InDeployWindow reports whether env may deploy at hour (0-23).
+// Production may deploy from 10:00 to 15:59; other environments any time.
+func InDeployWindow(env string, hour int) bool {
+	return env != "production" || (hour >= 10 && hour < 16)
+}
+
+// DeployGate decides whether a deploy may go out. It returns "go", or
+// "blocked: " followed by the first reason it is not safe.
+func DeployGate(env string, hour int, testsPassed bool, failingChecks int) string {
+	if !testsPassed {
+		return "blocked: tests failing"
+	}
+	if failingChecks == 1 {
+		return "blocked: 1 check failing"
+	}
+	if failingChecks > 1 {
+		return fmt.Sprintf("blocked: %d checks failing", failingChecks)
+	}
+	if !InDeployWindow(env, hour) {
+		return "blocked: outside deploy window"
+	}
+	return "go"
+}

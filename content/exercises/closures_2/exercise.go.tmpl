@@ -1,0 +1,31 @@
+// Package closures is the Gopherlings exercise "Functions as values: state that sticks".
+package closures
+
+// NewErrorCounter returns a function that returns 1, 2, 3, ... on
+// successive calls.
+func NewErrorCounter() func() int {
+	return func() int {
+		// TODO(1): count starts again at 0 on every call. Fix that.
+		count := 0
+		count++
+		return count
+	}
+}
+
+// NewIDGenerator returns a function that returns "prefix-1", "prefix-2", ...
+// on successive calls.
+func NewIDGenerator(prefix string) func() string {
+	// TODO(2): Add a number that grows on every call. Add the import you need.
+	return func() string {
+		return prefix
+	}
+}
+
+// NewRateLimiter returns a function that allows the first limit calls and
+// refuses every call after that.
+func NewRateLimiter(limit int) func() bool {
+	// TODO(3): Count the calls and refuse them once limit is used up.
+	return func() bool {
+		return true
+	}
+}

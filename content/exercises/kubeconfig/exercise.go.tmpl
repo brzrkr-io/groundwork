@@ -1,0 +1,32 @@
+// Package kubeconfig is the Gopherlings exercise "kubeconfig: clusters, users and contexts".
+package kubeconfig
+
+import (
+	"fmt"
+
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+)
+
+// CurrentContext parses the kubeconfig in data and returns the name of its
+// current context.
+func CurrentContext(data []byte) (string, error) {
+	// TODO(1): Parse data with clientcmd.Load and return the config's
+	// CurrentContext. Return the error if parsing fails.
+	return "", nil
+}
+
+// ContextNames returns the names of every context in cfg, sorted
+// alphabetically.
+func ContextNames(cfg *clientcmdapi.Config) []string {
+	// TODO(2): Collect the keys of cfg.Contexts and return them sorted.
+	return nil
+}
+
+// ServerFor returns the API server URL that the context contextName points
+// at. It follows the context to its cluster and returns the cluster's server.
+func ServerFor(cfg *clientcmdapi.Config, contextName string) (string, error) {
+	// TODO(3): Look up the context, then its cluster, and return the
+	// cluster's Server. Return the errors described in the README when
+	// either lookup fails.
+	return "", fmt.Errorf("context %q not found", contextName)
+}

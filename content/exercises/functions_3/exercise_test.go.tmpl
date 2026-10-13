@@ -1,0 +1,71 @@
+package functions
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestAllowedDowntimeMinutes(t *testing.T) {
+	// Each line is one case: the inputs, then the answer we want, as %.1f text.
+	cases := []struct {
+		sla  float64
+		days int
+		want string
+	}{
+		{99.9, 30, "43.2"},
+		{99.0, 7, "100.8"},
+		{99.5, 1, "7.2"},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%v_over_%d_days", c.sla, c.days), func(t *testing.T) {
+			got := fmt.Sprintf("%.1f", AllowedDowntimeMinutes(c.sla, c.days))
+			if got != c.want {
+				t.Errorf("AllowedDowntimeMinutes(%v, %d) = %s, want %s", c.sla, c.days, got, c.want)
+			}
+		})
+	}
+}
+
+func TestRemainingBudget(t *testing.T) {
+	cases := []struct {
+		sla  float64
+		days int
+		used float64
+		want string
+	}{
+		{99.9, 30, 30, "13.2"},
+		{99.9, 30, 50, "-6.8"},
+		{99.0, 7, 0.8, "100.0"},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%v_used_%v", c.sla, c.used), func(t *testing.T) {
+			got := fmt.Sprintf("%.1f", RemainingBudget(c.sla, c.days, c.used))
+			if got != c.want {
+				t.Errorf("RemainingBudget(%v, %d, %v) = %s, want %s", c.sla, c.days, c.used, got, c.want)
+			}
+		})
+	}
+}
+
+func TestBudgetReport(t *testing.T) {
+	cases := []struct {
+		service string
+		sla     float64
+		days    int
+		used    float64
+		want    string
+	}{
+		{"api", 99.9, 30, 30, "api: 13.2 of 43.2 minutes left"},
+		{"web", 99.0, 7, 0, "web: 100.8 of 100.8 minutes left"},
+		{"api", 99.9, 30, 50, "api: budget exceeded by 6.8 minutes"},
+		{"db", 99.5, 1, 10, "db: budget exceeded by 2.8 minutes"},
+	}
+	for _, c := range cases {
+		t.Run(c.want, func(t *testing.T) {
+			got := BudgetReport(c.service, c.sla, c.days, c.used)
+			if got != c.want {
+				t.Errorf("BudgetReport(%q, %v, %d, %v) = %q, want %q", c.service, c.sla, c.days, c.used, got, c.want)
+			}
+		})
+	}
+}

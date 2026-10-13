@@ -1,0 +1,76 @@
+package deploy
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestDeployOrder(t *testing.T) {
+	tests := []struct {
+		name   string
+		canary string
+		hosts  []string
+		want   []string
+	}{
+		{"two hosts", "web-0", []string{"web-1", "web-2"}, []string{"web-0", "web-1", "web-2"}},
+		{"three hosts", "api-canary", []string{"api-1", "api-2", "api-3"}, []string{"api-canary", "api-1", "api-2", "api-3"}},
+		{"no hosts", "web-0", nil, []string{"web-0"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := slices.Clone(tt.hosts)
+			got := DeployOrder(tt.canary, tt.hosts)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("DeployOrder(%q, %q) = %q, want %q", tt.canary, before, got, tt.want)
+			}
+			if !slices.Equal(tt.hosts, before) {
+				t.Errorf("DeployOrder changed hosts from %q to %q", before, tt.hosts)
+			}
+		})
+	}
+}
+
+func TestWithDomain(t *testing.T) {
+	tests := []struct {
+		name   string
+		hosts  []string
+		domain string
+		want   []string
+	}{
+		{"two hosts", []string{"web-1", "db-1"}, "prod.internal", []string{"web-1.prod.internal", "db-1.prod.internal"}},
+		{"one host", []string{"cache-7"}, "staging.example.com", []string{"cache-7.staging.example.com"}},
+		{"nil hosts", nil, "prod.internal", nil},
+		{"empty hosts", []string{}, "prod.internal", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := WithDomain(tt.hosts, tt.domain)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("WithDomain(%q, %q) = %q, want %q", tt.hosts, tt.domain, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSnapshot(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+	}{
+		{"two hosts", []string{"web-1", "web-2"}},
+		{"three hosts", []string{"db-1", "db-2", "db-3"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := slices.Clone(tt.hosts)
+			got := Snapshot(tt.hosts)
+			if !slices.Equal(got, want) {
+				t.Fatalf("Snapshot(%q) = %q, want %q", want, got, want)
+			}
+			tt.hosts[0] = "changed"
+			if !slices.Equal(got, want) {
+				t.Errorf("after hosts[0] = %q, the snapshot became %q, want it to stay %q", "changed", got, want)
+			}
+		})
+	}
+}

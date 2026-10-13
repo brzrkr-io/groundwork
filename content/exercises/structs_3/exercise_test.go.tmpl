@@ -1,0 +1,162 @@
+package structs3
+
+import (
+	"maps"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestParseHost(t *testing.T) {
+	// Each case is the line we pass in, then the Host we want back.
+	tests := []struct {
+		line string
+		want Host
+	}{
+		{"web-1 10.0.0.5 eu-west-1", Host{Name: "web-1", IP: "10.0.0.5", Region: "eu-west-1"}},
+		{"  db-1   10.0.1.10  us-east-1 ", Host{Name: "db-1", IP: "10.0.1.10", Region: "us-east-1"}},
+		{"cache-1 10.0.2.20 ap-south-1", Host{Name: "cache-1", IP: "10.0.2.20", Region: "ap-south-1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			got, err := ParseHost(tt.line)
+			if got != tt.want || err != nil {
+				t.Errorf("ParseHost(%q) = %+v, %v, want %+v, nil", tt.line, got, err, tt.want)
+			}
+		})
+	}
+
+	// These lines don't have exactly 3 fields, so they must fail.
+	bad := []string{
+		"web-2 10.0.0.6",
+		"web-3 10.0.0.7 eu-west-1 extra",
+		"",
+	}
+	for _, line := range bad {
+		t.Run(line, func(t *testing.T) {
+			got, err := ParseHost(line)
+			if got != (Host{}) || err == nil {
+				t.Errorf("ParseHost(%q) = %+v, %v, want %+v and an error", line, got, err, Host{})
+			}
+		})
+	}
+}
+
+func TestParseInventory(t *testing.T) {
+	// Each case is the inventory text, then the hosts we want back.
+	tests := []struct {
+		name string
+		text string
+		want []Host
+	}{
+		{
+			name: "comments and blank lines",
+			text: "# hosts\nweb-1 10.0.0.5 eu-west-1\n\ndb-1 10.0.1.10 us-east-1\n",
+			want: []Host{
+				{Name: "web-1", IP: "10.0.0.5", Region: "eu-west-1"},
+				{Name: "db-1", IP: "10.0.1.10", Region: "us-east-1"},
+			},
+		},
+		{
+			name: "indented lines",
+			text: "  web-1 10.0.0.5 eu-west-1\n\t# a comment\n   web-2 10.0.0.6 eu-west-1  ",
+			want: []Host{
+				{Name: "web-1", IP: "10.0.0.5", Region: "eu-west-1"},
+				{Name: "web-2", IP: "10.0.0.6", Region: "eu-west-1"},
+			},
+		},
+		{
+			name: "keeps order",
+			text: "db-1 10.0.1.10 us-east-1\ncache-1 10.0.2.20 ap-south-1\nweb-1 10.0.0.5 eu-west-1",
+			want: []Host{
+				{Name: "db-1", IP: "10.0.1.10", Region: "us-east-1"},
+				{Name: "cache-1", IP: "10.0.2.20", Region: "ap-south-1"},
+				{Name: "web-1", IP: "10.0.0.5", Region: "eu-west-1"},
+			},
+		},
+		{
+			name: "no hosts",
+			text: "# nothing here yet\n\n",
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseInventory(tt.text)
+			// slices.Equal reports whether two slices hold equal values in
+			// the same order.
+			if !slices.Equal(got, tt.want) || err != nil {
+				t.Errorf("ParseInventory(%q) = %+v, %v, want %+v, nil", tt.text, got, err, tt.want)
+			}
+		})
+	}
+
+	// Each case is inventory text with a bad line, then the start of the
+	// error message we want.
+	bad := []struct {
+		text       string
+		wantPrefix string
+	}{
+		{"web-1 10.0.0.5 eu-west-1\n# db\ndb-1 10.0.1.10\n", "line 3: "},
+		{"web-1 10.0.0.5 eu-west-1 extra", "line 1: "},
+		{"\n\n# hosts\nweb-1 10.0.0.5 eu-west-1\nweb-2\n", "line 5: "},
+	}
+	for _, tt := range bad {
+		t.Run(tt.wantPrefix, func(t *testing.T) {
+			got, err := ParseInventory(tt.text)
+			if err == nil {
+				t.Fatalf("ParseInventory(%q) = %+v, nil, want nil and an error starting with %q", tt.text, got, tt.wantPrefix)
+			}
+			if got != nil || !strings.HasPrefix(err.Error(), tt.wantPrefix) {
+				t.Errorf("ParseInventory(%q) = %+v, %q, want nil and an error starting with %q", tt.text, got, err, tt.wantPrefix)
+			}
+		})
+	}
+}
+
+func TestSummarize(t *testing.T) {
+	// Each case is the hosts we pass in, then the Summary we want back.
+	tests := []struct {
+		name  string
+		hosts []Host
+		want  Summary
+	}{
+		{
+			name: "two regions",
+			hosts: []Host{
+				{Name: "web-1", IP: "10.0.0.5", Region: "eu-west-1"},
+				{Name: "web-2", IP: "10.0.0.6", Region: "eu-west-1"},
+				{Name: "db-1", IP: "10.0.1.10", Region: "us-east-1"},
+			},
+			want: Summary{Total: 3, ByRegion: map[string]int{"eu-west-1": 2, "us-east-1": 1}},
+		},
+		{
+			name: "one region",
+			hosts: []Host{
+				{Name: "cache-1", IP: "10.0.2.20", Region: "ap-south-1"},
+				{Name: "cache-2", IP: "10.0.2.21", Region: "ap-south-1"},
+			},
+			want: Summary{Total: 2, ByRegion: map[string]int{"ap-south-1": 2}},
+		},
+		{
+			name:  "no hosts",
+			hosts: nil,
+			want:  Summary{Total: 0, ByRegion: map[string]int{}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Summarize(tt.hosts)
+			if got.Total != tt.want.Total {
+				t.Errorf("Summarize(%+v).Total = %d, want %d", tt.hosts, got.Total, tt.want.Total)
+			}
+			if got.ByRegion == nil {
+				t.Errorf("Summarize(%+v).ByRegion = nil, want %v", tt.hosts, tt.want.ByRegion)
+			} else if !maps.Equal(got.ByRegion, tt.want.ByRegion) {
+				// maps.Equal reports whether two maps hold the same keys
+				// and values, in any order.
+				t.Errorf("Summarize(%+v).ByRegion = %v, want %v", tt.hosts, got.ByRegion, tt.want.ByRegion)
+			}
+		})
+	}
+}

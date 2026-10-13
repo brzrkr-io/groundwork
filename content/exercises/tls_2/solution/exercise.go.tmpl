@@ -1,0 +1,60 @@
+// Package tlscheck is the Gopherlings exercise "TLS: stop skipping verification".
+package tlscheck
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+)
+
+// NewClient returns an HTTP client that trusts only the CA certificates in
+// caPEM. It returns an error if caPEM holds no certificates.
+func NewClient(caPEM []byte) (*http.Client, error) {
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return nil, errors.New("no CA certificates found in PEM data")
+	}
+	tlsConfig := &tls.Config{
+		RootCAs:    pool,
+		MinVersion: tls.VersionTLS12,
+	}
+	return &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+	}, nil
+}
+
+// ExpiryStatus describes how soon cert expires: "EXPIRED on <date>",
+// "WARN: expires in <n> days" when fewer than warnDays days are left, or
+// "OK: expires in <n> days".
+func ExpiryStatus(cert *x509.Certificate, now time.Time, warnDays int) string {
+	days := int(cert.NotAfter.Sub(now) / (24 * time.Hour))
+	if now.After(cert.NotAfter) {
+		return "EXPIRED on " + cert.NotAfter.Format(time.DateOnly)
+	}
+	if days < warnDays {
+		return fmt.Sprintf("WARN: expires in %d days", days)
+	}
+	return fmt.Sprintf("OK: expires in %d days", days)
+}
+
+// Diagnose turns a request error into a short label: "ok",
+// "unknown authority", "hostname mismatch", "expired" or "other".
+func Diagnose(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); ok {
+		return "unknown authority"
+	}
+	if _, ok := errors.AsType[x509.HostnameError](err); ok {
+		return "hostname mismatch"
+	}
+	if invalid, ok := errors.AsType[x509.CertificateInvalidError](err); ok && invalid.Reason == x509.Expired {
+		return "expired"
+	}
+	return "other"
+}

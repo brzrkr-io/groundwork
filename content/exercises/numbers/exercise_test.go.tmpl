@@ -1,0 +1,67 @@
+package numbers
+
+import "testing"
+
+func TestTotalMemoryMiB(t *testing.T) {
+	tests := []struct {
+		name          string
+		replicas      int
+		perReplicaMiB int
+		want          int
+	}{
+		{name: "three small replicas", replicas: 3, perReplicaMiB: 256, want: 768},
+		{name: "five bigger replicas", replicas: 5, perReplicaMiB: 512, want: 2560},
+		{name: "scaled to zero", replicas: 0, perReplicaMiB: 512, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := TotalMemoryMiB(tt.replicas, tt.perReplicaMiB)
+			if got != tt.want {
+				t.Errorf("TotalMemoryMiB(%d, %d) = %d, want %d", tt.replicas, tt.perReplicaMiB, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReplicasNeeded(t *testing.T) {
+	tests := []struct {
+		name           string
+		requestsPerSec int
+		perReplica     int
+		want           int
+	}{
+		{name: "needs rounding up", requestsPerSec: 1000, perReplica: 300, want: 4},
+		{name: "divides exactly", requestsPerSec: 900, perReplica: 300, want: 3},
+		{name: "tiny load", requestsPerSec: 1, perReplica: 300, want: 1},
+		{name: "no load", requestsPerSec: 0, perReplica: 300, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ReplicasNeeded(tt.requestsPerSec, tt.perReplica)
+			if got != tt.want {
+				t.Errorf("ReplicasNeeded(%d, %d) = %d, want %d", tt.requestsPerSec, tt.perReplica, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCPUPercent(t *testing.T) {
+	tests := []struct {
+		name  string
+		used  float64
+		limit float64
+		want  float64
+	}{
+		{name: "a quarter", used: 250, limit: 1000, want: 25},
+		{name: "fractional percent", used: 125, limit: 1000, want: 12.5},
+		{name: "over the limit", used: 1500, limit: 1000, want: 150},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CPUPercent(tt.used, tt.limit)
+			if got != tt.want {
+				t.Errorf("CPUPercent(%v, %v) = %v, want %v", tt.used, tt.limit, got, tt.want)
+			}
+		})
+	}
+}

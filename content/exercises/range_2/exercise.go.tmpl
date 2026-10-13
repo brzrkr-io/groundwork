@@ -1,0 +1,22 @@
+// Package alerts is the Gopherlings exercise "Looping with range: fix the alert math".
+package alerts
+
+// TotalDowntime returns the total minutes across all outages.
+func TotalDowntime(outages []int) int {
+	total := 0
+	// TODO(1): This adds up the wrong numbers. Fix the loop.
+	for minutes := range outages {
+		total += minutes
+	}
+	return total
+}
+
+// CapLatencies changes ms in place so no value is greater than limit.
+func CapLatencies(ms []int, limit int) {
+	// TODO(2): ms never changes. Fix the loop.
+	for _, v := range ms {
+		if v > limit {
+			v = limit
+		}
+	}
+}

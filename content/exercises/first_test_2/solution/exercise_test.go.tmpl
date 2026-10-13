@@ -1,0 +1,16 @@
+package commits
+
+import "testing"
+
+func TestShortSHA(t *testing.T) {
+	sha := "9f86d081884c7d659a2feaa0c55ad015"
+	got := ShortSHA(sha)
+	want := "9f86d08"
+	if got != want {
+		t.Errorf("ShortSHA(%q) = %q, want %q", sha, got, want)
+	}
+
+	if got := ShortSHA("a1b2c"); got != "a1b2c" {
+		t.Errorf("ShortSHA(%q) = %q, want %q", "a1b2c", got, "a1b2c")
+	}
+}

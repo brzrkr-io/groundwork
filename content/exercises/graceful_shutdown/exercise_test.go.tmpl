@@ -1,0 +1,223 @@
+package shutdown
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"sync"
+	"testing"
+	"time"
+)
+
+// stuckServer is a real HTTP server on a free loopback port. Its handler
+// blocks until release is called, like a slow request in the middle of a
+// deploy.
+type stuckServer struct {
+	srv           *http.Server
+	ln            net.Listener
+	url           string
+	started       chan struct{} // receives a value when a request reaches the handler
+	release       func()        // lets the stuck handler reply "done"
+	shutdownBegan chan struct{} // closed when srv.Shutdown starts (listener already closed)
+}
+
+func newStuckServer(t *testing.T) *stuckServer {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	s := &stuckServer{
+		ln:            ln,
+		url:           "http://" + ln.Addr().String() + "/deploy",
+		started:       make(chan struct{}, 1),
+		release:       sync.OnceFunc(func() { close(release) }),
+		shutdownBegan: make(chan struct{}),
+	}
+	s.srv = &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.started <- struct{}{}
+		<-release
+		fmt.Fprint(w, "done")
+	})}
+	s.srv.RegisterOnShutdown(sync.OnceFunc(func() { close(s.shutdownBegan) }))
+	t.Cleanup(func() {
+		s.release()
+		s.srv.Close()
+	})
+	return s
+}
+
+// reply is what an HTTP client got back.
+type reply struct {
+	status int
+	body   string
+	err    error
+}
+
+// get sends GET url in the background. The reply arrives on the channel.
+func get(url string) <-chan reply {
+	ch := make(chan reply, 1)
+	go func() {
+		// A fresh connection per request keeps the test predictable.
+		client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
+		resp, err := client.Get(url)
+		if err != nil {
+			ch <- reply{err: err}
+			return
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		ch <- reply{status: resp.StatusCode, body: string(body), err: err}
+	}()
+	return ch
+}
+
+// waitFor waits up to 2 seconds for a value from ch, and fails the test if
+// none arrives.
+func waitFor[T any](t *testing.T, ch <-chan T, what string) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out after 2s waiting for %s", what)
+		var zero T
+		return zero
+	}
+}
+
+func TestNewServer(t *testing.T) {
+	h := http.NewServeMux()
+	srv := NewServer(h)
+
+	if srv.Handler != h {
+		t.Errorf("NewServer(h).Handler is not h")
+	}
+	tests := []struct {
+		field     string
+		got, want time.Duration
+	}{
+		{"ReadHeaderTimeout", srv.ReadHeaderTimeout, 5 * time.Second},
+		{"ReadTimeout", srv.ReadTimeout, 10 * time.Second},
+		{"WriteTimeout", srv.WriteTimeout, 30 * time.Second},
+		{"IdleTimeout", srv.IdleTimeout, 60 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.field, func(t *testing.T) {
+			if tt.got != tt.want {
+				t.Errorf("NewServer(h).%s = %v, want %v", tt.field, tt.got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRun(t *testing.T) {
+	t.Run("waits for the in-flight request", func(t *testing.T) {
+		s := newStuckServer(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- Run(ctx, s.srv, s.ln, 2*time.Second) }()
+
+		inFlight := get(s.url)
+		waitFor(t, s.started, "the request to reach the handler")
+
+		cancel() // like SIGTERM during a deploy
+		waitFor(t, s.shutdownBegan, "Run to call srv.Shutdown after ctx was cancelled")
+
+		// Shutdown closes the listener first, so new connections are refused.
+		if conn, err := net.Dial("tcp", s.ln.Addr().String()); err == nil {
+			conn.Close()
+			t.Errorf("a new connection was accepted during shutdown, want it refused")
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("Run returned %v while a request was still in flight, want it to wait", err)
+		default:
+		}
+
+		s.release()
+		got := waitFor(t, inFlight, "the in-flight request to finish")
+		if got.err != nil || got.status != http.StatusOK || got.body != "done" {
+			t.Errorf("in-flight GET /deploy = %d %q (err %v), want 200 \"done\"", got.status, got.body, got.err)
+		}
+		if err := waitFor(t, done, "Run to return"); err != nil {
+			t.Errorf("Run() = %v, want nil after a clean shutdown", err)
+		}
+	})
+
+	t.Run("returns nil when idle", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv := &http.Server{Handler: http.NotFoundHandler()}
+		t.Cleanup(func() { srv.Close() })
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- Run(ctx, srv, ln, time.Second) }()
+
+		cancel()
+		if err := waitFor(t, done, "Run to return after ctx was cancelled"); err != nil {
+			t.Errorf("Run() = %v, want nil after a clean shutdown", err)
+		}
+	})
+
+	t.Run("returns the Serve error", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ln.Close() // Serve fails straight away on a closed listener
+		srv := &http.Server{Handler: http.NotFoundHandler()}
+		t.Cleanup(func() { srv.Close() })
+		done := make(chan error, 1)
+		go func() { done <- Run(context.Background(), srv, ln, time.Second) }()
+
+		err = waitFor(t, done, "Run to return the Serve error")
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("Run() with a closed listener = %v, want the Serve error", err)
+		}
+	})
+}
+
+func TestStop(t *testing.T) {
+	t.Run("forces close after grace", func(t *testing.T) {
+		s := newStuckServer(t)
+		go s.srv.Serve(s.ln)
+		inFlight := get(s.url)
+		waitFor(t, s.started, "the request to reach the handler")
+
+		// The handler never finishes, so 20ms of grace can't be enough.
+		err := Stop(s.srv, 20*time.Millisecond)
+		want := "forced shutdown: context deadline exceeded"
+		if err == nil || err.Error() != want {
+			t.Errorf("Stop(srv, 20ms) = %v, want %q", err, want)
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("errors.Is(Stop(srv, 20ms), context.DeadlineExceeded) = false, want true")
+		}
+		got := waitFor(t, inFlight, "srv.Close() to cut off the stuck request")
+		if got.err == nil {
+			t.Errorf("stuck GET /deploy = %d %q, want a connection error after srv.Close()", got.status, got.body)
+		}
+	})
+
+	t.Run("returns nil when idle", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv := &http.Server{Handler: http.NotFoundHandler()}
+		t.Cleanup(func() { srv.Close() })
+		go srv.Serve(ln)
+
+		if err := Stop(srv, time.Second); err != nil {
+			t.Errorf("Stop(srv, 1s) with no requests = %v, want nil", err)
+		}
+	})
+}

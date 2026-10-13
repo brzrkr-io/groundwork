@@ -1,0 +1,221 @@
+package runcmd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+// TestMain lets this test binary double as a fake command-line tool.
+// When RUNCMD_HELPER=1 is in the environment, it acts as the tool and exits
+// instead of running the tests.
+func TestMain(m *testing.M) {
+	if os.Getenv("RUNCMD_HELPER") == "1" {
+		os.Exit(fakeToolMain(os.Args[1:]))
+	}
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
+		// Started as a fake tool, but RUNCMD_HELPER=1 got lost on the way.
+		fmt.Fprintln(os.Stderr, "fake tool: RUNCMD_HELPER=1 is missing from the environment (did cmd.Env leave out os.Environ()?)")
+		os.Exit(2)
+	}
+	os.Exit(m.Run())
+}
+
+// fakeToolMain is the pretend program the tests run. It understands:
+//
+//	echo WORDS...       print the words separated by spaces
+//	exit CODE OUT ERR   print OUT to stdout, then ERR to stderr, then exit with CODE
+//	pwd                 print the working directory
+//	getenv KEY          print the value of the environment variable KEY
+//	sleep               sleep for 2 seconds
+func fakeToolMain(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "fake tool: no command given")
+		return 2
+	}
+	switch args[0] {
+	case "echo":
+		fmt.Println(strings.Join(args[1:], " "))
+	case "exit":
+		code, _ := strconv.Atoi(args[1])
+		if args[2] != "" {
+			fmt.Println(args[2])
+		}
+		if args[3] != "" {
+			fmt.Fprintln(os.Stderr, args[3])
+		}
+		return code
+	case "pwd":
+		dir, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Println(dir)
+	case "getenv":
+		fmt.Println(os.Getenv(args[1]))
+	case "sleep":
+		time.Sleep(2 * time.Second)
+	default:
+		fmt.Fprintf(os.Stderr, "fake tool: unknown command %q\n", args[0])
+		return 2
+	}
+	return 0
+}
+
+// fakeTool switches on fake-tool mode for this test and returns the program
+// name to run: the test binary itself.
+func fakeTool(t *testing.T) string {
+	t.Helper()
+	t.Setenv("RUNCMD_HELPER", "1")
+	return os.Args[0]
+}
+
+// describe formats err, adding the command's stderr when there is some.
+func describe(err error) string {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && len(exitErr.Stderr) > 0 {
+		return fmt.Sprintf("%v (stderr: %q)", err, exitErr.Stderr)
+	}
+	return fmt.Sprint(err)
+}
+
+func TestOutput(t *testing.T) {
+	tool := fakeTool(t)
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"one word", []string{"echo", "healthy"}, "healthy"},
+		{"several words", []string{"echo", "web-1", "web-2", "web-3"}, "web-1 web-2 web-3"},
+		{"trims spaces", []string{"echo", "  nginx is running  "}, "nginx is running"},
+		{"ignores stderr", []string{"exit", "0", "ok", "warning: flag --old is deprecated"}, "ok"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Output(tool, tt.args...)
+			if err != nil {
+				t.Fatalf("Output(tool, %q) returned error: %s", tt.args, describe(err))
+			}
+			if got != tt.want {
+				t.Errorf("Output(tool, %q) = %q, want %q", tt.args, got, tt.want)
+			}
+		})
+	}
+
+	failures := [][]string{
+		{"exit", "1", "", "error: disk full"},
+		{"exit", "3", "inactive", ""},
+	}
+	for _, args := range failures {
+		t.Run("fails with exit "+args[1], func(t *testing.T) {
+			if _, err := Output(tool, args...); err == nil {
+				t.Errorf("Output(tool, %q) error = nil, want an error", args)
+			}
+		})
+	}
+}
+
+func TestExitStatus(t *testing.T) {
+	tool := fakeTool(t)
+	tests := []struct {
+		name     string
+		args     []string
+		wantCode int
+		wantOut  string
+	}{
+		{"success", []string{"exit", "0", "active", ""}, 0, "active"},
+		{"inactive service", []string{"exit", "3", "inactive", ""}, 3, "inactive"},
+		{"stderr only", []string{"exit", "1", "", "error: deployment not found"}, 1, "error: deployment not found"},
+		{"stdout then stderr", []string{"exit", "2", "checking config", "nginx: [emerg] unknown directive"}, 2, "checking config\nnginx: [emerg] unknown directive"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, out, err := ExitStatus(tool, tt.args...)
+			if err != nil {
+				t.Fatalf("ExitStatus(tool, %q) returned error: %v, want nil", tt.args, err)
+			}
+			if code != tt.wantCode {
+				t.Errorf("ExitStatus(tool, %q) code = %d, want %d", tt.args, code, tt.wantCode)
+			}
+			if out != tt.wantOut {
+				t.Errorf("ExitStatus(tool, %q) output = %q, want %q", tt.args, out, tt.wantOut)
+			}
+		})
+	}
+
+	missing := []string{
+		filepath.Join(t.TempDir(), "no-such-tool"),
+		"gopherlings-no-such-tool",
+	}
+	for _, name := range missing {
+		t.Run("cannot start "+filepath.Base(name), func(t *testing.T) {
+			code, _, err := ExitStatus(name, "status")
+			if code != -1 || err == nil {
+				t.Errorf("ExitStatus(%q, \"status\") = %d, err %v, want -1 and an error", name, code, err)
+			}
+		})
+	}
+}
+
+func TestRun(t *testing.T) {
+	tool := fakeTool(t)
+
+	t.Run("runs in Dir", func(t *testing.T) {
+		for _, dir := range []string{t.TempDir(), t.TempDir()} {
+			opts := Options{Dir: dir, Timeout: 5 * time.Second}
+			got, err := Run(opts, tool, "pwd")
+			if err != nil {
+				t.Fatalf("Run(%+v, tool, \"pwd\") returned error: %s", opts, describe(err))
+			}
+			// Temp dirs can sit behind symlinks (macOS /tmp), so resolve both sides.
+			gotReal, _ := filepath.EvalSymlinks(got)
+			wantReal, _ := filepath.EvalSymlinks(dir)
+			if gotReal != wantReal {
+				t.Errorf("Run(%+v, tool, \"pwd\") = %q, want %q", opts, got, dir)
+			}
+		}
+	})
+
+	t.Run("adds Env", func(t *testing.T) {
+		tests := []struct {
+			env  []string
+			key  string
+			want string
+		}{
+			{[]string{"DEPLOY_ENV=staging"}, "DEPLOY_ENV", "staging"},
+			{[]string{"DEPLOY_ENV=prod", "REGION=eu-west-1"}, "REGION", "eu-west-1"},
+		}
+		for _, tt := range tests {
+			opts := Options{Env: tt.env, Timeout: 5 * time.Second}
+			got, err := Run(opts, tool, "getenv", tt.key)
+			if err != nil {
+				t.Fatalf("Run(%+v, tool, \"getenv\", %q) returned error: %s", opts, tt.key, describe(err))
+			}
+			if got != tt.want {
+				t.Errorf("Run(%+v, tool, \"getenv\", %q) = %q, want %q", opts, tt.key, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("times out", func(t *testing.T) {
+		for _, timeout := range []time.Duration{50 * time.Millisecond, 150 * time.Millisecond} {
+			opts := Options{Timeout: timeout}
+			start := time.Now()
+			_, err := Run(opts, tool, "sleep")
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("Run(%+v, tool, \"sleep\") error = %v, want an error wrapping context.DeadlineExceeded", opts, err)
+			}
+			if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
+				t.Fatalf("Run(%+v, tool, \"sleep\") took %v; the command was not stopped at the deadline", opts, elapsed.Round(100*time.Millisecond))
+			}
+		}
+	})
+}

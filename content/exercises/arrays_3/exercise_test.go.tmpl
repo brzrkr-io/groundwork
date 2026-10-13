@@ -1,0 +1,63 @@
+package oncall
+
+import "testing"
+
+func TestDailyChange(t *testing.T) {
+	cases := []struct {
+		name       string
+		last, this [7]int
+		want       [7]int
+	}{
+		{"mixed", [7]int{2, 0, 1, 0, 0, 0, 0}, [7]int{1, 3, 1, 0, 0, 0, 2}, [7]int{-1, 3, 0, 0, 0, 0, 2}},
+		{"all_better", [7]int{5, 5, 5, 5, 5, 5, 5}, [7]int{1, 2, 3, 4, 5, 0, 0}, [7]int{-4, -3, -2, -1, 0, -5, -5}},
+		{"same", [7]int{1, 1, 0, 0, 0, 0, 0}, [7]int{1, 1, 0, 0, 0, 0, 0}, [7]int{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := DailyChange(c.last, c.this); got != c.want {
+				t.Errorf("DailyChange(%v, %v) = %v, want %v", c.last, c.this, got, c.want)
+			}
+		})
+	}
+}
+
+func TestBusiestDay(t *testing.T) {
+	cases := []struct {
+		pages [7]int
+		want  string
+	}{
+		{[7]int{1, 4, 0, 4, 2, 0, 0}, "Tue"},
+		{[7]int{0, 0, 0, 0, 0, 0, 5}, "Sun"},
+		{[7]int{9, 1, 1, 1, 1, 1, 1}, "Mon"},
+		{[7]int{0, 2, 1, 3, 3, 0, 1}, "Thu"},
+		{[7]int{}, "Mon"},
+	}
+	for _, c := range cases {
+		t.Run(c.want, func(t *testing.T) {
+			if got := BusiestDay(c.pages); got != c.want {
+				t.Errorf("BusiestDay(%v) = %q, want %q", c.pages, got, c.want)
+			}
+		})
+	}
+}
+
+func TestWeekSummary(t *testing.T) {
+	cases := []struct {
+		name       string
+		last, this [7]int
+		want       string
+	}{
+		{"same_week", [7]int{1, 2, 0, 0, 0, 0, 0}, [7]int{1, 2, 0, 0, 0, 0, 0}, "same as last week: 3 pages"},
+		{"quiet_both_weeks", [7]int{}, [7]int{}, "same as last week: 0 pages"},
+		{"worse", [7]int{2, 0, 1, 0, 0, 0, 0}, [7]int{1, 3, 1, 0, 0, 0, 2}, "7 pages (+4 vs last week), busiest Tue"},
+		{"better", [7]int{4, 4, 4, 0, 0, 0, 0}, [7]int{0, 1, 0, 0, 2, 0, 0}, "3 pages (-9 vs last week), busiest Fri"},
+		{"same_total_other_days", [7]int{3, 0, 0, 0, 0, 0, 0}, [7]int{0, 0, 0, 0, 3, 0, 0}, "3 pages (+0 vs last week), busiest Fri"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := WeekSummary(c.last, c.this); got != c.want {
+				t.Errorf("WeekSummary(%v, %v) = %q, want %q", c.last, c.this, got, c.want)
+			}
+		})
+	}
+}

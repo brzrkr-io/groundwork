@@ -1,0 +1,83 @@
+package errvalues
+
+import "testing"
+
+// errText turns an error into text for comparing: "<nil>" means no error.
+func errText(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	return err.Error()
+}
+
+func TestRequireName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr string
+	}{
+		{"api", "<nil>"},
+		{"billing-worker", "<nil>"},
+		{"", "service name is empty"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := errText(RequireName(tt.name)); got != tt.wantErr {
+				t.Errorf("RequireName(%q) = %q, want %q", tt.name, got, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestParsePort(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    int
+		wantErr string
+	}{
+		{"8080", 8080, "<nil>"},
+		{"1", 1, "<nil>"},
+		{"65535", 65535, "<nil>"},
+		{"http", 0, `port "http" is not a number`},
+		{"", 0, `port "" is not a number`},
+		{"70000", 0, "port 70000 is out of range 1-65535"},
+		{"0", 0, "port 0 is out of range 1-65535"},
+		{"-1", 0, "port -1 is out of range 1-65535"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := ParsePort(tt.in)
+			if got != tt.want || errText(err) != tt.wantErr {
+				t.Errorf("ParsePort(%q) = %d, %q, want %d, %q", tt.in, got, errText(err), tt.want, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseEndpoint(t *testing.T) {
+	tests := []struct {
+		in       string
+		wantHost string
+		wantPort int
+		wantErr  string
+	}{
+		{"db:5432", "db", 5432, "<nil>"},
+		{"cache.internal:6379", "cache.internal", 6379, "<nil>"},
+		{"db", "", 0, `endpoint "db" has no port`},
+		{"web-1", "", 0, `endpoint "web-1" has no port`},
+		{":5432", "", 0, `endpoint ":5432" has no host`},
+		{":80", "", 0, `endpoint ":80" has no host`},
+		{"db:http", "", 0, `endpoint "db:http": port "http" is not a number`},
+		{"db:", "", 0, `endpoint "db:": port "" is not a number`},
+		{"db:0", "", 0, `endpoint "db:0": port 0 is out of range 1-65535`},
+		{"db:99999", "", 0, `endpoint "db:99999": port 99999 is out of range 1-65535`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			host, port, err := ParseEndpoint(tt.in)
+			if host != tt.wantHost || port != tt.wantPort || errText(err) != tt.wantErr {
+				t.Errorf("ParseEndpoint(%q) = %q, %d, %q, want %q, %d, %q",
+					tt.in, host, port, errText(err), tt.wantHost, tt.wantPort, tt.wantErr)
+			}
+		})
+	}
+}

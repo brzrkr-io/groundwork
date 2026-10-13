@@ -1,0 +1,223 @@
+package queues
+
+import (
+	"context"
+	"slices"
+	"sync"
+	"testing"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/workqueue"
+)
+
+func deployment(namespace, name string) *appsv1.Deployment {
+	return &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}}
+}
+
+func namespaceObj(name string) *corev1.Namespace {
+	return &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+}
+
+// newTestQueue returns a fresh queue that is shut down when the test ends.
+func newTestQueue(t *testing.T) workqueue.TypedRateLimitingInterface[string] {
+	q := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
+	t.Cleanup(q.ShutDown)
+	return q
+}
+
+// drain takes every waiting key out of q, in queue order.
+func drain(q workqueue.TypedRateLimitingInterface[string]) []string {
+	keys := []string{}
+	for q.Len() > 0 {
+		key, _ := q.Get()
+		q.Done(key)
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func TestKeyFor(t *testing.T) {
+	tests := []struct {
+		name string
+		obj  any
+		want string
+	}{
+		{"deployment in shop", deployment("shop", "web"), "shop/web"},
+		{"deployment in payments", deployment("payments", "checkout"), "payments/checkout"},
+		{"namespace has no namespace", namespaceObj("monitoring"), "monitoring"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := KeyFor(tt.obj)
+			if err != nil {
+				t.Fatalf("KeyFor(%s) returned error %v, want nil", tt.name, err)
+			}
+			if got != tt.want {
+				t.Errorf("KeyFor(%s) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("not a Kubernetes object", func(t *testing.T) {
+		if _, err := KeyFor("shop/web"); err == nil {
+			t.Errorf(`KeyFor("shop/web") returned a nil error, want an error`)
+		}
+	})
+}
+
+func TestEnqueueAll(t *testing.T) {
+	tests := []struct {
+		name string
+		objs []any
+		want []string
+	}{
+		{
+			name: "three events for one deployment",
+			objs: []any{deployment("shop", "web"), deployment("shop", "web"), deployment("shop", "web")},
+			want: []string{"shop/web"},
+		},
+		{
+			name: "two deployments",
+			objs: []any{deployment("shop", "web"), deployment("shop", "api"), deployment("shop", "web")},
+			want: []string{"shop/web", "shop/api"},
+		},
+		{
+			name: "namespace and deployment",
+			objs: []any{namespaceObj("payments"), deployment("payments", "worker")},
+			want: []string{"payments", "payments/worker"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := newTestQueue(t)
+			if err := EnqueueAll(q, tt.objs); err != nil {
+				t.Fatalf("EnqueueAll(%s) returned error %v, want nil", tt.name, err)
+			}
+			if got := q.Len(); got != len(tt.want) {
+				t.Errorf("after EnqueueAll(%s), q.Len() = %d, want %d", tt.name, got, len(tt.want))
+			}
+			if got := drain(q); !slices.Equal(got, tt.want) {
+				t.Errorf("after EnqueueAll(%s), queue holds %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("stops at an object without a key", func(t *testing.T) {
+		q := newTestQueue(t)
+		objs := []any{deployment("shop", "web"), "not an object", deployment("shop", "api")}
+		if err := EnqueueAll(q, objs); err == nil {
+			t.Errorf("EnqueueAll(web, \"not an object\", api) returned a nil error, want an error")
+		}
+		want := []string{"shop/web"}
+		if got := drain(q); !slices.Equal(got, want) {
+			t.Errorf("after EnqueueAll(web, \"not an object\", api), queue holds %q, want %q", got, want)
+		}
+	})
+}
+
+func TestProcessNextItem(t *testing.T) {
+	tests := []struct {
+		key                     string
+		wantNamespace, wantName string
+		wantCalled              bool
+	}{
+		{"shop/web", "shop", "web", true},
+		{"payments/checkout", "payments", "checkout", true},
+		{"monitoring", "", "monitoring", true},
+		{"shop/web/extra", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			q := newTestQueue(t)
+			q.Add(tt.key)
+
+			called := false
+			var gotNamespace, gotName string
+			handle := func(namespace, name string) {
+				called = true
+				gotNamespace, gotName = namespace, name
+			}
+
+			if got := ProcessNextItem(q, handle); !got {
+				t.Errorf("ProcessNextItem with %q queued = false, want true", tt.key)
+			}
+			if called != tt.wantCalled {
+				t.Fatalf("ProcessNextItem with %q queued: handle called = %v, want %v", tt.key, called, tt.wantCalled)
+			}
+			if called && (gotNamespace != tt.wantNamespace || gotName != tt.wantName) {
+				t.Errorf("ProcessNextItem with %q queued called handle(%q, %q), want handle(%q, %q)",
+					tt.key, gotNamespace, gotName, tt.wantNamespace, tt.wantName)
+			}
+
+			// A key can only go back in the queue after Done.
+			q.Add(tt.key)
+			if got := q.Len(); got != 1 {
+				t.Errorf("after ProcessNextItem, Add(%q) left q.Len() = %d, want 1 (did you call q.Done?)", tt.key, got)
+			}
+		})
+	}
+
+	t.Run("queue shut down", func(t *testing.T) {
+		q := newTestQueue(t)
+		q.ShutDown()
+		called := false
+		if got := ProcessNextItem(q, func(string, string) { called = true }); got {
+			t.Errorf("ProcessNextItem on a shut down queue = true, want false")
+		}
+		if called {
+			t.Errorf("ProcessNextItem on a shut down queue called handle, want no call")
+		}
+	})
+
+	t.Run("RunWorker handles every key", func(t *testing.T) {
+		q := newTestQueue(t)
+
+		var mu sync.Mutex
+		handled := []string{}
+		handle := func(namespace, name string) {
+			mu.Lock()
+			defer mu.Unlock()
+			handled = append(handled, namespace+"/"+name)
+		}
+		count := func() int {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(handled)
+		}
+
+		finished := make(chan struct{})
+		go func() {
+			defer close(finished)
+			RunWorker(q, handle)
+		}()
+
+		q.Add("shop/web")
+		q.Add("shop/api")
+		q.Add("payments/checkout")
+
+		err := wait.PollUntilContextTimeout(t.Context(), 10*time.Millisecond, 5*time.Second, true,
+			func(context.Context) (bool, error) { return count() == 3, nil })
+		if err != nil {
+			t.Fatalf("RunWorker handled %d keys within 5s, want 3", count())
+		}
+
+		q.ShutDown()
+		select {
+		case <-finished:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("RunWorker did not return within 5s of ShutDown, want it to stop")
+		}
+
+		mu.Lock()
+		defer mu.Unlock()
+		slices.Sort(handled)
+		want := []string{"payments/checkout", "shop/api", "shop/web"}
+		if !slices.Equal(handled, want) {
+			t.Errorf("RunWorker handled %q, want %q", handled, want)
+		}
+	})
+}

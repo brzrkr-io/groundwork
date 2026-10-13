@@ -1,0 +1,46 @@
+// Package objects is the Gopherlings exercise "Kubernetes objects: Services and selectors".
+package objects
+
+import (
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+// NewService builds a ClusterIP Service for Deployment d. The Service has the
+// Deployment's name and namespace, selects the Deployment's Pods, and sends
+// traffic arriving on port 80 to containerPort on those Pods.
+func NewService(d *appsv1.Deployment, containerPort int32) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: d.Name,
+			// TODO(1): Bug: the Service lands in the wrong namespace.
+			Namespace: "default",
+			Labels:    d.Labels,
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			// TODO(1): Bug: this uses the Deployment's own labels. Use the
+			// labels from the Deployment's selector instead.
+			Selector: d.Labels,
+			Ports: []corev1.ServicePort{
+				{
+					Name:     "http",
+					Protocol: corev1.ProtocolTCP,
+					// TODO(2): Bug: the two port numbers are the wrong way round.
+					Port:       containerPort,
+					TargetPort: intstr.FromInt32(80),
+				},
+			},
+		},
+	}
+}
+
+// CheckSelector returns an error if Deployment d has no selector, or if its
+// Pod template is missing a label that the selector asks for. It returns nil
+// when the selector matches the template.
+func CheckSelector(d *appsv1.Deployment) error {
+	// TODO(3): Check the selector against d.Spec.Template.Labels.
+	return nil
+}

@@ -1,0 +1,73 @@
+package latency
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestTotalLatency(t *testing.T) {
+	tests := []struct {
+		name string
+		ms   []int
+		want int
+	}{
+		{"three hosts", []int{120, 80, 300}, 500},
+		{"one host", []int{42}, 42},
+		{"with zeros", []int{0, 15, 0}, 15},
+		{"empty", nil, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := TotalLatency(tt.ms); got != tt.want {
+				t.Errorf("TotalLatency(%v) = %d, want %d", tt.ms, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSlowest(t *testing.T) {
+	tests := []struct {
+		name     string
+		hosts    []string
+		ms       []int
+		wantHost string
+		wantMs   int
+	}{
+		{"middle is slowest", []string{"web-1", "web-2", "db-1"}, []int{120, 450, 300}, "web-2", 450},
+		{"last is slowest", []string{"api-1", "api-2"}, []int{90, 91}, "api-2", 91},
+		{"first is slowest", []string{"cache-1", "cache-2", "cache-3"}, []int{700, 5, 6}, "cache-1", 700},
+		{"tie goes to first", []string{"web-1", "web-2"}, []int{200, 200}, "web-1", 200},
+		{"all zero", []string{"web-1", "web-2"}, []int{0, 0}, "web-1", 0},
+		{"empty", nil, nil, "", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotHost, gotMs := Slowest(tt.hosts, tt.ms)
+			if gotHost != tt.wantHost || gotMs != tt.wantMs {
+				t.Errorf("Slowest(%q, %v) = %q, %d, want %q, %d", tt.hosts, tt.ms, gotHost, gotMs, tt.wantHost, tt.wantMs)
+			}
+		})
+	}
+}
+
+func TestUnhealthy(t *testing.T) {
+	tests := []struct {
+		name    string
+		hosts   []string
+		healthy []bool
+		want    []string
+	}{
+		{"two down", []string{"web-1", "web-2", "db-1"}, []bool{true, false, false}, []string{"web-2", "db-1"}},
+		{"first down", []string{"api-1", "api-2"}, []bool{false, true}, []string{"api-1"}},
+		{"all healthy", []string{"web-1"}, []bool{true}, nil},
+		{"no hosts", nil, nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Unhealthy(tt.hosts, tt.healthy)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Unhealthy(%q, %v) = %q, want %q", tt.hosts, tt.healthy, got, tt.want)
+			}
+		})
+	}
+}

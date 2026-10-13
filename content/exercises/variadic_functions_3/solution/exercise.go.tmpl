@@ -1,0 +1,45 @@
+// Package cmdline is the Gopherlings exercise "Variadic functions: a command builder".
+package cmdline
+
+import "strings"
+
+// Command returns bin followed by args, separated by spaces. Arguments that
+// are empty or contain a space are wrapped in double quotes.
+func Command(bin string, args ...string) string {
+	var b strings.Builder
+	b.WriteString(bin)
+	for _, a := range args {
+		b.WriteString(" ")
+		if a == "" || strings.Contains(a, " ") {
+			a = `"` + a + `"`
+		}
+		b.WriteString(a)
+	}
+	return b.String()
+}
+
+// Kubectl returns a kubectl command line, with "-n namespace" first when
+// namespace is not empty.
+func Kubectl(namespace string, args ...string) string {
+	var all []string
+	if namespace != "" {
+		all = append(all, "-n", namespace)
+	}
+	all = append(all, args...)
+	return Command("kubectl", all...)
+}
+
+// Chain joins the non-empty commands with " && ".
+func Chain(commands ...string) string {
+	script := ""
+	for _, c := range commands {
+		if c == "" {
+			continue
+		}
+		if script != "" {
+			script += " && "
+		}
+		script += c
+	}
+	return script
+}

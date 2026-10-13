@@ -1,0 +1,71 @@
+package jsonapi
+
+import (
+	"errors"
+	"sync"
+)
+
+// Service is one entry in the service catalog.
+type Service struct {
+	Name  string `json:"name"`
+	Port  int    `json:"port"`
+	Owner string `json:"owner"`
+}
+
+// Validate reports what is wrong with s, or returns nil if s is fine.
+func (s Service) Validate() error {
+	if s.Name == "" {
+		return errors.New("name is required")
+	}
+	if s.Port < 1 || s.Port > 65535 {
+		return errors.New("port must be between 1 and 65535")
+	}
+	return nil
+}
+
+// ErrNotFound means the store has no service with that name.
+var ErrNotFound = errors.New("service not found")
+
+// ErrExists means a service with that name is already stored.
+var ErrExists = errors.New("service already exists")
+
+// Store keeps services in memory.
+//
+// A server handles many requests at the same time. The mutex lets only one
+// of them touch the map at a time, so they can't corrupt it. Mutexes are
+// covered in the Concurrency module.
+type Store struct {
+	mu       sync.Mutex
+	services map[string]Service
+}
+
+// NewStore returns a store that already holds the given services.
+func NewStore(services ...Service) *Store {
+	s := &Store{services: make(map[string]Service)}
+	for _, svc := range services {
+		s.services[svc.Name] = svc
+	}
+	return s
+}
+
+// Get returns the service called name. It fails only with ErrNotFound.
+func (s *Store) Get(name string) (Service, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	svc, ok := s.services[name]
+	if !ok {
+		return Service{}, ErrNotFound
+	}
+	return svc, nil
+}
+
+// Create saves svc. It fails only with ErrExists, when the name is taken.
+func (s *Store) Create(svc Service) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.services[svc.Name]; ok {
+		return ErrExists
+	}
+	s.services[svc.Name] = svc
+	return nil
+}

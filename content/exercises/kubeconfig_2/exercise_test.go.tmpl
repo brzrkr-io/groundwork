@@ -1,0 +1,113 @@
+package kubeconfig
+
+import (
+	"testing"
+	"time"
+
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+)
+
+// loadTestConfig reads the practice kubeconfig in testdata/.
+func loadTestConfig(t *testing.T) *clientcmdapi.Config {
+	t.Helper()
+	cfg, err := clientcmd.LoadFromFile("testdata/kubeconfig.yaml")
+	if err != nil {
+		t.Fatalf("loading testdata/kubeconfig.yaml: %v", err)
+	}
+	return cfg
+}
+
+func TestRESTConfig(t *testing.T) {
+	cfg := loadTestConfig(t)
+	tests := []struct {
+		context   string
+		wantHost  string
+		wantToken string
+	}{
+		{"dev", "https://dev.k8s.example.com:6443", "fake-token-dev-team"},
+		{"prod", "https://prod-us-east-1.k8s.example.com:6443", "fake-token-release-bot"},
+		{"ci", "https://ci.k8s.example.com:6443", "fake-token-ci-runner"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.context, func(t *testing.T) {
+			got, err := RESTConfig(cfg, tt.context)
+			if err != nil {
+				t.Fatalf("RESTConfig(cfg, %q) returned error %v, want nil", tt.context, err)
+			}
+			if got.Host != tt.wantHost {
+				t.Errorf("RESTConfig(cfg, %q).Host = %q, want %q", tt.context, got.Host, tt.wantHost)
+			}
+			if got.BearerToken != tt.wantToken {
+				t.Errorf("RESTConfig(cfg, %q).BearerToken = %q, want %q", tt.context, got.BearerToken, tt.wantToken)
+			}
+		})
+	}
+
+	for _, name := range []string{"staging", "prod-eu"} {
+		t.Run("unknown "+name, func(t *testing.T) {
+			got, err := RESTConfig(cfg, name)
+			if !clientcmd.IsContextNotFound(err) {
+				host := ""
+				if got != nil {
+					host = got.Host
+				}
+				t.Errorf("RESTConfig(cfg, %q) = Host %q, error %v, want a context-not-found error", name, host, err)
+			}
+		})
+	}
+}
+
+func TestTune(t *testing.T) {
+	for _, agent := range []string{"deploy-bot/1.4.0", "nightly-cleanup/0.3.1"} {
+		t.Run(agent, func(t *testing.T) {
+			c := &rest.Config{Host: "https://dev.k8s.example.com:6443"}
+			Tune(c, agent)
+			if c.QPS != 20 {
+				t.Errorf("after Tune(c, %q): QPS = %v, want 20", agent, c.QPS)
+			}
+			if c.Burst != 40 {
+				t.Errorf("after Tune(c, %q): Burst = %d, want 40", agent, c.Burst)
+			}
+			if c.Timeout != 30*time.Second {
+				t.Errorf("after Tune(c, %q): Timeout = %v, want %v", agent, c.Timeout, 30*time.Second)
+			}
+			if c.UserAgent != agent {
+				t.Errorf("after Tune(c, %q): UserAgent = %q, want %q", agent, c.UserAgent, agent)
+			}
+		})
+	}
+}
+
+func TestNamespace(t *testing.T) {
+	cfg := loadTestConfig(t)
+	tests := []struct {
+		context string
+		want    string
+	}{
+		{"dev", "shop"},
+		{"prod", "payments"},
+		{"ci", "default"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.context, func(t *testing.T) {
+			got, err := Namespace(cfg, tt.context)
+			if err != nil {
+				t.Fatalf("Namespace(cfg, %q) returned error %v, want nil", tt.context, err)
+			}
+			if got != tt.want {
+				t.Errorf("Namespace(cfg, %q) = %q, want %q", tt.context, got, tt.want)
+			}
+		})
+	}
+
+	for _, name := range []string{"staging", "prod-eu"} {
+		t.Run("unknown "+name, func(t *testing.T) {
+			got, err := Namespace(cfg, name)
+			if !clientcmd.IsContextNotFound(err) {
+				t.Errorf("Namespace(cfg, %q) = %q, error %v, want a context-not-found error", name, got, err)
+			}
+		})
+	}
+}

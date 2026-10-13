@@ -1,0 +1,34 @@
+package constants
+
+import "testing"
+
+func TestHealthPort(t *testing.T) {
+	if got := HealthPort(); got != 8081 {
+		t.Errorf("HealthPort() = %d, want 8081", got)
+	}
+}
+
+func TestHealthURL(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+		want string
+	}{
+		{name: "host name", host: "api.internal", want: "http://api.internal/healthz"},
+		{name: "IP address", host: "10.0.3.17", want: "http://10.0.3.17/healthz"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := HealthURL(tt.host)
+			if got != tt.want {
+				t.Errorf("HealthURL(%q) = %q, want %q", tt.host, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDownAfterSeconds(t *testing.T) {
+	if DownAfterSeconds != 30 {
+		t.Errorf("DownAfterSeconds = %d, want 30", DownAfterSeconds)
+	}
+}

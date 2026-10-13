@@ -1,0 +1,27 @@
+// Package deploy is the Gopherlings exercise "Practice: reproduce a bug report".
+package deploy
+
+import (
+	"fmt"
+	"strings"
+)
+
+// NormalizeEnvironment checks the environment name given to the deploy
+// command and returns its canonical form: "development", "staging" or
+// "production". Any other name is an error.
+func NormalizeEnvironment(name string) (string, error) {
+	return normalizeEnvironment(name)
+}
+
+// normalizeEnvironment points at the real implementation. Gopherlings' grader
+// swaps in broken versions to check that your test catches them.
+var normalizeEnvironment = realNormalizeEnvironment
+
+func realNormalizeEnvironment(name string) (string, error) {
+	env := strings.ToLower(strings.TrimSpace(name))
+	switch env {
+	case "development", "staging", "production":
+		return env, nil
+	}
+	return "", fmt.Errorf("unknown environment %q", name)
+}

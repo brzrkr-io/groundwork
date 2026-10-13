@@ -1,0 +1,49 @@
+// Package objects is the Gopherlings exercise "Kubernetes objects: building a Deployment".
+package objects
+
+import (
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// Labels returns the labels every object of an app carries: "app" set to the
+// app name and "env" set to the environment.
+func Labels(app, env string) map[string]string {
+	// TODO(1): Return a map with the keys "app" and "env".
+	return nil
+}
+
+// NewDeployment builds a Deployment that runs replicas copies of image. The
+// Deployment is named after the app and lives in namespace ns.
+func NewDeployment(app, ns, env, image string, replicas int32) *appsv1.Deployment {
+	labels := Labels(app, env)
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: app,
+			// TODO(2): Set the Namespace and the Labels.
+		},
+		Spec: appsv1.DeploymentSpec{
+			// TODO(2): Set Replicas, and a Selector whose MatchLabels are labels.
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						AppContainer(app, image, 8080),
+					},
+				},
+			},
+		},
+	}
+}
+
+// AppContainer builds the container that runs an app: the image, one port
+// named "http", and CPU and memory requests and limits.
+func AppContainer(name, image string, port int32) corev1.Container {
+	return corev1.Container{
+		Name: name,
+		// TODO(3): Set Image, Ports and Resources.
+	}
+}

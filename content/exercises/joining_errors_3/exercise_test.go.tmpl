@@ -1,0 +1,145 @@
+package joining3
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"testing"
+)
+
+// errText returns err's message, or "<nil>" when err is nil.
+func errText(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	return err.Error()
+}
+
+func TestShutdown(t *testing.T) {
+	tests := []struct {
+		name     string
+		failures map[string]string // step name -> error message; missing means success
+		want     string
+	}{
+		{
+			name:     "every step succeeds",
+			failures: nil,
+			want:     "<nil>",
+		},
+		{
+			name:     "first step fails, the rest still run",
+			failures: map[string]string{"drain": "3 requests still in flight"},
+			want:     `step "drain": 3 requests still in flight`,
+		},
+		{
+			name: "two steps fail",
+			failures: map[string]string{
+				"flush-logs": "disk full",
+				"deregister": "load balancer timed out",
+			},
+			want: "step \"flush-logs\": disk full\n" +
+				"step \"deregister\": load balancer timed out",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ran []string
+			var steps []Step
+			for _, name := range []string{"drain", "flush-logs", "close-db", "deregister"} {
+				steps = append(steps, Step{
+					Name: name,
+					Run: func() error {
+						ran = append(ran, name)
+						if msg, ok := tt.failures[name]; ok {
+							return errors.New(msg)
+						}
+						return nil
+					},
+				})
+			}
+
+			got := errText(Shutdown(steps))
+			if got != tt.want {
+				t.Errorf("Shutdown(...) = %q, want %q", got, tt.want)
+			}
+			wantRan := []string{"drain", "flush-logs", "close-db", "deregister"}
+			if !slices.Equal(ran, wantRan) {
+				t.Errorf("Shutdown(...) ran steps %q, want %q", ran, wantRan)
+			}
+		})
+	}
+
+	t.Run("failures are *StepError", func(t *testing.T) {
+		errTimeout := errors.New("timed out")
+		err := Shutdown([]Step{{Name: "close-db", Run: func() error { return errTimeout }}})
+		stepErr, ok := errors.AsType[*StepError](err)
+		if !ok {
+			t.Fatalf("errors.AsType[*StepError](Shutdown(...)) found nothing in %q", errText(err))
+		}
+		if stepErr.Step != "close-db" || stepErr.Err != errTimeout {
+			t.Errorf("Shutdown(...) step error = %+v, want Step %q and Err %q", *stepErr, "close-db", "timed out")
+		}
+	})
+}
+
+func TestSplit(t *testing.T) {
+	errDrain := errors.New("drain failed")
+	errFlush := errors.New("flush failed")
+	errClose := errors.New("close failed")
+
+	tests := []struct {
+		name string
+		err  error
+		want []error
+	}{
+		{name: "nil", err: nil, want: nil},
+		{name: "plain error", err: errDrain, want: []error{errDrain}},
+		{name: "join of one", err: errors.Join(errFlush), want: []error{errFlush}},
+		{
+			name: "join of three",
+			err:  errors.Join(errDrain, errFlush, errClose),
+			want: []error{errDrain, errFlush, errClose},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Split(tt.err)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Split(%q) = %q, want %q", errText(tt.err), got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFailedSteps(t *testing.T) {
+	drain := &StepError{Step: "drain", Err: errors.New("3 requests still in flight")}
+	flush := &StepError{Step: "flush-logs", Err: errors.New("disk full")}
+
+	tests := []struct {
+		name string
+		err  error
+		want []string
+	}{
+		{name: "nil", err: nil, want: nil},
+		{name: "single step error", err: drain, want: []string{"drain"}},
+		{name: "joined step errors", err: errors.Join(drain, flush), want: []string{"drain", "flush-logs"}},
+		{
+			name: "wrapped step error inside the join",
+			err:  errors.Join(fmt.Errorf("shutdown api: %w", flush), drain),
+			want: []string{"flush-logs", "drain"},
+		},
+		{
+			name: "other errors are skipped",
+			err:  errors.Join(errors.New("signal lost"), flush),
+			want: []string{"flush-logs"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FailedSteps(tt.err)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("FailedSteps(%q) = %q, want %q", errText(tt.err), got, tt.want)
+			}
+		})
+	}
+}

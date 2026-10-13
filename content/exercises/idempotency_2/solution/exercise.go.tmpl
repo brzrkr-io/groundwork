@@ -1,0 +1,150 @@
+// Package idempotency is the Gopherlings exercise "Idempotency keys: scope, expire and fingerprint".
+package idempotency
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
+	"maps"
+	"net/http"
+	"sync"
+	"time"
+)
+
+// Response is a captured HTTP response: everything needed to send it again.
+type Response struct {
+	Status int
+	Header http.Header
+	Body   []byte
+}
+
+// Entry is what the Store keeps for one idempotency key.
+type Entry struct {
+	Response    Response
+	Fingerprint string    // SHA-256 of the request body, in hex
+	Saved       time.Time // when Put stored the entry
+}
+
+// Store remembers entries by key for a limited time. It is safe for
+// concurrent use.
+type Store struct {
+	mu      sync.Mutex
+	entries map[string]Entry
+	ttl     time.Duration
+	now     func() time.Time
+}
+
+// NewStore returns an empty Store whose entries last for ttl. It reads the
+// current time from now (pass time.Now in production).
+func NewStore(ttl time.Duration, now func() time.Time) *Store {
+	return &Store{entries: map[string]Entry{}, ttl: ttl, now: now}
+}
+
+// Put stores e under key and stamps it with the current time.
+func (s *Store) Put(key string, e Entry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e.Saved = s.now()
+	s.entries[key] = e
+}
+
+// Get returns the entry stored under key. Entries older than the TTL count
+// as missing.
+func (s *Store) Get(key string) (Entry, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.entries[key]
+	if !ok || s.now().Sub(e.Saved) >= s.ttl {
+		return Entry{}, false
+	}
+	return e, true
+}
+
+// Fingerprint returns the SHA-256 hash of body as 64 lowercase hex characters.
+func Fingerprint(body []byte) string {
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])
+}
+
+// storeKey builds the key the Store uses for a request, so that the same
+// Idempotency-Key from different clients or endpoints never collides.
+func storeKey(r *http.Request, key string) string {
+	return r.Header.Get("X-Client-ID") + "|" + r.Method + " " + r.URL.Path + "|" + key
+}
+
+// Middleware replays responses for repeated requests that carry an
+// Idempotency-Key header.
+func Middleware(store *Store, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("Idempotency-Key")
+		if key == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "cannot read request body", http.StatusBadRequest)
+			return
+		}
+		// next reads r.Body too, so give it a fresh reader over the same bytes.
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		fingerprint := Fingerprint(body)
+
+		sk := storeKey(r, key)
+		if e, ok := store.Get(sk); ok {
+			if e.Fingerprint != fingerprint {
+				http.Error(w, "Idempotency-Key reused with a different request body", http.StatusUnprocessableEntity)
+				return
+			}
+			w.Header().Set("Idempotent-Replayed", "true")
+			writeResponse(w, e.Response)
+			return
+		}
+
+		resp := record(next, r)
+		store.Put(sk, Entry{Response: resp, Fingerprint: fingerprint})
+		writeResponse(w, resp)
+	})
+}
+
+// record runs next with a recorder instead of the real ResponseWriter and
+// returns everything next wrote.
+func record(next http.Handler, r *http.Request) Response {
+	rec := &recorder{header: http.Header{}}
+	next.ServeHTTP(rec, r)
+	rec.WriteHeader(http.StatusOK) // a handler that wrote nothing means 200 OK
+	return Response{Status: rec.status, Header: rec.header, Body: rec.body.Bytes()}
+}
+
+// writeResponse sends a captured response to the client.
+func writeResponse(w http.ResponseWriter, resp Response) {
+	maps.Copy(w.Header(), resp.Header.Clone())
+	w.WriteHeader(resp.Status)
+	w.Write(resp.Body)
+}
+
+// recorder is an http.ResponseWriter that keeps the response in memory
+// instead of sending it over the network.
+type recorder struct {
+	header http.Header
+	status int
+	body   bytes.Buffer
+}
+
+func (rec *recorder) Header() http.Header {
+	return rec.header
+}
+
+// WriteHeader keeps the first status code, like a real ResponseWriter.
+func (rec *recorder) WriteHeader(status int) {
+	if rec.status == 0 {
+		rec.status = status
+	}
+}
+
+// Write sends 200 OK first if no status was set, like a real ResponseWriter.
+func (rec *recorder) Write(b []byte) (int, error) {
+	rec.WriteHeader(http.StatusOK)
+	return rec.body.Write(b)
+}

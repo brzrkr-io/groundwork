@@ -1,0 +1,27 @@
+// Package oncall is the Gopherlings exercise "Arrays: weekly on-call summary".
+package oncall
+
+// dayNames holds the name of each day of the week, Monday first.
+var dayNames = [...]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+
+// DailyChange returns, for each day, this week's pages minus last week's.
+func DailyChange(last, this [7]int) [7]int {
+	var change [7]int
+	// TODO(1): Fill change with this[i] - last[i] for every day.
+	return change
+}
+
+// BusiestDay returns the name of the day with the most pages. The earliest
+// day wins a tie.
+func BusiestDay(pages [7]int) string {
+	best := 0
+	// TODO(2): Loop over pages and move best to the index of the busiest day.
+	return dayNames[best]
+}
+
+// WeekSummary describes this week's pages compared with last week's.
+func WeekSummary(last, this [7]int) string {
+	// TODO(3): Build the summary line described in the README. You need to
+	// import "fmt".
+	return ""
+}

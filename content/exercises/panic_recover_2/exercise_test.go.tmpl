@@ -1,0 +1,109 @@
+package recovery2
+
+import (
+	"errors"
+	"maps"
+	"testing"
+)
+
+// guard calls Guard. If a panic escapes from Guard, it reports a test
+// failure instead of crashing the whole test run.
+func guard(t *testing.T, command string, handler func() error) error {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Guard(%q, handler) let a panic escape: %v", command, r)
+		}
+	}()
+	return Guard(command, handler)
+}
+
+func TestGuardStopsPanic(t *testing.T) {
+	t.Run("handler returns nil", func(t *testing.T) {
+		if err := guard(t, "status", func() error { return nil }); err != nil {
+			t.Errorf(`Guard("status", handler) = %v, want nil`, err)
+		}
+	})
+
+	t.Run("handler returns an error", func(t *testing.T) {
+		handlerErr := errors.New("deploy is locked")
+		err := guard(t, "deploy web", func() error { return handlerErr })
+		if err != handlerErr {
+			t.Errorf(`Guard("deploy web", handler) = %v, want the handler's error %q`, err, handlerErr)
+		}
+	})
+
+	t.Run("handler panics with a string", func(t *testing.T) {
+		guard(t, "restart api", func() error { panic("boom") })
+	})
+
+	t.Run("handler panics with an error", func(t *testing.T) {
+		guard(t, "silence disk", func() error { panic(errors.New("no such alert")) })
+	})
+}
+
+func TestGuardReportsPanic(t *testing.T) {
+	tests := []struct {
+		command string
+		value   any
+		want    string
+	}{
+		{"restart api", "boom", `command "restart api" panicked: boom`},
+		{"silence disk", errors.New("no such alert"), `command "silence disk" panicked: no such alert`},
+		{"scale web", 7, `command "scale web" panicked: 7`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.command, func(t *testing.T) {
+			err := guard(t, tc.command, func() error { panic(tc.value) })
+			if err == nil {
+				t.Fatalf("Guard(%q, handler panicking with %v) = nil, want %q", tc.command, tc.value, tc.want)
+			}
+			if err.Error() != tc.want {
+				t.Errorf("Guard(%q, handler panicking with %v) = %q, want %q", tc.command, tc.value, err.Error(), tc.want)
+			}
+		})
+	}
+}
+
+func TestCountBySeverity(t *testing.T) {
+	tests := []struct {
+		name   string
+		alerts []Alert
+		want   map[string]int
+	}{
+		{
+			name:   "no alerts",
+			alerts: nil,
+			want:   map[string]int{},
+		},
+		{
+			name: "one alert",
+			alerts: []Alert{
+				{Name: "DiskFull", Severity: "critical"},
+			},
+			want: map[string]int{"critical": 1},
+		},
+		{
+			name: "mixed",
+			alerts: []Alert{
+				{Name: "DiskFull", Severity: "critical"},
+				{Name: "HighLatency", Severity: "warning"},
+				{Name: "PodCrashLooping", Severity: "critical"},
+				{Name: "CertExpiresSoon", Severity: "warning"},
+				{Name: "BackupSlow", Severity: "info"},
+			},
+			want: map[string]int{"critical": 2, "warning": 2, "info": 1},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CountBySeverity(tc.alerts)
+			if got == nil {
+				t.Fatalf("CountBySeverity(%v) = nil map, want %v", tc.alerts, tc.want)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("CountBySeverity(%v) = %v, want %v", tc.alerts, got, tc.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,48 @@
+// Package rollout is the Gopherlings exercise "Errors from goroutines: stop on first failure".
+package rollout
+
+import (
+	"context"
+	"sync"
+)
+
+// Group runs tasks in goroutines, keeps the first error, and cancels its
+// context as soon as any task fails.
+type Group struct {
+	cancel context.CancelFunc // cancels the group's ctx
+	wg     sync.WaitGroup     // counts running tasks
+	once   sync.Once          // makes sure only the first error is kept
+	err    error              // the first error
+}
+
+// WithContext returns a new Group and a child of ctx that is cancelled when a
+// task fails or Wait returns.
+func WithContext(ctx context.Context) (*Group, context.Context) {
+	// TODO(1): Create a cancelable child of ctx. Store its cancel function in
+	// the Group, and return the Group and the child.
+	return &Group{}, ctx
+}
+
+// Go runs f in a new goroutine. If f fails, its error is kept (if it is the
+// first) and the group's context is cancelled.
+func (g *Group) Go(f func() error) {
+	// TODO(2): Run f in a goroutine that Wait waits for. On error, use
+	// g.once.Do to save the error and call g.cancel().
+	if err := f(); err != nil && g.err == nil {
+		g.err = err
+	}
+}
+
+// Wait waits for every task started with Go, cancels the group's context and
+// returns the first error.
+func (g *Group) Wait() error {
+	// TODO(1): Wait for every task, call g.cancel(), then return g.err.
+	return g.err
+}
+
+// DeployRegions deploys to every region at the same time and stops the rest
+// as soon as one fails. It returns the first error, or nil.
+func DeployRegions(ctx context.Context, regions []string, deploy func(ctx context.Context, region string) error) error {
+	// TODO(3): Use WithContext, g.Go and g.Wait. Give deploy the group's ctx.
+	return nil
+}

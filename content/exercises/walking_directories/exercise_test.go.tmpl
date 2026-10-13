@@ -1,0 +1,142 @@
+package walkdirs
+
+import (
+	"slices"
+	"testing"
+	"testing/fstest"
+)
+
+// bytesOf returns a fake file that is n bytes long.
+func bytesOf(n int) *fstest.MapFile {
+	return &fstest.MapFile{Data: make([]byte, n)}
+}
+
+func TestListFiles(t *testing.T) {
+	tests := []struct {
+		name string
+		fsys fstest.MapFS
+		want []string
+	}{
+		{
+			name: "flat directory",
+			fsys: fstest.MapFS{
+				"web.log": {},
+				"api.log": {},
+				"db.log":  {},
+			},
+			want: []string{"api.log", "db.log", "web.log"},
+		},
+		{
+			name: "walk order is not sorted order",
+			fsys: fstest.MapFS{
+				"a.txt":   {},
+				"a/b.log": {},
+			},
+			want: []string{"a.txt", "a/b.log"},
+		},
+		{
+			name: "nested directories",
+			fsys: fstest.MapFS{
+				"var/log/nginx/access.log": {},
+				"var/log/syslog":           {},
+				"etc/hosts":                {},
+				"var/log.old":              {},
+			},
+			want: []string{"etc/hosts", "var/log.old", "var/log/nginx/access.log", "var/log/syslog"},
+		},
+		{
+			name: "empty",
+			fsys: fstest.MapFS{},
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ListFiles(tt.fsys)
+			if err != nil {
+				t.Fatalf("ListFiles() error = %v, want nil", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ListFiles() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestListFilesSkipsGit(t *testing.T) {
+	tests := []struct {
+		name string
+		fsys fstest.MapFS
+		want []string
+	}{
+		{
+			name: "top-level .git",
+			fsys: fstest.MapFS{
+				"README.md":        {},
+				".git/HEAD":        {},
+				".git/objects/ab1": {},
+			},
+			want: []string{"README.md"},
+		},
+		{
+			name: "nested .git",
+			fsys: fstest.MapFS{
+				"svc/main.go":     {},
+				"svc/.git/config": {},
+				"deploy.sh":       {},
+			},
+			want: []string{"deploy.sh", "svc/main.go"},
+		},
+		{
+			name: "a file called .gitignore is kept",
+			fsys: fstest.MapFS{
+				".gitignore": {},
+				".git/HEAD":  {},
+			},
+			want: []string{".gitignore"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ListFiles(tt.fsys)
+			if err != nil {
+				t.Fatalf("ListFiles() error = %v, want nil", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ListFiles() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLargeLogs(t *testing.T) {
+	fsys := fstest.MapFS{
+		"api/app.log":     bytesOf(500),
+		"api/app.log.1":   bytesOf(900),
+		"db/slow.log":     bytesOf(100),
+		"db/tiny.log":     bytesOf(10),
+		"web/big.txt":     bytesOf(900),
+		"web/access.log":  bytesOf(2000),
+		".git/huge.log":   bytesOf(5000),
+		"svc/.git/x.log":  bytesOf(5000),
+		"svc/release.log": bytesOf(99),
+	}
+	tests := []struct {
+		minSize int64
+		want    []string
+	}{
+		{minSize: 100, want: []string{"api/app.log", "db/slow.log", "web/access.log"}},
+		{minSize: 500, want: []string{"api/app.log", "web/access.log"}},
+		{minSize: 1000, want: []string{"web/access.log"}},
+		{minSize: 10000, want: nil},
+	}
+	for _, tt := range tests {
+		got, err := LargeLogs(fsys, tt.minSize)
+		if err != nil {
+			t.Fatalf("LargeLogs(fsys, %d) error = %v, want nil", tt.minSize, err)
+		}
+		if !slices.Equal(got, tt.want) {
+			t.Errorf("LargeLogs(fsys, %d) = %q, want %q", tt.minSize, got, tt.want)
+		}
+	}
+}

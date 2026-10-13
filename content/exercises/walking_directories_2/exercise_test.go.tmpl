@@ -1,0 +1,166 @@
+package diskwalk
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+	"time"
+)
+
+var now = time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC)
+
+const day = 24 * time.Hour
+
+// writeFile creates root/rel with size bytes and sets its modification time
+// to age before now.
+func writeFile(t *testing.T, root, rel string, size int, age time.Duration) {
+	t.Helper()
+	name := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, make([]byte, size), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mtime := now.Add(-age)
+	if err := os.Chtimes(name, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// staleFiles calls StaleFiles and turns a panic into an error, so a crash
+// shows up as a normal test failure.
+func staleFiles(root string, maxAge time.Duration) (got []string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return StaleFiles(root, now, maxAge)
+}
+
+func TestStaleFiles(t *testing.T) {
+	t.Run("old files are found", func(t *testing.T) {
+		root := t.TempDir()
+		writeFile(t, root, "db/mon.sql.gz", 1, 10*day)
+		writeFile(t, root, "db/sun.sql.gz", 1, 2*day)
+		writeFile(t, root, "redis/dump.rdb", 1, 30*day)
+		writeFile(t, root, "notes.txt", 1, 8*day)
+		writeFile(t, root, "edge.txt", 1, 7*day) // exactly maxAge: not stale
+
+		got, err := staleFiles(root, 7*day)
+		want := []string{"db/mon.sql.gz", "notes.txt", "redis/dump.rdb"}
+		if err != nil || !slices.Equal(got, want) {
+			t.Errorf("StaleFiles(root, now, 7d) = %q, %v, want %q, nil", got, err, want)
+		}
+	})
+
+	missing := []string{"no-such-dir", "no-such-parent/backups"}
+	for _, name := range missing {
+		t.Run("missing root "+name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), name)
+			got, err := staleFiles(root, 7*day)
+			if err == nil {
+				t.Fatalf("StaleFiles(%q, now, 7d) = %q, nil, want an error", name, got)
+			}
+			if !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("StaleFiles(%q, now, 7d) error = %v, want the walk's \"no such file\" error", name, err)
+			}
+		})
+	}
+}
+
+func TestStaleFilesSkipsPinned(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]time.Duration // path -> age
+		want  []string
+	}{
+		{
+			name: "pinned inside a database folder",
+			files: map[string]time.Duration{
+				"db/old.sql.gz":         10 * day,
+				"db/pinned/gold.sql.gz": 90 * day,
+			},
+			want: []string{"db/old.sql.gz"},
+		},
+		{
+			name: "pinned at the top and nested deeper",
+			files: map[string]time.Duration{
+				"pinned/a.tar":            100 * day,
+				"pinned/sub/b.tar":        100 * day,
+				"redis/2026/pinned/c.rdb": 100 * day,
+				"redis/2026/d.rdb":        100 * day,
+			},
+			want: []string{"redis/2026/d.rdb"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			for rel, age := range tt.files {
+				writeFile(t, root, rel, 1, age)
+			}
+			got, err := staleFiles(root, 7*day)
+			if err != nil || !slices.Equal(got, tt.want) {
+				t.Errorf("StaleFiles(root, now, 7d) = %q, %v, want %q, nil", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestDirSizes(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]int // path -> size
+		dirs  []string       // extra empty directories
+		want  map[string]int64
+	}{
+		{
+			name: "files at every level",
+			files: map[string]int{
+				"notes.txt":             10,
+				"db/mon.sql.gz":         300,
+				"db/pinned/gold.sql.gz": 200,
+				"redis/dump.rdb":        50,
+			},
+			want: map[string]int64{".": 10, "db": 500, "redis": 50},
+		},
+		{
+			name: "deep trees and an empty folder",
+			files: map[string]int{
+				"pg/2026/01/a.dump": 1000,
+				"pg/2026/02/b.dump": 1500,
+				"pg/latest.dump":    7,
+				"mongo/x/y/z.bson":  64,
+			},
+			dirs: []string{"empty/inside"},
+			want: map[string]int64{"pg": 2507, "mongo": 64},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			for rel, size := range tt.files {
+				writeFile(t, root, rel, size, day)
+			}
+			for _, dir := range tt.dirs {
+				if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err := DirSizes(root)
+			if err != nil {
+				t.Fatalf("DirSizes(root) error = %v, want nil", err)
+			}
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("DirSizes(root) = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

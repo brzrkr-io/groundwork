@@ -1,0 +1,39 @@
+// Package logging is the Gopherlings exercise "Structured logging with slog".
+package logging
+
+import (
+	"io"
+	"log/slog"
+)
+
+// Deploy is one rollout of a service to a region.
+type Deploy struct {
+	ID      string
+	Service string
+	Region  string
+}
+
+// NewLogger returns a logger that writes JSON lines to w, drops records below
+// level and redacts secrets.
+func NewLogger(w io.Writer, level slog.Level) *slog.Logger {
+	opts := &slog.HandlerOptions{
+		// TODO(1): Set Level to level.
+		// TODO(3): Set ReplaceAttr to Redact.
+	}
+	// TODO(1): Write JSON instead of text.
+	return slog.New(slog.NewTextHandler(w, opts))
+}
+
+// DeployLogger returns a logger that adds the deploy's ID, service and region
+// to every line.
+func DeployLogger(logger *slog.Logger, d Deploy) *slog.Logger {
+	// TODO(2): Return logger.With(...) with deploy_id and a "target" group.
+	return logger
+}
+
+// Redact replaces the value of "password" and "token" attributes with
+// "REDACTED". It has the shape of slog.HandlerOptions.ReplaceAttr.
+func Redact(groups []string, a slog.Attr) slog.Attr {
+	// TODO(3): Redact attributes whose key is "password" or "token".
+	return a
+}

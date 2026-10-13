@@ -1,0 +1,81 @@
+package redact
+
+import "testing"
+
+func TestIsAlert(t *testing.T) {
+	tests := []struct {
+		line string
+		want bool
+	}{
+		{"09:14:03 ERROR disk full on /var", true},
+		{"FATAL: out of memory", true},
+		{"retrying after ERROR", true},
+		{"09:14:03 INFO deploy finished", false},
+		{"checks passed, ERRORS=0", false},
+		{"dns answer NOERROR", false},
+		{"level=error msg=timeout", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			if got := IsAlert(tt.line); got != tt.want {
+				t.Errorf("IsAlert(%q) = %v, want %v", tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsInternalHost(t *testing.T) {
+	tests := []struct {
+		host string
+		want bool
+	}{
+		{"db-1.internal", true},
+		{"api.eu-west-1.internal", true},
+		{"cache.internal", true},
+		{"db-1xinternal", false},
+		{"db-1.internal.evil.com", false},
+		{"DB-1.internal", false},
+		{"my host.internal", false},
+		{"internal", false},
+		{".internal", false},
+		{"db..internal", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			if got := IsInternalHost(tt.host); got != tt.want {
+				t.Errorf("IsInternalHost(%q) = %v, want %v", tt.host, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedact(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{
+			"user=deploy password=hunter2 host=db-1",
+			"user=deploy password=REDACTED host=db-1",
+		},
+		{
+			"token=abc123 secret=s3cr3t!",
+			"token=REDACTED secret=REDACTED",
+		},
+		{
+			"api_token=xyz789 retries=3",
+			"api_token=REDACTED retries=3",
+		},
+		{
+			"connecting to db-1.internal:5432",
+			"connecting to db-1.internal:5432",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			if got := Redact(tt.line); got != tt.want {
+				t.Errorf("Redact(%q) = %q, want %q", tt.line, got, tt.want)
+			}
+		})
+	}
+}

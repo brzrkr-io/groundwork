@@ -1,0 +1,80 @@
+// Package cleanup2 is the Gopherlings exercise "defer: fix the log rotation job".
+package cleanup2
+
+import "fmt"
+
+// Recorder is a fake connection to a fleet of hosts. Each method appends a
+// line to Events instead of talking to a real server.
+type Recorder struct {
+	Events      []string
+	Unreachable string // Connect fails for this host
+	DiskFull    string // Rotate fails for this host
+}
+
+// Connect records "connect <host>". It fails when host is r.Unreachable.
+func (r *Recorder) Connect(host string) error {
+	r.Events = append(r.Events, "connect "+host)
+	if host == r.Unreachable {
+		return fmt.Errorf("connect %s: connection refused", host)
+	}
+	return nil
+}
+
+// Rotate records "rotate <host>". It fails when host is r.DiskFull.
+func (r *Recorder) Rotate(host string) error {
+	r.Events = append(r.Events, "rotate "+host)
+	if host == r.DiskFull {
+		return fmt.Errorf("rotate %s: disk full", host)
+	}
+	return nil
+}
+
+// Close records "close <host>".
+func (r *Recorder) Close(host string) {
+	r.Events = append(r.Events, "close "+host)
+}
+
+// Record appends event to the log as it is.
+func (r *Recorder) Record(event string) {
+	r.Events = append(r.Events, event)
+}
+
+// Maintenance rotates the logs on host and records whether it worked.
+func Maintenance(r *Recorder, host string) error {
+	status := "failed"
+	// A closure reads status when it runs, after the function has finished.
+	defer func() {
+		r.Record("maintenance " + host + ": " + status)
+	}()
+
+	if err := r.Connect(host); err != nil {
+		return err
+	}
+	defer r.Close(host)
+
+	if err := r.Rotate(host); err != nil {
+		return err
+	}
+	status = "ok"
+	return nil
+}
+
+// RotateHost connects to host, rotates its logs and closes the connection.
+func RotateHost(r *Recorder, host string) error {
+	if err := r.Connect(host); err != nil {
+		return err
+	}
+	defer r.Close(host)
+	return r.Rotate(host)
+}
+
+// RotateAll rotates the logs on every host in order, stopping at the first
+// error.
+func RotateAll(r *Recorder, hosts []string) error {
+	for _, host := range hosts {
+		if err := RotateHost(r, host); err != nil {
+			return err
+		}
+	}
+	return nil
+}

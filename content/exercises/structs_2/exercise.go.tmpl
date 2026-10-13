@@ -1,0 +1,52 @@
+// Package structs2 is the Gopherlings exercise "Structs: changes that vanish".
+package structs2
+
+// Host is one machine watched by the health checker.
+type Host struct {
+	Name     string
+	Addr     string
+	Healthy  bool
+	Failures int
+}
+
+// MarkAllUnhealthy sets Healthy to false on every host in hosts.
+func MarkAllUnhealthy(hosts []Host) {
+	// TODO(1): This loop changes a copy of each host. Make it change the
+	// hosts in the slice.
+	for _, h := range hosts {
+		h.Healthy = false
+	}
+}
+
+// RecordFailure adds one failure to the host called name, and marks it
+// unhealthy once it has 3 or more failures.
+func RecordFailure(hosts []Host, name string) {
+	for i := range hosts {
+		if hosts[i].Name == name {
+			// TODO(2): h is a copy, so these changes are lost. Make them
+			// reach hosts[i].
+			h := hosts[i]
+			h.Failures++
+			if h.Failures >= 3 {
+				h.Healthy = false
+			}
+			return
+		}
+	}
+}
+
+// ResetAll clears the failures on every host and marks it healthy.
+func ResetAll(hosts []Host) {
+	for i := range hosts {
+		// TODO(3): Store the host that reset returns back in the slice.
+		reset(hosts[i])
+	}
+}
+
+// reset clears h's failures and marks it healthy.
+// TODO(3): reset only changes its own copy of h. Make it return the
+// updated Host.
+func reset(h Host) {
+	h.Failures = 0
+	h.Healthy = true
+}

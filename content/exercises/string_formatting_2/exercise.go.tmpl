@@ -1,0 +1,24 @@
+// Package formatting is the Gopherlings exercise "Formatting: fix the bot messages".
+package formatting
+
+import "fmt"
+
+// ScaleMessage announces a scaling action, such as
+// "scaling api from 2 to 5 replicas".
+func ScaleMessage(service string, from, to int) string {
+	// TODO(1): go vet rejects this line. Fix the format string.
+	return fmt.Sprintf("scaling %d from %d to %d replicas", service, from, to)
+}
+
+// LogLine returns a logfmt line with the level, message and duration.
+func LogLine(level, msg string, durationMs int) string {
+	// TODO(2): Format the logfmt line.
+	return ""
+}
+
+// IncidentID returns the ticket ID for incident number n, such as
+// "INC-00042".
+func IncidentID(n int) string {
+	// TODO(3): Format the ID with the number padded to 5 digits.
+	return ""
+}

@@ -1,0 +1,56 @@
+// Package httpclient is the Gopherlings exercise "HTTP clients: fix the deploy notifier".
+package httpclient
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+)
+
+// GetVersion fetches url and returns the version text in its body, such as "v1.4.2".
+func GetVersion(client *http.Client, url string) (string, error) {
+	// TODO(1): Fix the two bugs: the body is never closed, and error statuses are treated as versions.
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(body)), nil
+}
+
+// DeployEvent is the JSON body sent to the deploy webhook.
+type DeployEvent struct {
+	Service string `json:"service"`
+	Version string `json:"version"`
+	Env     string `json:"env"`
+}
+
+// NewDeployRequest builds a POST request that sends ev to url as JSON.
+func NewDeployRequest(ctx context.Context, url string, ev DeployEvent) (*http.Request, error) {
+	// TODO(2): Encode ev as JSON and send it as the request body (add the bytes and encoding/json imports).
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	// TODO(2): Set the Content-Type header to "application/json".
+	return req, nil
+}
+
+// NotifyDeploy sends req with client. Any 2xx status counts as success.
+func NotifyDeploy(client *http.Client, req *http.Request) error {
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	// TODO(3): Accept every 2xx status, not only 200.
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("notify: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}

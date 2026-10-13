@@ -1,0 +1,59 @@
+// Package dnsrecords is the Gopherlings exercise "CSV files: fix the TSV DNS export".
+package dnsrecords
+
+import (
+	"encoding/csv"
+	"io"
+)
+
+// Record is one DNS record from a zone export.
+type Record struct {
+	Name  string
+	Type  string
+	Value string
+}
+
+// newReader returns a csv.Reader set up for the zone export format.
+func newReader(r io.Reader) *csv.Reader {
+	cr := csv.NewReader(r)
+	cr.FieldsPerRecord = 3
+	// TODO(1): Fields are separated by tabs, and lines starting with # are
+	// comments.
+	return cr
+}
+
+// ReadRecords reads every record from a zone export.
+func ReadRecords(r io.Reader) ([]Record, error) {
+	cr := newReader(r)
+	var records []Record
+	for {
+		row, err := cr.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, Record{Name: row[0], Type: row[1], Value: row[2]})
+	}
+	return records, nil
+}
+
+// WriteRecords writes records as tab-separated lines with no header.
+func WriteRecords(w io.Writer, records []Record) error {
+	cw := csv.NewWriter(w)
+	cw.Comma = '\t'
+	for _, rec := range records {
+		cw.Write([]string{rec.Name, rec.Type, rec.Value})
+	}
+	// TODO(2): Nothing reaches w and errors are lost. Fix both.
+	return nil
+}
+
+// BadLines returns the line numbers of records with the wrong number of
+// fields in a zone export.
+func BadLines(r io.Reader) ([]int, error) {
+	// TODO(3): Read with newReader until io.EOF, collecting the line of every
+	// record with the wrong number of fields. Return any other error.
+	return nil, nil
+}

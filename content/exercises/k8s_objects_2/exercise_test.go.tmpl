@@ -1,0 +1,143 @@
+package objects
+
+import (
+	"maps"
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+// deployment builds a test Deployment. A nil selector means "no selector".
+func deployment(ns, name string, labels, selector, template map[string]string) *appsv1.Deployment {
+	d := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: template},
+			},
+		},
+	}
+	if selector != nil {
+		d.Spec.Selector = &metav1.LabelSelector{MatchLabels: selector}
+	}
+	return d
+}
+
+func TestNewServiceSelectsPods(t *testing.T) {
+	tests := []struct {
+		ns, name string
+		labels   map[string]string
+		selector map[string]string
+		template map[string]string
+	}{
+		{
+			ns: "shop", name: "checkout",
+			labels:   map[string]string{"app": "checkout", "team": "payments"},
+			selector: map[string]string{"app": "checkout"},
+			template: map[string]string{"app": "checkout", "version": "1.4.2"},
+		},
+		{
+			ns: "monitoring", name: "grafana",
+			labels:   map[string]string{"app": "grafana", "team": "sre"},
+			selector: map[string]string{"app": "grafana", "env": "production"},
+			template: map[string]string{"app": "grafana", "env": "production", "version": "11.2.0"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := deployment(tt.ns, tt.name, tt.labels, tt.selector, tt.template)
+			svc := NewService(d, 8080)
+			if svc.Name != tt.name {
+				t.Errorf("NewService(%s/%s).Name = %q, want %q", tt.ns, tt.name, svc.Name, tt.name)
+			}
+			if svc.Namespace != tt.ns {
+				t.Errorf("NewService(%s/%s).Namespace = %q, want %q", tt.ns, tt.name, svc.Namespace, tt.ns)
+			}
+			if !maps.Equal(svc.Spec.Selector, tt.selector) {
+				t.Errorf("NewService(%s/%s).Spec.Selector = %v, want %v", tt.ns, tt.name, svc.Spec.Selector, tt.selector)
+			}
+		})
+	}
+}
+
+func TestNewServicePorts(t *testing.T) {
+	for _, containerPort := range []int32{8080, 3000} {
+		d := deployment("shop", "web",
+			map[string]string{"app": "web"},
+			map[string]string{"app": "web"},
+			map[string]string{"app": "web"})
+		svc := NewService(d, containerPort)
+		if len(svc.Spec.Ports) != 1 {
+			t.Fatalf("NewService(web, %d) has %d ports, want 1", containerPort, len(svc.Spec.Ports))
+		}
+		p := svc.Spec.Ports[0]
+		if p.Port != 80 {
+			t.Errorf("NewService(web, %d) Port = %d, want 80", containerPort, p.Port)
+		}
+		if p.TargetPort != intstr.FromInt32(containerPort) {
+			t.Errorf("NewService(web, %d) TargetPort = %s, want %d", containerPort, p.TargetPort.String(), containerPort)
+		}
+	}
+}
+
+func TestCheckSelector(t *testing.T) {
+	tests := []struct {
+		name     string
+		selector map[string]string
+		template map[string]string
+		want     string // "" means no error
+	}{
+		{
+			name:     "matches",
+			selector: map[string]string{"app": "checkout", "env": "production"},
+			template: map[string]string{"app": "checkout", "env": "production", "version": "1.4.2"},
+			want:     "",
+		},
+		{
+			name:     "no selector",
+			selector: nil,
+			template: map[string]string{"app": "checkout"},
+			want:     "deployment shop/checkout: selector is empty",
+		},
+		{
+			name:     "empty selector",
+			selector: map[string]string{},
+			template: map[string]string{"app": "checkout"},
+			want:     "deployment shop/checkout: selector is empty",
+		},
+		{
+			name:     "missing label",
+			selector: map[string]string{"app": "checkout", "env": "production"},
+			template: map[string]string{"app": "checkout"},
+			want:     `deployment shop/checkout: template label env is "", selector wants "production"`,
+		},
+		{
+			name:     "wrong value",
+			selector: map[string]string{"app": "checkout"},
+			template: map[string]string{"app": "checkout-v2"},
+			want:     `deployment shop/checkout: template label app is "checkout-v2", selector wants "checkout"`,
+		},
+		{
+			name:     "two problems reports the first key",
+			selector: map[string]string{"env": "production", "app": "checkout"},
+			template: map[string]string{"app": "cart", "env": "staging"},
+			want:     `deployment shop/checkout: template label app is "cart", selector wants "checkout"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := deployment("shop", "checkout", nil, tt.selector, tt.template)
+			err := CheckSelector(d)
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			if got != tt.want {
+				t.Errorf("CheckSelector() error = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

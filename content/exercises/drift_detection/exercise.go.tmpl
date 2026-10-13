@@ -1,0 +1,115 @@
+// Package drift compares the infrastructure you declared with what really
+// exists in AWS, like a tiny "terraform plan".
+package drift
+
+import (
+	"cmp"
+	"context"
+	"slices"
+
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+)
+
+// Resource is one piece of infrastructure: an S3 bucket or an EC2 instance.
+type Resource struct {
+	Kind string            `json:"kind"`
+	Name string            `json:"name"`
+	Tags map[string]string `json:"tags"`
+}
+
+// ID returns "kind/name", for example "bucket/acme-logs".
+func (r Resource) ID() string {
+	return r.Kind + "/" + r.Name
+}
+
+// Change is one difference between the desired and the actual state.
+type Change struct {
+	Action string   // "create", "update" or "delete"
+	ID     string   // the resource ID, for example "instance/web-2"
+	Keys   []string // only for "update": the tag keys that differ, sorted
+}
+
+// LoadDesired reads the desired state from a JSON file.
+func LoadDesired(path string) ([]Resource, error) {
+	// TODO(1): Read the file and decode the JSON into a []Resource.
+	// Wrap any error as "load desired state: <err>" (add the imports you need).
+	return nil, nil
+}
+
+// Diff lists the changes that would turn actual into desired, sorted by ID.
+func Diff(desired, actual []Resource) []Change {
+	want := byID(desired)
+	got := byID(actual)
+
+	var changes []Change
+	// TODO(2): For every ID in want that is not in got, append a "create".
+
+	for id, w := range want {
+		g, ok := got[id]
+		if !ok {
+			continue
+		}
+		if keys := changedKeys(w.Tags, g.Tags); len(keys) > 0 {
+			changes = append(changes, Change{Action: "update", ID: id, Keys: keys})
+		}
+	}
+
+	// TODO(2): For every ID in got that is not in want, append a "delete".
+
+	// Ranging over a map visits keys in random order, so sort the result.
+	slices.SortFunc(changes, func(a, b Change) int {
+		return cmp.Compare(a.ID, b.ID)
+	})
+	return changes
+}
+
+// Plan compares the desired state in desiredPath with AWS and returns a
+// report plus an exit code: 0 no changes, 1 error, 2 changes present.
+func Plan(ctx context.Context, desiredPath string, buckets BucketAPI, instances ec2.DescribeInstancesAPIClient) (string, int) {
+	desired, err := LoadDesired(desiredPath)
+	if err != nil {
+		return "Error: " + err.Error() + "\n", 1
+	}
+	actual, err := Actual(ctx, buckets, instances)
+	if err != nil {
+		// TODO(3): Return the error the same way as above.
+		return "", 0
+	}
+
+	changes := Diff(desired, actual)
+	if len(changes) == 0 {
+		// TODO(3): Return the "No changes." message and exit code 0.
+		return "", 0
+	}
+
+	// TODO(3): Write one line per change, then the "Plan:" summary line.
+	// Return the report and exit code 2.
+	return "", 0
+}
+
+// byID indexes resources by their ID.
+func byID(rs []Resource) map[string]Resource {
+	m := make(map[string]Resource, len(rs))
+	for _, r := range rs {
+		m[r.ID()] = r
+	}
+	return m
+}
+
+// changedKeys returns the sorted tag keys whose values differ between want
+// and got, including keys that only one side has.
+func changedKeys(want, got map[string]string) []string {
+	var keys []string
+	for k, v := range want {
+		if gv, ok := got[k]; !ok || gv != v {
+			keys = append(keys, k)
+		}
+	}
+	for k := range got {
+		if _, ok := want[k]; !ok {
+			keys = append(keys, k)
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}

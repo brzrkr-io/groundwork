@@ -1,0 +1,173 @@
+package manifests
+
+import (
+	"errors"
+	"os"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+// readFile loads a manifest from the testdata folder.
+func readFile(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// replicas shows a *int32 as text: "nil" or the number.
+func replicas(p *int32) string {
+	if p == nil {
+		return "nil"
+	}
+	return strconv.Itoa(int(*p))
+}
+
+func TestParseDeployment(t *testing.T) {
+	tests := []struct {
+		file          string
+		name, ns      string
+		replicas      string
+		image         string
+		containerPort int32
+	}{
+		{"checkout.yaml", "checkout", "shop", "3", "registry.example.com/shop/checkout:2.1.0", 8080},
+		{"worker.yaml", "worker", "payments", "nil", "registry.example.com/payments/worker:0.9.3", 9090},
+	}
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			d, err := ParseDeployment(readFile(t, tt.file))
+			if err != nil {
+				t.Fatalf("ParseDeployment(%s) error = %v, want nil", tt.file, err)
+			}
+			if d == nil {
+				t.Fatalf("ParseDeployment(%s) = nil, want a Deployment", tt.file)
+			}
+			if d.Name != tt.name {
+				t.Errorf("Name = %q, want %q", d.Name, tt.name)
+			}
+			if d.Namespace != tt.ns {
+				t.Errorf("Namespace = %q, want %q", d.Namespace, tt.ns)
+			}
+			if got := replicas(d.Spec.Replicas); got != tt.replicas {
+				t.Errorf("Spec.Replicas = %s, want %s", got, tt.replicas)
+			}
+			containers := d.Spec.Template.Spec.Containers
+			if len(containers) != 1 {
+				t.Fatalf("got %d containers, want 1", len(containers))
+			}
+			if containers[0].Image != tt.image {
+				t.Errorf("Image = %q, want %q", containers[0].Image, tt.image)
+			}
+			if len(containers[0].Ports) != 1 || containers[0].Ports[0].ContainerPort != tt.containerPort {
+				t.Errorf("Ports = %v, want one port with ContainerPort %d", containers[0].Ports, tt.containerPort)
+			}
+		})
+	}
+
+	errorTests := []struct {
+		name string
+		yaml string
+	}{
+		{"broken YAML", "spec:\n  replicas: [3\n"},
+		{"replicas is not a number", "spec:\n  replicas: three\n"},
+	}
+	for _, tt := range errorTests {
+		t.Run(tt.name, func(t *testing.T) {
+			d, err := ParseDeployment([]byte(tt.yaml))
+			if err == nil {
+				t.Fatalf("ParseDeployment(%q) error = nil, want an error", tt.yaml)
+			}
+			if d != nil {
+				t.Errorf("ParseDeployment(%q) returned a Deployment with the error, want nil", tt.yaml)
+			}
+			if !strings.HasPrefix(err.Error(), "parse deployment: ") {
+				t.Errorf("ParseDeployment(%q) error = %q, want prefix %q", tt.yaml, err, "parse deployment: ")
+			}
+			if errors.Unwrap(err) == nil {
+				t.Errorf("ParseDeployment(%q) error = %q, want it wrapped with %%w", tt.yaml, err)
+			}
+		})
+	}
+}
+
+func TestReadType(t *testing.T) {
+	tests := []struct {
+		file       string
+		apiVersion string
+		kind       string
+	}{
+		{"service.yaml", "v1", "Service"},
+		{"checkout.yaml", "apps/v1", "Deployment"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			tm, err := ReadType(readFile(t, tt.file))
+			if err != nil {
+				t.Fatalf("ReadType(%s) error = %v, want nil", tt.file, err)
+			}
+			if tm.APIVersion != tt.apiVersion || tm.Kind != tt.kind {
+				t.Errorf("ReadType(%s) = {APIVersion: %q, Kind: %q}, want {APIVersion: %q, Kind: %q}",
+					tt.file, tm.APIVersion, tm.Kind, tt.apiVersion, tt.kind)
+			}
+		})
+	}
+
+	errorTests := []struct {
+		name       string
+		yaml       string
+		wantPrefix string
+		wantExact  string
+	}{
+		{name: "no kind", yaml: "metadata:\n  name: web\n", wantExact: "read type: missing kind"},
+		{name: "only apiVersion", yaml: "apiVersion: v1\n", wantExact: "read type: missing kind"},
+		{name: "broken YAML", yaml: "kind: [Service\n", wantPrefix: "read type: "},
+	}
+	for _, tt := range errorTests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ReadType([]byte(tt.yaml))
+			if err == nil {
+				t.Fatalf("ReadType(%q) error = nil, want an error", tt.yaml)
+			}
+			if tt.wantExact != "" && err.Error() != tt.wantExact {
+				t.Errorf("ReadType(%q) error = %q, want %q", tt.yaml, err, tt.wantExact)
+			}
+			if tt.wantPrefix != "" {
+				if !strings.HasPrefix(err.Error(), tt.wantPrefix) {
+					t.Errorf("ReadType(%q) error = %q, want prefix %q", tt.yaml, err, tt.wantPrefix)
+				}
+				if errors.Unwrap(err) == nil {
+					t.Errorf("ReadType(%q) error = %q, want it wrapped with %%w", tt.yaml, err)
+				}
+			}
+		})
+	}
+}
+
+func TestSplitDocuments(t *testing.T) {
+	tests := []struct {
+		name   string
+		stream string
+		want   []string
+	}{
+		{"one document", "kind: Namespace\n", []string{"kind: Namespace"}},
+		{"two documents", "kind: Namespace\n---\nkind: Service\n", []string{"kind: Namespace", "kind: Service"}},
+		{"empty documents skipped", "---\nkind: Namespace\n---\n\n---\nkind: Service\n", []string{"kind: Namespace", "kind: Service"}},
+		{"--- inside a line", "name: a---b\n---\nkind: Service", []string{"name: a---b", "kind: Service"}},
+		{"multi-line document trimmed", "\n\nkind: Namespace\nmetadata:\n  name: shop\n\n---\n", []string{"kind: Namespace\nmetadata:\n  name: shop"}},
+		{"empty stream", "", nil},
+		{"only separators", "---\n---\n", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SplitDocuments(tt.stream)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("SplitDocuments(%q) = %q, want %q", tt.stream, got, tt.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,49 @@
+package hosts
+
+import (
+	"slices"
+	"testing"
+)
+
+// assertHosts fails the test if got and want differ.
+func assertHosts(t *testing.T, got, want []string) {
+	t.Helper()
+	if !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestParseHosts(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want []string
+	}{
+		{
+			name: "one host per line",
+			text: "web-1\nweb-2\ndb-1",
+			want: []string{"web-1", "web-2", "db-1"},
+		},
+		{
+			name: "skips comments",
+			text: "# web tier\nweb-1\n# database\ndb-1",
+			want: []string{"web-1", "db-1"},
+		},
+		{
+			name: "skips blank lines",
+			text: "web-1\n\nweb-2\n\n",
+			want: []string{"web-1", "web-2"},
+		},
+		{
+			name: "trims spaces",
+			text: "  web-1  \n\tdb-1",
+			want: []string{"web-1", "db-1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseHosts(tt.text)
+			assertHosts(t, got, tt.want)
+		})
+	}
+}

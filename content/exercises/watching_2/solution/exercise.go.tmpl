@@ -1,0 +1,54 @@
+// Package watching is the Gopherlings exercise "Watching resources: closed watches and ERROR events".
+package watching
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/watch"
+)
+
+// ErrWatchClosed is returned by Follow when the server closes the watch.
+var ErrWatchClosed = errors.New("watch closed by the server")
+
+// Apply updates phases, a map from Pod name to Pod phase, with one event.
+// ADDED and MODIFIED record the Pod's phase, DELETED removes the Pod, and
+// every other event leaves the map alone.
+func Apply(phases map[string]corev1.PodPhase, ev watch.Event) {
+	pod, ok := ev.Object.(*corev1.Pod)
+	if !ok {
+		return
+	}
+	switch ev.Type {
+	case watch.Added, watch.Modified:
+		phases[pod.Name] = pod.Status.Phase
+	case watch.Deleted:
+		delete(phases, pod.Name)
+	}
+}
+
+// Follow applies the events from w to a new phases map until the watch ends.
+// It returns the map with nil when ctx is cancelled, with ErrWatchClosed when
+// the server closes the watch, and with the API error when an ERROR event
+// arrives.
+func Follow(ctx context.Context, w watch.Interface) (map[string]corev1.PodPhase, error) {
+	defer w.Stop()
+	phases := map[string]corev1.PodPhase{}
+	for {
+		select {
+		case <-ctx.Done():
+			return phases, nil
+		case ev, ok := <-w.ResultChan():
+			if !ok {
+				return phases, ErrWatchClosed
+			}
+			if ev.Type == watch.Error {
+				return phases, fmt.Errorf("watch error: %w", apierrors.FromObject(ev.Object))
+			}
+			Apply(phases, ev)
+		}
+	}
+}

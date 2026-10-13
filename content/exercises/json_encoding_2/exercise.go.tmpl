@@ -1,0 +1,46 @@
+// Package events is the Gopherlings exercise "Encoding JSON: fix the alert stream".
+package events
+
+import (
+	"encoding/json"
+	"io"
+	"time"
+)
+
+// auditRecord is one entry in the audit log.
+//
+// TODO(1): AuditJSON always returns "{}". Fix this struct so every field is
+// encoded, with the keys "time", "user", "action" and "target".
+type auditRecord struct {
+	at     time.Time
+	user   string
+	action string
+	target string
+}
+
+// AuditJSON encodes one audit log entry as a single line of JSON.
+func AuditJSON(user, action, target string, at time.Time) (string, error) {
+	rec := auditRecord{at: at, user: user, action: action, target: target}
+	b, err := json.Marshal(rec)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// Alert is an alert event sent to the log collector.
+//
+// TODO(2): Fix the three broken struct tags.
+type Alert struct {
+	Service  string `json:"service"`
+	Severity string `json:"sevrity"`
+	Region   string `json: "region"`
+	Message  string `json:"message"`
+	Silenced bool   `json:"silenced"`
+}
+
+// WriteJSONLines writes each alert to w as one line of JSON.
+func WriteJSONLines(w io.Writer, alerts []Alert) error {
+	// TODO(3): Use a json.Encoder to write one alert per line.
+	return nil
+}

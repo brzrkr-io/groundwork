@@ -1,0 +1,41 @@
+// Package returns is the Gopherlings exercise "Multiple return values".
+package returns
+
+import (
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// SplitUptime splits a number of minutes into whole hours and leftover minutes.
+func SplitUptime(totalMinutes int) (int, int) {
+	return totalMinutes / 60, totalMinutes % 60
+}
+
+// SplitHostPort splits "host:port" at the first colon. The bool reports
+// whether a colon was found.
+func SplitHostPort(addr string) (string, string, bool) {
+	host, port, found := strings.Cut(addr, ":")
+	if !found {
+		return "", "", false
+	}
+	return host, port, true
+}
+
+// ParseAddress splits "host:port" and converts the port to a number between
+// 1 and 65535.
+func ParseAddress(addr string) (string, int, error) {
+	host, portText, ok := SplitHostPort(addr)
+	if !ok {
+		return "", 0, errors.New("missing port")
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return "", 0, err
+	}
+	if port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("port %d out of range", port)
+	}
+	return host, port, nil
+}

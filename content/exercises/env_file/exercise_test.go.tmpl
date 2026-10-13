@@ -1,0 +1,219 @@
+package dotenv
+
+import (
+	"errors"
+	"io"
+	"maps"
+	"slices"
+	"strings"
+	"testing"
+	"testing/iotest"
+)
+
+func TestUnquote(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    string
+		wantErr error
+	}{
+		{"double quotes", `"Hello, ops team"`, "Hello, ops team", nil},
+		{"single quotes", `'json'`, "json", nil},
+		{"empty quotes", `""`, "", nil},
+		{"quotes keep inner spaces", `"  padded  "`, "  padded  ", nil},
+		{"no quotes", `8080`, "8080", nil},
+		{"empty value", ``, "", nil},
+		{"quote in the middle", `it's`, "it's", nil},
+		{"unterminated double", `"oops`, "", ErrUnterminatedQuote},
+		{"lone quote", `"`, "", ErrUnterminatedQuote},
+		{"mismatched quotes", `'mixed"`, "", ErrUnterminatedQuote},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Unquote(tt.value)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Unquote(%q) error = %v, want %v", tt.value, err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("Unquote(%q) = %q, want %q", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseLine(t *testing.T) {
+	tests := []struct {
+		name      string
+		line      string
+		wantKey   string
+		wantValue string
+	}{
+		{"simple", "PORT=8080", "PORT", "8080"},
+		{"export and spaces", "  export APP_ENV = prod ", "APP_ENV", "prod"},
+		{"double quoted", `GREETING="Hi = hello"`, "GREETING", "Hi = hello"},
+		{"single quoted", `LOG_FORMAT='json'`, "LOG_FORMAT", "json"},
+		{"empty value", "EMPTY=", "EMPTY", ""},
+		{"equals in value", "DATABASE_URL=postgres://db/shop?sslmode=require", "DATABASE_URL", "postgres://db/shop?sslmode=require"},
+		{"no inline comments", "PORT=8080 # web", "PORT", "8080 # web"},
+		{"underscore key", "_INTERNAL=1", "_INTERNAL", "1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, value, err := ParseLine(tt.line)
+			if err != nil {
+				t.Fatalf("ParseLine(%q) returned error %v, want nil", tt.line, err)
+			}
+			if key != tt.wantKey || value != tt.wantValue {
+				t.Errorf("ParseLine(%q) = %q, %q, want %q, %q", tt.line, key, value, tt.wantKey, tt.wantValue)
+			}
+		})
+	}
+
+	errorTests := []struct {
+		name    string
+		line    string
+		wantErr error
+		wantMsg string
+	}{
+		{"no equals", "PORT 8080", ErrMissingEquals, `missing "="`},
+		{"dash in key", "MY-VAR=1", ErrInvalidKey, `invalid key "MY-VAR"`},
+		{"digit first", "1PORT=1", ErrInvalidKey, `invalid key "1PORT"`},
+		{"empty key", "=value", ErrInvalidKey, `invalid key ""`},
+		{"unterminated quote", `NAME="checkout`, ErrUnterminatedQuote, "unterminated quote"},
+	}
+	for _, tt := range errorTests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, value, err := ParseLine(tt.line)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ParseLine(%q) error = %v, want %v", tt.line, err, tt.wantErr)
+			}
+			if err.Error() != tt.wantMsg {
+				t.Errorf("ParseLine(%q) error message = %q, want %q", tt.line, err.Error(), tt.wantMsg)
+			}
+			if key != "" || value != "" {
+				t.Errorf("ParseLine(%q) = %q, %q on error, want empty strings", tt.line, key, value)
+			}
+		})
+	}
+}
+
+func TestParse(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  map[string]string
+	}{
+		{
+			name: "checkout service",
+			input: `# Settings for the checkout service
+export APP_ENV=production
+PORT=8080
+
+DATABASE_URL=postgres://app@db.internal:5432/shop?sslmode=require
+GREETING="Hello, ops team"
+  # an indented comment
+LOG_FORMAT='json'
+`,
+			want: map[string]string{
+				"APP_ENV":      "production",
+				"PORT":         "8080",
+				"DATABASE_URL": "postgres://app@db.internal:5432/shop?sslmode=require",
+				"GREETING":     "Hello, ops team",
+				"LOG_FORMAT":   "json",
+			},
+		},
+		{
+			name:  "last duplicate wins",
+			input: "PORT=8080\nREGION=eu-west-1\nPORT=9090\n",
+			want:  map[string]string{"PORT": "9090", "REGION": "eu-west-1"},
+		},
+		{
+			name:  "only comments",
+			input: "# nothing here yet\n\n",
+			want:  map[string]string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Parse(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("Parse(%q) returned error %v, want nil", tt.input, err)
+			}
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("Parse(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("reports every bad line", func(t *testing.T) {
+		input := `PORT=8080
+LOG_LEVEL debug
+
+MY-VAR=1
+NAME="checkout
+`
+		got, err := Parse(strings.NewReader(input))
+		want := "line 2: missing \"=\"\nline 4: invalid key \"MY-VAR\"\nline 5: unterminated quote"
+		if err == nil {
+			t.Fatalf("Parse(%q) returned nil error, want %q", input, want)
+		}
+		if err.Error() != want {
+			t.Errorf("Parse(%q) error =\n%s\nwant\n%s", input, err, want)
+		}
+		for _, target := range []error{ErrMissingEquals, ErrInvalidKey, ErrUnterminatedQuote} {
+			if !errors.Is(err, target) {
+				t.Errorf("errors.Is(err, %v) = false, want true", target)
+			}
+		}
+		if got != nil {
+			t.Errorf("Parse(%q) = %v on error, want nil", input, got)
+		}
+	})
+
+	t.Run("read error", func(t *testing.T) {
+		errDisk := errors.New("disk on fire")
+		r := io.MultiReader(strings.NewReader("PORT=8080\n"), iotest.ErrReader(errDisk))
+		got, err := Parse(r)
+		if !errors.Is(err, errDisk) {
+			t.Fatalf("Parse(failing reader) error = %v, want %v", err, errDisk)
+		}
+		if got != nil {
+			t.Errorf("Parse(failing reader) = %v on error, want nil", got)
+		}
+	})
+}
+
+func TestEnviron(t *testing.T) {
+	tests := []struct {
+		name string
+		vars map[string]string
+		want []string
+	}{
+		{
+			name: "sorted by key",
+			vars: map[string]string{"PORT": "8080", "APP_ENV": "production"},
+			want: []string{"APP_ENV=production", "PORT=8080"},
+		},
+		{
+			name: "values kept as they are",
+			vars: map[string]string{"ZONE": "b", "GREETING": "Hello, ops team", "EMPTY": "", "DSN": "db?x=1"},
+			want: []string{"DSN=db?x=1", "EMPTY=", "GREETING=Hello, ops team", "ZONE=b"},
+		},
+		{
+			name: "empty map",
+			vars: map[string]string{},
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Environ(tt.vars)
+			if len(got) == 0 && len(tt.want) == 0 {
+				return
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Environ(%v) = %q, want %q", tt.vars, got, tt.want)
+			}
+		})
+	}
+}

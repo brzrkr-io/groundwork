@@ -1,0 +1,61 @@
+// Package awsconfig is the Gopherlings exercise "AWS SDK configuration: regions, profiles and credentials".
+package awsconfig
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+)
+
+// StaticConfig returns an AWS config for region that uses the given access
+// key ID and secret access key.
+func StaticConfig(ctx context.Context, region, keyID, secret string) (aws.Config, error) {
+	return config.LoadDefaultConfig(ctx,
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(keyID, secret, "")),
+	)
+}
+
+// Settings says where to load AWS settings from.
+type Settings struct {
+	Profile         string // profile name, e.g. "staging"
+	Region          string // region override; "" means use the profile's region
+	ConfigFile      string // path to the shared config file
+	CredentialsFile string // path to the shared credentials file
+}
+
+// Load returns the AWS config for s.Profile, read from s.ConfigFile and
+// s.CredentialsFile. A non-empty s.Region overrides the profile's region.
+func Load(ctx context.Context, s Settings) (aws.Config, error) {
+	opts := []func(*config.LoadOptions) error{
+		config.WithSharedConfigProfile(s.Profile),
+		config.WithSharedConfigFiles([]string{s.ConfigFile}),
+		config.WithSharedCredentialsFiles([]string{s.CredentialsFile}),
+	}
+	if s.Region != "" {
+		opts = append(opts, config.WithRegion(s.Region))
+	}
+	return config.LoadDefaultConfig(ctx, opts...)
+}
+
+// Redact hides most of a secret so it is safe to log: the first 4
+// characters followed by "****", or just "****" for 4 characters or fewer.
+func Redact(secret string) string {
+	if len(secret) <= 4 {
+		return "****"
+	}
+	return secret[:4] + "****"
+}
+
+// Describe returns a log-safe line such as
+// "region=eu-west-1 access_key=AKIA****".
+func Describe(ctx context.Context, cfg aws.Config) (string, error) {
+	creds, err := cfg.Credentials.Retrieve(ctx)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("region=%s access_key=%s", cfg.Region, Redact(creds.AccessKeyID)), nil
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "kind": "bucket",
+    "name": "acme-artifacts",
+    "tags": { "Env": "prod", "Owner": "ci" }
+  },
+  {
+    "kind": "bucket",
+    "name": "acme-logs",
+    "tags": { "Env": "prod", "Owner": "platform" }
+  },
+  {
+    "kind": "instance",
+    "name": "web-1",
+    "tags": { "Env": "prod", "Owner": "web" }
+  },
+  {
+    "kind": "instance",
+    "name": "web-2",
+    "tags": { "Env": "prod", "Owner": "web" }
+  }
+]

@@ -1,0 +1,15 @@
+package alerts
+
+import "testing"
+
+func FuzzTruncate(f *testing.F) {
+	// TODO(1): Add the seeds ("disk 92% full on db-1", 10) and
+	// ("disk full", -1) with f.Add.
+
+	f.Fuzz(func(t *testing.T, msg string, limit int) {
+		// TODO(1): Call Truncate(msg, limit). Check the length and prefix
+		// properties from the README with t.Errorf.
+
+		// TODO(2): Check that a valid UTF-8 msg gives a valid UTF-8 result.
+	})
+}

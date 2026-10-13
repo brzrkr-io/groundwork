@@ -1,0 +1,63 @@
+// Package httptesting is the Gopherlings exercise "Testing HTTP: recorders and fake servers".
+package httptesting
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+)
+
+// This code is correct. Your job in this exercise is to write tests for it.
+
+// Directory maps host names to their IP addresses.
+type Directory map[string]string
+
+// NewHandler returns the host lookup API. GET /hosts/{name} answers with the
+// host's IP address, or 404 for a host that isn't in the directory.
+func NewHandler(d Directory) http.Handler {
+	return newHandler(d)
+}
+
+// FetchIP asks the host lookup API at baseURL for the IP address of host.
+func FetchIP(client *http.Client, baseURL, host string) (string, error) {
+	return fetchIP(client, baseURL, host)
+}
+
+// newHandler and fetchIP point at the real implementations. Gopherlings'
+// grader swaps in broken versions to check that your tests catch them.
+var (
+	newHandler = realNewHandler
+	fetchIP    = realFetchIP
+)
+
+func realNewHandler(d Directory) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /hosts/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		ip, ok := d[name]
+		if !ok {
+			http.Error(w, "unknown host: "+name, http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintln(w, ip)
+	})
+	return mux
+}
+
+func realFetchIP(client *http.Client, baseURL, host string) (string, error) {
+	resp, err := client.Get(baseURL + "/hosts/" + host)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("lookup %s: unexpected status %d", host, resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(body)), nil
+}

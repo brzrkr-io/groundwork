@@ -1,0 +1,224 @@
+package buckettags
+
+import (
+	"context"
+	"errors"
+	"maps"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
+)
+
+// apiError builds an error shaped like the real SDK's: an OperationError
+// wrapping an API error with a code.
+func apiError(code, message string) error {
+	return &smithy.OperationError{
+		ServiceID:     "S3",
+		OperationName: "GetBucketTagging",
+		Err:           &smithy.GenericAPIError{Code: code, Message: message},
+	}
+}
+
+// bucket is what the fake S3 knows about one bucket: its tags, or an error.
+type bucket struct {
+	tags []types.Tag
+	err  error
+}
+
+// fakeS3 answers GetBucketTagging from a map of bucket name to bucket.
+type fakeS3 map[string]bucket
+
+func (f fakeS3) GetBucketTagging(ctx context.Context, in *s3.GetBucketTaggingInput, _ ...func(*s3.Options)) (*s3.GetBucketTaggingOutput, error) {
+	b, ok := f[aws.ToString(in.Bucket)]
+	if !ok {
+		return nil, apiError("NoSuchBucket", "The specified bucket does not exist")
+	}
+	if b.err != nil {
+		return nil, b.err
+	}
+	return &s3.GetBucketTaggingOutput{TagSet: b.tags}, nil
+}
+
+// tagged returns a bucket with the given key, value pairs as tags.
+func tagged(kv ...string) bucket {
+	var b bucket
+	for i := 0; i < len(kv); i += 2 {
+		b.tags = append(b.tags, types.Tag{Key: aws.String(kv[i]), Value: aws.String(kv[i+1])})
+	}
+	return b
+}
+
+var (
+	untagged     = bucket{err: apiError("NoSuchTagSet", "The TagSet does not exist")}
+	accessDenied = bucket{err: apiError("AccessDenied", "Access Denied")}
+)
+
+// errorCode returns the API error code inside err, or "" if there is none.
+func errorCode(err error) string {
+	if apiErr, ok := errors.AsType[smithy.APIError](err); ok {
+		return apiErr.ErrorCode()
+	}
+	return ""
+}
+
+func TestBucketTags(t *testing.T) {
+	api := fakeS3{
+		"artifacts-prod": tagged("Owner", "release-team", "Env", "prod", "CostCenter", "CC-1042"),
+		"logs-staging":   tagged("Env", "staging"),
+		"logs-archive":   untagged,
+		"tmp-uploads":    untagged,
+		"secrets-prod":   accessDenied,
+	}
+	tests := []struct {
+		bucket   string
+		want     map[string]string
+		wantCode string // "" means no error expected
+	}{
+		{"artifacts-prod", map[string]string{"Owner": "release-team", "Env": "prod", "CostCenter": "CC-1042"}, ""},
+		{"logs-staging", map[string]string{"Env": "staging"}, ""},
+		{"logs-archive", map[string]string{}, ""},
+		{"tmp-uploads", map[string]string{}, ""},
+		{"secrets-prod", nil, "AccessDenied"},
+		{"deleted-bucket", nil, "NoSuchBucket"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.bucket, func(t *testing.T) {
+			got, err := BucketTags(context.Background(), api, tt.bucket)
+			if tt.wantCode == "" {
+				if err != nil {
+					t.Fatalf("BucketTags(%q) error = %v, want nil", tt.bucket, err)
+				}
+				if !maps.Equal(got, tt.want) {
+					t.Errorf("BucketTags(%q) = %v, want %v", tt.bucket, got, tt.want)
+				}
+				return
+			}
+			if code := errorCode(err); code != tt.wantCode {
+				t.Fatalf("BucketTags(%q) error = %v, want an API error with code %q", tt.bucket, err, tt.wantCode)
+			}
+			prefix := `get tags for bucket "` + tt.bucket + `": `
+			if !strings.HasPrefix(err.Error(), prefix) {
+				t.Errorf("BucketTags(%q) error = %q, want it to start with %q", tt.bucket, err, prefix)
+			}
+		})
+	}
+}
+
+func TestProblems(t *testing.T) {
+	tests := []struct {
+		name   string
+		bucket string
+		tags   map[string]string
+		want   []string
+	}{
+		{
+			name:   "all good",
+			bucket: "artifacts-prod",
+			tags:   map[string]string{"Owner": "release-team", "Env": "prod", "CostCenter": "CC-1042"},
+			want:   nil,
+		},
+		{
+			name:   "no tags",
+			bucket: "logs-archive",
+			tags:   map[string]string{},
+			want: []string{
+				"logs-archive: missing CostCenter",
+				"logs-archive: missing Env",
+				"logs-archive: missing Owner",
+			},
+		},
+		{
+			name:   "long Env name",
+			bucket: "web-assets",
+			tags:   map[string]string{"Owner": "web-team", "Env": "production", "CostCenter": "CC-2001"},
+			want:   []string{`web-assets: Env "production" is not prod, staging or dev`},
+		},
+		{
+			name:   "Env is case-sensitive",
+			bucket: "ml-models",
+			tags:   map[string]string{"Env": "Staging", "CostCenter": "CC-3300"},
+			want: []string{
+				"ml-models: missing Owner",
+				`ml-models: Env "Staging" is not prod, staging or dev`,
+			},
+		},
+		{
+			name:   "good Env, missing CostCenter",
+			bucket: "ci-cache",
+			tags:   map[string]string{"Owner": "ci-team", "Env": "dev"},
+			want:   []string{"ci-cache: missing CostCenter"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Problems(tt.bucket, tt.tags)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Problems(%q, %v) = %q, want %q", tt.bucket, tt.tags, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAudit(t *testing.T) {
+	api := fakeS3{
+		"web-assets":   tagged("Owner", "web-team", "Env", "production", "CostCenter", "CC-2001"),
+		"logs-archive": untagged,
+		"ci-cache":     tagged("Env", "dev", "CostCenter", "CC-7000"),
+		"zz-backups":   tagged("Owner", "dba-team", "Env", "prod"),
+		"aa-reports":   tagged("Owner", "data-team", "CostCenter", "CC-4100"),
+		"secrets-prod": accessDenied,
+	}
+
+	tests := []struct {
+		name    string
+		buckets []string
+		want    []string
+	}{
+		{
+			name:    "mixed buckets",
+			buckets: []string{"web-assets", "logs-archive", "ci-cache"},
+			want: []string{
+				"ci-cache: missing Owner",
+				"logs-archive: missing CostCenter",
+				"logs-archive: missing Env",
+				"logs-archive: missing Owner",
+				`web-assets: Env "production" is not prod, staging or dev`,
+			},
+		},
+		{
+			name:    "reverse alphabetical input",
+			buckets: []string{"zz-backups", "aa-reports"},
+			want: []string{
+				"aa-reports: missing Env",
+				"zz-backups: missing CostCenter",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Audit(context.Background(), api, tt.buckets)
+			if err != nil {
+				t.Fatalf("Audit(%q) error = %v, want nil", tt.buckets, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Audit(%q) =\n  %q\nwant\n  %q", tt.buckets, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("access denied stops the audit", func(t *testing.T) {
+		buckets := []string{"ci-cache", "secrets-prod"}
+		got, err := Audit(context.Background(), api, buckets)
+		if code := errorCode(err); code != "AccessDenied" {
+			t.Fatalf("Audit(%q) error = %v, want an API error with code %q", buckets, err, "AccessDenied")
+		}
+		if got != nil {
+			t.Errorf("Audit(%q) = %q, want nil on error", buckets, got)
+		}
+	})
+}

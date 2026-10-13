@@ -1,0 +1,31 @@
+// Package closures is the Gopherlings exercise "Functions as values".
+package closures
+
+// NewThresholdChecker returns a function that reports whether a value is at
+// or above limit.
+func NewThresholdChecker(limit int) func(int) bool {
+	return func(value int) bool {
+		return value >= limit
+	}
+}
+
+// NewRequestCounter returns a function that returns 1, 2, 3, ... on
+// successive calls.
+func NewRequestCounter() func() int {
+	count := 0
+	return func() int {
+		count++
+		return count
+	}
+}
+
+// Retry calls try with attempt numbers 1 to attempts until it returns true,
+// and returns the attempt that succeeded, or 0 if none did.
+func Retry(attempts int, try func(attempt int) bool) int {
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if try(attempt) {
+			return attempt
+		}
+	}
+	return 0
+}

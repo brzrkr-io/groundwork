@@ -1,0 +1,44 @@
+// Package tags is the Gopherlings exercise "Benchmarks".
+package tags
+
+import "strings"
+
+// Tag is one label on a cloud resource, such as env=prod.
+type Tag struct {
+	Key   string
+	Value string
+}
+
+// FormatTags joins tags into the "key=value,key=value" text that the deploy
+// tool passes to the cloud CLI. Tags keep their order. No tags give "".
+//
+//	FormatTags([]Tag{{Key: "env", Value: "prod"}, {Key: "team", Value: "sre"}})
+//	// => "env=prod,team=sre"
+func FormatTags(tags []Tag) string {
+	return formatTags(tags)
+}
+
+// formatTags points at the real implementation. Gopherlings' grader swaps in
+// broken versions to check that your benchmark catches them.
+var formatTags = realFormatTags
+
+func realFormatTags(tags []Tag) string {
+	// Room for "key=value," per tag. The last comma is never written, so
+	// this is one byte more than needed, which is fine.
+	n := 0
+	for _, t := range tags {
+		n += len(t.Key) + 1 + len(t.Value) + 1
+	}
+
+	var b strings.Builder
+	b.Grow(n)
+	for i, t := range tags {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(t.Key)
+		b.WriteString("=")
+		b.WriteString(t.Value)
+	}
+	return b.String()
+}

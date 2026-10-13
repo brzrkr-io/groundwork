@@ -1,0 +1,56 @@
+// Package fleet is the Gopherlings exercise "WaitGroups: patching the fleet".
+package fleet
+
+import "sync"
+
+// PatchAll patches every host at the same time and returns one error per
+// host, in the same order as hosts. Hosts that patched fine get nil.
+func PatchAll(hosts []string, patch func(host string) error) []error {
+	errs := make([]error, len(hosts))
+	var wg sync.WaitGroup
+	for i, host := range hosts {
+		wg.Go(func() {
+			errs[i] = patch(host)
+		})
+	}
+	wg.Wait()
+	return errs
+}
+
+// ChecksumAll computes the checksum of every file at the same time and
+// returns them keyed by file name.
+func ChecksumAll(files []string, sum func(file string) string) map[string]string {
+	results := make([]string, len(files))
+	var wg sync.WaitGroup
+	for i, file := range files {
+		wg.Go(func() {
+			results[i] = sum(file)
+		})
+	}
+	wg.Wait()
+
+	// Back in one goroutine, so writing to the map is safe.
+	sums := make(map[string]string, len(files))
+	for i, file := range files {
+		sums[file] = results[i]
+	}
+	return sums
+}
+
+// Rollout deploys every canary at the same time and waits for them, then
+// deploys every host in rest at the same time and waits for them.
+func Rollout(canaries, rest []string, deploy func(host string)) {
+	deployAll(canaries, deploy)
+	deployAll(rest, deploy)
+}
+
+// deployAll deploys every host at the same time and waits for them.
+func deployAll(hosts []string, deploy func(host string)) {
+	var wg sync.WaitGroup
+	for _, host := range hosts {
+		wg.Go(func() {
+			deploy(host)
+		})
+	}
+	wg.Wait()
+}

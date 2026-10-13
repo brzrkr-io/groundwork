@@ -1,0 +1,30 @@
+// Package streams is the Gopherlings exercise "Standard streams: stdin, stdout, stderr and exit codes".
+package streams
+
+import (
+	"fmt"
+	"io"
+)
+
+// Run is the whole hostfilter program. args is os.Args[1:]. It reads
+// hostnames from stdin, writes the ones that start with the prefix to stdout,
+// writes problems to stderr, and returns the exit code: 0 for success, 1 if
+// any line was bad or stdin could not be read, 2 for a usage error.
+func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	// TODO(1): Fix the usage check: it must also reject extra arguments, and
+	// a usage error goes to stderr with exit code 2.
+	if len(args) == 0 {
+		fmt.Fprintln(stdout, "usage: hostfilter PREFIX")
+		return 0
+	}
+	return Filter(args[0], stdin, stdout, stderr)
+}
+
+// Filter does the real work of Run once the arguments are known to be good.
+func Filter(prefix string, stdin io.Reader, stdout, stderr io.Writer) int {
+	// TODO(2): Read stdin line by line and print every host that starts with
+	// prefix, skipping blank lines and # comments.
+	// TODO(3): Report invalid hosts and read errors on stderr, and return 1
+	// if there were any.
+	return 0
+}

@@ -1,0 +1,29 @@
+// Package services is the Gopherlings exercise "Benchmarks: sub-benchmarks and preallocation".
+package services
+
+// Service is one entry in the deploy manifest.
+type Service struct {
+	Name string
+	Port int
+}
+
+// Ports returns the port of every service, in the same order as svcs. The
+// load balancer config is generated from this list.
+//
+//	Ports([]Service{{Name: "api", Port: 8080}, {Name: "web", Port: 443}})
+//	// => [8080 443]
+func Ports(svcs []Service) []int {
+	return ports(svcs)
+}
+
+// ports points at the real implementation. Gopherlings' grader swaps in
+// broken versions to check that your benchmark catches them.
+var ports = realPorts
+
+func realPorts(svcs []Service) []int {
+	out := make([]int, 0, len(svcs))
+	for _, s := range svcs {
+		out = append(out, s.Port)
+	}
+	return out
+}

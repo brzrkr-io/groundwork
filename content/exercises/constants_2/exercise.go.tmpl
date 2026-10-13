@@ -1,0 +1,29 @@
+// Package constants is the Gopherlings exercise "Constants: fix the health check config".
+package constants
+
+// Health check settings for the load balancer.
+const (
+	// ProbePort is the port the health check connects to.
+	// TODO(1): This constant breaks HealthPort. Fix it.
+	ProbePort = "8081"
+	// HealthPath is the URL path the health check requests.
+	// TODO(2): The load balancer probes "/healthz". Fix the value.
+	HealthPath = "/health"
+	// CheckIntervalSeconds is how often the health check runs.
+	CheckIntervalSeconds = 10
+	// FailureThreshold is how many failed checks in a row mark a target down.
+	FailureThreshold = 3
+	// DownAfterSeconds is how long a broken target takes to be marked down.
+	// TODO(3): Compute this from CheckIntervalSeconds and FailureThreshold.
+	DownAfterSeconds = 0
+)
+
+// HealthPort returns the port the health check connects to.
+func HealthPort() int {
+	return ProbePort
+}
+
+// HealthURL returns the URL the health check requests on host.
+func HealthURL(host string) string {
+	return "http://" + host + HealthPath
+}

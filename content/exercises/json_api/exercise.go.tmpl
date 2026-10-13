@@ -1,0 +1,47 @@
+// Package jsonapi is the Gopherlings exercise "JSON APIs: build a service catalog".
+package jsonapi
+
+import "net/http"
+
+// API serves the service catalog over HTTP.
+type API struct {
+	store *Store
+}
+
+// NewAPI returns an API backed by store.
+func NewAPI(store *Store) *API {
+	return &API{store: store}
+}
+
+// Routes returns a handler with every endpoint registered.
+func (a *API) Routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /services/{name}", a.handleGet)
+	mux.HandleFunc("POST /services", a.handleCreate)
+	return mux
+}
+
+// writeJSON sends v as a JSON body with the given status code.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	// TODO(1): Set the Content-Type header, write the status code, then
+	// encode v into the body. Add the "encoding/json" import.
+}
+
+// writeError sends {"error": msg} with the given status code.
+func writeError(w http.ResponseWriter, status int, msg string) {
+	// TODO(1): Send msg under the "error" key, using writeJSON.
+}
+
+// handleGet serves GET /services/{name}.
+func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
+	// TODO(2): Look up the service named in the path. Reply 200 with the
+	// service, or 404 with an error when the store doesn't have it.
+	writeError(w, http.StatusNotImplemented, "not implemented")
+}
+
+// handleCreate serves POST /services.
+func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
+	// TODO(3): Decode a Service from the body (at most 1 MiB, no unknown
+	// fields), validate it, save it, and reply 201 with it.
+	writeError(w, http.StatusNotImplemented, "not implemented")
+}

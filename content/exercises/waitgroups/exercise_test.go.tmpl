@@ -1,0 +1,150 @@
+package waitgroups
+
+import (
+	"slices"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+// recorder remembers which names were handled. Many goroutines call add at
+// once, so it uses a mutex (you'll learn about those in Mutexes).
+type recorder struct {
+	mu    sync.Mutex
+	names []string
+}
+
+func (r *recorder) add(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.names = append(r.names, name)
+}
+
+// sorted returns the names handled so far, in alphabetical order.
+func (r *recorder) sorted() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	sorted := slices.Clone(r.names)
+	slices.Sort(sorted)
+	return sorted
+}
+
+func TestDeployAll(t *testing.T) {
+	tests := []struct {
+		name    string
+		regions []string
+	}{
+		{"three regions", []string{"ap-south-1", "eu-west-1", "us-east-1"}},
+		{"two regions", []string{"eu-central-1", "us-west-2"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// synctest.Test gives the test a fake clock: sleeps finish
+			// instantly, but time.Now moves forward by the right amount.
+			synctest.Test(t, func(t *testing.T) {
+				var deployed recorder
+				deploy := func(region string) {
+					time.Sleep(time.Second) // each deploy takes 1 second
+					deployed.add(region)
+				}
+
+				start := time.Now()
+				DeployAll(tt.regions, deploy)
+				elapsed := time.Since(start)
+
+				if got := deployed.sorted(); !slices.Equal(got, tt.regions) {
+					t.Errorf("when DeployAll returned, deployed = %q, want %q", got, tt.regions)
+				}
+				if elapsed != time.Second {
+					t.Errorf("DeployAll took %v, want 1s: the deploys should run at the same time", elapsed)
+				}
+
+				// Let any goroutine that is still running finish before the test ends.
+				time.Sleep(time.Minute)
+			})
+		})
+	}
+}
+
+func TestResolveAll(t *testing.T) {
+	// How long each lookup takes, and what it returns.
+	delays := map[string]time.Duration{
+		"api.internal":   3 * time.Second,
+		"db.internal":    1 * time.Second,
+		"cache.internal": 2 * time.Second,
+	}
+	addrs := map[string]string{
+		"api.internal":   "10.0.1.5",
+		"db.internal":    "10.0.2.9",
+		"cache.internal": "10.0.3.14",
+	}
+
+	tests := []struct {
+		name        string
+		hosts       []string
+		want        []string
+		wantElapsed time.Duration
+	}{
+		{"two hosts", []string{"api.internal", "db.internal"}, []string{"10.0.1.5", "10.0.2.9"}, 3 * time.Second},
+		{"three hosts", []string{"db.internal", "cache.internal", "api.internal"}, []string{"10.0.2.9", "10.0.3.14", "10.0.1.5"}, 3 * time.Second},
+		{"fast hosts", []string{"cache.internal", "db.internal"}, []string{"10.0.3.14", "10.0.2.9"}, 2 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				resolve := func(host string) string {
+					time.Sleep(delays[host])
+					return addrs[host]
+				}
+
+				start := time.Now()
+				got := ResolveAll(tt.hosts, resolve)
+				elapsed := time.Since(start)
+
+				if !slices.Equal(got, tt.want) {
+					t.Errorf("ResolveAll(%q) = %q, want %q", tt.hosts, got, tt.want)
+				}
+				if elapsed != tt.wantElapsed {
+					t.Errorf("ResolveAll(%q) took %v, want %v (as long as the slowest lookup)", tt.hosts, elapsed, tt.wantElapsed)
+				}
+
+				time.Sleep(time.Minute)
+			})
+		})
+	}
+}
+
+func TestBackupAll(t *testing.T) {
+	tests := []struct {
+		name      string
+		databases []string
+	}{
+		{"two databases", []string{"orders", "users"}},
+		{"four databases", []string{"billing", "orders", "sessions", "users"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var backedUp recorder
+				backup := func(db string) {
+					time.Sleep(time.Second) // each backup takes 1 second
+					backedUp.add(db)
+				}
+
+				start := time.Now()
+				BackupAll(tt.databases, backup)
+				elapsed := time.Since(start)
+
+				if got := backedUp.sorted(); !slices.Equal(got, tt.databases) {
+					t.Errorf("when BackupAll returned, backed up = %q, want %q (does startBackup start its goroutine with wg.Go?)", got, tt.databases)
+				}
+				if elapsed != time.Second {
+					t.Errorf("BackupAll took %v, want 1s: startBackup should run each backup in its own goroutine", elapsed)
+				}
+
+				time.Sleep(time.Minute)
+			})
+		})
+	}
+}

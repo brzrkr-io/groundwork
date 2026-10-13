@@ -1,0 +1,124 @@
+package fileio
+
+import (
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+)
+
+// writeFile creates a test file in dir and returns its path.
+func writeFile(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestLoadBanner(t *testing.T) {
+	dir := t.TempDir()
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{"maintenance banner", writeFile(t, dir, "maint.txt", "Maintenance tonight 22:00 UTC\n"), "Maintenance tonight 22:00 UTC\n"},
+		{"two-line banner", writeFile(t, dir, "prod.txt", "PRODUCTION\nBe careful.\n"), "PRODUCTION\nBe careful.\n"},
+		{"missing file", filepath.Join(dir, "missing.txt"), DefaultBanner},
+		{"missing directory", filepath.Join(dir, "nope", "banner.txt"), DefaultBanner},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := LoadBanner(tt.path)
+			if err != nil {
+				t.Fatalf("LoadBanner(%q) error = %v, want nil", tt.path, err)
+			}
+			if got != tt.want {
+				t.Errorf("LoadBanner(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("path is a directory", func(t *testing.T) {
+		got, err := LoadBanner(dir)
+		if err == nil {
+			t.Errorf("LoadBanner(%q) = %q, nil, want an error", dir, got)
+		}
+	})
+}
+
+func TestReadHosts(t *testing.T) {
+	dir := t.TempDir()
+	tests := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{"plain list", "web01\nweb02\nweb03\n", []string{"web01", "web02", "web03"}},
+		{"comments and blanks", "# web tier\nweb01\n\n  web02  \n# db tier\n\ndb01\n", []string{"web01", "web02", "db01"}},
+		{"no final newline", "cache01\ncache02", []string{"cache01", "cache02"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeFile(t, dir, tt.name+".txt", tt.content)
+			got, err := ReadHosts(path)
+			if err != nil {
+				t.Fatalf("ReadHosts(%q) error = %v, want nil", path, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ReadHosts(%q) = %q, want %q", path, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("missing file", func(t *testing.T) {
+		path := filepath.Join(dir, "missing.txt")
+		got, err := ReadHosts(path)
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("ReadHosts(%q) = %q, %v, want an error matching fs.ErrNotExist", path, got, err)
+		}
+	})
+}
+
+func TestWriteHosts(t *testing.T) {
+	tests := []struct {
+		name  string
+		old   string // existing file content; "" means no file yet
+		hosts []string
+		want  string
+	}{
+		{"new file", "", []string{"db01", "db02"}, "db01\ndb02\n"},
+		{"one host", "", []string{"web01"}, "web01\n"},
+		{"replaces longer file", "old01\nold02\nold03\nold04\n", []string{"new01"}, "new01\n"},
+		{"empty list", "web01\n", []string{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "hosts.txt")
+			if tt.old != "" {
+				writeFile(t, filepath.Dir(path), "hosts.txt", tt.old)
+			}
+			if err := WriteHosts(path, tt.hosts); err != nil {
+				t.Fatalf("WriteHosts(%q, %q) = %v, want nil", path, tt.hosts, err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading back %q: %v", path, err)
+			}
+			if got := string(data); got != tt.want {
+				t.Errorf("after WriteHosts(%q, %q), file holds %q, want %q", path, tt.hosts, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("missing parent directory", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "nope", "hosts.txt")
+		if err := WriteHosts(path, []string{"web01"}); err == nil {
+			t.Errorf("WriteHosts(%q, ...) = nil, want an error", path)
+		}
+	})
+}

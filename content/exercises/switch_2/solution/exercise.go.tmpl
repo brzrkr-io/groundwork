@@ -1,0 +1,35 @@
+// Package switches is the Gopherlings exercise "Switch: the fallthrough bug".
+package switches
+
+import "strings"
+
+// LevelNumber converts a log level name to its severity number.
+func LevelNumber(level string) int {
+	switch level {
+	case "debug":
+		return 0
+	case "info":
+		return 1
+	case "warn", "warning":
+		return 2
+	case "error":
+		return 3
+	case "fatal", "panic":
+		return 4
+	}
+	return -1
+}
+
+// RegionArea groups a cloud region name by area.
+func RegionArea(region string) string {
+	switch {
+	case strings.HasPrefix(region, "us-"):
+		return "North America"
+	case strings.HasPrefix(region, "eu-"):
+		return "Europe"
+	case strings.HasPrefix(region, "ap-"):
+		return "Asia Pacific"
+	default:
+		return "other"
+	}
+}

@@ -1,0 +1,178 @@
+package middleware
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// okHandler is the "real" handler the middleware wraps. It answers "ok".
+var okHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "ok")
+})
+
+// tag returns middleware that adds name to trace, so a test can see the
+// order in which middlewares ran.
+func tag(name string, trace *[]string) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			*trace = append(*trace, name)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func TestChain(t *testing.T) {
+	// Each line is one case: the middlewares passed to Chain, in order,
+	// then the order we want things to run in.
+	tests := []struct {
+		names []string
+		want  string
+	}{
+		{nil, "handler"},
+		{[]string{"recover"}, "recover handler"},
+		{[]string{"recover", "log"}, "recover log handler"},
+		{[]string{"recover", "log", "auth"}, "recover log auth handler"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			var trace []string
+			var mws []Middleware
+			for _, name := range tt.names {
+				mws = append(mws, tag(name, &trace))
+			}
+			final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				trace = append(trace, "handler")
+			})
+
+			h := Chain(final, mws...)
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+
+			if got := strings.Join(trace, " "); got != tt.want {
+				t.Errorf("Chain(handler, %v) ran %q, want %q", tt.names, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAccessLog(t *testing.T) {
+	// Each case: the request, what the inner handler does, then the status
+	// we want and the log line we want.
+	tests := []struct {
+		name     string
+		method   string
+		path     string
+		inner    http.HandlerFunc
+		wantCode int
+		wantLog  string
+	}{
+		{
+			name:     "body only means 200",
+			method:   "GET",
+			path:     "/healthz",
+			inner:    okHandler,
+			wantCode: 200,
+			wantLog:  "GET /healthz 200\n",
+		},
+		{
+			name:     "not found",
+			method:   "GET",
+			path:     "/missing",
+			inner:    http.NotFound,
+			wantCode: 404,
+			wantLog:  "GET /missing 404\n",
+		},
+		{
+			name:   "created",
+			method: "POST",
+			path:   "/deploys",
+			inner: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusCreated)
+			},
+			wantCode: 201,
+			wantLog:  "POST /deploys 201\n",
+		},
+		{
+			name:   "unavailable",
+			method: "GET",
+			path:   "/readyz",
+			inner: func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "warming up", http.StatusServiceUnavailable)
+			},
+			wantCode: 503,
+			wantLog:  "GET /readyz 503\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var log strings.Builder
+			h := AccessLog(&log)(tt.inner)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, nil))
+
+			if got := log.String(); got != tt.wantLog {
+				t.Errorf("log = %q, want %q", got, tt.wantLog)
+			}
+			if rec.Code != tt.wantCode {
+				t.Errorf("status sent to the client = %d, want %d", rec.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestRequireToken(t *testing.T) {
+	// Each case: the token the middleware expects, the Authorization header
+	// the client sent ("" for none), and whether the request gets through.
+	tests := []struct {
+		name    string
+		token   string
+		header  string
+		allowed bool
+	}{
+		{"right token", "s3cret", "Bearer s3cret", true},
+		{"another right token", "deploy-bot-7", "Bearer deploy-bot-7", true},
+		{"no header", "s3cret", "", false},
+		{"wrong token", "s3cret", "Bearer hunter2", false},
+		{"missing Bearer", "s3cret", "s3cret", false},
+		{"token of a different bot", "deploy-bot-7", "Bearer s3cret", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				fmt.Fprint(w, "ok")
+			})
+			h := RequireToken(tt.token)(inner)
+
+			req := httptest.NewRequest("POST", "/deploys", nil)
+			if tt.header != "" {
+				req.Header.Set("Authorization", tt.header)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if called != tt.allowed {
+				t.Errorf("next handler called = %v, want %v", called, tt.allowed)
+			}
+			if tt.allowed {
+				if rec.Code != 200 || rec.Body.String() != "ok" {
+					t.Errorf("response = %d %q, want 200 %q", rec.Code, rec.Body.String(), "ok")
+				}
+				return
+			}
+			if rec.Code != 401 {
+				t.Errorf("status = %d, want 401", rec.Code)
+			}
+			if got := rec.Header().Get("Content-Type"); got != "application/json" {
+				t.Errorf("Content-Type = %q, want %q", got, "application/json")
+			}
+			want := `{"error":"unauthorized"}` + "\n"
+			if got := rec.Body.String(); got != want {
+				t.Errorf("body = %q, want %q", got, want)
+			}
+		})
+	}
+}

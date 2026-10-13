@@ -1,0 +1,22 @@
+// Package pods is the Gopherlings exercise "The strings package: which pods are broken?".
+package pods
+
+// IsReady reports whether a READY value like "2/3" means every container is
+// ready.
+func IsReady(ready string) bool {
+	// TODO(1): Return true when the text before "/" equals the text after it.
+	return false
+}
+
+// NotReadyPods returns the names of the pods in kubectl get pods output that
+// are not ready and not Completed, in alphabetical order.
+func NotReadyPods(output string) []string {
+	// TODO(2): Go through the lines and collect the pods that need attention.
+	return nil
+}
+
+// Report returns a one-line summary of output for the team chat.
+func Report(output string) string {
+	// TODO(3): Return "all pods ready" or "not ready: " and the pod names.
+	return ""
+}

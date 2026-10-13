@@ -1,0 +1,31 @@
+// Package recovery2 is the Gopherlings exercise "panic and recover: fix the chat bot's safety net".
+package recovery2
+
+import "fmt"
+
+// Alert is one firing alert from the monitoring system.
+type Alert struct {
+	Name     string
+	Severity string
+}
+
+// Guard runs the handler for one chat command. If the handler panics, Guard
+// returns an error instead, so the bot stays online.
+func Guard(command string, handler func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("command %q panicked: %v", command, r)
+		}
+	}()
+	return handler()
+}
+
+// CountBySeverity counts the alerts for each severity, such as "critical"
+// or "warning".
+func CountBySeverity(alerts []Alert) map[string]int {
+	counts := make(map[string]int)
+	for _, a := range alerts {
+		counts[a.Severity]++
+	}
+	return counts
+}

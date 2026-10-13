@@ -1,0 +1,66 @@
+package formatting
+
+import "testing"
+
+func TestStatusLine(t *testing.T) {
+	tests := []struct {
+		name     string
+		service  string
+		replicas int
+		want     string
+	}{
+		{name: "api", service: "api", replicas: 3, want: "api: 3 replicas ready"},
+		{name: "billing", service: "billing", replicas: 12, want: "billing: 12 replicas ready"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := StatusLine(tt.service, tt.replicas)
+			if got != tt.want {
+				t.Errorf("StatusLine(%q, %d) = %q, want %q", tt.service, tt.replicas, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRolloutProgress(t *testing.T) {
+	tests := []struct {
+		name    string
+		service string
+		percent float64
+		want    string
+	}{
+		{name: "halfway", service: "api", percent: 42.5, want: `rollout "api" 42.5% complete`},
+		{name: "done", service: "billing", percent: 100, want: `rollout "billing" 100.0% complete`},
+		{name: "rounded", service: "auth", percent: 33.333, want: `rollout "auth" 33.3% complete`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := RolloutProgress(tt.service, tt.percent)
+			if got != tt.want {
+				t.Errorf("RolloutProgress(%q, %v) = %q, want %q", tt.service, tt.percent, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTableRow(t *testing.T) {
+	tests := []struct {
+		name     string
+		service  string
+		replicas int
+		status   string
+		want     string
+	}{
+		{name: "short name", service: "api", replicas: 3, status: "Running", want: "api        |     3 | Running"},
+		{name: "longer name", service: "checkout", replicas: 12, status: "Pending", want: "checkout   |    12 | Pending"},
+		{name: "name wider than column", service: "notification-svc", replicas: 120, status: "Running", want: "notification-svc |   120 | Running"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := TableRow(tt.service, tt.replicas, tt.status)
+			if got != tt.want {
+				t.Errorf("TableRow(%q, %d, %q) = %q, want %q", tt.service, tt.replicas, tt.status, got, tt.want)
+			}
+		})
+	}
+}

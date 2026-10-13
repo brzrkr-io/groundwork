@@ -1,0 +1,6 @@
+// Package slug turns free text into names that are safe to use for
+// Kubernetes objects. It is internal: only this module can import it.
+package slug
+
+// TODO(1): Move Slugify here from deploykit/deploykit.go and name it Make.
+// TODO(2): Then make it keep at most 63 characters and trim "-" from both ends.

@@ -1,0 +1,144 @@
+package joining
+
+import (
+	"errors"
+	"fmt"
+	"testing"
+)
+
+// errText returns err's message, or "<nil>" when err is nil.
+func errText(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	return err.Error()
+}
+
+func TestPreflight(t *testing.T) {
+	tests := []struct {
+		name string
+		host Host
+		want string
+	}{
+		{
+			name: "healthy host",
+			host: Host{Name: "web-1", Reachable: true, DiskFreeGB: 40, MemoryFreeGB: 8},
+			want: "<nil>",
+		},
+		{
+			name: "low disk and low memory",
+			host: Host{Name: "web-2", Reachable: true, DiskFreeGB: 3, MemoryFreeGB: 1},
+			want: "low disk space: 3 GB free, need 10\nlow memory: 1 GB free, need 2",
+		},
+		{
+			name: "low memory only",
+			host: Host{Name: "web-3", Reachable: true, DiskFreeGB: 25, MemoryFreeGB: 0},
+			want: "low memory: 0 GB free, need 2",
+		},
+		{
+			name: "everything wrong",
+			host: Host{Name: "db-1", Reachable: false, DiskFreeGB: 9, MemoryFreeGB: 1},
+			want: "host unreachable\nlow disk space: 9 GB free, need 10\nlow memory: 1 GB free, need 2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := errText(Preflight(tt.host))
+			if got != tt.want {
+				t.Errorf("Preflight(%+v) = %q, want %q", tt.host, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPreflightAll(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []Host
+		want  string
+	}{
+		{
+			name:  "no hosts",
+			hosts: nil,
+			want:  "<nil>",
+		},
+		{
+			name: "all healthy",
+			hosts: []Host{
+				{Name: "web-1", Reachable: true, DiskFreeGB: 40, MemoryFreeGB: 8},
+				{Name: "web-2", Reachable: true, DiskFreeGB: 10, MemoryFreeGB: 2},
+			},
+			want: "<nil>",
+		},
+		{
+			name: "two hosts with problems",
+			hosts: []Host{
+				{Name: "web-1", Reachable: true, DiskFreeGB: 40, MemoryFreeGB: 8},
+				{Name: "web-2", Reachable: true, DiskFreeGB: 3, MemoryFreeGB: 1},
+				{Name: "web-3", Reachable: false, DiskFreeGB: 40, MemoryFreeGB: 8},
+			},
+			want: "web-2: low disk space: 3 GB free, need 10\n" +
+				"web-2: low memory: 1 GB free, need 2\n" +
+				"web-3: host unreachable",
+		},
+		{
+			name: "one problem",
+			hosts: []Host{
+				{Name: "db-1", Reachable: true, DiskFreeGB: 7, MemoryFreeGB: 16},
+			},
+			want: "db-1: low disk space: 7 GB free, need 10",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := errText(PreflightAll(tt.hosts))
+			if got != tt.want {
+				t.Errorf("PreflightAll(%+v) = %q, want %q", tt.hosts, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("sentinels still visible", func(t *testing.T) {
+		hosts := []Host{{Name: "web-2", Reachable: true, DiskFreeGB: 3, MemoryFreeGB: 8}}
+		err := PreflightAll(hosts)
+		if !errors.Is(err, ErrLowDisk) {
+			t.Errorf("errors.Is(PreflightAll(%+v), ErrLowDisk) = false, want true (wrap with %%w)", hosts)
+		}
+	})
+}
+
+func TestDecide(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "nil", err: nil, want: "deploy"},
+		{name: "unreachable alone", err: ErrUnreachable, want: "abort"},
+		{
+			name: "unreachable inside a joined error",
+			err: errors.Join(
+				fmt.Errorf("web-2: %w", ErrLowDisk),
+				fmt.Errorf("web-3: %w", ErrUnreachable),
+			),
+			want: "abort",
+		},
+		{name: "low memory", err: fmt.Errorf("web-2: %w", ErrLowMemory), want: "warn"},
+		{
+			name: "disk and memory joined",
+			err: errors.Join(
+				fmt.Errorf("web-2: %w", ErrLowDisk),
+				fmt.Errorf("web-2: %w", ErrLowMemory),
+			),
+			want: "warn",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Decide(tt.err)
+			if got != tt.want {
+				t.Errorf("Decide(%q) = %q, want %q", errText(tt.err), got, tt.want)
+			}
+		})
+	}
+}

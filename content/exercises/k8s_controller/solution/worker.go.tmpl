@@ -1,0 +1,28 @@
+package controller
+
+import "context"
+
+// processNextItem takes one key from the queue and reconciles it. It returns
+// false once the queue has been shut down, and true otherwise.
+func (c *Controller) processNextItem(ctx context.Context) bool {
+	key, shutdown := c.queue.Get()
+	if shutdown {
+		return false
+	}
+	defer c.queue.Done(key)
+
+	if err := c.Reconcile(ctx, key); err != nil {
+		// Try again later, waiting longer after each failure.
+		c.queue.AddRateLimited(key)
+		return true
+	}
+	// Success: reset the key's failure count.
+	c.queue.Forget(key)
+	return true
+}
+
+// runWorker processes keys until the queue shuts down.
+func (c *Controller) runWorker(ctx context.Context) {
+	for c.processNextItem(ctx) {
+	}
+}

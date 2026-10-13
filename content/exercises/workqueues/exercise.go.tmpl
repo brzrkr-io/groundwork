@@ -1,0 +1,39 @@
+// Package queues feeds Kubernetes object events through a workqueue.
+package queues
+
+import (
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
+)
+
+// NewQueue returns an empty workqueue of "namespace/name" keys that uses the
+// default controller rate limiter.
+func NewQueue() workqueue.TypedRateLimitingInterface[string] {
+	return workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
+}
+
+// KeyFor returns the queue key for a Kubernetes object: "namespace/name", or
+// just "name" for objects that don't live in a namespace.
+func KeyFor(obj any) (string, error) {
+	return cache.MetaNamespaceKeyFunc(obj)
+}
+
+// EnqueueAll adds the key of every object in objs to q. It stops at the
+// first object that has no key and returns that error.
+func EnqueueAll(q workqueue.TypedRateLimitingInterface[string], objs []any) error {
+	// TODO(1): Add the key of each object to q.
+	return nil
+}
+
+// ProcessNextItem takes one key from q, splits it into namespace and name,
+// and calls handle with them. It returns false once q has been shut down.
+func ProcessNextItem(q workqueue.TypedRateLimitingInterface[string], handle func(namespace, name string)) bool {
+	// TODO(2): Get a key, mark it Done when you finish, split it and call handle.
+	return false
+}
+
+// RunWorker processes keys from q until q is shut down.
+func RunWorker(q workqueue.TypedRateLimitingInterface[string], handle func(namespace, name string)) {
+	for ProcessNextItem(q, handle) {
+	}
+}

@@ -1,0 +1,27 @@
+// Package pointers is the Gopherlings exercise "Pointers".
+package pointers
+
+// Deployment is a named workload and how many copies (replicas) of it run.
+type Deployment struct {
+	Name     string
+	Replicas int
+}
+
+// ResetCounter sets the counter that count points to back to 0.
+func ResetCounter(count *int) {
+	// TODO(1): Set the int that count points to to 0.
+}
+
+// Scale sets d.Replicas to replicas. It does nothing when d is nil, and it
+// uses 0 when replicas is negative.
+func Scale(d *Deployment, replicas int) {
+	// TODO(2): Do nothing for a nil d, turn negative replicas into 0, then
+	// set the Replicas field.
+}
+
+// FindDeployment returns a pointer to the element of ds called name, or nil
+// if there is none. The pointer points into ds.
+func FindDeployment(ds []Deployment, name string) *Deployment {
+	// TODO(3): Return a pointer to the matching element of ds, or nil.
+	return nil
+}

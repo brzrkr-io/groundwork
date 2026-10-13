@@ -1,0 +1,10 @@
+// Package deploy is the public entry point for naming and running deploys.
+package deploy
+
+import "gopherlings.local/internal_packages_2/deploy/internal/naming"
+
+// ReleaseName returns the name of the release of service at version, such as
+// "payments-v1-4-2".
+func ReleaseName(service, version string) string {
+	return naming.Release(service, version)
+}

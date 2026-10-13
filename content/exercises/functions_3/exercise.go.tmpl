@@ -1,0 +1,22 @@
+// Package functions is the Gopherlings exercise "Functions: SLO error budget report".
+package functions
+
+import "fmt"
+
+// AllowedDowntimeMinutes returns the downtime an SLA allows over days.
+func AllowedDowntimeMinutes(slaPercent float64, days int) float64 {
+	// TODO(1): Compute the allowed downtime in minutes.
+	return 0
+}
+
+// RemainingBudget returns the allowed downtime minus usedMinutes.
+func RemainingBudget(slaPercent float64, days int, usedMinutes float64) float64 {
+	// TODO(2): Subtract usedMinutes from the allowed downtime.
+	return 0
+}
+
+// BudgetReport describes how much error budget a service has left.
+func BudgetReport(service string, slaPercent float64, days int, usedMinutes float64) string {
+	// TODO(3): Build the report line.
+	return fmt.Sprintf("%s: no report", service)
+}

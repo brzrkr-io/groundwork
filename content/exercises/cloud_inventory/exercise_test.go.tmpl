@@ -1,0 +1,365 @@
+package inventory
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+)
+
+// The real clients satisfy the interfaces Gather uses.
+var (
+	_ s3.ListBucketsAPIClient        = (*s3.Client)(nil)
+	_ ec2.DescribeInstancesAPIClient = (*ec2.Client)(nil)
+)
+
+var errBoom = errors.New("boom")
+
+// fakeS3 serves ListBuckets from memory, two buckets per page. Like real
+// S3, it honours the BucketRegion filter.
+type fakeS3 struct {
+	buckets []s3types.Bucket
+	err     error
+}
+
+func (f *fakeS3) ListBuckets(ctx context.Context, in *s3.ListBucketsInput, _ ...func(*s3.Options)) (*s3.ListBucketsOutput, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if f.err != nil {
+		return nil, f.err
+	}
+	var match []s3types.Bucket
+	for _, b := range f.buckets {
+		if in.BucketRegion == nil || aws.ToString(b.BucketRegion) == *in.BucketRegion {
+			match = append(match, b)
+		}
+	}
+	start, _ := strconv.Atoi(aws.ToString(in.ContinuationToken))
+	end := min(start+2, len(match))
+	out := &s3.ListBucketsOutput{Buckets: match[start:end]}
+	if end < len(match) {
+		out.ContinuationToken = aws.String(strconv.Itoa(end))
+	}
+	return out, nil
+}
+
+// fakeEC2 serves DescribeInstances for one region, one page per entry in
+// pages. If tracker is set, it records how many regions are busy at once.
+type fakeEC2 struct {
+	pages   [][]ec2types.Instance
+	err     error
+	tracker *tracker
+}
+
+func (f *fakeEC2) DescribeInstances(ctx context.Context, in *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	if f.tracker != nil {
+		f.tracker.enter()
+		defer f.tracker.leave()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if f.err != nil {
+		return nil, f.err
+	}
+	if len(f.pages) == 0 {
+		return &ec2.DescribeInstancesOutput{}, nil
+	}
+	page, _ := strconv.Atoi(aws.ToString(in.NextToken))
+	out := &ec2.DescribeInstancesOutput{
+		Reservations: []ec2types.Reservation{{Instances: f.pages[page]}},
+	}
+	if page+1 < len(f.pages) {
+		out.NextToken = aws.String(strconv.Itoa(page + 1))
+	}
+	return out, nil
+}
+
+// tracker counts calls that are in progress at the same time.
+type tracker struct {
+	mu      sync.Mutex
+	current int
+	max     int
+}
+
+func (t *tracker) enter() {
+	t.mu.Lock()
+	t.current++
+	t.max = max(t.max, t.current)
+	t.mu.Unlock()
+	// Stay busy for a moment so overlapping calls actually overlap.
+	time.Sleep(10 * time.Millisecond)
+}
+
+func (t *tracker) leave() {
+	t.mu.Lock()
+	t.current--
+	t.mu.Unlock()
+}
+
+func bucket(name, region string) s3types.Bucket {
+	return s3types.Bucket{Name: aws.String(name), BucketRegion: aws.String(region)}
+}
+
+// instance builds an EC2 instance. An empty name means "no Name tag".
+func instance(id, name string, state ec2types.InstanceStateName) ec2types.Instance {
+	inst := ec2types.Instance{
+		InstanceId: aws.String(id),
+		State:      &ec2types.InstanceState{Name: state},
+		Tags:       []ec2types.Tag{{Key: aws.String("Env"), Value: aws.String("prod")}},
+	}
+	if name != "" {
+		inst.Tags = append(inst.Tags, ec2types.Tag{Key: aws.String("Name"), Value: aws.String(name)})
+	}
+	return inst
+}
+
+// account is the pretend AWS account used by the tests.
+func account() *fakeS3 {
+	return &fakeS3{buckets: []s3types.Bucket{
+		bucket("acme-artifacts", "us-east-1"),
+		bucket("acme-backups-apse2", "ap-southeast-2"),
+		bucket("acme-legacy", "us-west-2"),
+		bucket("acme-logs-euw1", "eu-west-1"),
+		bucket("acme-logs-use1", "us-east-1"),
+		bucket("acme-web-assets", "us-east-1"),
+	}}
+}
+
+// regionsEC2 returns one fake EC2 client per region.
+func regionsEC2() map[string]*fakeEC2 {
+	return map[string]*fakeEC2{
+		"us-east-1": {pages: [][]ec2types.Instance{
+			{
+				instance("i-0a1", "web-1", ec2types.InstanceStateNameRunning),
+				instance("i-0a2", "web-2", ec2types.InstanceStateNameStopped),
+			},
+			{instance("i-0a3", "", ec2types.InstanceStateNamePending)},
+		}},
+		"eu-west-1": {pages: [][]ec2types.Instance{
+			{instance("i-0b1", "api-1", ec2types.InstanceStateNameRunning)},
+		}},
+		"ap-southeast-2": {},
+	}
+}
+
+func TestBuckets(t *testing.T) {
+	tests := []struct {
+		region string
+		want   []Item
+	}{
+		{"us-east-1", []Item{
+			{Kind: "bucket", Region: "us-east-1", ID: "acme-artifacts"},
+			{Kind: "bucket", Region: "us-east-1", ID: "acme-logs-use1"},
+			{Kind: "bucket", Region: "us-east-1", ID: "acme-web-assets"},
+		}},
+		{"eu-west-1", []Item{
+			{Kind: "bucket", Region: "eu-west-1", ID: "acme-logs-euw1"},
+		}},
+		{"sa-east-1", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.region, func(t *testing.T) {
+			got, err := Buckets(t.Context(), account(), tt.region)
+			if err != nil {
+				t.Fatalf("Buckets(%q) error: %v", tt.region, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Buckets(%q) = %+v, want %+v", tt.region, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("error", func(t *testing.T) {
+		_, err := Buckets(t.Context(), &fakeS3{err: errBoom}, "us-east-1")
+		if !errors.Is(err, errBoom) || !strings.HasPrefix(fmt.Sprint(err), "list buckets: ") {
+			t.Errorf("Buckets() error = %v, want %q wrapping the API error", err, "list buckets: boom")
+		}
+	})
+}
+
+func TestInstances(t *testing.T) {
+	tests := []struct {
+		region string
+		want   []Item
+	}{
+		{"us-east-1", []Item{
+			{Kind: "instance", Region: "us-east-1", ID: "i-0a1", Name: "web-1", State: "running"},
+			{Kind: "instance", Region: "us-east-1", ID: "i-0a2", Name: "web-2", State: "stopped"},
+			{Kind: "instance", Region: "us-east-1", ID: "i-0a3", State: "pending"},
+		}},
+		{"eu-west-1", []Item{
+			{Kind: "instance", Region: "eu-west-1", ID: "i-0b1", Name: "api-1", State: "running"},
+		}},
+		{"ap-southeast-2", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.region, func(t *testing.T) {
+			got, err := Instances(t.Context(), regionsEC2()[tt.region], tt.region)
+			if err != nil {
+				t.Fatalf("Instances(%q) error: %v", tt.region, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Instances(%q) = %+v, want %+v", tt.region, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("error", func(t *testing.T) {
+		_, err := Instances(t.Context(), &fakeEC2{err: errBoom}, "us-east-1")
+		if !errors.Is(err, errBoom) || !strings.HasPrefix(fmt.Sprint(err), "describe instances: ") {
+			t.Errorf("Instances() error = %v, want %q wrapping the API error", err, "describe instances: boom")
+		}
+	})
+}
+
+func TestTable(t *testing.T) {
+	tests := []struct {
+		name  string
+		items []Item
+		want  string
+	}{
+		{
+			name: "buckets and instances",
+			items: []Item{
+				{Kind: "bucket", Region: "eu-west-1", ID: "acme-logs-euw1"},
+				{Kind: "instance", Region: "us-east-1", ID: "i-0a1", Name: "web-1", State: "running"},
+				{Kind: "instance", Region: "us-east-1", ID: "i-0a3", State: "pending"},
+			},
+			want: "" +
+				"KIND      REGION     ID              NAME   STATE\n" +
+				"bucket    eu-west-1  acme-logs-euw1  -      -\n" +
+				"instance  us-east-1  i-0a1           web-1  running\n" +
+				"instance  us-east-1  i-0a3           -      pending\n",
+		},
+		{
+			name:  "empty",
+			items: nil,
+			want:  "KIND  REGION  ID  NAME  STATE\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Table(tt.items); got != tt.want {
+				t.Errorf("Table() =\n%s\nwant\n%s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestJSON(t *testing.T) {
+	tests := []struct {
+		name  string
+		items []Item
+		want  string
+	}{
+		{
+			name: "buckets and instances",
+			items: []Item{
+				{Kind: "bucket", Region: "eu-west-1", ID: "acme-logs-euw1"},
+				{Kind: "instance", Region: "us-east-1", ID: "i-0a1", Name: "web-1", State: "running"},
+			},
+			want: `{
+  "buckets": 1,
+  "instances": 1,
+  "items": [
+    {
+      "kind": "bucket",
+      "region": "eu-west-1",
+      "id": "acme-logs-euw1"
+    },
+    {
+      "kind": "instance",
+      "region": "us-east-1",
+      "id": "i-0a1",
+      "name": "web-1",
+      "state": "running"
+    }
+  ]
+}`,
+		},
+		{
+			name:  "empty",
+			items: nil,
+			want: `{
+  "buckets": 0,
+  "instances": 0,
+  "items": []
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := JSON(tt.items)
+			if err != nil {
+				t.Fatalf("JSON() error: %v", err)
+			}
+			if string(got) != tt.want {
+				t.Errorf("JSON() =\n%s\nwant\n%s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGather(t *testing.T) {
+	regions := []string{"us-east-1", "eu-west-1", "ap-southeast-2"}
+
+	for _, maxParallel := range []int{1, 2} {
+		t.Run(fmt.Sprintf("maxParallel=%d", maxParallel), func(t *testing.T) {
+			busy := &tracker{}
+			clients := regionsEC2()
+			for _, c := range clients {
+				c.tracker = busy
+			}
+			ec2For := func(region string) ec2.DescribeInstancesAPIClient { return clients[region] }
+
+			got, err := Gather(t.Context(), regions, account(), ec2For, maxParallel)
+			if err != nil {
+				t.Fatalf("Gather() error: %v", err)
+			}
+			want := []Item{
+				{Kind: "bucket", Region: "ap-southeast-2", ID: "acme-backups-apse2"},
+				{Kind: "bucket", Region: "eu-west-1", ID: "acme-logs-euw1"},
+				{Kind: "bucket", Region: "us-east-1", ID: "acme-artifacts"},
+				{Kind: "bucket", Region: "us-east-1", ID: "acme-logs-use1"},
+				{Kind: "bucket", Region: "us-east-1", ID: "acme-web-assets"},
+				{Kind: "instance", Region: "eu-west-1", ID: "i-0b1", Name: "api-1", State: "running"},
+				{Kind: "instance", Region: "us-east-1", ID: "i-0a1", Name: "web-1", State: "running"},
+				{Kind: "instance", Region: "us-east-1", ID: "i-0a2", Name: "web-2", State: "stopped"},
+				{Kind: "instance", Region: "us-east-1", ID: "i-0a3", State: "pending"},
+			}
+			if !slices.Equal(got, want) {
+				t.Errorf("Gather() =\n%+v\nwant\n%+v", got, want)
+			}
+			if busy.max > maxParallel {
+				t.Errorf("Gather() worked on %d regions at once, want at most %d", busy.max, maxParallel)
+			}
+		})
+	}
+
+	t.Run("region fails", func(t *testing.T) {
+		clients := regionsEC2()
+		clients["eu-west-1"].err = errBoom
+		ec2For := func(region string) ec2.DescribeInstancesAPIClient { return clients[region] }
+
+		got, err := Gather(t.Context(), regions, account(), ec2For, 2)
+		if !errors.Is(err, errBoom) || !strings.Contains(fmt.Sprint(err), "region eu-west-1: ") {
+			t.Errorf("Gather() error = %v, want %q", err, "region eu-west-1: describe instances: boom")
+		}
+		if got != nil {
+			t.Errorf("Gather() items = %+v, want nil when a region fails", got)
+		}
+	})
+}

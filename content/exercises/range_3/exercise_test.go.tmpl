@@ -1,0 +1,64 @@
+package report
+
+import "testing"
+
+func TestFailurePercent(t *testing.T) {
+	tests := []struct {
+		name   string
+		checks []bool
+		want   int
+	}{
+		{"one of four failed", []bool{true, false, true, true}, 25},
+		{"rounds down", []bool{false, false, true}, 66},
+		{"all failed", []bool{false, false}, 100},
+		{"all passed", []bool{true, true, true}, 0},
+		{"no checks", nil, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FailurePercent(tt.checks); got != tt.want {
+				t.Errorf("FailurePercent(%v) = %d, want %d", tt.checks, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSummary(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []string
+		want    string
+	}{
+		{"mixed", []string{"ok", "ok", "failed", "skipped", "ok"}, "3 ok, 1 failed, 1 skipped"},
+		{"all ok", []string{"ok", "ok"}, "2 ok, 0 failed, 0 skipped"},
+		{"failures and skips", []string{"failed", "skipped", "failed"}, "0 ok, 2 failed, 1 skipped"},
+		{"no results", nil, "0 ok, 0 failed, 0 skipped"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Summary(tt.results); got != tt.want {
+				t.Errorf("Summary(%q) = %q, want %q", tt.results, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLabels(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+		want int
+	}{
+		{"kubernetes service", "api.default.svc.cluster.local", 5},
+		{"two labels", "example.com", 2},
+		{"single label", "localhost", 1},
+		{"empty", "", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Labels(tt.host); got != tt.want {
+				t.Errorf("Labels(%q) = %d, want %d", tt.host, got, tt.want)
+			}
+		})
+	}
+}

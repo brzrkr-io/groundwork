@@ -1,0 +1,16 @@
+package retry
+
+import "testing"
+
+// TODO(1): Write a fakeSleeper type that implements Sleeper by recording
+// every duration it is asked to sleep, without really sleeping.
+
+func TestRetrySucceedsOnThirdTry(t *testing.T) {
+	// TODO(2): Call Retry with attempts 5 and an fn that fails twice, then
+	// succeeds. Check the error, the number of calls and the sleeps.
+}
+
+func TestRetryGivesUp(t *testing.T) {
+	// TODO(3): Call Retry with attempts 3 and an fn that always fails.
+	// Check the error, the number of calls and the sleeps.
+}

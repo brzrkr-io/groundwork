@@ -1,0 +1,162 @@
+package backupcfg
+
+import (
+	"maps"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// envFrom returns a lookup function backed by a map, standing in for
+// os.LookupEnv.
+func envFrom(env map[string]string) func(string) (string, bool) {
+	return func(key string) (string, bool) {
+		v, ok := env[key]
+		return v, ok
+	}
+}
+
+// sources builds a Source map for interval, compress and proxy.
+func sources(interval, compress, proxy string) map[string]string {
+	return map[string]string{"interval": interval, "compress": compress, "proxy": proxy}
+}
+
+// checkSettings reports a failure when got and want differ.
+func checkSettings(t *testing.T, call string, got, want Settings) {
+	t.Helper()
+	if got.Interval != want.Interval || got.Compress != want.Compress || got.Proxy != want.Proxy ||
+		!maps.Equal(got.Source, want.Source) {
+		t.Errorf("%s = %+v, want %+v", call, got, want)
+	}
+}
+
+func TestLoadOrder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "backup.json")
+	file := `{"interval": "30m", "proxy": "http://proxy.internal:3128"}`
+	if err := os.WriteFile(path, []byte(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		args []string
+		env  map[string]string
+		want Settings
+	}{
+		{
+			name: "env beats file",
+			args: []string{"-config", path},
+			env:  map[string]string{"HTTPS_PROXY": "http://env-proxy:3128"},
+			want: Settings{30 * time.Minute, true, "http://env-proxy:3128", sources("file", "default", "env")},
+		},
+		{
+			name: "flag beats env",
+			args: []string{"-config", path, "-proxy", "http://debug-proxy:8888"},
+			env:  map[string]string{"HTTPS_PROXY": "http://env-proxy:3128"},
+			want: Settings{30 * time.Minute, true, "http://debug-proxy:8888", sources("file", "default", "flag")},
+		},
+		{
+			name: "empty flag beats env",
+			args: []string{"-proxy=", "-interval", "10m", "-compress=false"},
+			env:  map[string]string{"HTTPS_PROXY": "http://env-proxy:3128"},
+			want: Settings{10 * time.Minute, false, "", sources("flag", "flag", "flag")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Load(tt.args, envFrom(tt.env))
+			if err != nil {
+				t.Fatalf("Load(%q) error = %v, want nil", tt.args, err)
+			}
+			checkSettings(t, "Load(…)", got, tt.want)
+		})
+	}
+}
+
+func TestApplyEnvEmptyProxy(t *testing.T) {
+	const fileProxy = `{"proxy": "http://proxy.internal:3128"}`
+	tests := []struct {
+		name string
+		env  map[string]string
+		want Settings
+	}{
+		{
+			name: "set to empty disables the proxy",
+			env:  map[string]string{"HTTPS_PROXY": ""},
+			want: Settings{time.Hour, true, "", sources("default", "default", "env")},
+		},
+		{
+			name: "set to a value replaces the proxy",
+			env:  map[string]string{"HTTPS_PROXY": "http://edge:3128"},
+			want: Settings{time.Hour, true, "http://edge:3128", sources("default", "default", "env")},
+		},
+		{
+			name: "unset keeps the file's proxy",
+			env:  map[string]string{"HTTP_PROXY": ""},
+			want: Settings{time.Hour, true, "http://proxy.internal:3128", sources("default", "default", "file")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := Defaults()
+			if err := s.ApplyFile([]byte(fileProxy)); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.ApplyEnv(envFrom(tt.env)); err != nil {
+				t.Fatalf("ApplyEnv(%q) error = %v, want nil", tt.env, err)
+			}
+			checkSettings(t, "ApplyEnv(…)", s, tt.want)
+		})
+	}
+}
+
+func TestApplyEnvParsing(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want Settings
+	}{
+		{
+			name: "five minutes, no compression",
+			env:  map[string]string{"BACKUP_INTERVAL": "5m", "BACKUP_COMPRESS": "false"},
+			want: Settings{5 * time.Minute, false, "", sources("env", "env", "default")},
+		},
+		{
+			name: "ninety seconds",
+			env:  map[string]string{"BACKUP_INTERVAL": "90s"},
+			want: Settings{90 * time.Second, true, "", sources("env", "default", "default")},
+		},
+		{
+			name: "compress as a number",
+			env:  map[string]string{"BACKUP_COMPRESS": "1", "BACKUP_INTERVAL": "1h30m"},
+			want: Settings{90 * time.Minute, true, "", sources("env", "env", "default")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := Defaults()
+			if err := s.ApplyEnv(envFrom(tt.env)); err != nil {
+				t.Fatalf("ApplyEnv(%q) error = %v, want nil", tt.env, err)
+			}
+			checkSettings(t, "ApplyEnv(…)", s, tt.want)
+		})
+	}
+
+	bad := []struct{ key, value string }{
+		{"BACKUP_INTERVAL", "5 minutes"},
+		{"BACKUP_INTERVAL", "300"},
+		{"BACKUP_COMPRESS", "maybe"},
+		{"BACKUP_COMPRESS", "yes"},
+	}
+	for _, b := range bad {
+		t.Run("invalid "+b.key+"="+b.value, func(t *testing.T) {
+			s := Defaults()
+			err := s.ApplyEnv(envFrom(map[string]string{b.key: b.value}))
+			if err == nil || !strings.Contains(err.Error(), b.key) {
+				t.Errorf("ApplyEnv(%s=%q) error = %v, want an error mentioning %s", b.key, b.value, err, b.key)
+			}
+		})
+	}
+}

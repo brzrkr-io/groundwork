@@ -1,0 +1,49 @@
+// Package report is the Gopherlings exercise "Looping with range: rollout report".
+package report
+
+import "fmt"
+
+// FailurePercent returns the percentage of checks that failed (false),
+// rounded down. It returns 0 when there are no checks.
+func FailurePercent(checks []bool) int {
+	if len(checks) == 0 {
+		return 0
+	}
+	failed := 0
+	for _, passed := range checks {
+		if !passed {
+			failed++
+		}
+	}
+	return failed * 100 / len(checks)
+}
+
+// Summary counts the results and returns "<ok> ok, <failed> failed, <skipped> skipped".
+func Summary(results []string) string {
+	ok, failed, skipped := 0, 0, 0
+	for _, r := range results {
+		switch r {
+		case "ok":
+			ok++
+		case "failed":
+			failed++
+		case "skipped":
+			skipped++
+		}
+	}
+	return fmt.Sprintf("%d ok, %d failed, %d skipped", ok, failed, skipped)
+}
+
+// Labels returns how many dot-separated labels the DNS name has.
+func Labels(name string) int {
+	if name == "" {
+		return 0
+	}
+	labels := 1
+	for _, r := range name {
+		if r == '.' {
+			labels++
+		}
+	}
+	return labels
+}

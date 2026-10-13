@@ -1,0 +1,74 @@
+package booleans
+
+import "testing"
+
+func TestIsPrivilegedPort(t *testing.T) {
+	// Each line is one case: a name, the input, then the answer we want.
+	tests := []struct {
+		name string
+		port int
+		want bool
+	}{
+		{"ssh", 22, true},
+		{"http", 80, true},
+		{"highest privileged", 1023, true},
+		{"first unprivileged", 1024, false},
+		{"http alt", 8080, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsPrivilegedPort(tt.port); got != tt.want {
+				t.Errorf("IsPrivilegedPort(%d) = %t, want %t", tt.port, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCanDeploy(t *testing.T) {
+	// Each line is one case: the inputs, then the answer we want.
+	tests := []struct {
+		name                                string
+		testsPassed, approved, freezeActive bool
+		want                                bool
+	}{
+		{"all clear", true, true, false, true},
+		{"tests failed", false, true, false, false},
+		{"not approved", true, false, false, false},
+		{"freeze active", true, true, true, false},
+		{"nothing ready", false, false, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CanDeploy(tt.testsPassed, tt.approved, tt.freezeActive)
+			if got != tt.want {
+				t.Errorf("CanDeploy(%t, %t, %t) = %t, want %t",
+					tt.testsPassed, tt.approved, tt.freezeActive, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsWorkHours(t *testing.T) {
+	// Each line is one case: the inputs, then the answer we want.
+	tests := []struct {
+		name    string
+		hour    int
+		weekend bool
+		want    bool
+	}{
+		{"start of day", 9, false, true},
+		{"midday", 12, false, true},
+		{"last work hour", 16, false, true},
+		{"17:00 is after hours", 17, false, false},
+		{"too early", 8, false, false},
+		{"midnight", 0, false, false},
+		{"weekend", 10, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsWorkHours(tt.hour, tt.weekend); got != tt.want {
+				t.Errorf("IsWorkHours(%d, %t) = %t, want %t", tt.hour, tt.weekend, got, tt.want)
+			}
+		})
+	}
+}

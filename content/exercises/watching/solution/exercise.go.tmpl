@@ -1,0 +1,60 @@
+// Package watching is the Gopherlings exercise "Watching resources: streaming Pod events".
+package watching
+
+import (
+	"context"
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
+)
+
+// Describe returns a one-line summary of a Pod event, such as
+// "ADDED shop/web-1". For an event that does not carry a Pod, it returns just
+// the event type, such as "ERROR".
+func Describe(ev watch.Event) string {
+	pod, ok := ev.Object.(*corev1.Pod)
+	if !ok {
+		return string(ev.Type)
+	}
+	return fmt.Sprintf("%s %s/%s", ev.Type, pod.Namespace, pod.Name)
+}
+
+// Collect reads events from w until it has n descriptions or the channel is
+// closed. It stops the watch and returns the descriptions in order.
+func Collect(w watch.Interface, n int) []string {
+	defer w.Stop()
+	var lines []string
+	for ev := range w.ResultChan() {
+		lines = append(lines, Describe(ev))
+		if len(lines) == n {
+			break
+		}
+	}
+	return lines
+}
+
+// WatchPods watches the Pods in namespace and calls handle with every event.
+// It returns nil once ctx is cancelled or the server closes the watch, and
+// an error if the watch can't be started.
+func WatchPods(ctx context.Context, cs kubernetes.Interface, namespace string, handle func(watch.Event)) error {
+	w, err := cs.CoreV1().Pods(namespace).Watch(ctx, metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	defer w.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case ev, ok := <-w.ResultChan():
+			if !ok {
+				return nil // the server closed the watch
+			}
+			handle(ev)
+		}
+	}
+}

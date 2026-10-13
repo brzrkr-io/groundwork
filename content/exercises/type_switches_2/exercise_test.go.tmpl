@@ -1,0 +1,102 @@
+package typeswitches2
+
+import (
+	"slices"
+	"testing"
+)
+
+// cfg is a decoded config file. Each test reads keys from it.
+var cfg = map[string]any{
+	"debug":        true,
+	"maintenance":  false,
+	"dry_run":      "yes",
+	"replicas":     3,
+	"port":         float64(8080),
+	"timeout":      float64(30),
+	"ratio":        2.5,
+	"workers":      "4",
+	"max_conns":    "250",
+	"min_replicas": "many",
+	"regions":      []any{"eu-west-1", "us-east-1"},
+	"zones":        []any{"a", "b", "c"},
+	"tags":         []string{"team-payments", "tier-1"},
+	"ports":        []any{"80", 443},
+	"mixed":        []any{true, "x"},
+	"no_regions":   []any{},
+}
+
+func TestGetBool(t *testing.T) {
+	// Each line is one case: the key, then the answers we want.
+	tests := []struct {
+		key    string
+		want   bool
+		wantOK bool
+	}{
+		{"debug", true, true},
+		{"maintenance", false, true},
+		{"dry_run", false, false},
+		{"replicas", false, false},
+		{"verbose", false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			got, ok := GetBool(cfg, tt.key)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("GetBool(cfg, %q) = %t, %t, want %t, %t", tt.key, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestGetInt(t *testing.T) {
+	// Each line is one case: the key, then the answers we want.
+	tests := []struct {
+		key    string
+		want   int
+		wantOK bool
+	}{
+		{"replicas", 3, true},
+		{"port", 8080, true},
+		{"timeout", 30, true},
+		{"ratio", 0, false},
+		{"workers", 4, true},
+		{"max_conns", 250, true},
+		{"min_replicas", 0, false},
+		{"debug", 0, false},
+		{"missing", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			got, ok := GetInt(cfg, tt.key)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("GetInt(cfg, %q) = %d, %t, want %d, %t", tt.key, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestGetStrings(t *testing.T) {
+	// Each line is one case: the key, then the answers we want.
+	tests := []struct {
+		key    string
+		want   []string
+		wantOK bool
+	}{
+		{"regions", []string{"eu-west-1", "us-east-1"}, true},
+		{"zones", []string{"a", "b", "c"}, true},
+		{"tags", []string{"team-payments", "tier-1"}, true},
+		{"no_regions", []string{}, true},
+		{"ports", nil, false},
+		{"mixed", nil, false},
+		{"dry_run", nil, false},
+		{"missing", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			got, ok := GetStrings(cfg, tt.key)
+			if !slices.Equal(got, tt.want) || ok != tt.wantOK {
+				t.Errorf("GetStrings(cfg, %q) = %q, %t, want %q, %t", tt.key, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}

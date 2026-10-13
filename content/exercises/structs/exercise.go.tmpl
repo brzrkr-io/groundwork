@@ -1,0 +1,40 @@
+// Package structs is the Gopherlings exercise "Structs".
+package structs
+
+// Resources holds the CPU and memory limits for one container.
+type Resources struct {
+	CPUMillis int
+	MemoryMB  int
+}
+
+// Deployment describes one service that the deploy tool rolls out.
+type Deployment struct {
+	Name     string
+	Image    string
+	Replicas int
+	Env      map[string]string
+	Limits   Resources
+}
+
+// NewDeployment returns a deployment for name and image with default
+// settings.
+func NewDeployment(name, image string) Deployment {
+	// TODO(1): Fill in every field with the values from the README.
+	return Deployment{}
+}
+
+// ApplyDefaults returns d with a default replica count and memory limit
+// filled in where they are missing.
+func ApplyDefaults(d Deployment) Deployment {
+	// TODO(2): Set Replicas to 1 if it is 0, and Limits.MemoryMB to 128 if
+	// it is 0.
+	return d
+}
+
+// FindDeployment returns the deployment in ds called name, and whether it
+// was found.
+func FindDeployment(ds []Deployment, name string) (Deployment, bool) {
+	// TODO(3): Return the matching deployment and true. Keep this line for
+	// the "not found" case.
+	return Deployment{}, false
+}

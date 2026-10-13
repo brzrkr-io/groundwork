@@ -1,0 +1,29 @@
+// Package hosts is the Gopherlings exercise "Subtests and helpers".
+package hosts
+
+import "strings"
+
+// ParseHosts reads a host list with one hostname per line. It trims spaces
+// around each line and skips blank lines and comment lines (lines starting
+// with "#"). It returns the hosts in order, or nil if there are none.
+//
+// This code is correct. Your job in this exercise is to write a test for it.
+func ParseHosts(text string) []string {
+	return parseHosts(text)
+}
+
+// parseHosts points at the real implementation. Gopherlings' grader swaps in
+// broken versions to check that your test catches them.
+var parseHosts = realParseHosts
+
+func realParseHosts(text string) []string {
+	var hosts []string
+	for line := range strings.SplitSeq(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		hosts = append(hosts, line)
+	}
+	return hosts
+}

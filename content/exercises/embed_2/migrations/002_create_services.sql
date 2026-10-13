@@ -1,0 +1,1 @@
+CREATE TABLE services (name TEXT PRIMARY KEY, port INTEGER NOT NULL);

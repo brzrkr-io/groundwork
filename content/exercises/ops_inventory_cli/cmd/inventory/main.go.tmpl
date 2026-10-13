@@ -1,0 +1,14 @@
+// Command inventory prints the hosts in an inventory file.
+//
+//	go run ./cmd/inventory -env prod -tag web
+package main
+
+import (
+	"os"
+
+	"gopherlings.local/ops_inventory_cli/internal/cli"
+)
+
+func main() {
+	os.Exit(cli.Run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}

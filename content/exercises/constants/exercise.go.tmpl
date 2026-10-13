@@ -1,0 +1,37 @@
+// Package constants is the Gopherlings exercise "Constants".
+package constants
+
+// DefaultPort is the port every service listens on.
+const DefaultPort = 8080
+
+// Settings for the checkout service.
+const (
+	// ServiceName is the name of the service.
+	ServiceName = "checkout"
+	// Namespace is the Kubernetes namespace the service runs in.
+	Namespace = "payments"
+	// MaxReplicas is the most replicas the autoscaler may run.
+	MaxReplicas = 10
+)
+
+// SidecarPort returns the port for sidecar number n. Sidecars use the ports
+// just above DefaultPort: sidecar 1 uses 8081, sidecar 2 uses 8082.
+func SidecarPort(n int) int {
+	// TODO(1): This does not compile. Return the sidecar's port without changing DefaultPort.
+	DefaultPort = DefaultPort + n
+	return DefaultPort
+}
+
+// DNSName returns the in-cluster DNS name of the service, such as
+// "checkout.payments.svc.cluster.local".
+func DNSName(clusterDomain string) string {
+	// TODO(2): Build the DNS name from ServiceName, Namespace and clusterDomain.
+	return clusterDomain
+}
+
+// SpareReplicas returns how many more replicas may start when running are
+// already up.
+func SpareReplicas(running int) int {
+	// TODO(3): Return how many more replicas fit under MaxReplicas.
+	return 0
+}

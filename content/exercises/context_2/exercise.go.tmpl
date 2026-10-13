@@ -1,0 +1,57 @@
+// Package dashboard is the Gopherlings exercise "Context: cancelling HTTP requests".
+package dashboard
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
+
+// Fetch GETs url and returns the response body. Cancelling ctx stops the
+// request.
+func Fetch(ctx context.Context, client *http.Client, url string) (string, error) {
+	// TODO(1): This request ignores ctx. Build it with
+	// http.NewRequestWithContext instead.
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// FetchWithTimeout calls Fetch with a context that times out after timeout.
+func FetchWithTimeout(client *http.Client, url string, timeout time.Duration) (string, error) {
+	// TODO(2): Create a context that times out after timeout, cancel it when
+	// you're done, and pass it to Fetch.
+	return Fetch(context.Background(), client, url)
+}
+
+// Versions fetches every URL in order and returns the bodies. It stops at
+// the first error.
+func Versions(ctx context.Context, client *http.Client, urls []string) ([]string, error) {
+	var versions []string
+	for _, url := range urls {
+		// TODO(3): Pass the caller's ctx on instead of context.Background().
+		version, err := Fetch(context.Background(), client, url)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, version)
+	}
+	return versions, nil
+}

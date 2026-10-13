@@ -1,0 +1,117 @@
+package selectors
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+)
+
+// pod builds a Pod with just a name and labels, which is all a selector looks at.
+func pod(name string, podLabels map[string]string) corev1.Pod {
+	return corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "shop", Labels: podLabels}}
+}
+
+// shopPods is the list of Pods used by TestMatchingPodNames and TestSelectPods.
+var shopPods = []corev1.Pod{
+	pod("api-1", map[string]string{"app": "api", "env": "prod", "tier": "api", "team": "payments"}),
+	pod("web-1", map[string]string{"app": "web", "env": "prod", "tier": "web", "team": "shop"}),
+	pod("web-canary", map[string]string{"app": "web", "env": "prod", "tier": "web", "team": "shop", "canary": "true"}),
+	pod("worker-1", map[string]string{"app": "worker", "env": "prod", "tier": "batch", "team": "payments"}),
+	pod("web-dev", map[string]string{"app": "web", "env": "dev", "tier": "web", "team": "shop"}),
+	pod("debug-shell", nil),
+}
+
+func TestServiceSelects(t *testing.T) {
+	tests := []struct {
+		name      string
+		selector  map[string]string
+		podLabels map[string]string
+		want      bool
+	}{
+		{"extra pod labels are fine", map[string]string{"app": "checkout"}, map[string]string{"app": "checkout", "env": "prod"}, true},
+		{"different app", map[string]string{"app": "checkout"}, map[string]string{"app": "cart", "env": "prod"}, false},
+		{"both keys match", map[string]string{"app": "checkout", "tier": "web"}, map[string]string{"app": "checkout", "tier": "web", "env": "staging"}, true},
+		{"one key differs", map[string]string{"app": "checkout", "tier": "web"}, map[string]string{"app": "checkout", "tier": "worker"}, false},
+		{"pod has no labels", map[string]string{"app": "checkout"}, nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "checkout", Namespace: "shop"},
+				Spec:       corev1.ServiceSpec{Selector: tt.selector},
+			}
+			got := ServiceSelects(svc, pod("checkout-7d9f8-x2b4q", tt.podLabels))
+			if got != tt.want {
+				t.Errorf("ServiceSelects(selector %v, pod labels %v) = %t, want %t", tt.selector, tt.podLabels, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMatchingPodNames(t *testing.T) {
+	tests := []struct {
+		name string
+		sel  labels.Selector
+		want []string
+	}{
+		{"team=shop", labels.SelectorFromSet(labels.Set{"team": "shop"}), []string{"web-1", "web-canary", "web-dev"}},
+		{"app=worker,env=prod", labels.SelectorFromSet(labels.Set{"app": "worker", "env": "prod"}), []string{"worker-1"}},
+		{"everything", labels.Everything(), []string{"api-1", "web-1", "web-canary", "worker-1", "web-dev", "debug-shell"}},
+		{"no match", labels.SelectorFromSet(labels.Set{"app": "db"}), nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MatchingPodNames(shopPods, tt.sel)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("MatchingPodNames(shopPods, %q) = %q, want %q", tt.sel.String(), got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSelectPods(t *testing.T) {
+	valid := []struct {
+		expr string
+		want []string
+	}{
+		{"env=prod,tier in (web,api)", []string{"api-1", "web-1", "web-canary"}},
+		{"team=payments", []string{"api-1", "worker-1"}},
+		{"env!=dev", []string{"api-1", "web-1", "web-canary", "worker-1", "debug-shell"}},
+		{"canary", []string{"web-canary"}},
+		{"!canary,app=web", []string{"web-1", "web-dev"}},
+		{"app=db", nil},
+	}
+	for _, tt := range valid {
+		t.Run(tt.expr, func(t *testing.T) {
+			got, err := SelectPods(shopPods, tt.expr)
+			if err != nil {
+				t.Fatalf("SelectPods(shopPods, %q) returned error %v, want no error", tt.expr, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("SelectPods(shopPods, %q) = %q, want %q", tt.expr, got, tt.want)
+			}
+		})
+	}
+
+	invalid := []string{"tier in web", "env=prod,", "env=prod tier=web"}
+	for _, expr := range invalid {
+		t.Run("invalid "+expr, func(t *testing.T) {
+			got, err := SelectPods(shopPods, expr)
+			wantPrefix := fmt.Sprintf("invalid selector %q: ", expr)
+			if err == nil {
+				t.Fatalf("SelectPods(shopPods, %q) = %q, nil, want an error starting with %q", expr, got, wantPrefix)
+			}
+			if !strings.HasPrefix(err.Error(), wantPrefix) {
+				t.Errorf("SelectPods(shopPods, %q) error = %q, want it to start with %q", expr, err.Error(), wantPrefix)
+			}
+			if got != nil {
+				t.Errorf("SelectPods(shopPods, %q) names = %q, want nil when there is an error", expr, got)
+			}
+		})
+	}
+}

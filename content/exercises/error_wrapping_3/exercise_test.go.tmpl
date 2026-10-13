@@ -1,0 +1,134 @@
+package wrapping3
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"testing"
+)
+
+func TestDeployError(t *testing.T) {
+	compileErr := errors.New("compile main.go: exit status 1")
+	healthErr := fmt.Errorf("GET /healthz returned 503: %w", ErrUnhealthy)
+
+	tests := []struct {
+		name string
+		err  *DeployError
+		want string
+	}{
+		{"build", &DeployError{Service: "api", Stage: "build", Err: compileErr}, "deploy api: stage build: compile main.go: exit status 1"},
+		{"verify", &DeployError{Service: "worker", Stage: "verify", Err: healthErr}, "deploy worker: stage verify: GET /healthz returned 503: health check failed"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.err.Error(); got != tc.want {
+				t.Errorf("DeployError.Error() = %q, want %q", got, tc.want)
+			}
+			if got := errors.Unwrap(tc.err); got != tc.err.Err {
+				t.Errorf("errors.Unwrap(DeployError) = %v, want %v", got, tc.err.Err)
+			}
+		})
+	}
+
+	t.Run("errors.Is sees through DeployError", func(t *testing.T) {
+		err := fmt.Errorf("release v1.4.2: %w", &DeployError{Service: "worker", Stage: "verify", Err: healthErr})
+		if !errors.Is(err, ErrUnhealthy) {
+			t.Errorf("errors.Is(%v, ErrUnhealthy) = false, want true", err)
+		}
+	})
+}
+
+// pipeline returns build, test and rollout stages. Each stage appends its
+// name to *ran when it runs. The stage named failAt returns failErr.
+func pipeline(ran *[]string, failAt string, failErr error) []Stage {
+	var stages []Stage
+	for _, name := range []string{"build", "test", "rollout"} {
+		stages = append(stages, Stage{Name: name, Run: func() error {
+			*ran = append(*ran, name)
+			if name == failAt {
+				return failErr
+			}
+			return nil
+		}})
+	}
+	return stages
+}
+
+func TestDeploy(t *testing.T) {
+	t.Run("all stages pass", func(t *testing.T) {
+		var ran []string
+		err := Deploy("api", pipeline(&ran, "", nil))
+		if err != nil {
+			t.Errorf("Deploy(%q, stages) = %v, want nil", "api", err)
+		}
+		want := []string{"build", "test", "rollout"}
+		if !slices.Equal(ran, want) {
+			t.Errorf("Deploy(%q, stages) ran %q, want %q", "api", ran, want)
+		}
+	})
+
+	t.Run("no stages", func(t *testing.T) {
+		if err := Deploy("api", nil); err != nil {
+			t.Errorf("Deploy(%q, nil) = %v, want nil", "api", err)
+		}
+	})
+
+	failures := []struct {
+		name    string
+		service string
+		failAt  string
+		failErr error
+		wantRan []string
+	}{
+		{"test fails", "api", "test", errors.New("2 tests failed"), []string{"build", "test"}},
+		{"build fails", "worker", "build", errors.New("compile main.go: exit status 1"), []string{"build"}},
+		{"rollout fails", "web", "rollout", errors.New("image pull backoff"), []string{"build", "test", "rollout"}},
+	}
+	for _, tc := range failures {
+		t.Run(tc.name, func(t *testing.T) {
+			var ran []string
+			err := Deploy(tc.service, pipeline(&ran, tc.failAt, tc.failErr))
+			if !slices.Equal(ran, tc.wantRan) {
+				t.Errorf("Deploy(%q, stages) ran %q, want %q", tc.service, ran, tc.wantRan)
+			}
+			derr, ok := errors.AsType[*DeployError](err)
+			if !ok {
+				t.Fatalf("Deploy(%q, stages) = %v, want a *DeployError", tc.service, err)
+			}
+			if derr.Service != tc.service {
+				t.Errorf("Deploy(%q, stages): Service = %q, want %q", tc.service, derr.Service, tc.service)
+			}
+			if derr.Stage != tc.failAt {
+				t.Errorf("Deploy(%q, stages): Stage = %q, want %q", tc.service, derr.Stage, tc.failAt)
+			}
+			if derr.Err != tc.failErr {
+				t.Errorf("Deploy(%q, stages): Err = %v, want %v", tc.service, derr.Err, tc.failErr)
+			}
+		})
+	}
+}
+
+func TestShouldRollback(t *testing.T) {
+	healthErr := fmt.Errorf("GET /healthz returned 503: %w", ErrUnhealthy)
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"no error", nil, false},
+		{"build failed", fmt.Errorf("release v1.4.2: %w", &DeployError{Service: "api", Stage: "build", Err: errors.New("compile main.go: exit status 1")}), false},
+		{"test failed", &DeployError{Service: "api", Stage: "test", Err: errors.New("2 tests failed")}, false},
+		{"rollout failed", &DeployError{Service: "web", Stage: "rollout", Err: errors.New("image pull backoff")}, true},
+		{"rollout failed, wrapped", fmt.Errorf("release v1.4.2: %w", &DeployError{Service: "web", Stage: "rollout", Err: errors.New("3 of 5 pods updated")}), true},
+		{"unhealthy after verify", fmt.Errorf("release v1.4.2: %w", &DeployError{Service: "api", Stage: "verify", Err: healthErr}), true},
+		{"bare ErrUnhealthy", ErrUnhealthy, true},
+		{"other error", errors.New("vault timed out"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ShouldRollback(tc.err); got != tc.want {
+				t.Errorf("ShouldRollback(%v) = %t, want %t", tc.err, got, tc.want)
+			}
+		})
+	}
+}

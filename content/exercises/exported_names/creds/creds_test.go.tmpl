@@ -1,0 +1,63 @@
+package creds_test
+
+import (
+	"reflect"
+	"testing"
+
+	"gopherlings.local/exported_names/creds"
+)
+
+func TestNewCredential(t *testing.T) {
+	tests := []struct {
+		user, token string
+		wantHeader  string
+	}{
+		{"deploy-bot", "s3cr3t-value", "Bearer s3cr3t-value"},
+		{"ci", "abc", "Bearer abc"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.user, func(t *testing.T) {
+			c := creds.NewCredential(tt.user, tt.token)
+			if c.User != tt.user {
+				t.Errorf("NewCredential(%q, %q).User = %q, want %q", tt.user, tt.token, c.User, tt.user)
+			}
+			if got := c.Header(); got != tt.wantHeader {
+				t.Errorf("NewCredential(%q, %q).Header() = %q, want %q", tt.user, tt.token, got, tt.wantHeader)
+			}
+		})
+	}
+}
+
+func TestTokenIsPrivate(t *testing.T) {
+	// reflect lets a program look at a type's fields while it runs.
+	// TypeFor returns the description of the Credential struct type, and
+	// Fields lists its fields one by one.
+	typ := reflect.TypeFor[creds.Credential]()
+	for field := range typ.Fields() {
+		if field.IsExported() && field.Name != "User" {
+			t.Errorf("Credential has exported field %s; only User should be exported", field.Name)
+		}
+	}
+}
+
+func TestMasked(t *testing.T) {
+	tests := []struct {
+		user, token string
+		want        string
+	}{
+		{"deploy-bot", "s3cr3t-value", "deploy-bot:s3****"},
+		{"ci", "abcdef", "ci:ab****"},
+		{"ci", "abcde", "ci:ab****"},
+		{"ci", "abcd", "ci:****"},
+		{"ci", "abc", "ci:****"},
+		{"ci", "", "ci:****"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			c := creds.NewCredential(tt.user, tt.token)
+			if got := c.Masked(); got != tt.want {
+				t.Errorf("NewCredential(%q, %q).Masked() = %q, want %q", tt.user, tt.token, got, tt.want)
+			}
+		})
+	}
+}

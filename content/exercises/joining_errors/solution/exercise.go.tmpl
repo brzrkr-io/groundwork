@@ -1,0 +1,78 @@
+// Package joining is the Gopherlings exercise "Reporting many errors".
+package joining
+
+import (
+	"errors"
+	"fmt"
+)
+
+// Sentinel errors for the preflight checks.
+var (
+	ErrUnreachable = errors.New("host unreachable")
+	ErrLowDisk     = errors.New("low disk space")
+	ErrLowMemory   = errors.New("low memory")
+)
+
+// Host describes a deploy target as seen by the preflight checks.
+type Host struct {
+	Name         string
+	Reachable    bool
+	DiskFreeGB   int
+	MemoryFreeGB int
+}
+
+func checkReachable(h Host) error {
+	if !h.Reachable {
+		return ErrUnreachable
+	}
+	return nil
+}
+
+func checkDisk(h Host) error {
+	if h.DiskFreeGB < 10 {
+		return fmt.Errorf("%w: %d GB free, need 10", ErrLowDisk, h.DiskFreeGB)
+	}
+	return nil
+}
+
+func checkMemory(h Host) error {
+	if h.MemoryFreeGB < 2 {
+		return fmt.Errorf("%w: %d GB free, need 2", ErrLowMemory, h.MemoryFreeGB)
+	}
+	return nil
+}
+
+// checks lists every preflight check, in the order they run.
+var checks = []func(Host) error{checkReachable, checkDisk, checkMemory}
+
+// Preflight runs every check on h and reports all of the problems it finds.
+// It returns nil when the host is ready.
+func Preflight(h Host) error {
+	return errors.Join(checkReachable(h), checkDisk(h), checkMemory(h))
+}
+
+// PreflightAll runs every check on every host. Each problem is prefixed with
+// the host's name. It returns nil when every host is ready.
+func PreflightAll(hosts []Host) error {
+	var errs []error
+	for _, h := range hosts {
+		for _, check := range checks {
+			if err := check(h); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", h.Name, err))
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// Decide turns a preflight result into "deploy", "abort" or "warn".
+func Decide(err error) string {
+	switch {
+	case err == nil:
+		return "deploy"
+	case errors.Is(err, ErrUnreachable):
+		return "abort"
+	default:
+		return "warn"
+	}
+}

@@ -1,0 +1,33 @@
+package controller
+
+import (
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/client-go/tools/cache"
+)
+
+// addHandlers tells the Deployment informer to call onAdd and onUpdate.
+// There is no delete handler: when a Deployment is deleted, the garbage
+// collector removes its Service.
+func (c *Controller) addHandlers(informer cache.TypedSharedIndexInformer[*appsv1.Deployment]) error {
+	_, err := informer.AddTypedEventHandler(cache.TypedResourceEventHandlerFuncs[*appsv1.Deployment]{
+		AddFunc:    c.onAdd,
+		UpdateFunc: c.onUpdate,
+	})
+	return err
+}
+
+// onAdd runs when the informer sees a Deployment for the first time.
+func (c *Controller) onAdd(d *appsv1.Deployment) {
+	if Exposed(d) {
+		c.queue.Add(Key(d))
+	}
+}
+
+// onUpdate runs when a Deployment the informer already knows changes.
+func (c *Controller) onUpdate(oldD, newD *appsv1.Deployment) {
+	// Checking oldD catches the label being removed: the new version is
+	// no longer exposed, but its Service still has to go.
+	if Exposed(oldD) || Exposed(newD) {
+		c.queue.Add(Key(newD))
+	}
+}

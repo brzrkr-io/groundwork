@@ -1,0 +1,122 @@
+package ports
+
+// This file is how Gopherlings grades the test you write. You don't need to
+// change it, but you are welcome to read it.
+//
+// TestGrader re-runs your tests against the real code, where they must pass,
+// and then against each mutant below, where they must fail. A mutant is a
+// copy of the code with one deliberate bug.
+
+import (
+	"errors"
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+// learnerTests selects the tests you write in exercise_test.go.
+const learnerTests = "^TestParsePort$"
+
+// mutants are the bugs your tests must catch.
+var mutants = []mutant{
+	{
+		name: "rejects_valid_ports",
+		bug:  `ParsePort rejected the valid port "8080"`,
+		install: func() {
+			parsePort = func(s string) (int, error) {
+				return 0, errors.New("broken")
+			}
+		},
+	},
+	{
+		name: "always_8080",
+		bug:  `ParsePort returned 8080 for every valid port`,
+		install: func() {
+			parsePort = func(s string) (int, error) {
+				if _, err := realParsePort(s); err != nil {
+					return 0, err
+				}
+				return 8080, nil
+			}
+		},
+	},
+	{
+		name: "accepts_port_0",
+		bug:  `ParsePort accepted port "0"`,
+		install: func() {
+			parsePort = func(s string) (int, error) {
+				if s == "0" {
+					return 0, nil
+				}
+				return realParsePort(s)
+			}
+		},
+	},
+	{
+		name: "accepts_port_65536",
+		bug:  `ParsePort accepted port "65536"`,
+		install: func() {
+			parsePort = func(s string) (int, error) {
+				if s == "65536" {
+					return 65536, nil
+				}
+				return realParsePort(s)
+			}
+		},
+	},
+}
+
+// Everything below is the same in every Testing exercise.
+
+// mutantEnv names the environment variable that tells a re-run which mutant
+// to install.
+const mutantEnv = "GOPHERLINGS_MUTANT"
+
+type mutant struct {
+	name    string // short name, used in GOPHERLINGS_MUTANT and test output
+	bug     string // completes "your tests didn't notice when ..."
+	install func() // swaps the bug into the package
+}
+
+// TestMain runs before any test. In a re-run started by TestGrader, it
+// installs the mutant named by GOPHERLINGS_MUTANT.
+func TestMain(m *testing.M) {
+	if name := os.Getenv(mutantEnv); name != "" {
+		for _, mu := range mutants {
+			if mu.name == name {
+				mu.install()
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func TestGrader(t *testing.T) {
+	if _, rerun := os.LookupEnv(mutantEnv); rerun {
+		t.Skip("TestGrader does not run inside its own re-runs")
+	}
+	out, err := runLearnerTests("")
+	if strings.Contains(out, "no tests to run") {
+		t.Fatalf("found no test matching %s in exercise_test.go", learnerTests)
+	}
+	if err != nil {
+		t.Fatalf("your tests must pass on the real code first, but they failed:\n%s", out)
+	}
+	for _, mu := range mutants {
+		t.Run(mu.name, func(t *testing.T) {
+			if _, err := runLearnerTests(mu.name); err == nil {
+				t.Errorf("your tests didn't notice when %s", mu.bug)
+			}
+		})
+	}
+}
+
+// runLearnerTests re-runs this test binary with only your tests selected and
+// the named mutant installed. An empty name means the real code.
+func runLearnerTests(mutant string) (string, error) {
+	cmd := exec.Command(os.Args[0], "-test.run="+learnerTests)
+	cmd.Env = append(os.Environ(), mutantEnv+"="+mutant)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

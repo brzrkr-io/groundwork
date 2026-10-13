@@ -1,0 +1,22 @@
+// Package inventory is the Gopherlings exercise "append and copy: fix the inventory".
+package inventory
+
+import "strconv"
+
+// Addresses returns "host:port" for every host, in order.
+func Addresses(hosts []string, port int) []string {
+	// TODO(1): The result starts with blank strings. Fix this line.
+	out := make([]string, len(hosts))
+	for i := range len(hosts) {
+		out = append(out, hosts[i]+":"+strconv.Itoa(port))
+	}
+	return out
+}
+
+// Backup returns an independent copy of hosts.
+func Backup(hosts []string) []string {
+	// TODO(2): The backup comes back empty. Fix this line.
+	backup := make([]string, 0, len(hosts))
+	copy(backup, hosts)
+	return backup
+}

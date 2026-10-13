@@ -1,0 +1,198 @@
+package breaker
+
+import (
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+var errTimeout = errors.New("inventory API: timeout")
+
+// fakeClock is a clock the test moves by hand.
+type fakeClock struct {
+	t time.Time
+}
+
+func (c *fakeClock) now() time.Time          { return c.t }
+func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
+
+func newClock() *fakeClock {
+	return &fakeClock{t: time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)}
+}
+
+func fail() error    { return errTimeout }
+func succeed() error { return nil }
+
+func TestSuccessResetsFailures(t *testing.T) {
+	tests := []struct {
+		name  string
+		calls string // f = failure, s = success, two hours apart
+		want  State
+	}{
+		{"fail ok fail ok fail", "fsfsf", Closed},
+		{"fail fail ok fail fail", "ffsff", Closed},
+		{"fail ok fail fail fail", "fsfff", Open},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clock := newClock()
+			b := New(3, time.Minute, clock.now)
+			for _, c := range tt.calls {
+				if c == 'f' {
+					b.Call(fail)
+				} else {
+					b.Call(succeed)
+				}
+				clock.advance(2 * time.Hour)
+			}
+			if got := b.State(); got != tt.want {
+				t.Errorf("threshold 3, calls %s: State() = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOnStateChange(t *testing.T) {
+	t.Run("records every transition", func(t *testing.T) {
+		clock := newClock()
+		b := New(2, 30*time.Second, clock.now)
+		var got []string
+		b.OnStateChange = func(from, to State) {
+			got = append(got, fmt.Sprintf("%v->%v", from, to))
+		}
+
+		b.Call(succeed) // closed stays closed: no change
+		b.Call(fail)
+		b.Call(fail) // opens
+		clock.advance(30 * time.Second)
+		b.Call(fail) // trial fails
+		clock.advance(30 * time.Second)
+		b.Call(succeed) // trial succeeds
+		b.Call(succeed) // closed stays closed: no change
+
+		want := []string{
+			"closed->open",
+			"open->half-open",
+			"half-open->open",
+			"open->half-open",
+			"half-open->closed",
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("transitions = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("works without a hook", func(t *testing.T) {
+		b := New(1, 30*time.Second, newClock().now)
+		b.Call(fail)
+		if got := b.State(); got != Open {
+			t.Errorf("State() = %v, want %v", got, Open)
+		}
+	})
+}
+
+// backend is a test HTTP server. /fail answers 503, /missing answers 404 and
+// every other path answers 200. hits counts the requests that reached it.
+func backend(t *testing.T) (*httptest.Server, *atomic.Int32) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		switch r.URL.Path {
+		case "/fail":
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case "/missing":
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &hits
+}
+
+// get sends GET srv.URL+path and returns the status code (0 on error).
+func get(client *http.Client, url string) (int, error) {
+	resp, err := client.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	resp.Body.Close()
+	return resp.StatusCode, nil
+}
+
+// roundTripFunc turns a function into an http.RoundTripper.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestTransport(t *testing.T) {
+	t.Run("5xx responses are returned and count as failures", func(t *testing.T) {
+		srv, hits := backend(t)
+		b := New(2, time.Minute, newClock().now)
+		client := &http.Client{Transport: &Transport{Base: http.DefaultTransport, Breaker: b}}
+
+		for range 2 {
+			code, err := get(client, srv.URL+"/fail")
+			if err != nil || code != http.StatusServiceUnavailable {
+				t.Fatalf("GET /fail = %d, %v, want 503, <nil>", code, err)
+			}
+		}
+		if got := b.State(); got != Open {
+			t.Fatalf("State() after two 503s = %v, want %v", got, Open)
+		}
+		_, err := get(client, srv.URL+"/ok")
+		if !errors.Is(err, ErrOpen) {
+			t.Errorf("GET /ok on an open breaker: error = %v, want %v", err, ErrOpen)
+		}
+		if got := hits.Load(); got != 2 {
+			t.Errorf("backend hits = %d, want 2 (the open breaker must not send the request)", got)
+		}
+	})
+
+	t.Run("2xx and 4xx responses are successes", func(t *testing.T) {
+		srv, hits := backend(t)
+		b := New(2, time.Minute, newClock().now)
+		client := &http.Client{Transport: &Transport{Base: http.DefaultTransport, Breaker: b}}
+
+		for _, path := range []string{"/fail", "/ok", "/fail", "/missing", "/fail"} {
+			if _, err := get(client, srv.URL+path); err != nil {
+				t.Fatalf("GET %s: error = %v, want <nil>", path, err)
+			}
+		}
+		if got := b.State(); got != Closed {
+			t.Errorf("State() after 503, 200, 503, 404, 503 = %v, want %v", got, Closed)
+		}
+		if got := hits.Load(); got != 5 {
+			t.Errorf("backend hits = %d, want 5", got)
+		}
+	})
+
+	t.Run("transport errors count as failures", func(t *testing.T) {
+		errRefused := errors.New("connection refused")
+		sent := 0
+		base := roundTripFunc(func(*http.Request) (*http.Response, error) {
+			sent++
+			return nil, errRefused
+		})
+		b := New(2, time.Minute, newClock().now)
+		client := &http.Client{Transport: &Transport{Base: base, Breaker: b}}
+
+		for range 2 {
+			if _, err := get(client, "http://inventory.internal/hosts"); !errors.Is(err, errRefused) {
+				t.Fatalf("GET with a broken network: error = %v, want %v", err, errRefused)
+			}
+		}
+		_, err := get(client, "http://inventory.internal/hosts")
+		if !errors.Is(err, ErrOpen) {
+			t.Errorf("third GET: error = %v, want %v", err, ErrOpen)
+		}
+		if sent != 2 {
+			t.Errorf("requests sent = %d, want 2", sent)
+		}
+	})
+}

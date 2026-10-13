@@ -1,0 +1,33 @@
+// Package traffic is the Gopherlings exercise "Arrays: fix the hourly histogram".
+package traffic
+
+// TotalRequests returns the number of requests over all 24 hours.
+func TotalRequests(hours [24]int) int {
+	total := 0
+	// TODO(1): This loop skips one hour. Fix it.
+	for i := 1; i < len(hours); i++ {
+		total += hours[i]
+	}
+	return total
+}
+
+// PeakHour returns the hour with the most requests. The earliest hour wins a
+// tie.
+func PeakHour(hours [24]int) int {
+	best := 0
+	for i := range len(hours) {
+		// TODO(2): This comparison mixes up an hour with a request count. Fix it.
+		if hours[i] > best {
+			best = i
+		}
+	}
+	return best
+}
+
+// ClearHour returns a copy of hours with the given hour set to 0.
+func ClearHour(hours [24]int, hour int) [24]int {
+	cleaned := hours
+	// TODO(3): The wrong array is changed here. Fix it.
+	hours[hour] = 0
+	return cleaned
+}

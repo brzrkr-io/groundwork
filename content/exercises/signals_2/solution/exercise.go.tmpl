@@ -1,0 +1,42 @@
+// Package reload is the Gopherlings exercise "Signals: SIGHUP reloads, SIGTERM stops".
+package reload
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"syscall"
+)
+
+// ExitCodeFor returns the exit code for a program stopped by sig,
+// following the 128 + signal number convention.
+func ExitCodeFor(sig os.Signal) int {
+	switch sig {
+	case os.Interrupt:
+		return 128 + 2
+	case syscall.SIGTERM:
+		return 128 + 15
+	default:
+		return 1
+	}
+}
+
+// Serve handles signals until a stop signal arrives or sigs is closed.
+// SIGHUP reloads the config; any other signal stops the service.
+func Serve(sigs <-chan os.Signal, reload func() error, log io.Writer) int {
+	for sig := range sigs {
+		switch sig {
+		case syscall.SIGHUP:
+			// A failed reload is logged, not fatal: the old config stays live.
+			if err := reload(); err != nil {
+				fmt.Fprintf(log, "reload failed: %v; keeping old config\n", err)
+			} else {
+				fmt.Fprintln(log, "reloaded config")
+			}
+		default:
+			fmt.Fprintf(log, "received %v: shutting down\n", sig)
+			return ExitCodeFor(sig)
+		}
+	}
+	return 0
+}

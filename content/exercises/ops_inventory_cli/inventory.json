@@ -1,0 +1,12 @@
+[
+  {"name": "web-1", "env": "prod", "region": "eu-west-1", "address": "10.1.1.11", "tags": ["web", "nginx"]},
+  {"name": "web-2", "env": "prod", "region": "eu-west-1", "address": "10.1.1.12", "tags": ["web", "nginx"]},
+  {"name": "web-3", "env": "prod", "region": "us-east-1", "address": "10.0.1.13", "tags": ["web", "nginx"]},
+  {"name": "api-1", "env": "prod", "region": "us-east-1", "address": "10.0.4.21", "tags": ["api", "canary"]},
+  {"name": "db-1", "env": "prod", "region": "us-east-1", "address": "10.0.2.10", "tags": ["db", "postgres", "primary"]},
+  {"name": "db-2", "env": "prod", "region": "eu-west-1", "address": "10.1.2.10", "tags": ["db", "postgres", "replica"]},
+  {"name": "cache-1", "env": "staging", "region": "eu-west-1", "address": "10.1.3.10", "tags": ["cache", "redis"]},
+  {"name": "web-s1", "env": "staging", "region": "eu-west-1", "address": "10.1.1.51", "tags": ["web", "nginx"]},
+  {"name": "build-1", "env": "dev", "region": "us-east-1", "address": "10.9.0.5", "tags": ["ci"]},
+  {"name": "bastion-1", "env": "prod", "region": "us-east-1", "address": "2001:db8::22"}
+]

@@ -1,0 +1,64 @@
+package methods
+
+import "testing"
+
+func TestAddress(t *testing.T) {
+	tests := []struct {
+		name string
+		host Host
+		want string
+	}{
+		{"web on 8080", Host{Name: "web-1", IP: "10.0.0.5", Port: 8080}, "10.0.0.5:8080"},
+		{"database on 5432", Host{Name: "db-1", IP: "10.0.1.20", Port: 5432}, "10.0.1.20:5432"},
+		{"https on 443", Host{Name: "lb-1", IP: "192.168.1.10", Port: 443}, "192.168.1.10:443"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.host.Address(); got != tc.want {
+				t.Errorf("Host{IP: %q, Port: %d}.Address() = %q, want %q", tc.host.IP, tc.host.Port, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestURL(t *testing.T) {
+	tests := []struct {
+		name string
+		host Host
+		path string
+		want string
+	}{
+		{"health check", Host{Name: "web-1", IP: "10.0.0.5", Port: 8080}, "/healthz", "http://10.0.0.5:8080/healthz"},
+		{"metrics", Host{Name: "api-1", IP: "10.0.2.7", Port: 9090}, "/metrics", "http://10.0.2.7:9090/metrics"},
+		{"root path", Host{Name: "lb-1", IP: "192.168.1.10", Port: 80}, "/", "http://192.168.1.10:80/"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.host.URL(tc.path); got != tc.want {
+				t.Errorf("Host{IP: %q, Port: %d}.URL(%q) = %q, want %q", tc.host.IP, tc.host.Port, tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestImageTag(t *testing.T) {
+	tests := []struct {
+		name  string
+		image string
+		want  string
+	}{
+		{"version tag", "nginx:1.27", "1.27"},
+		{"tag with dash", "redis:7.4-alpine", "7.4-alpine"},
+		{"image with registry", "ghcr.io/acme/api:v2.3.1", "v2.3.1"},
+		{"no tag", "redis", "latest"},
+		{"no tag with registry", "ghcr.io/acme/worker", "latest"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d := Deployment{Name: "app", Image: tc.image}
+			if got := d.ImageTag(); got != tc.want {
+				t.Errorf("Deployment{Image: %q}.ImageTag() = %q, want %q", tc.image, got, tc.want)
+			}
+		})
+	}
+}

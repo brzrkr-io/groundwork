@@ -1,0 +1,73 @@
+// Package tagaudit is the Gopherlings exercise "Tag compliance: audit and fix instance tags".
+package tagaudit
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+// RequiredTags lists the tag keys every instance must carry, in report order.
+var RequiredTags = []string{"CostCenter", "Env", "Owner"}
+
+// Finding records one instance that is missing required tags.
+type Finding struct {
+	InstanceID string
+	Missing    []string
+}
+
+// MissingTags returns the keys from RequiredTags that tags does not have, or
+// has with an empty value, in RequiredTags order.
+func MissingTags(tags []types.Tag) []string {
+	have := make(map[string]string, len(tags))
+	for _, t := range tags {
+		have[aws.ToString(t.Key)] = aws.ToString(t.Value)
+	}
+
+	// TODO(1): Collect every key in RequiredTags whose value in have is "".
+	return nil
+}
+
+// Audit reads every instance through the DescribeInstances paginator and
+// returns one Finding per instance with missing tags, sorted by InstanceID.
+func Audit(ctx context.Context, api ec2.DescribeInstancesAPIClient) ([]Finding, error) {
+	var findings []Finding
+	p := ec2.NewDescribeInstancesPaginator(api, &ec2.DescribeInstancesInput{})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("describe instances: %w", err)
+		}
+		for _, r := range page.Reservations {
+			for _, inst := range r.Instances {
+				// TODO(2): Only add a Finding when the instance is missing
+				// tags, and fill in Missing.
+				findings = append(findings, Finding{InstanceID: aws.ToString(inst.InstanceId)})
+			}
+		}
+	}
+
+	// TODO(2): Sort findings by InstanceID.
+	return findings, nil
+}
+
+// BuildFixes turns findings into CreateTags requests that add the missing
+// tags for which defaults has a value. Each request has DryRun set to dryRun.
+func BuildFixes(findings []Finding, defaults map[string]string, dryRun bool) []*ec2.CreateTagsInput {
+	var fixes []*ec2.CreateTagsInput
+	for _, f := range findings {
+		var tags []types.Tag
+		// TODO(3): Add a types.Tag for each key in f.Missing that has an
+		// entry in defaults. Skip the finding if no tag was added, and set
+		// DryRun on the request.
+
+		fixes = append(fixes, &ec2.CreateTagsInput{
+			Resources: []string{f.InstanceID},
+			Tags:      tags,
+		})
+	}
+	return fixes
+}

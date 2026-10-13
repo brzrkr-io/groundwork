@@ -1,0 +1,212 @@
+package awsclients
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+)
+
+// stubS3 answers ListBuckets with fixed buckets, or a fixed error.
+type stubS3 struct {
+	names []string
+	err   error
+}
+
+func (s *stubS3) ListBuckets(ctx context.Context, params *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	out := &s3.ListBucketsOutput{}
+	for _, n := range s.names {
+		out.Buckets = append(out.Buckets, s3types.Bucket{Name: aws.String(n)})
+	}
+	return out, nil
+}
+
+func TestBucketNames(t *testing.T) {
+	tests := []struct {
+		name  string
+		names []string
+		want  []string
+	}{
+		{"three buckets", []string{"web-assets", "app-logs", "backups"}, []string{"app-logs", "backups", "web-assets"}},
+		{"two buckets", []string{"acme-prod-logs", "acme-dev-logs"}, []string{"acme-dev-logs", "acme-prod-logs"}},
+		{"no buckets", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := BucketNames(context.Background(), &stubS3{names: tt.names})
+			if err != nil {
+				t.Fatalf("BucketNames() error = %v, want nil", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("BucketNames() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	for _, apiErr := range []error{errors.New("AccessDenied"), errors.New("connection refused")} {
+		t.Run("error "+apiErr.Error(), func(t *testing.T) {
+			got, err := BucketNames(context.Background(), &stubS3{err: apiErr})
+			want := "list buckets: " + apiErr.Error()
+			if err == nil || err.Error() != want {
+				t.Fatalf("BucketNames() error = %v, want %q", err, want)
+			}
+			if !errors.Is(err, apiErr) {
+				t.Errorf("BucketNames() error does not wrap the API error; use %%w")
+			}
+			if got != nil {
+				t.Errorf("BucketNames() = %q, want nil on error", got)
+			}
+		})
+	}
+}
+
+// FakeBucketLister must be usable wherever a BucketLister is expected.
+var _ BucketLister = (*FakeBucketLister)(nil)
+
+func TestFakeBucketLister(t *testing.T) {
+	tests := []struct {
+		name  string
+		names []string
+	}{
+		{"two buckets", []string{"web-assets", "app-logs"}},
+		{"three buckets", []string{"backups", "acme-prod-logs", "acme-dev-logs"}},
+		{"no buckets", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &FakeBucketLister{Names: tt.names}
+			out, err := f.ListBuckets(context.Background(), &s3.ListBucketsInput{})
+			if err != nil {
+				t.Fatalf("ListBuckets() error = %v, want nil", err)
+			}
+			if out == nil {
+				t.Fatal("ListBuckets() output = nil, want an output")
+			}
+			var got []string
+			for _, b := range out.Buckets {
+				got = append(got, aws.ToString(b.Name))
+			}
+			if !slices.Equal(got, tt.names) {
+				t.Errorf("ListBuckets() bucket names = %q, want %q", got, tt.names)
+			}
+		})
+	}
+
+	for _, fakeErr := range []error{errors.New("AccessDenied"), errors.New("throttled")} {
+		t.Run("error "+fakeErr.Error(), func(t *testing.T) {
+			f := &FakeBucketLister{Names: []string{"web-assets"}, Err: fakeErr}
+			out, err := f.ListBuckets(context.Background(), &s3.ListBucketsInput{})
+			if err != fakeErr {
+				t.Errorf("ListBuckets() error = %v, want %v", err, fakeErr)
+			}
+			if out != nil {
+				t.Errorf("ListBuckets() output = non-nil, want nil when Err is set")
+			}
+		})
+	}
+}
+
+// stubEC2 answers DescribeInstances with a fixed output, or a fixed error.
+type stubEC2 struct {
+	out *ec2.DescribeInstancesOutput
+	err error
+}
+
+func (s *stubEC2) DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.out, nil
+}
+
+// instance builds a test instance. An empty state means State is nil.
+func instance(id string, state ec2types.InstanceStateName) ec2types.Instance {
+	inst := ec2types.Instance{InstanceId: aws.String(id)}
+	if state != "" {
+		inst.State = &ec2types.InstanceState{Name: state}
+	}
+	return inst
+}
+
+func TestRunningInstanceIDs(t *testing.T) {
+	tests := []struct {
+		name         string
+		reservations []ec2types.Reservation
+		want         []string
+	}{
+		{
+			name: "two reservations",
+			reservations: []ec2types.Reservation{
+				{Instances: []ec2types.Instance{
+					instance("i-0b2", ec2types.InstanceStateNameRunning),
+					instance("i-0c3", ec2types.InstanceStateNameStopped),
+				}},
+				{Instances: []ec2types.Instance{
+					instance("i-0a1", ec2types.InstanceStateNameRunning),
+				}},
+			},
+			want: []string{"i-0a1", "i-0b2"},
+		},
+		{
+			name: "mixed states and a missing state",
+			reservations: []ec2types.Reservation{
+				{Instances: []ec2types.Instance{
+					instance("i-web-3", ec2types.InstanceStateNameRunning),
+					instance("i-web-2", ec2types.InstanceStateNamePending),
+					instance("i-db-1", ec2types.InstanceStateNameRunning),
+					instance("i-old-9", ec2types.InstanceStateNameTerminated),
+					instance("i-new-4", ""),
+					instance("i-web-1", ec2types.InstanceStateNameRunning),
+				}},
+			},
+			want: []string{"i-db-1", "i-web-1", "i-web-3"},
+		},
+		{
+			name: "nothing running",
+			reservations: []ec2types.Reservation{
+				{Instances: []ec2types.Instance{
+					instance("i-0c3", ec2types.InstanceStateNameStopped),
+					instance("i-0d4", ec2types.InstanceStateNameStopping),
+				}},
+			},
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			api := &stubEC2{out: &ec2.DescribeInstancesOutput{Reservations: tt.reservations}}
+			got, err := RunningInstanceIDs(context.Background(), api)
+			if err != nil {
+				t.Fatalf("RunningInstanceIDs() error = %v, want nil", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("RunningInstanceIDs() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	for _, apiErr := range []error{errors.New("UnauthorizedOperation"), errors.New("RequestLimitExceeded")} {
+		t.Run("error "+apiErr.Error(), func(t *testing.T) {
+			got, err := RunningInstanceIDs(context.Background(), &stubEC2{err: apiErr})
+			want := "describe instances: " + apiErr.Error()
+			if err == nil || err.Error() != want {
+				t.Fatalf("RunningInstanceIDs() error = %v, want %q", err, want)
+			}
+			if !errors.Is(err, apiErr) {
+				t.Errorf("RunningInstanceIDs() error does not wrap the API error; use %%w")
+			}
+			if got != nil {
+				t.Errorf("RunningInstanceIDs() = %q, want nil on error", got)
+			}
+		})
+	}
+}

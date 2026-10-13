@@ -1,0 +1,74 @@
+// Package reconcile is the Gopherlings exercise "Reconcile loops: desired vs actual".
+package reconcile
+
+import (
+	"errors"
+	"fmt"
+	"strconv"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
+)
+
+// ErrMissingKey means a required key is absent or empty in the ConfigMap.
+var ErrMissingKey = errors.New("missing key")
+
+// ErrInvalidReplicas means the "replicas" value is not a whole number from 0
+// up to the int32 limit.
+var ErrInvalidReplicas = errors.New("invalid replicas")
+
+// Desired is the state that the rollout-config ConfigMap asks for.
+type Desired struct {
+	Replicas int32
+	Image    string
+}
+
+// DesiredFromConfigMap reads the desired state from the "replicas" and
+// "image" keys of cm.Data.
+func DesiredFromConfigMap(cm *corev1.ConfigMap) (Desired, error) {
+	raw := cm.Data["replicas"]
+	if raw == "" {
+		return Desired{}, fmt.Errorf("%w: %q", ErrMissingKey, "replicas")
+	}
+	n, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil || n < 0 {
+		return Desired{}, fmt.Errorf("%w: %q", ErrInvalidReplicas, raw)
+	}
+	image := cm.Data["image"]
+	if image == "" {
+		return Desired{}, fmt.Errorf("%w: %q", ErrMissingKey, "image")
+	}
+	return Desired{Replicas: int32(n), Image: image}, nil
+}
+
+// Diff lists the differences between desired and current, replicas first,
+// then image. It returns no entries when current is in sync.
+func Diff(desired Desired, current *appsv1.Deployment) []string {
+	var changes []string
+	if have := ptr.Deref(current.Spec.Replicas, 1); have != desired.Replicas {
+		changes = append(changes, fmt.Sprintf("replicas: %d -> %d", have, desired.Replicas))
+	}
+	if have := current.Spec.Template.Spec.Containers[0].Image; have != desired.Image {
+		changes = append(changes, fmt.Sprintf("image: %s -> %s", have, desired.Image))
+	}
+	return changes
+}
+
+// Apply returns a copy of current changed to match desired, and whether
+// anything had to change. It never modifies current.
+func Apply(desired Desired, current *appsv1.Deployment) (*appsv1.Deployment, bool) {
+	updated := current.DeepCopy()
+	changed := false
+	if ptr.Deref(updated.Spec.Replicas, 1) != desired.Replicas {
+		updated.Spec.Replicas = new(desired.Replicas)
+		changed = true
+	}
+	// A pointer to the container, so the assignment changes the copy itself.
+	c := &updated.Spec.Template.Spec.Containers[0]
+	if c.Image != desired.Image {
+		c.Image = desired.Image
+		changed = true
+	}
+	return updated, changed
+}

@@ -1,0 +1,21 @@
+package report
+
+import "testing"
+
+func TestLine(t *testing.T) {
+	tests := []struct {
+		service, version string
+		healthy          bool
+		want             string
+	}{
+		{"payments", "v1.4.2", true, "payments-v1-4-2: healthy"},
+		{"checkout", "v2.0.0", false, "checkout-v2-0-0: DOWN"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := Line(tt.service, tt.version, tt.healthy); got != tt.want {
+				t.Errorf("Line(%q, %q, %t) = %q, want %q", tt.service, tt.version, tt.healthy, got, tt.want)
+			}
+		})
+	}
+}

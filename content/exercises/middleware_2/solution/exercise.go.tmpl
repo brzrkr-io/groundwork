@@ -1,0 +1,68 @@
+// Package middleware is the Gopherlings exercise "Middleware: chains, status codes and auth".
+package middleware
+
+import (
+	"crypto/subtle"
+	"fmt"
+	"io"
+	"net/http"
+	"slices"
+)
+
+// Middleware wraps a handler with extra behaviour and returns the wrapped
+// handler.
+type Middleware func(http.Handler) http.Handler
+
+// Chain wraps h with every middleware in mws. The first one listed is the
+// outermost, so it runs first.
+func Chain(h http.Handler, mws ...Middleware) http.Handler {
+	// Wrap from the last to the first, so the first ends up outermost.
+	for _, mw := range slices.Backward(mws) {
+		h = mw(h)
+	}
+	return h
+}
+
+// statusRecorder is a ResponseWriter that remembers the status code the
+// handler sent.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+// WriteHeader remembers code, then sends it through the real
+// ResponseWriter.
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+// AccessLog returns middleware that writes "METHOD PATH STATUS" and a
+// newline to out after each request.
+func AccessLog(out io.Writer) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(rec, r)
+			fmt.Fprintf(out, "%s %s %d\n", r.Method, r.URL.Path, rec.status)
+		})
+	}
+}
+
+// RequireToken returns middleware that only lets requests through when
+// they carry the header "Authorization: Bearer <token>".
+func RequireToken(token string) Middleware {
+	want := []byte("Bearer " + token)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			got := []byte(r.Header.Get("Authorization"))
+			if subtle.ConstantTimeCompare(got, want) != 1 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				fmt.Fprintln(w, `{"error":"unauthorized"}`)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}

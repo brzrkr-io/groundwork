@@ -1,0 +1,215 @@
+package cli
+
+import (
+	"errors"
+	"flag"
+	"slices"
+	"strings"
+	"testing"
+
+	"gopherlings.local/ops_inventory_cli/internal/inventory"
+)
+
+func TestParseFlags(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		var stderr strings.Builder
+		got, err := parseFlags(nil, &stderr)
+		if err != nil {
+			t.Fatalf("parseFlags(nil) error = %v, want nil", err)
+		}
+		want := options{file: "inventory.json"}
+		if !equalOptions(got, want) {
+			t.Errorf("parseFlags(nil) = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("every flag", func(t *testing.T) {
+		args := []string{"-file", "hosts.json", "-env", "prod", "-region", "eu-west-1", "-tag", "web", "-tag", "nginx", "-json"}
+		var stderr strings.Builder
+		got, err := parseFlags(args, &stderr)
+		if err != nil {
+			t.Fatalf("parseFlags(%q) error = %v, want nil", args, err)
+		}
+		want := options{
+			file:   "hosts.json",
+			json:   true,
+			filter: inventory.Filter{Env: "prod", Region: "eu-west-1", Tags: []string{"web", "nginx"}},
+		}
+		if !equalOptions(got, want) {
+			t.Errorf("parseFlags(%q) = %+v, want %+v", args, got, want)
+		}
+	})
+
+	t.Run("-h asks for help", func(t *testing.T) {
+		var stderr strings.Builder
+		_, err := parseFlags([]string{"-h"}, &stderr)
+		if !errors.Is(err, flag.ErrHelp) {
+			t.Errorf("parseFlags([-h]) error = %v, want flag.ErrHelp", err)
+		}
+	})
+
+	bad := []struct {
+		name       string
+		args       []string
+		wantStderr string // must appear somewhere on stderr
+	}{
+		{"unknown env", []string{"-env", "qa"}, `inventory: -env must be one of dev, staging, prod, got "qa"` + "\n"},
+		{"leftover argument", []string{"-env", "prod", "web-1"}, `inventory: unexpected argument "web-1"` + "\n"},
+		{"unknown flag", []string{"-colour"}, "flag provided but not defined: -colour"},
+	}
+	for _, tt := range bad {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr strings.Builder
+			_, err := parseFlags(tt.args, &stderr)
+			if err == nil {
+				t.Fatalf("parseFlags(%q) error = nil, want an error", tt.args)
+			}
+			if !strings.Contains(stderr.String(), tt.wantStderr) {
+				t.Errorf("parseFlags(%q) stderr = %q, want it to contain %q", tt.args, stderr.String(), tt.wantStderr)
+			}
+			if !strings.Contains(stderr.String(), "Usage of inventory:") {
+				t.Errorf("parseFlags(%q) stderr = %q, want the usage text after the message", tt.args, stderr.String())
+			}
+		})
+	}
+}
+
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		stdin      string
+		wantCode   int
+		wantStdout string
+		wantStderr string // must appear somewhere on stderr; "" means stderr must be empty
+	}{
+		{
+			name:     "every host as a table, sorted by name",
+			args:     []string{"-file", "testdata/hosts.json"},
+			wantCode: 0,
+			wantStdout: "" +
+				"NAME     ENV      REGION     ADDRESS    TAGS\n" +
+				"build-1  dev      us-east-1  10.9.0.5   -\n" +
+				"cache-1  staging  eu-west-1  10.1.3.10  cache,redis\n" +
+				"db-1     prod     us-east-1  10.0.2.10  db,postgres\n" +
+				"web-1    prod     eu-west-1  10.1.1.11  web,nginx\n" +
+				"web-2    prod     us-east-1  10.0.1.12  web,nginx\n",
+		},
+		{
+			name:     "filtered by env and tag",
+			args:     []string{"-file", "testdata/hosts.json", "-env", "prod", "-tag", "web"},
+			wantCode: 0,
+			wantStdout: "" +
+				"NAME   ENV   REGION     ADDRESS    TAGS\n" +
+				"web-1  prod  eu-west-1  10.1.1.11  web,nginx\n" +
+				"web-2  prod  us-east-1  10.0.1.12  web,nginx\n",
+		},
+		{
+			name:     "JSON output",
+			args:     []string{"-file", "testdata/hosts.json", "-region", "eu-west-1", "-json"},
+			wantCode: 0,
+			wantStdout: `[
+  {
+    "name": "cache-1",
+    "env": "staging",
+    "region": "eu-west-1",
+    "address": "10.1.3.10",
+    "tags": [
+      "cache",
+      "redis"
+    ]
+  },
+  {
+    "name": "web-1",
+    "env": "prod",
+    "region": "eu-west-1",
+    "address": "10.1.1.11",
+    "tags": [
+      "web",
+      "nginx"
+    ]
+  }
+]
+`,
+		},
+		{
+			name:       "no matches is still a success",
+			args:       []string{"-file", "testdata/hosts.json", "-region", "ap-south-1"},
+			wantCode:   0,
+			wantStdout: "NAME  ENV  REGION  ADDRESS  TAGS\n",
+		},
+		{
+			name:     "-file - reads stdin",
+			args:     []string{"-file", "-", "-env", "dev"},
+			stdin:    `[{"name": "build-1", "env": "dev", "region": "us-east-1", "address": "10.9.0.5", "tags": ["ci"]}]`,
+			wantCode: 0,
+			wantStdout: "" +
+				"NAME     ENV  REGION     ADDRESS   TAGS\n" +
+				"build-1  dev  us-east-1  10.9.0.5  ci\n",
+		},
+		{
+			name:       "-h is not an error",
+			args:       []string{"-h"},
+			wantCode:   0,
+			wantStderr: "Usage of inventory:",
+		},
+		{
+			name:       "bad env is a usage error",
+			args:       []string{"-file", "testdata/hosts.json", "-env", "qa"},
+			wantCode:   2,
+			wantStderr: `inventory: -env must be one of dev, staging, prod, got "qa"`,
+		},
+		{
+			name:       "unknown flag is a usage error",
+			args:       []string{"-colour"},
+			wantCode:   2,
+			wantStderr: "flag provided but not defined: -colour",
+		},
+		{
+			name:       "missing file",
+			args:       []string{"-file", "testdata/missing.json"},
+			wantCode:   1,
+			wantStderr: "inventory: open testdata/missing.json: ",
+		},
+		{
+			name:       "broken JSON",
+			args:       []string{"-file", "testdata/broken.json"},
+			wantCode:   1,
+			wantStderr: "inventory: parse inventory: ",
+		},
+		{
+			name:     "invalid hosts",
+			args:     []string{"-file", "testdata/invalid.json"},
+			wantCode: 1,
+			wantStderr: "" +
+				"inventory: testdata/invalid.json is invalid:\n" +
+				`host 2 (web-2): env "qa" must be one of dev, staging, prod` + "\n" +
+				"host 3: name is required\n" +
+				`host 3: address "10.1.1.300" is not a valid IP address` + "\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr strings.Builder
+			code := Run(tt.args, strings.NewReader(tt.stdin), &stdout, &stderr)
+			if code != tt.wantCode {
+				t.Errorf("Run(%q) exit code = %d, want %d (stderr: %q)", tt.args, code, tt.wantCode, stderr.String())
+			}
+			if stdout.String() != tt.wantStdout {
+				t.Errorf("Run(%q) stdout =\n%s\nwant\n%s", tt.args, stdout.String(), tt.wantStdout)
+			}
+			if tt.wantStderr == "" && stderr.String() != "" {
+				t.Errorf("Run(%q) stderr = %q, want nothing", tt.args, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), tt.wantStderr) {
+				t.Errorf("Run(%q) stderr = %q, want it to contain %q", tt.args, stderr.String(), tt.wantStderr)
+			}
+		})
+	}
+}
+
+func equalOptions(a, b options) bool {
+	return a.file == b.file && a.json == b.json &&
+		a.filter.Env == b.filter.Env && a.filter.Region == b.filter.Region &&
+		slices.Equal(a.filter.Tags, b.filter.Tags)
+}

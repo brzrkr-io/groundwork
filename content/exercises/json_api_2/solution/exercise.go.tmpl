@@ -1,0 +1,74 @@
+// Package jsonapi is the Gopherlings exercise "JSON APIs: fix the alerts API".
+package jsonapi
+
+import (
+	"cmp"
+	"encoding/json"
+	"net/http"
+	"slices"
+)
+
+// API serves the alerts over HTTP.
+type API struct {
+	store *Store
+}
+
+// NewAPI returns an API backed by store.
+func NewAPI(store *Store) *API {
+	return &API{store: store}
+}
+
+// Routes returns a handler with every endpoint registered.
+func (a *API) Routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /alerts", a.handleList)
+	mux.HandleFunc("POST /alerts", a.handleCreate)
+	return mux
+}
+
+// writeJSON sends v as a JSON body with the given status code.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeError sends {"error": msg} with the given status code.
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// handleCreate serves POST /alerts.
+func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	var alert Alert
+	if err := dec.Decode(&alert); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := alert.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := a.store.Create(alert); err != nil {
+		writeError(w, http.StatusConflict, "alert already exists: "+alert.Name)
+		return
+	}
+	writeJSON(w, http.StatusCreated, alert)
+}
+
+// handleList serves GET /alerts.
+func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
+	alerts := a.store.All()
+	if alerts == nil {
+		// A nil slice encodes as null; clients expect [].
+		alerts = []Alert{}
+	}
+	slices.SortFunc(alerts, func(x, y Alert) int {
+		return cmp.Compare(x.Name, y.Name)
+	})
+	writeJSON(w, http.StatusOK, alerts)
+}

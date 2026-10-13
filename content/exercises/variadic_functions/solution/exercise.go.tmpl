@@ -1,0 +1,36 @@
+// Package toolkit is the Gopherlings exercise "Variadic functions".
+package toolkit
+
+// Max returns the largest of values, or 0 when there are none.
+func Max(values ...int) int {
+	if len(values) == 0 {
+		return 0
+	}
+	largest := values[0]
+	for _, v := range values[1:] {
+		if v > largest {
+			largest = v
+		}
+	}
+	return largest
+}
+
+// JoinPath joins the non-empty parts with "/".
+func JoinPath(parts ...string) string {
+	path := ""
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		if path != "" {
+			path += "/"
+		}
+		path += p
+	}
+	return path
+}
+
+// Tags returns a new slice with base first, followed by every extra tag.
+func Tags(base string, extra ...string) []string {
+	return append([]string{base}, extra...)
+}

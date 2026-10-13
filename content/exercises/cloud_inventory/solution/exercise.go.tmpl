@@ -1,0 +1,179 @@
+// Package inventory is the Gopherlings exercise "Practice: cloud inventory report".
+package inventory
+
+import (
+	"cmp"
+	"context"
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+	"sync"
+	"text/tabwriter"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+// Item is one row of the inventory: an S3 bucket or an EC2 instance.
+type Item struct {
+	Kind   string `json:"kind"`            // "bucket" or "instance"
+	Region string `json:"region"`          // e.g. "eu-west-1"
+	ID     string `json:"id"`              // bucket name or instance ID
+	Name   string `json:"name,omitempty"`  // the instance's Name tag; empty for buckets
+	State  string `json:"state,omitempty"` // the instance state; empty for buckets
+}
+
+// Report is the JSON document written by JSON.
+type Report struct {
+	Buckets   int    `json:"buckets"`
+	Instances int    `json:"instances"`
+	Items     []Item `json:"items"`
+}
+
+// EC2Factory returns the EC2 client for one region.
+type EC2Factory func(region string) ec2.DescribeInstancesAPIClient
+
+// Buckets lists the buckets that live in region.
+func Buckets(ctx context.Context, api s3.ListBucketsAPIClient, region string) ([]Item, error) {
+	var items []Item
+	p := s3.NewListBucketsPaginator(api, &s3.ListBucketsInput{BucketRegion: aws.String(region)})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list buckets: %w", err)
+		}
+		for _, b := range page.Buckets {
+			items = append(items, Item{Kind: "bucket", Region: region, ID: aws.ToString(b.Name)})
+		}
+	}
+	return items, nil
+}
+
+// Instances lists the EC2 instances that api can see. region is copied into
+// every Item.
+func Instances(ctx context.Context, api ec2.DescribeInstancesAPIClient, region string) ([]Item, error) {
+	var items []Item
+	p := ec2.NewDescribeInstancesPaginator(api, &ec2.DescribeInstancesInput{})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("describe instances: %w", err)
+		}
+		for _, r := range page.Reservations {
+			for _, inst := range r.Instances {
+				item := Item{Kind: "instance", Region: region, ID: aws.ToString(inst.InstanceId)}
+				if inst.State != nil {
+					item.State = string(inst.State.Name)
+				}
+				for _, tag := range inst.Tags {
+					if aws.ToString(tag.Key) == "Name" {
+						item.Name = aws.ToString(tag.Value)
+					}
+				}
+				items = append(items, item)
+			}
+		}
+	}
+	return items, nil
+}
+
+// Table renders items as an aligned text table with a header row.
+func Table(items []Item) string {
+	var b strings.Builder
+	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "KIND\tREGION\tID\tNAME\tSTATE")
+	for _, it := range items {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", it.Kind, it.Region, it.ID, orDash(it.Name), orDash(it.State))
+	}
+	w.Flush()
+	return b.String()
+}
+
+// orDash returns s, or "-" when s is empty, so empty cells stay visible.
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+// JSON renders items as an indented Report.
+func JSON(items []Item) ([]byte, error) {
+	// A nil slice would be encoded as null; consumers expect a list.
+	report := Report{Items: []Item{}}
+	for _, it := range items {
+		switch it.Kind {
+		case "bucket":
+			report.Buckets++
+		case "instance":
+			report.Instances++
+		}
+		report.Items = append(report.Items, it)
+	}
+	return json.MarshalIndent(report, "", "  ")
+}
+
+// Gather collects the buckets and instances of every region, working on at
+// most maxParallel regions at a time. The result is sorted by Kind, then
+// Region, then ID.
+func Gather(ctx context.Context, regions []string, s3api s3.ListBucketsAPIClient, ec2For EC2Factory, maxParallel int) ([]Item, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sem := make(chan struct{}, maxParallel)
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		items    []Item
+		firstErr error
+	)
+	for _, region := range regions {
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			found, err := regionItems(ctx, region, s3api, ec2For(region))
+
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				// Only the first failure is reported. Cancelling makes the
+				// other regions stop instead of finishing work nobody reads.
+				if firstErr == nil {
+					firstErr = fmt.Errorf("region %s: %w", region, err)
+					cancel()
+				}
+				return
+			}
+			items = append(items, found...)
+		})
+	}
+	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	slices.SortFunc(items, func(a, b Item) int {
+		return cmp.Or(
+			cmp.Compare(a.Kind, b.Kind),
+			cmp.Compare(a.Region, b.Region),
+			cmp.Compare(a.ID, b.ID),
+		)
+	})
+	return items, nil
+}
+
+// regionItems collects the buckets and instances of one region.
+func regionItems(ctx context.Context, region string, s3api s3.ListBucketsAPIClient, ec2api ec2.DescribeInstancesAPIClient) ([]Item, error) {
+	buckets, err := Buckets(ctx, s3api, region)
+	if err != nil {
+		return nil, err
+	}
+	instances, err := Instances(ctx, ec2api, region)
+	if err != nil {
+		return nil, err
+	}
+	return append(buckets, instances...), nil
+}

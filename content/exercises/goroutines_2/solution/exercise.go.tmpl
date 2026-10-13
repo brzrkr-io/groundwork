@@ -1,0 +1,30 @@
+// Package maintenance is the Gopherlings exercise "Goroutines: fix the maintenance script".
+package maintenance
+
+import "sync"
+
+// DrainNodes drains every node at the same time and returns once all of the
+// drains have finished.
+func DrainNodes(nodes []string, drain func(node string)) {
+	var wg sync.WaitGroup
+	for _, node := range nodes {
+		wg.Go(func() {
+			drain(node)
+		})
+	}
+	wg.Wait()
+}
+
+// PingAll pings every host at the same time and returns the answers in the
+// same order as hosts.
+func PingAll(hosts []string, ping func(host string) bool) []bool {
+	results := make([]bool, len(hosts))
+	var wg sync.WaitGroup
+	for i, host := range hosts {
+		wg.Go(func() {
+			results[i] = ping(host)
+		})
+	}
+	wg.Wait()
+	return results
+}

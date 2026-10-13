@@ -1,0 +1,48 @@
+// Package joining3 is the Gopherlings exercise "Reporting many errors: run every shutdown step".
+package joining3
+
+import "fmt"
+
+// Step is one cleanup step that runs when a service shuts down.
+type Step struct {
+	Name string
+	Run  func() error
+}
+
+// StepError records which shutdown step failed and why.
+type StepError struct {
+	Step string
+	Err  error
+}
+
+// Error formats the failure as `step "<name>": <reason>`.
+func (e *StepError) Error() string {
+	return fmt.Sprintf("step %q: %v", e.Step, e.Err)
+}
+
+// Unwrap returns the reason, so errors.Is and errors.AsType can see it.
+func (e *StepError) Unwrap() error {
+	return e.Err
+}
+
+// Shutdown runs every step in order, even when earlier steps fail. It returns
+// nil when every step succeeds, or every failure joined into one error.
+func Shutdown(steps []Step) error {
+	// TODO(1): Run every step; collect each failure as a *StepError and join them.
+	// You need to add the "errors" import.
+	return nil
+}
+
+// Split returns the errors inside a joined error. A nil error gives an empty
+// list, and any other error gives a list of just that error.
+func Split(err error) []error {
+	// TODO(2): Use a type assertion to interface{ Unwrap() []error }.
+	return nil
+}
+
+// FailedSteps returns the names of the failed steps in a Shutdown error, in
+// order.
+func FailedSteps(err error) []string {
+	// TODO(3): Split err, and use errors.AsType to find each *StepError.
+	return nil
+}

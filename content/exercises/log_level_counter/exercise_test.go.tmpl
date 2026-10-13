@@ -1,0 +1,136 @@
+package logcount
+
+import (
+	"maps"
+	"slices"
+	"testing"
+)
+
+func TestParseLine(t *testing.T) {
+	tests := []struct {
+		name        string
+		line        string
+		wantLevel   string
+		wantMessage string
+		wantOK      bool
+	}{
+		{"error line", "2025-01-02T10:00:00Z ERROR db timeout", "ERROR", "db timeout", true},
+		{"extra spaces and lower case", "2025-01-02T10:00:05Z   warn   disk  80% full", "WARN", "disk 80% full", true},
+		{"one word message", "2025-01-02T10:00:06Z INFO started", "INFO", "started", true},
+		{"no message", "2025-01-02T10:00:09Z INFO", "", "", false},
+		{"only a timestamp", "2025-01-02T10:00:09Z", "", "", false},
+		{"empty line", "", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			level, message, ok := ParseLine(tt.line)
+			if level != tt.wantLevel || message != tt.wantMessage || ok != tt.wantOK {
+				t.Errorf("ParseLine(%q) = %q, %q, %v, want %q, %q, %v",
+					tt.line, level, message, ok, tt.wantLevel, tt.wantMessage, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestCountLevels(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		want  map[string]int
+	}{
+		{
+			name: "mixed levels and a bad line",
+			lines: []string{
+				"2025-01-02T10:00:00Z ERROR db timeout",
+				"2025-01-02T10:00:01Z info request served",
+				"2025-01-02T10:00:02Z ERROR db timeout",
+				"garbage",
+			},
+			want: map[string]int{"ERROR": 2, "INFO": 1},
+		},
+		{
+			name: "all four levels",
+			lines: []string{
+				"2025-01-02T10:00:00Z DEBUG cache warmed",
+				"2025-01-02T10:00:01Z WARN slow query",
+				"2025-01-02T10:00:02Z WARN slow query",
+				"2025-01-02T10:00:03Z WARN retrying",
+				"2025-01-02T10:00:04Z INFO healthy",
+				"2025-01-02T10:00:05Z ERROR crashed",
+			},
+			want: map[string]int{"DEBUG": 1, "WARN": 3, "INFO": 1, "ERROR": 1},
+		},
+		{
+			name:  "only bad lines",
+			lines: []string{"", "oops"},
+			want:  map[string]int{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CountLevels(tt.lines)
+			if got == nil {
+				t.Fatalf("CountLevels(%q) = nil, want %v", tt.lines, tt.want)
+			}
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("CountLevels(%q) = %v, want %v", tt.lines, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSummary(t *testing.T) {
+	tests := []struct {
+		name   string
+		counts map[string]int
+		want   string
+	}{
+		{"standard levels", map[string]int{"INFO": 5, "ERROR": 2, "WARN": 1}, "ERROR=2 WARN=1 INFO=5 DEBUG=0"},
+		{"extra levels", map[string]int{"ERROR": 1, "TRACE": 4, "AUDIT": 2}, "ERROR=1 WARN=0 INFO=0 DEBUG=0 AUDIT=2 TRACE=4"},
+		{"empty", map[string]int{}, "ERROR=0 WARN=0 INFO=0 DEBUG=0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Summary(tt.counts); got != tt.want {
+				t.Errorf("Summary(%v) = %q, want %q", tt.counts, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTopMessages(t *testing.T) {
+	lines := []string{
+		"2025-01-02T10:00:00Z ERROR db timeout",
+		"2025-01-02T10:00:01Z ERROR cache miss storm",
+		"2025-01-02T10:00:02Z ERROR db timeout",
+		"2025-01-02T10:00:03Z WARN db timeout",
+		"2025-01-02T10:00:04Z ERROR auth failed",
+		"2025-01-02T10:00:05Z WARN disk 80% full",
+		"2025-01-02T10:00:06Z WARN disk 80% full",
+		"2025-01-02T10:00:07Z error db timeout",
+		"not a log line",
+	}
+	tests := []struct {
+		name  string
+		level string
+		n     int
+		want  []string
+	}{
+		{"top two errors", "ERROR", 2, []string{"3x db timeout", "1x auth failed"}},
+		{"all errors", "ERROR", 10, []string{"3x db timeout", "1x auth failed", "1x cache miss storm"}},
+		{"warnings", "WARN", 5, []string{"2x disk 80% full", "1x db timeout"}},
+		{"n is zero", "ERROR", 0, []string{}},
+		{"no matches", "DEBUG", 3, []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := TopMessages(lines, tt.level, tt.n)
+			if got == nil {
+				t.Fatalf("TopMessages(lines, %q, %d) = nil, want %q", tt.level, tt.n, tt.want)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("TopMessages(lines, %q, %d) = %q, want %q", tt.level, tt.n, got, tt.want)
+			}
+		})
+	}
+}

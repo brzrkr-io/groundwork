@@ -1,0 +1,172 @@
+package report
+
+import (
+	"context"
+	"errors"
+	"maps"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+func TestPrefixSizes(t *testing.T) {
+	errAccessDenied := errors.New("api error AccessDenied: Access Denied")
+	logs := []object{
+		{"README.txt", 120},
+		{"api/2026-10-10.log", 1200},
+		{"api/2026-10-11.log", 800},
+		{"nginx/access-2026-10-11.log", 52000},
+		{"nginx/error-2026-10-11.log", 3100},
+		{"worker/2026-10-11.log", 4500},
+		{"worker/2026-10-11.log.1", 500},
+	}
+	wantLogs := map[string]int64{"README.txt": 120, "api": 2000, "nginx": 55100, "worker": 5000}
+
+	tests := []struct {
+		name     string
+		objects  []object
+		pageSize int
+		failCall int
+		want     map[string]int64
+		wantErr  string
+	}{
+		{
+			name:     "everything on one page",
+			objects:  logs,
+			pageSize: 1000,
+			want:     wantLogs,
+		},
+		{
+			name:     "four pages",
+			objects:  logs,
+			pageSize: 2,
+			want:     wantLogs,
+		},
+		{
+			name:     "two pages, one prefix",
+			objects:  []object{{"db/backup-1.sql.gz", 7000}, {"db/backup-2.sql.gz", 7100}, {"db/backup-3.sql.gz", 7200}},
+			pageSize: 2,
+			want:     map[string]int64{"db": 21300},
+		},
+		{
+			name:     "empty bucket",
+			objects:  nil,
+			pageSize: 2,
+			want:     map[string]int64{},
+		},
+		{
+			name:     "second page fails",
+			objects:  logs,
+			pageSize: 2,
+			failCall: 2,
+			wantErr:  "size report s3://central-logs: api error AccessDenied: Access Denied",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeS3{
+				bucket:   "central-logs",
+				objects:  tc.objects,
+				pageSize: tc.pageSize,
+				failCall: tc.failCall,
+				failErr:  errAccessDenied,
+			}
+			got, err := PrefixSizes(context.Background(), fake, "central-logs")
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("PrefixSizes(ctx, fake, %q) error = %v, want %q", "central-logs", err, tc.wantErr)
+				}
+				if !errors.Is(err, errAccessDenied) {
+					t.Errorf("PrefixSizes error does not wrap the API error; use %%w")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("PrefixSizes(ctx, fake, %q) returned error: %v", "central-logs", err)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("PrefixSizes(ctx, fake, %q) = %v, want %v", "central-logs", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunningByType(t *testing.T) {
+	errThrottled := errors.New("api error RequestLimitExceeded: Request limit exceeded")
+	threePages := [][]types.Reservation{
+		{
+			reservation(
+				instance("i-0a1b2c3d4e5f00001", types.InstanceTypeM5Large, types.InstanceStateNameRunning),
+				instance("i-0a1b2c3d4e5f00002", types.InstanceTypeT3Micro, types.InstanceStateNameStopped),
+			),
+		},
+		{}, // EC2 sometimes sends an empty page that still has a NextToken
+		{
+			reservation(
+				instance("i-0a1b2c3d4e5f00003", types.InstanceTypeM5Large, types.InstanceStateNameRunning),
+				instance("i-0a1b2c3d4e5f00004", types.InstanceTypeT3Micro, types.InstanceStateNameRunning),
+			),
+			reservation(
+				instance("i-0a1b2c3d4e5f00005", types.InstanceTypeC6gXlarge, types.InstanceStateNamePending),
+			),
+		},
+	}
+
+	tests := []struct {
+		name     string
+		pages    [][]types.Reservation
+		failCall int
+		want     map[string]int
+		wantErr  string
+	}{
+		{
+			name: "one page",
+			pages: [][]types.Reservation{{
+				reservation(
+					instance("i-0a1b2c3d4e5f00001", types.InstanceTypeT3Micro, types.InstanceStateNameRunning),
+					instance("i-0a1b2c3d4e5f00002", types.InstanceTypeT3Micro, types.InstanceStateNameRunning),
+				),
+			}},
+			want: map[string]int{"t3.micro": 2},
+		},
+		{
+			name:  "three pages with an empty page in the middle",
+			pages: threePages,
+			want:  map[string]int{"m5.large": 2, "t3.micro": 1},
+		},
+		{
+			name: "nothing running",
+			pages: [][]types.Reservation{{
+				reservation(instance("i-0a1b2c3d4e5f00001", types.InstanceTypeT3Micro, types.InstanceStateNameStopped)),
+			}},
+			want: map[string]int{},
+		},
+		{
+			name:     "second page is throttled",
+			pages:    threePages,
+			failCall: 2,
+			wantErr:  "running by type: api error RequestLimitExceeded: Request limit exceeded",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeEC2{pages: tc.pages, failCall: tc.failCall, failErr: errThrottled}
+			got, err := RunningByType(context.Background(), fake)
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("RunningByType(ctx, fake) error = %v, want %q", err, tc.wantErr)
+				}
+				if !errors.Is(err, errThrottled) {
+					t.Errorf("RunningByType error does not wrap the API error; use %%w")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RunningByType(ctx, fake) returned error: %v", err)
+			}
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("RunningByType(ctx, fake) = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

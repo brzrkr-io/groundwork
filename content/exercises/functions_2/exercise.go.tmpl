@@ -1,0 +1,27 @@
+// Package functions is the Gopherlings exercise "Functions: swapped arguments and helpers".
+package functions
+
+import "fmt"
+
+// Percent returns what percent part is of whole.
+func Percent(part, whole float64) float64 {
+	return part / whole * 100
+}
+
+// UsageLine formats CPU usage like "api: 37.5% CPU".
+func UsageLine(service string, used, total float64) string {
+	// TODO(1): Fix the order of the arguments to Percent.
+	return fmt.Sprintf("%s: %.1f%% CPU", service, Percent(total, used))
+}
+
+// TagOrLatest returns tag, or "latest" when tag is empty.
+func TagOrLatest(tag string) string {
+	// TODO(2): Default an empty tag to "latest".
+	return "TODO"
+}
+
+// ImageRef returns a container image reference like "docker.io/nginx:latest".
+func ImageRef(registry, name, tag string) string {
+	// TODO(3): Join registry, name and TagOrLatest(tag).
+	return name
+}

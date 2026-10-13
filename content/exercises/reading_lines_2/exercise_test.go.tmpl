@@ -1,0 +1,168 @@
+package logscan
+
+import (
+	"bufio"
+	"errors"
+	"io"
+	"slices"
+	"strings"
+	"testing"
+	"testing/iotest"
+)
+
+// errConn stands in for a read failure, such as a dropped connection.
+var errConn = errors.New("connection reset")
+
+// failingReader returns a reader that yields text and then fails with errConn.
+func failingReader(text string) io.Reader {
+	return io.MultiReader(strings.NewReader(text), iotest.ErrReader(errConn))
+}
+
+func TestFindPanics(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []int
+	}{
+		{
+			name:  "two panics",
+			input: "INFO starting\npanic: nil map\nINFO restarting\npanic: index out of range\n",
+			want:  []int{2, 4},
+		},
+		{
+			name:  "panic on the first line",
+			input: "panic: runtime error\ngoroutine 1 [running]:\n",
+			want:  []int{1},
+		},
+		{
+			name:  "panic on the last line, no trailing newline",
+			input: "INFO a\nINFO b\nINFO c\nWARN d\nERROR worker panic: boom",
+			want:  []int{5},
+		},
+		{
+			name:  "no panics",
+			input: "INFO ok\nWARN slow request\n",
+			want:  nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FindPanics(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("FindPanics(%q) error = %v, want nil", tt.input, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("FindPanics(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("read error", func(t *testing.T) {
+		got, err := FindPanics(failingReader("INFO ok\npanic: boom\n"))
+		if !errors.Is(err, errConn) {
+			t.Errorf("FindPanics(failing reader) error = %v, want %v", err, errConn)
+		}
+		if got != nil {
+			t.Errorf("FindPanics(failing reader) = %v, want nil", got)
+		}
+	})
+}
+
+func TestGrep(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		word  string
+		want  []string
+	}{
+		{
+			name:  "errors",
+			input: "INFO ok\nERROR db timeout\nWARN slow\nERROR db timeout\n",
+			word:  "ERROR",
+			want:  []string{"2: ERROR db timeout", "4: ERROR db timeout"},
+		},
+		{
+			name:  "word in the middle of a line",
+			input: "GET /health 200\nGET /pay 503\nPOST /pay 200\n",
+			word:  "/pay",
+			want:  []string{"2: GET /pay 503", "3: POST /pay 200"},
+		},
+		{
+			name:  "keeps the line as it is",
+			input: "  WARN  disk 91%\n",
+			word:  "disk",
+			want:  []string{"1:   WARN  disk 91%"},
+		},
+		{
+			name:  "case-sensitive",
+			input: "error: lower case\nERROR upper case\n",
+			word:  "ERROR",
+			want:  []string{"2: ERROR upper case"},
+		},
+		{
+			name:  "no matches",
+			input: "INFO ok\nINFO ok\n",
+			word:  "ERROR",
+			want:  nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Grep(strings.NewReader(tt.input), tt.word)
+			if err != nil {
+				t.Fatalf("Grep(%q, %q) error = %v, want nil", tt.input, tt.word, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Grep(%q, %q) = %q, want %q", tt.input, tt.word, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("read error", func(t *testing.T) {
+		got, err := Grep(failingReader("ERROR one\n"), "ERROR")
+		if !errors.Is(err, errConn) {
+			t.Errorf("Grep(failing reader, %q) error = %v, want %v", "ERROR", err, errConn)
+		}
+		if got != nil {
+			t.Errorf("Grep(failing reader, %q) = %q, want nil", "ERROR", got)
+		}
+	})
+}
+
+func TestGrepHugeLines(t *testing.T) {
+	// A 100 KiB JSON record: longer than the scanner's default 64 KiB limit.
+	hugeJSON := `{"level":"info","body":"` + strings.Repeat("x", 100*1024) + `"}`
+	input := "INFO start\n" + hugeJSON + "\nERROR disk full\n"
+
+	tests := []struct {
+		name string
+		word string
+		want []string
+	}{
+		{"match after the huge line", "ERROR", []string{"3: ERROR disk full"}},
+		{"match inside the huge line", `"level"`, []string{"2: " + hugeJSON}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Grep(strings.NewReader(input), tt.word)
+			if err != nil {
+				t.Fatalf("Grep(log with 100 KiB line, %q) error = %v, want nil", tt.word, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				// %.60q shortens each string to 60 characters so the output stays readable.
+				t.Errorf("Grep(log with 100 KiB line, %q) = %.60q, want %.60q", tt.word, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("line over 1 MiB", func(t *testing.T) {
+		tooBig := "INFO start\n" + strings.Repeat("x", 2*1024*1024) + "\nERROR after\n"
+		got, err := Grep(strings.NewReader(tooBig), "ERROR")
+		if !errors.Is(err, bufio.ErrTooLong) {
+			t.Errorf("Grep(log with 2 MiB line, %q) error = %v, want %v", "ERROR", err, bufio.ErrTooLong)
+		}
+		if got != nil {
+			t.Errorf("Grep(log with 2 MiB line, %q) = %.60q, want nil", "ERROR", got)
+		}
+	})
+}

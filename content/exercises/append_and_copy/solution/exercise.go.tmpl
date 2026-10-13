@@ -1,0 +1,25 @@
+// Package deploy is the Gopherlings exercise "append and copy".
+package deploy
+
+import "slices"
+
+// DeployOrder returns the canary host followed by every host in hosts.
+func DeployOrder(canary string, hosts []string) []string {
+	order := []string{canary}
+	order = append(order, hosts...)
+	return order
+}
+
+// WithDomain returns each host name followed by "." and domain.
+func WithDomain(hosts []string, domain string) []string {
+	var out []string
+	for i := range len(hosts) {
+		out = append(out, hosts[i]+"."+domain)
+	}
+	return out
+}
+
+// Snapshot returns an independent copy of hosts.
+func Snapshot(hosts []string) []string {
+	return slices.Clone(hosts)
+}

@@ -1,0 +1,70 @@
+package notify
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestDefaultConfig(t *testing.T) {
+	// Move to an empty folder, so only embedded files can be found.
+	t.Chdir(t.TempDir())
+
+	got, err := DefaultConfig()
+	if err != nil {
+		t.Fatalf("DefaultConfig() error = %v, want nil", err)
+	}
+	want := Config{Channel: "#deploys", Username: "deploy-bot", Retries: 3}
+	if got != want {
+		t.Errorf("DefaultConfig() = %+v, want %+v", got, want)
+	}
+}
+
+func TestKinds(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	got, err := Kinds()
+	if err != nil {
+		t.Fatalf("Kinds() error = %v, want nil", err)
+	}
+	want := []string{"deploy", "failed", "rollback"}
+	if !slices.Equal(got, want) {
+		t.Errorf("Kinds() = %q, want %q", got, want)
+	}
+}
+
+func TestRender(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	payments := Deploy{Service: "payments", Version: "v1.4.2", Env: "production", User: "alice"}
+	checkout := Deploy{Service: "checkout", Version: "v2.0.0", Env: "staging", User: "ci-bot"}
+	tests := []struct {
+		kind string
+		d    Deploy
+		want string
+	}{
+		{"deploy", payments, "[deploy] payments v1.4.2 is live in production.\nDeployed by alice.\n"},
+		{"failed", checkout, "[failed] checkout v2.0.0 failed to deploy to staging.\nStarted by ci-bot.\n"},
+		{"rollback", payments, "[rollback] payments in production was rolled back to v1.4.2.\nRolled back by alice.\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			got, err := Render(tt.kind, tt.d)
+			if err != nil {
+				t.Fatalf("Render(%q, ...) error = %v, want nil", tt.kind, err)
+			}
+			if got != tt.want {
+				t.Errorf("Render(%q, %+v) = %q, want %q", tt.kind, tt.d, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("unknown kind", func(t *testing.T) {
+		got, err := Render("party", payments)
+		if err == nil {
+			t.Errorf("Render(%q, ...) error = nil, want an error", "party")
+		}
+		if got != "" {
+			t.Errorf("Render(%q, ...) = %q, want %q", "party", got, "")
+		}
+	})
+}

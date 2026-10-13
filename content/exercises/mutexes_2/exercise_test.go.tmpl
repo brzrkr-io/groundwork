@@ -1,0 +1,102 @@
+package deploystats
+
+import (
+	"sync"
+	"testing"
+	"time"
+)
+
+// These tests run with the race detector. Any unprotected access to shared
+// data fails the test with "race detected".
+
+func TestDeployStats(t *testing.T) {
+	t.Run("one goroutine", func(t *testing.T) {
+		var s DeployStats
+		s.Record(true)
+		s.Record(false)
+		s.Record(true)
+		if s.Total() != 3 || s.Failed() != 1 {
+			t.Errorf("after Record(true), Record(false), Record(true): Total() = %d, Failed() = %d, want 3, 1", s.Total(), s.Failed())
+		}
+	})
+
+	t.Run("many goroutines", func(t *testing.T) {
+		var s DeployStats
+		var wg sync.WaitGroup
+		for range 20 {
+			wg.Go(func() {
+				for i := range 50 {
+					s.Record(i%5 != 0) // every fifth deploy fails
+				}
+			})
+		}
+		wg.Wait()
+		if s.Total() != 1000 || s.Failed() != 200 {
+			t.Errorf("after 1000 deploys from 20 goroutines: Total() = %d, Failed() = %d, want 1000, 200", s.Total(), s.Failed())
+		}
+	})
+}
+
+func TestAMICacheGet(t *testing.T) {
+	t.Run("caches each region", func(t *testing.T) {
+		c := NewAMICache()
+		lookups := 0
+		lookup := func(region string) string {
+			lookups++
+			return "ami-" + region
+		}
+
+		calls := []struct {
+			region      string
+			want        string
+			wantLookups int // total lookups after this call
+		}{
+			{"eu-west-1", "ami-eu-west-1", 1},
+			{"eu-west-1", "ami-eu-west-1", 1}, // cached
+			{"us-east-1", "ami-us-east-1", 2},
+			{"eu-west-1", "ami-eu-west-1", 2}, // still cached
+		}
+		for _, call := range calls {
+			got := c.Get(call.region, lookup)
+			if got != call.want {
+				t.Errorf("Get(%q) = %q, want %q", call.region, got, call.want)
+			}
+			if lookups != call.wantLookups {
+				t.Errorf("after Get(%q), lookup was called %d times in total, want %d", call.region, lookups, call.wantLookups)
+			}
+		}
+	})
+
+	t.Run("lookups for different regions run at the same time", func(t *testing.T) {
+		c := NewAMICache()
+		usStarted := make(chan struct{})
+		lookup := func(region string) string {
+			if region == "eu-west-1" {
+				// The eu lookup only finishes once the us lookup has started.
+				// If Get holds the lock during lookup, that never happens.
+				<-usStarted
+			} else {
+				close(usStarted)
+			}
+			return "ami-" + region
+		}
+
+		done := make(chan struct{})
+		go func() {
+			var wg sync.WaitGroup
+			wg.Go(func() { c.Get("eu-west-1", lookup) })
+			wg.Go(func() {
+				time.Sleep(10 * time.Millisecond) // give the eu lookup a head start
+				c.Get("us-east-1", lookup)
+			})
+			wg.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("Get for us-east-1 waited for the eu-west-1 lookup to finish: is the lock still held while lookup runs?")
+		}
+	})
+}

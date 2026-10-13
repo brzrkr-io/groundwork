@@ -1,0 +1,247 @@
+package idempotency
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+func TestStore(t *testing.T) {
+	t.Run("missing key", func(t *testing.T) {
+		s := NewStore()
+		if _, ok := s.Get("deploy-1"); ok {
+			t.Errorf("Get(%q) on an empty store: ok = true, want false", "deploy-1")
+		}
+	})
+
+	t.Run("put then get", func(t *testing.T) {
+		s := NewStore()
+		s.Put("deploy-1", Response{Status: 202, Body: []byte("deploy d-1 queued")})
+		s.Put("deploy-2", Response{Status: 409, Body: []byte("deploy already running")})
+
+		tests := []struct {
+			key        string
+			wantStatus int
+			wantBody   string
+		}{
+			{"deploy-1", 202, "deploy d-1 queued"},
+			{"deploy-2", 409, "deploy already running"},
+		}
+		for _, tt := range tests {
+			resp, ok := s.Get(tt.key)
+			if !ok {
+				t.Errorf("Get(%q): ok = false, want true", tt.key)
+				continue
+			}
+			if resp.Status != tt.wantStatus || string(resp.Body) != tt.wantBody {
+				t.Errorf("Get(%q) = %d %q, want %d %q", tt.key, resp.Status, resp.Body, tt.wantStatus, tt.wantBody)
+			}
+		}
+	})
+
+	// Run with -race, this case catches a Store without locking.
+	t.Run("safe for concurrent use", func(t *testing.T) {
+		s := NewStore()
+		var wg sync.WaitGroup
+		for i := range 20 {
+			wg.Go(func() {
+				key := fmt.Sprintf("deploy-%d", i)
+				s.Put(key, Response{Status: 202})
+				s.Get(key)
+			})
+		}
+		wg.Wait()
+		found := 0
+		for i := range 20 {
+			if _, ok := s.Get(fmt.Sprintf("deploy-%d", i)); ok {
+				found++
+			}
+		}
+		if found != 20 {
+			t.Errorf("after 20 concurrent Puts, Get found %d of the 20 keys, want 20", found)
+		}
+	})
+}
+
+// deployHandler pretends to start a deploy. Every call starts a new deploy
+// with the next number, so a handler that runs twice is easy to spot.
+func deployHandler(calls *int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*calls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprintf(w, `{"deploy":"d-%d"}`, *calls)
+	})
+}
+
+// send POSTs to h and returns the recorded response. An empty key sends no
+// Idempotency-Key header.
+func send(h http.Handler, key string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(http.MethodPost, "/deploys", strings.NewReader(`{"service":"api"}`))
+	if key != "" {
+		r.Header.Set("Idempotency-Key", key)
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	return w
+}
+
+func TestMiddlewareReplays(t *testing.T) {
+	type reply struct {
+		body     string
+		replayed string // the Idempotent-Replayed header
+	}
+	tests := []struct {
+		name      string
+		keys      []string // one request per key, in order
+		want      []reply
+		wantCalls int
+	}{
+		{
+			name:      "no key runs every time",
+			keys:      []string{"", ""},
+			want:      []reply{{`{"deploy":"d-1"}`, ""}, {`{"deploy":"d-2"}`, ""}},
+			wantCalls: 2,
+		},
+		{
+			name: "same key replays",
+			keys: []string{"abc", "abc", "abc"},
+			want: []reply{
+				{`{"deploy":"d-1"}`, ""},
+				{`{"deploy":"d-1"}`, "true"},
+				{`{"deploy":"d-1"}`, "true"},
+			},
+			wantCalls: 1,
+		},
+		{
+			name: "different keys run separately",
+			keys: []string{"abc", "xyz", "abc"},
+			want: []reply{
+				{`{"deploy":"d-1"}`, ""},
+				{`{"deploy":"d-2"}`, ""},
+				{`{"deploy":"d-1"}`, "true"},
+			},
+			wantCalls: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			h := Middleware(NewStore(), deployHandler(&calls))
+			for i, key := range tt.keys {
+				w := send(h, key)
+				want := tt.want[i]
+				if w.Code != http.StatusAccepted {
+					t.Errorf("request %d (key %q): status = %d, want %d", i+1, key, w.Code, http.StatusAccepted)
+				}
+				if got := w.Body.String(); got != want.body {
+					t.Errorf("request %d (key %q): body = %q, want %q", i+1, key, got, want.body)
+				}
+				if got := w.Header().Get("Content-Type"); got != "application/json" {
+					t.Errorf("request %d (key %q): Content-Type = %q, want %q", i+1, key, got, "application/json")
+				}
+				if got := w.Header().Get("Idempotent-Replayed"); got != want.replayed {
+					t.Errorf("request %d (key %q): Idempotent-Replayed = %q, want %q", i+1, key, got, want.replayed)
+				}
+			}
+			if calls != tt.wantCalls {
+				t.Errorf("handler ran %d times, want %d", calls, tt.wantCalls)
+			}
+		})
+	}
+}
+
+// sendAsync sends a request in a new goroutine. The response arrives on the
+// returned channel.
+func sendAsync(h http.Handler, key string) <-chan *httptest.ResponseRecorder {
+	ch := make(chan *httptest.ResponseRecorder, 1)
+	go func() { ch <- send(h, key) }()
+	return ch
+}
+
+// waitFor receives from ch. It fails the test after 2 seconds, so a stuck
+// request fails instead of hanging forever.
+func waitFor[T any](t *testing.T, ch <-chan T, what string) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %s", what)
+		var zero T
+		return zero
+	}
+}
+
+func TestMiddlewareConflict(t *testing.T) {
+	t.Run("Begin", func(t *testing.T) {
+		s := NewStore()
+		check := func(key string, want bool) {
+			t.Helper()
+			if got := s.Begin(key); got != want {
+				t.Errorf("Begin(%q) = %t, want %t", key, got, want)
+			}
+		}
+		check("vm-1", true)  // new key
+		check("vm-1", false) // already in progress
+		check("vm-2", true)  // another key is fine
+		s.Put("vm-1", Response{Status: 201})
+		check("vm-1", false) // finished: it has a stored response
+		check("vm-2", false) // still in progress
+	})
+
+	t.Run("duplicate while the first is running", func(t *testing.T) {
+		started := make(chan struct{})
+		release := make(chan struct{})
+		var calls atomic.Int32
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			n := calls.Add(1)
+			if n == 1 {
+				close(started) // tell the test the first request is running
+				<-release      // and wait until the test lets it finish
+			}
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprintf(w, "created vm-%d", n)
+		})
+		h := Middleware(NewStore(), next)
+
+		first := sendAsync(h, "abc")
+		waitFor(t, started, "the first request to reach the handler")
+
+		dup := waitFor(t, sendAsync(h, "abc"), "the duplicate request")
+		wantMsg := "request with this Idempotency-Key is still in progress"
+		if dup.Code != http.StatusConflict {
+			t.Errorf("duplicate while running: status = %d, want %d", dup.Code, http.StatusConflict)
+		}
+		if got := strings.TrimSpace(dup.Body.String()); got != wantMsg {
+			t.Errorf("duplicate while running: body = %q, want %q", got, wantMsg)
+		}
+
+		other := waitFor(t, sendAsync(h, "xyz"), "the request with another key")
+		if other.Code != http.StatusCreated || other.Body.String() != "created vm-2" {
+			t.Errorf("another key while running = %d %q, want %d %q", other.Code, other.Body.String(), http.StatusCreated, "created vm-2")
+		}
+
+		close(release)
+		got := waitFor(t, first, "the first request to finish")
+		if got.Code != http.StatusCreated || got.Body.String() != "created vm-1" {
+			t.Errorf("first request = %d %q, want %d %q", got.Code, got.Body.String(), http.StatusCreated, "created vm-1")
+		}
+
+		again := send(h, "abc")
+		if again.Code != http.StatusCreated || again.Body.String() != "created vm-1" {
+			t.Errorf("repeat after finishing = %d %q, want %d %q", again.Code, again.Body.String(), http.StatusCreated, "created vm-1")
+		}
+		if got := again.Header().Get("Idempotent-Replayed"); got != "true" {
+			t.Errorf("repeat after finishing: Idempotent-Replayed = %q, want %q", got, "true")
+		}
+		if n := calls.Load(); n != 2 {
+			t.Errorf("handler ran %d times, want 2 (once for abc, once for xyz)", n)
+		}
+	})
+}

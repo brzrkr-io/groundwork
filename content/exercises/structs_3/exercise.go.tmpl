@@ -1,0 +1,36 @@
+// Package structs3 is the Gopherlings exercise "Structs: parse a host inventory".
+package structs3
+
+// Host is one machine from the inventory.
+type Host struct {
+	Name   string
+	IP     string
+	Region string
+}
+
+// Summary counts the hosts in an inventory.
+type Summary struct {
+	Total    int
+	ByRegion map[string]int
+}
+
+// ParseHost parses one inventory line of the form "name ip region".
+func ParseHost(line string) (Host, error) {
+	// TODO(1): Split line into fields and build a Host. Return an error
+	// unless there are exactly 3 fields.
+	return Host{}, nil
+}
+
+// ParseInventory parses every host line in text, skipping blank lines and
+// lines that start with "#".
+func ParseInventory(text string) ([]Host, error) {
+	// TODO(2): Parse each line with ParseHost. On failure, return an error
+	// that starts with "line N: ".
+	return nil, nil
+}
+
+// Summarize counts hosts in total and per region.
+func Summarize(hosts []Host) Summary {
+	// TODO(3): Fill in Total and ByRegion.
+	return Summary{}
+}

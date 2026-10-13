@@ -1,0 +1,132 @@
+package rollout
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestStatus(t *testing.T) {
+	tests := []struct {
+		name    string
+		rollout Rollout
+		want    string
+	}{
+		{"not started", Rollout{Service: "api", Version: "v2", Replicas: 5}, "rolling out 0/5"},
+		{"halfway", Rollout{Service: "api", Version: "v2", Replicas: 5, Updated: 2}, "rolling out 2/5"},
+		{"almost done", Rollout{Service: "web", Version: "v7", Replicas: 3, Updated: 2}, "rolling out 2/3"},
+		{"done", Rollout{Service: "api", Version: "v2", Replicas: 5, Updated: 5}, "done"},
+		{"done small", Rollout{Service: "web", Version: "v7", Replicas: 1, Updated: 1}, "done"},
+		{"paused", Rollout{Service: "api", Version: "v2", Replicas: 5, Updated: 2, Paused: true}, "paused at 2/5"},
+		{"paused before start", Rollout{Service: "web", Version: "v7", Replicas: 3, Paused: true}, "paused at 0/3"},
+		{"paused when done", Rollout{Service: "web", Version: "v7", Replicas: 3, Updated: 3, Paused: true}, "paused at 3/3"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := tc.rollout
+			if got := r.Status(); got != tc.want {
+				t.Errorf("%+v.Status() = %q, want %q", tc.rollout, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAdvance(t *testing.T) {
+	tests := []struct {
+		name        string
+		rollout     Rollout
+		batch       int
+		want        int
+		wantUpdated int
+	}{
+		{"first batch", Rollout{Service: "api", Version: "v2", Replicas: 5}, 2, 2, 2},
+		{"middle batch", Rollout{Service: "api", Version: "v2", Replicas: 5, Updated: 2}, 2, 2, 4},
+		{"last replica", Rollout{Service: "api", Version: "v2", Replicas: 5, Updated: 4}, 3, 1, 5},
+		{"whole service at once", Rollout{Service: "web", Version: "v7", Replicas: 3}, 10, 3, 3},
+		{"already done", Rollout{Service: "web", Version: "v7", Replicas: 3, Updated: 3}, 2, 0, 3},
+		{"paused", Rollout{Service: "api", Version: "v2", Replicas: 5, Updated: 1, Paused: true}, 2, 0, 1},
+		{"zero batch", Rollout{Service: "api", Version: "v2", Replicas: 5, Updated: 1}, 0, 0, 1},
+		{"negative batch", Rollout{Service: "api", Version: "v2", Replicas: 5, Updated: 1}, -2, 0, 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := tc.rollout
+			if got := r.Advance(tc.batch); got != tc.want {
+				t.Errorf("%+v.Advance(%d) = %d, want %d", tc.rollout, tc.batch, got, tc.want)
+			}
+			if r.Updated != tc.wantUpdated {
+				t.Errorf("after %+v.Advance(%d), Updated = %d, want %d", tc.rollout, tc.batch, r.Updated, tc.wantUpdated)
+			}
+		})
+	}
+
+	t.Run("advance through a pointer until done", func(t *testing.T) {
+		r := &Rollout{Service: "api", Version: "v2", Replicas: 5}
+		want := []int{2, 2, 1, 0}
+		for i, w := range want {
+			if got := r.Advance(2); got != w {
+				t.Errorf("call %d: Advance(2) = %d, want %d", i+1, got, w)
+			}
+		}
+		if r.Updated != 5 {
+			t.Errorf("after 4 calls to Advance(2), Updated = %d, want 5", r.Updated)
+		}
+	})
+}
+
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name        string
+		rollout     Rollout
+		batch       int
+		want        []string
+		wantUpdated int
+	}{
+		{
+			name:        "batches of two",
+			rollout:     Rollout{Service: "api", Version: "v2", Replicas: 5},
+			batch:       2,
+			want:        []string{"rolling out 2/5", "rolling out 4/5", "done"},
+			wantUpdated: 5,
+		},
+		{
+			name:        "one at a time",
+			rollout:     Rollout{Service: "web", Version: "v7", Replicas: 3},
+			batch:       1,
+			want:        []string{"rolling out 1/3", "rolling out 2/3", "done"},
+			wantUpdated: 3,
+		},
+		{
+			name:        "resume halfway",
+			rollout:     Rollout{Service: "api", Version: "v2", Replicas: 4, Updated: 2},
+			batch:       5,
+			want:        []string{"done"},
+			wantUpdated: 4,
+		},
+		{
+			name:        "paused",
+			rollout:     Rollout{Service: "api", Version: "v2", Replicas: 5, Updated: 1, Paused: true},
+			batch:       2,
+			want:        nil,
+			wantUpdated: 1,
+		},
+		{
+			name:        "already done",
+			rollout:     Rollout{Service: "web", Version: "v7", Replicas: 3, Updated: 3},
+			batch:       2,
+			want:        nil,
+			wantUpdated: 3,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := tc.rollout
+			// slices.Equal treats nil and an empty slice as equal.
+			if got := r.Run(tc.batch); !slices.Equal(got, tc.want) {
+				t.Errorf("%+v.Run(%d) = %q, want %q", tc.rollout, tc.batch, got, tc.want)
+			}
+			if r.Updated != tc.wantUpdated {
+				t.Errorf("after %+v.Run(%d), Updated = %d, want %d", tc.rollout, tc.batch, r.Updated, tc.wantUpdated)
+			}
+		})
+	}
+}

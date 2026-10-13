@@ -1,0 +1,25 @@
+// Package pool is the Gopherlings exercise "Slice gotchas: drain and promote without side effects".
+package pool
+
+import "slices"
+
+// Drain returns a new slice holding pool without any copy of host. It never
+// changes pool.
+func Drain(pool []string, host string) []string {
+	var out []string
+	for _, h := range pool {
+		if h != host {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+// Promote returns a new slice with host moved to the front of pool, or a copy
+// of pool if host is not in it. It never changes pool.
+func Promote(pool []string, host string) []string {
+	if !slices.Contains(pool, host) {
+		return slices.Clone(pool)
+	}
+	return append([]string{host}, Drain(pool, host)...)
+}

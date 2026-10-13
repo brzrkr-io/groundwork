@@ -1,0 +1,50 @@
+// Package stringers2 is the Gopherlings exercise "Stringers: pod phases and uptime".
+package stringers2
+
+import "fmt"
+
+// Phase is where a pod is in its lifecycle.
+type Phase int
+
+// The pod phases, in the same order as Kubernetes lists them.
+const (
+	Pending Phase = iota
+	Running
+	Succeeded
+	Failed
+	Unknown
+)
+
+// phaseNames holds the name of each Phase, indexed by its value.
+// TODO(1): Finished jobs print as "Failed". Fix this list.
+var phaseNames = []string{"Pending", "Running", "Failed", "Unknown"}
+
+// String returns the phase's name, such as "Running".
+func (p Phase) String() string {
+	if p < 0 || int(p) >= len(phaseNames) {
+		return fmt.Sprintf("Phase(%d)", int(p))
+	}
+	return phaseNames[p]
+}
+
+// PodStatusLine describes a pod, such as "pod api-7f9c is Running".
+func PodStatusLine(name string, phase Phase) string {
+	// TODO(2): Print the phase by name, not as a number.
+	return fmt.Sprintf("pod %s is %d", name, phase)
+}
+
+// Uptime is how long something has been running, in seconds.
+type Uptime int
+
+// Time units, in seconds.
+const (
+	Minute = 60
+	Hour   = 60 * Minute
+	Day    = 24 * Hour
+)
+
+// String returns the uptime in its two largest units, such as "12m 5s".
+func (u Uptime) String() string {
+	// TODO(3): Use minutes, hours or days for longer uptimes.
+	return fmt.Sprintf("%ds", int(u))
+}

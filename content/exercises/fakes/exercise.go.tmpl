@@ -1,0 +1,28 @@
+// Package diskwatch is the Gopherlings exercise "Fakes and dependency injection".
+package diskwatch
+
+import "fmt"
+
+// Notifier sends an alert to the people on call. In production it would post
+// to Slack or page someone through PagerDuty.
+type Notifier interface {
+	Notify(message string)
+}
+
+// CheckDisk sends exactly one alert through n when a host's disk is 90% full
+// or more, such as "disk on web-1 is 93% full". Below 90% it sends nothing.
+//
+// This code is correct. Your job in this exercise is to write a test for it.
+func CheckDisk(n Notifier, host string, usedPercent int) {
+	checkDisk(n, host, usedPercent)
+}
+
+// checkDisk points at the real implementation. Gopherlings' grader swaps in
+// broken versions to check that your test catches them.
+var checkDisk = realCheckDisk
+
+func realCheckDisk(n Notifier, host string, usedPercent int) {
+	if usedPercent >= 90 {
+		n.Notify(fmt.Sprintf("disk on %s is %d%% full", host, usedPercent))
+	}
+}

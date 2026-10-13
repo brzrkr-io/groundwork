@@ -1,0 +1,102 @@
+package typeswitches
+
+import (
+	"maps"
+	"testing"
+)
+
+func TestAsAlert(t *testing.T) {
+	// Each line is one case: the event, then the answers we want.
+	tests := []struct {
+		name   string
+		e      any
+		want   AlertEvent
+		wantOK bool
+	}{
+		{"critical alert", AlertEvent{Service: "api", Severity: "critical", Message: "disk full"}, AlertEvent{Service: "api", Severity: "critical", Message: "disk full"}, true},
+		{"warning alert", AlertEvent{Service: "db", Severity: "warning", Message: "slow queries"}, AlertEvent{Service: "db", Severity: "warning", Message: "slow queries"}, true},
+		{"deploy event", DeployEvent{Service: "api", Version: "v1.4.2"}, AlertEvent{}, false},
+		{"string", "alert", AlertEvent{}, false},
+		{"nil", nil, AlertEvent{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := AsAlert(tt.e)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("AsAlert(%#v) = %#v, %t, want %#v, %t", tt.e, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestDescribe(t *testing.T) {
+	// Each line is one case: the event, then the description we want.
+	tests := []struct {
+		e    any
+		want string
+	}{
+		{DeployEvent{Service: "api", Version: "v1.4.2"}, "deploy api v1.4.2"},
+		{DeployEvent{Service: "web", Version: "v2.0.0"}, "deploy web v2.0.0"},
+		{ScaleEvent{Service: "api", From: 2, To: 5}, "scale api 2 -> 5"},
+		{ScaleEvent{Service: "worker", From: 10, To: 3}, "scale worker 10 -> 3"},
+		{AlertEvent{Service: "api", Severity: "critical", Message: "disk full"}, "alert api [critical]: disk full"},
+		{AlertEvent{Service: "db", Severity: "warning", Message: "slow queries"}, "alert db [warning]: slow queries"},
+		{42, "unknown event int"},
+		{"deploy api", "unknown event string"},
+		{&DeployEvent{Service: "api", Version: "v1.4.2"}, "unknown event *typeswitches.DeployEvent"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := Describe(tt.e); got != tt.want {
+				t.Errorf("Describe(%#v) = %q, want %q", tt.e, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTally(t *testing.T) {
+	// Each line is one case: the batch of events, then the counts we want.
+	tests := []struct {
+		name   string
+		events []any
+		want   map[string]int
+	}{
+		{
+			name: "mixed batch",
+			events: []any{
+				DeployEvent{Service: "api", Version: "v1.4.2"},
+				AlertEvent{Service: "db", Severity: "warning", Message: "slow queries"},
+				DeployEvent{Service: "web", Version: "v2.0.0"},
+				42,
+			},
+			want: map[string]int{"deploy": 2, "alert": 1, "unknown": 1},
+		},
+		{
+			name: "every kind",
+			events: []any{
+				ScaleEvent{Service: "api", From: 2, To: 5},
+				ScaleEvent{Service: "api", From: 5, To: 3},
+				ScaleEvent{Service: "worker", From: 1, To: 4},
+				DeployEvent{Service: "api", Version: "v1.4.3"},
+				AlertEvent{Service: "api", Severity: "critical", Message: "disk full"},
+				nil,
+				"restart api",
+			},
+			want: map[string]int{"scale": 3, "deploy": 1, "alert": 1, "unknown": 2},
+		},
+		{
+			name:   "empty batch",
+			events: []any{},
+			want:   map[string]int{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Tally(tt.events)
+			// maps.Equal reports whether both maps have the same keys and values.
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("Tally(%v) = %v, want %v", tt.events, got, tt.want)
+			}
+		})
+	}
+}

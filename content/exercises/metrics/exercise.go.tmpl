@@ -1,0 +1,84 @@
+// Package metrics is the Gopherlings exercise "Prometheus-style metrics: counters and /metrics".
+package metrics
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"sync"
+)
+
+// Counter is a number that only goes up, such as requests served.
+// It is safe for concurrent use. The zero value is a counter at 0.
+type Counter struct {
+	mu    sync.Mutex
+	value float64
+}
+
+// Inc adds 1 to the counter.
+func (c *Counter) Inc() {
+	c.Add(1)
+}
+
+// Add adds v to the counter. Negative values are ignored.
+func (c *Counter) Add(v float64) {
+	// TODO(1): Ignore negative v, and hold c.mu while you change c.value.
+	c.value += v
+}
+
+// Value returns the current count.
+func (c *Counter) Value() float64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.value
+}
+
+// CounterVec is a family of counters that share a name and are split by one
+// label, such as http_requests_total by status.
+type CounterVec struct {
+	name  string
+	help  string
+	label string
+
+	mu       sync.Mutex
+	counters map[string]*Counter // label value -> counter
+}
+
+// NewCounterVec returns an empty counter family.
+func NewCounterVec(name, help, label string) *CounterVec {
+	return &CounterVec{
+		name:     name,
+		help:     help,
+		label:    label,
+		counters: make(map[string]*Counter),
+	}
+}
+
+// Inc adds 1 to the counter for labelValue, creating it if needed.
+func (v *CounterVec) Inc(labelValue string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	c, ok := v.counters[labelValue]
+	if !ok {
+		c = &Counter{}
+		v.counters[labelValue] = c
+	}
+	c.Inc()
+}
+
+// Write writes the family to w in the Prometheus text format.
+func (v *CounterVec) Write(w io.Writer) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	fmt.Fprintf(w, "# HELP %s %s\n", v.name, v.help)
+	fmt.Fprintf(w, "# TYPE %s counter\n", v.name)
+	// TODO(2): Write one line per label value, sorted by label value.
+	// You'll need to import "maps", "slices" and "strconv".
+}
+
+// Handler serves the families in the Prometheus text format.
+func Handler(families ...*CounterVec) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// TODO(3): Set Content-Type, then write every family in order.
+	})
+}

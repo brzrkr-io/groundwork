@@ -1,0 +1,56 @@
+// Package structs3 is the Gopherlings exercise "Structs: parse a host inventory".
+package structs3
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Host is one machine from the inventory.
+type Host struct {
+	Name   string
+	IP     string
+	Region string
+}
+
+// Summary counts the hosts in an inventory.
+type Summary struct {
+	Total    int
+	ByRegion map[string]int
+}
+
+// ParseHost parses one inventory line of the form "name ip region".
+func ParseHost(line string) (Host, error) {
+	fields := strings.Fields(line)
+	if len(fields) != 3 {
+		return Host{}, fmt.Errorf("want 3 fields (name ip region), got %d in %q", len(fields), line)
+	}
+	return Host{Name: fields[0], IP: fields[1], Region: fields[2]}, nil
+}
+
+// ParseInventory parses every host line in text, skipping blank lines and
+// lines that start with "#".
+func ParseInventory(text string) ([]Host, error) {
+	var hosts []Host
+	for i, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		h, err := ParseHost(line)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %v", i+1, err)
+		}
+		hosts = append(hosts, h)
+	}
+	return hosts, nil
+}
+
+// Summarize counts hosts in total and per region.
+func Summarize(hosts []Host) Summary {
+	byRegion := map[string]int{}
+	for _, h := range hosts {
+		byRegion[h.Region]++
+	}
+	return Summary{Total: len(hosts), ByRegion: byRegion}
+}

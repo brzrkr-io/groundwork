@@ -1,0 +1,42 @@
+// Package generics is the Gopherlings exercise "Generics".
+package generics
+
+import "cmp"
+
+// Filter returns the items for which keep returns true, in their original
+// order.
+func Filter[T any](items []T, keep func(T) bool) []T {
+	// TODO(1): Return only the items that keep accepts.
+	return nil
+}
+
+// Max returns the largest item and true, or the zero value of T and false
+// when items is empty.
+func Max[T cmp.Ordered](items []T) (T, bool) {
+	// TODO(2): Return the largest item and true when items is not empty.
+	var zero T
+	return zero, false
+}
+
+// Set is a collection of distinct values.
+type Set[T comparable] map[T]bool
+
+// NewSet returns a set holding the given items.
+func NewSet[T comparable](items ...T) Set[T] {
+	s := Set[T]{}
+	for _, item := range items {
+		s[item] = true
+	}
+	return s
+}
+
+// Add puts v in the set.
+func (s Set[T]) Add(v T) {
+	// TODO(3): Put v in the set.
+}
+
+// Has reports whether v is in the set.
+func (s Set[T]) Has(v T) bool {
+	// TODO(3): Report whether v is in the set.
+	return false
+}

@@ -1,0 +1,11 @@
+// Package naming builds release names. It is internal to package deploy and
+// the packages below it.
+package naming
+
+import "strings"
+
+// Release joins service and version with "-", replaces dots with "-" and
+// lower-cases the result: Release("Payments", "V1.4.2") is "payments-v1-4-2".
+func Release(service, version string) string {
+	return strings.ToLower(strings.ReplaceAll(service+"-"+version, ".", "-"))
+}

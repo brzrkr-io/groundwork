@@ -1,0 +1,23 @@
+// Package registry is the Gopherlings exercise "Maps".
+package registry
+
+// PortFor returns the port registered for service, and whether the service is
+// registered at all.
+func PortFor(ports map[string]int, service string) (int, bool) {
+	// TODO(1): Look up service with comma ok and return both values.
+	return 0, false
+}
+
+// Deregister removes service from ports. It reports whether the service was
+// registered.
+func Deregister(ports map[string]int, service string) bool {
+	// TODO(2): Delete service, and report whether it was there.
+	return false
+}
+
+// CountByRegion counts how many hosts are in each region.
+func CountByRegion(regions []string) map[string]int {
+	counts := make(map[string]int)
+	// TODO(3): Add one to the count of every region in regions.
+	return counts
+}

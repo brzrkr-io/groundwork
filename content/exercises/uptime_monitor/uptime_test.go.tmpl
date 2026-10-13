@@ -1,0 +1,469 @@
+package uptime
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+// fakeService is a test HTTP server with these paths:
+//
+//	/ok     200 OK
+//	/down   503 Service Unavailable
+//	/flaky  503 for the first flakyFailures requests, then 200 OK
+//	/hang   never answers; waits until the client gives up
+//	/wait   waits until the test calls release (or the client gives up)
+//
+// Every request to /down, /hang and /wait sends a value on arrived.
+type fakeService struct {
+	*httptest.Server
+	hits          atomic.Int32 // requests received, on any path
+	flakyFailures int32
+	flakyHits     atomic.Int32
+	arrived       chan string // receives the path of each /down, /hang or /wait request
+	release       chan struct{}
+	releaseOnce   sync.Once
+}
+
+func newFakeService(t *testing.T, flakyFailures int32) *fakeService {
+	t.Helper()
+	s := &fakeService{
+		flakyFailures: flakyFailures,
+		arrived:       make(chan string, 100),
+		release:       make(chan struct{}),
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ok", func(w http.ResponseWriter, r *http.Request) {
+		s.hits.Add(1)
+	})
+	mux.HandleFunc("/down", func(w http.ResponseWriter, r *http.Request) {
+		s.hits.Add(1)
+		s.arrived <- r.URL.Path
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	mux.HandleFunc("/flaky", func(w http.ResponseWriter, r *http.Request) {
+		s.hits.Add(1)
+		if s.flakyHits.Add(1) <= s.flakyFailures {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	})
+	mux.HandleFunc("/hang", func(w http.ResponseWriter, r *http.Request) {
+		s.hits.Add(1)
+		s.arrived <- r.URL.Path
+		<-r.Context().Done()
+	})
+	mux.HandleFunc("/wait", func(w http.ResponseWriter, r *http.Request) {
+		s.hits.Add(1)
+		s.arrived <- r.URL.Path
+		select {
+		case <-s.release:
+		case <-r.Context().Done():
+		}
+	})
+	s.Server = httptest.NewServer(mux)
+	t.Cleanup(s.Close)
+	t.Cleanup(s.releaseAll) // runs before Close, so Close never waits on /wait
+	return s
+}
+
+// releaseAll lets every /wait request, now and later, finish.
+func (s *fakeService) releaseAll() { s.releaseOnce.Do(func() { close(s.release) }) }
+
+// target returns a Target for path on this service.
+func (s *fakeService) target(name, path string) Target {
+	return Target{Name: name, URL: s.URL + path}
+}
+
+// monitor returns a Monitor that uses this service's client.
+func (s *fakeService) monitor() *Monitor {
+	return &Monitor{Client: s.Client(), Timeout: time.Second, RetryDelay: time.Millisecond, Workers: 1}
+}
+
+// within runs f and fails the test if it hasn't returned after 2 seconds.
+func within(t *testing.T, call string, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s did not return within 2s", call)
+	}
+}
+
+// waitArrivals waits until n requests have arrived at /down, /hang or /wait.
+func waitArrivals(t *testing.T, s *fakeService, n int, why string) {
+	t.Helper()
+	for i := range n {
+		select {
+		case <-s.arrived:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("only %d of %d requests reached the server within 2s: %s", i, n, why)
+		}
+	}
+}
+
+// errText returns err's message, or "<nil>".
+func errText(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	return err.Error()
+}
+
+// ---------------------------------------------------------------------------
+// Task 1: Summarize
+// ---------------------------------------------------------------------------
+
+func TestSummarize(t *testing.T) {
+	up := func(name string, ms int) Result {
+		return Result{Target: Target{Name: name}, Up: true, Latency: time.Duration(ms) * time.Millisecond}
+	}
+	down := func(name string) Result {
+		return Result{Target: Target{Name: name}, Err: errors.New("unexpected status 503")}
+	}
+
+	tests := []struct {
+		name    string
+		results []Result
+		want    Summary
+	}{
+		{
+			"all up",
+			[]Result{up("api", 20), up("web", 40), up("auth", 30)},
+			Summary{Up: 3, Down: 0, AvgLatency: 30 * time.Millisecond, Slowest: "web", Status: "OK"},
+		},
+		{
+			"some down",
+			[]Result{up("api", 10), down("billing"), up("search", 50)},
+			Summary{Up: 2, Down: 1, AvgLatency: 30 * time.Millisecond, Slowest: "search", Status: "DEGRADED"},
+		},
+		{
+			"all down",
+			[]Result{down("api"), down("web")},
+			Summary{Up: 0, Down: 2, AvgLatency: 0, Slowest: "", Status: "DOWN"},
+		},
+		{
+			"tie for slowest: first one wins",
+			[]Result{up("api", 50), up("web", 50)},
+			Summary{Up: 2, Down: 0, AvgLatency: 50 * time.Millisecond, Slowest: "api", Status: "OK"},
+		},
+		{
+			"no targets",
+			nil,
+			Summary{Status: "OK"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Summarize(tt.results); got != tt.want {
+				t.Errorf("Summarize = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 2: Check
+// ---------------------------------------------------------------------------
+
+func TestCheck(t *testing.T) {
+	t.Run("up", func(t *testing.T) {
+		s := newFakeService(t, 0)
+		target := s.target("api", "/ok")
+		got := s.monitor().Check(context.Background(), target)
+
+		if got.Target != target || !got.Up || got.Status != 200 || got.Attempts != 1 || got.Err != nil {
+			t.Errorf("Check(/ok) = %+v, want Target %+v, Up true, Status 200, Attempts 1, Err nil", got, target)
+		}
+		if got.Latency <= 0 {
+			t.Errorf("Check(/ok).Latency = %v, want more than 0", got.Latency)
+		}
+	})
+
+	t.Run("bad status", func(t *testing.T) {
+		s := newFakeService(t, 0)
+		target := s.target("billing", "/down")
+		got := s.monitor().Check(context.Background(), target)
+
+		if got.Target != target || got.Up || got.Status != 503 || got.Attempts != 1 {
+			t.Errorf("Check(/down) = %+v, want Target %+v, Up false, Status 503, Attempts 1", got, target)
+		}
+		if want := "unexpected status 503"; errText(got.Err) != want {
+			t.Errorf("Check(/down).Err = %q, want %q", errText(got.Err), want)
+		}
+	})
+
+	t.Run("timeout", func(t *testing.T) {
+		s := newFakeService(t, 0)
+		m := s.monitor()
+		m.Timeout = 20 * time.Millisecond
+
+		var got Result
+		within(t, "Check(/hang) with a 20ms Timeout", func() {
+			got = m.Check(context.Background(), s.target("search", "/hang"))
+		})
+		if got.Up || got.Status != 0 || !errors.Is(got.Err, context.DeadlineExceeded) {
+			t.Errorf("Check(/hang) = %+v, want Up false, Status 0, and an Err matching context.DeadlineExceeded", got)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Task 3: CheckWithRetry
+// ---------------------------------------------------------------------------
+
+func TestCheckWithRetry(t *testing.T) {
+	tests := []struct {
+		name          string
+		path          string
+		flakyFailures int32
+		retries       int
+		wantUp        bool
+		wantAttempts  int
+	}{
+		{"recovers on the third attempt", "/flaky", 2, 2, true, 3},
+		{"still down after every retry", "/flaky", 5, 2, false, 3},
+		{"up first time", "/ok", 0, 3, true, 1},
+		{"no retries", "/down", 0, 0, false, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newFakeService(t, tt.flakyFailures)
+			m := s.monitor()
+			m.Retries = tt.retries
+
+			var got Result
+			within(t, "CheckWithRetry", func() {
+				got = m.CheckWithRetry(context.Background(), s.target("api", tt.path))
+			})
+			if got.Up != tt.wantUp || got.Attempts != tt.wantAttempts {
+				t.Errorf("CheckWithRetry(%s, Retries %d) = Up %t, Attempts %d, want Up %t, Attempts %d",
+					tt.path, tt.retries, got.Up, got.Attempts, tt.wantUp, tt.wantAttempts)
+			}
+			if hits := s.hits.Load(); int(hits) != tt.wantAttempts {
+				t.Errorf("the server got %d requests, want %d", hits, tt.wantAttempts)
+			}
+		})
+	}
+
+	t.Run("stops waiting when cancelled", func(t *testing.T) {
+		s := newFakeService(t, 0)
+		m := s.monitor()
+		m.Retries = 3
+		m.RetryDelay = time.Hour
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		results := make(chan Result, 1)
+		go func() { results <- m.CheckWithRetry(ctx, s.target("api", "/down")) }()
+
+		waitArrivals(t, s, 1, "the first attempt never happened")
+		cancel() // CheckWithRetry is now waiting an hour for its next attempt
+
+		select {
+		case got := <-results:
+			if got.Up || got.Attempts != 1 {
+				t.Errorf("CheckWithRetry after cancel = Up %t, Attempts %d, want Up false, Attempts 1", got.Up, got.Attempts)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("CheckWithRetry was still waiting 2s after ctx was cancelled: wait with a select on ctx.Done()")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Task 4: CheckAll
+// ---------------------------------------------------------------------------
+
+func TestCheckAll(t *testing.T) {
+	t.Run("results in input order", func(t *testing.T) {
+		s := newFakeService(t, 0)
+		m := s.monitor()
+		m.Workers = 2
+		targets := []Target{
+			s.target("api", "/ok"),
+			s.target("billing", "/down"),
+			s.target("web", "/ok"),
+			s.target("search", "/down"),
+			s.target("auth", "/ok"),
+		}
+
+		var got []Result
+		within(t, "CheckAll", func() { got = m.CheckAll(context.Background(), targets) })
+
+		if len(got) != len(targets) {
+			t.Fatalf("CheckAll returned %d results, want %d", len(got), len(targets))
+		}
+		var gotNames []string
+		var gotUp []bool
+		for _, r := range got {
+			gotNames = append(gotNames, r.Target.Name)
+			gotUp = append(gotUp, r.Up)
+		}
+		wantNames := []string{"api", "billing", "web", "search", "auth"}
+		wantUp := []bool{true, false, true, false, true}
+		if !slices.Equal(gotNames, wantNames) || !slices.Equal(gotUp, wantUp) {
+			t.Errorf("CheckAll returned names %q, up %v; want %q, %v", gotNames, gotUp, wantNames, wantUp)
+		}
+	})
+
+	t.Run("runs Workers checks at once", func(t *testing.T) {
+		s := newFakeService(t, 0)
+		m := s.monitor()
+		m.Workers = 3
+		targets := []Target{s.target("a", "/wait"), s.target("b", "/wait"), s.target("c", "/wait")}
+
+		results := make(chan []Result, 1)
+		go func() { results <- m.CheckAll(context.Background(), targets) }()
+
+		// /wait doesn't answer until releaseAll, so all 3 requests can only
+		// arrive if 3 checks run at the same time.
+		waitArrivals(t, s, 3, "with Workers = 3, all three checks should run at the same time")
+		s.releaseAll()
+		got := <-results
+		for _, r := range got {
+			if !r.Up {
+				t.Errorf("CheckAll result for %q: Up = false, want true", r.Target.Name)
+			}
+		}
+	})
+
+	t.Run("never more than Workers at once", func(t *testing.T) {
+		s := newFakeService(t, 0)
+		m := s.monitor()
+		m.Workers = 2
+		var targets []Target
+		for _, name := range []string{"a", "b", "c", "d", "e"} {
+			targets = append(targets, s.target(name, "/wait"))
+		}
+
+		results := make(chan []Result, 1)
+		go func() { results <- m.CheckAll(context.Background(), targets) }()
+
+		waitArrivals(t, s, 2, "with Workers = 2, two checks should run at the same time")
+		select {
+		case <-s.arrived:
+			t.Error("a third request arrived while two were still running; CheckAll should run at most Workers checks at once")
+		case <-time.After(50 * time.Millisecond):
+		}
+		s.releaseAll()
+
+		select {
+		case got := <-results:
+			if len(got) != len(targets) {
+				t.Errorf("CheckAll returned %d results, want %d", len(got), len(targets))
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("CheckAll did not return within 2s")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Task 5: Every
+// ---------------------------------------------------------------------------
+
+func TestEvery(t *testing.T) {
+	tests := []struct {
+		name        string
+		interval    time.Duration
+		cancelAfter time.Duration
+		wantCalls   []time.Duration // when fn should be called
+	}{
+		{"every 10s, cancelled at 25s", 10 * time.Second, 25 * time.Second, []time.Duration{0, 10 * time.Second, 20 * time.Second}},
+		{"every 3s, cancelled at 7s", 3 * time.Second, 7 * time.Second, []time.Duration{0, 3 * time.Second, 6 * time.Second}},
+		{"cancelled before the first tick", time.Minute, 5 * time.Second, []time.Duration{0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// synctest.Test gives the test a fake clock: tickers and timers
+			// fire instantly, but time.Now moves forward by the right amount.
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				go func() {
+					time.Sleep(tt.cancelAfter)
+					cancel()
+				}()
+
+				start := time.Now()
+				var calls []time.Duration
+				fn := func(ctx context.Context) { calls = append(calls, time.Since(start)) }
+
+				returned := make(chan error)
+				go func() { returned <- Every(ctx, tt.interval, fn) }()
+
+				select {
+				case err := <-returned:
+					if !errors.Is(err, context.Canceled) {
+						t.Errorf("Every = %v, want %v", err, context.Canceled)
+					}
+					if elapsed := time.Since(start); elapsed != tt.cancelAfter {
+						t.Errorf("Every returned after %v, want %v (as soon as ctx was cancelled)", elapsed, tt.cancelAfter)
+					}
+					if !slices.Equal(calls, tt.wantCalls) {
+						t.Errorf("Every(%v) called fn at %v, want %v", tt.interval, calls, tt.wantCalls)
+					}
+				case <-time.After(time.Hour):
+					t.Fatalf("Every(%v) was still running an hour after ctx was cancelled", tt.interval)
+				}
+
+				time.Sleep(time.Minute) // let the cancel goroutine finish before the test ends
+			})
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 6: Run
+// ---------------------------------------------------------------------------
+
+func TestRun(t *testing.T) {
+	s := newFakeService(t, 0)
+	m := s.monitor()
+	m.Workers = 2
+	targets := []Target{s.target("api", "/ok"), s.target("billing", "/down"), s.target("web", "/ok")}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var summaries []Summary
+	report := func(sum Summary) {
+		summaries = append(summaries, sum)
+		if len(summaries) == 2 {
+			cancel() // stop after two rounds
+		}
+	}
+
+	var err error
+	within(t, "Run (cancelled after 2 reports)", func() {
+		err = m.Run(ctx, targets, 10*time.Millisecond, report)
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Run = %v, want %v", err, context.Canceled)
+	}
+	if len(summaries) < 2 {
+		t.Fatalf("report was called %d times, want at least 2", len(summaries))
+	}
+	for i, sum := range summaries[:2] {
+		if sum.Up != 2 || sum.Down != 1 || sum.Status != "DEGRADED" || sum.AvgLatency <= 0 {
+			t.Errorf("report %d got %+v, want Up 2, Down 1, Status DEGRADED and AvgLatency above 0", i+1, sum)
+		}
+	}
+}

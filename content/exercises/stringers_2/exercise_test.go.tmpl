@@ -1,0 +1,74 @@
+package stringers2
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestPhaseString(t *testing.T) {
+	tests := []struct {
+		phase Phase
+		want  string
+	}{
+		{Pending, "Pending"},
+		{Running, "Running"},
+		{Succeeded, "Succeeded"},
+		{Failed, "Failed"},
+		{Unknown, "Unknown"},
+		{Phase(9), "Phase(9)"},
+		{Phase(-1), "Phase(-1)"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.want, func(t *testing.T) {
+			if got := tc.phase.String(); got != tc.want {
+				t.Errorf("Phase(%d).String() = %q, want %q", int(tc.phase), got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPodStatusLine(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase Phase
+		want  string
+	}{
+		{"api-7f9c", Running, "pod api-7f9c is Running"},
+		{"worker-2b1d", Pending, "pod worker-2b1d is Pending"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := PodStatusLine(tc.name, tc.phase); got != tc.want {
+				t.Errorf("PodStatusLine(%q, Phase(%d)) = %q, want %q", tc.name, int(tc.phase), got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUptimeString(t *testing.T) {
+	tests := []struct {
+		up   Uptime
+		want string
+	}{
+		{0, "0s"},
+		{45, "45s"},
+		{59, "59s"},
+		{60, "1m 0s"},
+		{725, "12m 5s"},
+		{3599, "59m 59s"},
+		{3600, "1h 0m"},
+		{5430, "1h 30m"},
+		{10859, "3h 0m"},
+		{86399, "23h 59m"},
+		{86400, "1d 0h"},
+		{187200, "2d 4h"},
+		{400 * Day, "400d 0h"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.want, func(t *testing.T) {
+			if got := fmt.Sprint(tc.up); got != tc.want {
+				t.Errorf("fmt.Sprint(Uptime(%d)) = %q, want %q", int(tc.up), got, tc.want)
+			}
+		})
+	}
+}

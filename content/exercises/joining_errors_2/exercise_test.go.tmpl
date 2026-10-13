@@ -1,0 +1,140 @@
+package joining2
+
+import (
+	"errors"
+	"fmt"
+	"testing"
+)
+
+// errText returns err's message, or "<nil>" when err is nil.
+func errText(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	return err.Error()
+}
+
+func TestValidateRule(t *testing.T) {
+	tests := []struct {
+		name string
+		rule Rule
+		want string
+	}{
+		{
+			name: "public https is fine",
+			rule: Rule{Name: "https", Port: 443, Protocol: "tcp", Source: "0.0.0.0/0"},
+			want: "<nil>",
+		},
+		{
+			name: "internal dns is fine",
+			rule: Rule{Name: "dns", Port: 53, Protocol: "udp", Source: "10.0.0.0/8"},
+			want: "<nil>",
+		},
+		{
+			name: "one problem",
+			rule: Rule{Name: "db", Port: 0, Protocol: "tcp", Source: "10.0.0.0/8"},
+			want: `rule "db": bad port: 0`,
+		},
+		{
+			name: "bad protocol and open to the world",
+			rule: Rule{Name: "ssh", Port: 22, Protocol: "icmp", Source: "0.0.0.0/0"},
+			want: "rule \"ssh\": bad protocol: \"icmp\"\n" +
+				"rule \"ssh\": open to the world: port 22",
+		},
+		{
+			name: "all three problems",
+			rule: Rule{Name: "metrics", Port: 70000, Protocol: "sctp", Source: "0.0.0.0/0"},
+			want: "rule \"metrics\": bad port: 70000\n" +
+				"rule \"metrics\": bad protocol: \"sctp\"\n" +
+				"rule \"metrics\": open to the world: port 70000",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := errText(ValidateRule(tt.rule))
+			if got != tt.want {
+				t.Errorf("ValidateRule(%+v) = %q, want %q", tt.rule, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateAll(t *testing.T) {
+	tests := []struct {
+		name  string
+		rules []Rule
+		want  string
+	}{
+		{
+			name:  "no rules",
+			rules: nil,
+			want:  "<nil>",
+		},
+		{
+			name: "all rules fine",
+			rules: []Rule{
+				{Name: "https", Port: 443, Protocol: "tcp", Source: "0.0.0.0/0"},
+				{Name: "dns", Port: 53, Protocol: "udp", Source: "10.0.0.0/8"},
+			},
+			want: "<nil>",
+		},
+		{
+			name: "two bad rules",
+			rules: []Rule{
+				{Name: "ssh", Port: 22, Protocol: "tcp", Source: "0.0.0.0/0"},
+				{Name: "https", Port: 443, Protocol: "tcp", Source: "0.0.0.0/0"},
+				{Name: "db", Port: 0, Protocol: "tcp", Source: "10.0.0.0/8"},
+			},
+			want: "check firewall: rule \"ssh\": open to the world: port 22\n" +
+				"rule \"db\": bad port: 0",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := errText(ValidateAll(tt.rules))
+			if got != tt.want {
+				t.Errorf("ValidateAll(%+v) = %q, want %q", tt.rules, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNeedsReview(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "bare sentinel", err: ErrOpenToWorld, want: true},
+		{
+			name: "wrapped",
+			err:  fmt.Errorf("rule %q: %w: port %d", "ssh", ErrOpenToWorld, 22),
+			want: true,
+		},
+		{
+			name: "inside a joined report",
+			err: fmt.Errorf("check firewall: %w", errors.Join(
+				fmt.Errorf("rule %q: %w: %d", "db", ErrBadPort, 0),
+				fmt.Errorf("rule %q: %w: port %d", "ssh", ErrOpenToWorld, 22),
+			)),
+			want: true,
+		},
+		{
+			name: "only other problems",
+			err: fmt.Errorf("check firewall: %w", errors.Join(
+				fmt.Errorf("rule %q: %w: %d", "db", ErrBadPort, 0),
+				fmt.Errorf("rule %q: %w: %q", "db", ErrBadProtocol, "icmp"),
+			)),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NeedsReview(tt.err)
+			if got != tt.want {
+				t.Errorf("NeedsReview(%q) = %t, want %t", errText(tt.err), got, tt.want)
+			}
+		})
+	}
+}

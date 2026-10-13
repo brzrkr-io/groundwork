@@ -1,0 +1,21 @@
+// Package errvalues3 is the Gopherlings exercise "Errors are values: parse health checks".
+package errvalues3
+
+// Check is one health check: probe Path on Port for the service Name.
+type Check struct {
+	Name string
+	Port int
+	Path string
+}
+
+// ParseCheck parses a line like "api 8080 /healthz".
+func ParseCheck(line string) (Check, error) {
+	// TODO(1): Parse the line and return the errors from the README.
+	return Check{}, nil
+}
+
+// ParseAll parses every non-blank line and stops at the first bad one.
+func ParseAll(lines []string) ([]Check, error) {
+	// TODO(2): Parse each line, skipping blank ones, and add line numbers to errors.
+	return nil, nil
+}

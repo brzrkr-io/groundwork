@@ -1,0 +1,19 @@
+// Package booleans is the Gopherlings exercise "Booleans".
+package booleans
+
+// IsPrivilegedPort reports whether port is below 1024.
+func IsPrivilegedPort(port int) bool {
+	return port < 1024
+}
+
+// CanDeploy reports whether a deploy may go out: tests passed, it is
+// approved, and no change freeze is active.
+func CanDeploy(testsPassed, approved, freezeActive bool) bool {
+	return testsPassed && approved && !freezeActive
+}
+
+// IsWorkHours reports whether hour (0-23) falls between 9:00 and 17:00
+// on a weekday. 17:00 itself is not work hours.
+func IsWorkHours(hour int, weekend bool) bool {
+	return hour >= 9 && hour < 17 && !weekend
+}

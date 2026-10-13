@@ -1,0 +1,34 @@
+// Package recovery is the Gopherlings exercise "panic and recover".
+package recovery
+
+import "errors"
+
+// ErrPanic marks errors that SafeRun made from a panic.
+var ErrPanic = errors.New("job panicked")
+
+// Job is one named task for the maintenance runner.
+type Job struct {
+	Name string
+	Run  func() error
+}
+
+// MustPort parses a port that is hard-coded in the program and panics if it
+// is invalid.
+func MustPort(s string) int {
+	// TODO(1): Return the port, or panic with `invalid port "<s>"` if s is not
+	// a number from 1 to 65535. Add the fmt and strconv imports.
+	return 0
+}
+
+// SafeRun runs job and turns a panic inside it into an error wrapping
+// ErrPanic.
+func SafeRun(job func() error) (err error) {
+	// TODO(2): Add a deferred function that recovers a panic and sets err.
+	return job()
+}
+
+// RunAll runs every job with SafeRun and returns one report line per job.
+func RunAll(jobs []Job) []string {
+	// TODO(3): Build the report: "<name>: ok" or "<name>: <error>".
+	return nil
+}

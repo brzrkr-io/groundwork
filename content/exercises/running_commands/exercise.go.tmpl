@@ -1,0 +1,58 @@
+// Package runcmd is the Gopherlings exercise "Running commands: output, exit codes and timeouts".
+package runcmd
+
+import (
+	"os/exec"
+	"strings"
+	"time"
+)
+
+// Output runs the program name with args and returns what it printed to
+// stdout, with surrounding whitespace trimmed.
+func Output(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	// TODO(1): Use cmd.Output() instead of cmd.Run(), and return the trimmed
+	// stdout along with the error.
+	err := cmd.Run()
+	return "", err
+}
+
+// ExitStatus runs the program name with args and reports its exit code and
+// its combined stdout and stderr, trimmed. A non-zero exit code is not an
+// error. If the program cannot be started at all, ExitStatus returns -1 and
+// the error.
+func ExitStatus(name string, args ...string) (code int, output string, err error) {
+	out, err := exec.Command(name, args...).CombinedOutput()
+	// TODO(2): If err is an *exec.ExitError, return its exit code, the output
+	// and a nil error. If err is any other error, return -1, "" and err.
+	return 0, strings.TrimSpace(string(out)), err
+}
+
+// Options controls how Run starts a program.
+type Options struct {
+	Dir     string        // working directory; "" means the current one
+	Env     []string      // extra "KEY=value" variables on top of ours
+	Timeout time.Duration // stop the program after this long
+}
+
+// Run runs the program name with args, using the working directory,
+// extra environment variables and timeout in opts. It returns the trimmed
+// stdout. If the timeout passes, the program is killed and the error wraps
+// context.DeadlineExceeded.
+func Run(opts Options, name string, args ...string) (string, error) {
+	// TODO(3): Create a context that times out after opts.Timeout and use
+	// exec.CommandContext. (Add "context" to the imports.)
+	cmd := exec.Command(name, args...)
+
+	// TODO(3): Set cmd.Dir, and set cmd.Env to our environment plus
+	// opts.Env. (Add "os" to the imports.)
+
+	out, err := cmd.Output()
+	if err != nil {
+		// TODO(3): If the context's deadline has passed, return
+		// fmt.Errorf("timed out after %v: %w", opts.Timeout, ctx.Err())
+		// instead. (Add "fmt" to the imports.)
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}

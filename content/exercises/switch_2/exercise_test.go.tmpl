@@ -1,0 +1,51 @@
+package switches
+
+import "testing"
+
+func TestLevelNumber(t *testing.T) {
+	// Each line is one case: the input, then the answer we want.
+	tests := []struct {
+		level string
+		want  int
+	}{
+		{"debug", 0},
+		{"info", 1},
+		{"warn", 2},
+		{"warning", 2},
+		{"error", 3},
+		{"fatal", 4},
+		{"panic", 4},
+		{"trace", -1},
+		{"", -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.level, func(t *testing.T) {
+			if got := LevelNumber(tt.level); got != tt.want {
+				t.Errorf("LevelNumber(%q) = %d, want %d", tt.level, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegionArea(t *testing.T) {
+	// Each line is one case: the input, then the answer we want.
+	tests := []struct {
+		region string
+		want   string
+	}{
+		{"us-east-1", "North America"},
+		{"us-west-2", "North America"},
+		{"eu-west-1", "Europe"},
+		{"eu-central-1", "Europe"},
+		{"ap-southeast-2", "Asia Pacific"},
+		{"sa-east-1", "other"},
+		{"europe", "other"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.region, func(t *testing.T) {
+			if got := RegionArea(tt.region); got != tt.want {
+				t.Errorf("RegionArea(%q) = %q, want %q", tt.region, got, tt.want)
+			}
+		})
+	}
+}

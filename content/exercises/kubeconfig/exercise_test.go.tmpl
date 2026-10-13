@@ -1,0 +1,117 @@
+package kubeconfig
+
+import (
+	"os"
+	"slices"
+	"testing"
+
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+)
+
+// loadTestConfig reads the practice kubeconfig in testdata/.
+func loadTestConfig(t *testing.T) *clientcmdapi.Config {
+	t.Helper()
+	cfg, err := clientcmd.LoadFromFile("testdata/kubeconfig.yaml")
+	if err != nil {
+		t.Fatalf("loading testdata/kubeconfig.yaml: %v", err)
+	}
+	return cfg
+}
+
+func TestCurrentContext(t *testing.T) {
+	fromFile, err := os.ReadFile("testdata/kubeconfig.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		data string
+		want string
+	}{
+		{"testdata file", string(fromFile), "staging"},
+		{"prod laptop", "apiVersion: v1\nkind: Config\ncurrent-context: prod-eu\n", "prod-eu"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := CurrentContext([]byte(tt.data))
+			if err != nil {
+				t.Fatalf("CurrentContext(...) returned error %v, want nil", err)
+			}
+			if got != tt.want {
+				t.Errorf("CurrentContext(...) = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	t.Run("broken YAML", func(t *testing.T) {
+		got, err := CurrentContext([]byte("current-context: [oops"))
+		if err == nil {
+			t.Errorf("CurrentContext(%q) = %q, nil, want an error", "current-context: [oops", got)
+		}
+	})
+}
+
+func TestContextNames(t *testing.T) {
+	small, err := clientcmd.Load([]byte(`apiVersion: v1
+kind: Config
+contexts:
+  - name: monitoring
+    context: {cluster: ops}
+  - name: ci
+    context: {cluster: ops}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		cfg  *clientcmdapi.Config
+		want []string
+	}{
+		{"testdata file", loadTestConfig(t), []string{"old-dev", "prod-eu", "prod-us", "staging"}},
+		{"two contexts", small, []string{"ci", "monitoring"}},
+		{"no contexts", clientcmdapi.NewConfig(), []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ContextNames(tt.cfg)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ContextNames(cfg) = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestServerFor(t *testing.T) {
+	cfg := loadTestConfig(t)
+	tests := []struct {
+		context string
+		want    string
+		wantErr string
+	}{
+		{context: "staging", want: "https://staging.k8s.example.com:6443"},
+		{context: "prod-eu", want: "https://prod-eu-west-1.k8s.example.com:6443"},
+		{context: "prod-us", want: "https://prod-us-east-1.k8s.example.com:6443"},
+		{context: "prod", wantErr: `context "prod" not found`},
+		{context: "minikube", wantErr: `context "minikube" not found`},
+		{context: "old-dev", wantErr: `cluster "dev" not found for context "old-dev"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.context, func(t *testing.T) {
+			got, err := ServerFor(cfg, tt.context)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Errorf("ServerFor(cfg, %q) = %q, error %v, want error %q", tt.context, got, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ServerFor(cfg, %q) returned error %v, want nil", tt.context, err)
+			}
+			if got != tt.want {
+				t.Errorf("ServerFor(cfg, %q) = %q, want %q", tt.context, got, tt.want)
+			}
+		})
+	}
+}

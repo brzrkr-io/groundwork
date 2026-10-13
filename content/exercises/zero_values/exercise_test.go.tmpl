@@ -1,0 +1,51 @@
+package zerovalues
+
+import "testing"
+
+func TestZeroSummary(t *testing.T) {
+	want := `port=0 host="" debug=false ratio=0`
+	if got := ZeroSummary(); got != want {
+		t.Errorf("ZeroSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestPortOrDefault(t *testing.T) {
+	// Each line is one case: the input, then the answer we want.
+	tests := []struct {
+		port int
+		want int
+	}{
+		{0, 8080},
+		{9090, 9090},
+		{443, 443},
+	}
+	for _, tt := range tests {
+		t.Run("", func(t *testing.T) {
+			if got := PortOrDefault(tt.port); got != tt.want {
+				t.Errorf("PortOrDefault(%d) = %d, want %d", tt.port, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConnectionString(t *testing.T) {
+	// Each line is one case: the inputs, then the answer we want.
+	tests := []struct {
+		host    string
+		port    int
+		timeout int
+		want    string
+	}{
+		{"", 0, 0, "localhost:8080 timeout=30s"},
+		{"db.internal", 5432, 5, "db.internal:5432 timeout=5s"},
+		{"cache", 0, 10, "cache:8080 timeout=10s"},
+		{"", 9000, 0, "localhost:9000 timeout=30s"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := ConnectionString(tt.host, tt.port, tt.timeout); got != tt.want {
+				t.Errorf("ConnectionString(%q, %d, %d) = %q, want %q", tt.host, tt.port, tt.timeout, got, tt.want)
+			}
+		})
+	}
+}

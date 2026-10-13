@@ -1,0 +1,83 @@
+package cmdline
+
+import "testing"
+
+func TestCommand(t *testing.T) {
+	tests := []struct {
+		name string
+		bin  string
+		args []string
+		want string
+	}{
+		{"plain arguments", "systemctl", []string{"restart", "nginx"}, `systemctl restart nginx`},
+		{"no arguments", "uptime", nil, `uptime`},
+		{"argument with a space", "git", []string{"commit", "-m", "fix deploy"}, `git commit -m "fix deploy"`},
+		{"several spaces", "logger", []string{"disk is almost full"}, `logger "disk is almost full"`},
+		{"empty argument", "helm", []string{"upgrade", "--set", ""}, `helm upgrade --set ""`},
+		{"empty argument first", "echo", []string{"", "done"}, `echo "" done`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Command(tt.bin, tt.args...); got != tt.want {
+				t.Errorf("Command(%q, %q...) = %q, want %q", tt.bin, tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestKubectl(t *testing.T) {
+	tests := []struct {
+		name      string
+		namespace string
+		args      []string
+		want      string
+	}{
+		{"with namespace", "prod", []string{"get", "pods"}, `kubectl -n prod get pods`},
+		{"other namespace", "staging", []string{"logs", "deploy/web"}, `kubectl -n staging logs deploy/web`},
+		{"no namespace", "", []string{"get", "nodes"}, `kubectl get nodes`},
+		{"no namespace, more args", "", []string{"top", "pods", "-A"}, `kubectl top pods -A`},
+		{"namespace only", "staging", nil, `kubectl -n staging`},
+		{"nothing at all", "", nil, `kubectl`},
+		{"argument with a space", "prod", []string{"annotate", "deploy/web", "note=hot fix"}, `kubectl -n prod annotate deploy/web "note=hot fix"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Kubectl(tt.namespace, tt.args...); got != tt.want {
+				t.Errorf("Kubectl(%q, %q...) = %q, want %q", tt.namespace, tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChain(t *testing.T) {
+	tests := []struct {
+		name     string
+		commands []string
+		want     string
+	}{
+		{"two commands", []string{"make build", "make test"}, `make build && make test`},
+		{"three commands", []string{"git pull", "make", "make install"}, `git pull && make && make install`},
+		{"one command", []string{"uptime"}, `uptime`},
+		{"empty command in the middle", []string{"make build", "", "make test"}, `make build && make test`},
+		{"empty commands at the ends", []string{"", "df -h", ""}, `df -h`},
+		{"only empty commands", []string{"", ""}, ``},
+		{"no commands", nil, ``},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Chain(tt.commands...); got != tt.want {
+				t.Errorf("Chain(%q...) = %q, want %q", tt.commands, got, tt.want)
+			}
+		})
+	}
+	t.Run("a rollout", func(t *testing.T) {
+		got := Chain(
+			Kubectl("prod", "apply", "-f", "web.yaml"),
+			Kubectl("prod", "rollout", "status", "deploy/web"),
+		)
+		want := `kubectl -n prod apply -f web.yaml && kubectl -n prod rollout status deploy/web`
+		if got != want {
+			t.Errorf("Chain(Kubectl(...), Kubectl(...)) = %q, want %q", got, want)
+		}
+	})
+}

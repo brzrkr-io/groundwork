@@ -1,0 +1,54 @@
+// Package awsconfig is the Gopherlings exercise "AWS SDK configuration: many regions, no leaked keys".
+package awsconfig
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+)
+
+// ForRegions returns one copy of cfg per region, in the same order as
+// regions, each with its Region set. cfg itself is not changed.
+func ForRegions(cfg aws.Config, regions []string) []aws.Config {
+	out := make([]aws.Config, 0, len(regions))
+	for _, region := range regions {
+		c := cfg.Copy()
+		c.Region = region
+		out = append(out, c)
+	}
+	return out
+}
+
+// LoadProfile loads the config for profile from the shared files. A
+// non-empty region always wins over AWS_REGION and the profile's region.
+func LoadProfile(ctx context.Context, profile, region string) (aws.Config, error) {
+	opts := []func(*config.LoadOptions) error{config.WithSharedConfigProfile(profile)}
+	if region != "" {
+		opts = append(opts, config.WithRegion(region))
+	}
+	return config.LoadDefaultConfig(ctx, opts...)
+}
+
+// mask keeps the first 4 characters of s and hides the rest.
+func mask(s string) string {
+	if len(s) <= 4 {
+		return "****"
+	}
+	return s[:4] + "****"
+}
+
+// Summary returns a log-safe line describing cfg, such as
+// "region=us-east-1 key=AKIA**** temporary=no".
+func Summary(ctx context.Context, cfg aws.Config) (string, error) {
+	creds, err := cfg.Credentials.Retrieve(ctx)
+	if err != nil {
+		return "", err
+	}
+	temporary := "no"
+	if creds.SessionToken != "" {
+		temporary = "yes"
+	}
+	return fmt.Sprintf("region=%s key=%s temporary=%s", cfg.Region, mask(creds.AccessKeyID), temporary), nil
+}

@@ -1,0 +1,23 @@
+// Package inventory is the Gopherlings exercise "Slices: fix the inventory script".
+package inventory
+
+// SkipHeader returns every line after the header line.
+func SkipHeader(lines []string) []string {
+	return lines[1:]
+}
+
+// Drain returns the hosts before index i and the hosts after it, leaving out
+// hosts[i].
+func Drain(hosts []string, i int) (before, after []string) {
+	before = hosts[:i]
+	after = hosts[i+1:]
+	return before, after
+}
+
+// LastHost returns the last host, or "" when there are no hosts.
+func LastHost(hosts []string) string {
+	if len(hosts) == 0 {
+		return ""
+	}
+	return hosts[len(hosts)-1]
+}

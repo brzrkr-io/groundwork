@@ -1,0 +1,57 @@
+// Package informers is the Gopherlings exercise "Informers: listers and the read-only cache".
+package informers
+
+import (
+	"context"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	appslisters "k8s.io/client-go/listers/apps/v1"
+)
+
+// StartLister starts factory, waits for its caches to sync and returns a
+// Deployment lister that reads from the synced cache.
+func StartLister(ctx context.Context, factory informers.SharedInformerFactory) (appslisters.DeploymentLister, error) {
+	// Ask for the lister first: the factory only starts informers it knows about.
+	lister := factory.Apps().V1().Deployments().Lister()
+	factory.StartWithContext(ctx)
+	if err := factory.WaitForCacheSyncWithContext(ctx).AsError(); err != nil {
+		return nil, err
+	}
+	return lister, nil
+}
+
+// TeamReplicas adds up the replicas of the Deployments in namespace that carry
+// the label team=<team>, reading them from the cache. A Deployment without
+// Spec.Replicas counts as 1.
+func TeamReplicas(lister appslisters.DeploymentLister, namespace, team string) (int32, error) {
+	selector := labels.SelectorFromSet(labels.Set{"team": team})
+	deployments, err := lister.Deployments(namespace).List(selector)
+	if err != nil {
+		return 0, err
+	}
+	var total int32
+	for _, d := range deployments {
+		if d.Spec.Replicas == nil {
+			total++
+		} else {
+			total += *d.Spec.Replicas
+		}
+	}
+	return total, nil
+}
+
+// Pause marks the Deployment namespace/name as paused. It reads the
+// Deployment from the cache and sends the change to the API server.
+func Pause(ctx context.Context, cs kubernetes.Interface, lister appslisters.DeploymentLister, namespace, name string) error {
+	cached, err := lister.Deployments(namespace).Get(name)
+	if err != nil {
+		return err
+	}
+	d := cached.DeepCopy()
+	d.Spec.Paused = true
+	_, err = cs.AppsV1().Deployments(namespace).Update(ctx, d, metav1.UpdateOptions{})
+	return err
+}

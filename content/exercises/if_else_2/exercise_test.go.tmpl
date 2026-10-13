@@ -1,0 +1,75 @@
+package ifelse
+
+import "testing"
+
+func TestBackupAgeLabel(t *testing.T) {
+	// Each line is one case: a name, the input, then the answer we want.
+	tests := []struct {
+		name     string
+		ageHours int
+		want     string
+	}{
+		{"brand new", 0, "fresh"},
+		{"a few hours", 5, "fresh"},
+		{"almost a day", 23, "fresh"},
+		{"exactly a day", 24, "1d old"},
+		{"two days", 50, "2d old"},
+		{"a week", 168, "7d old"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := BackupAgeLabel(tt.ageHours); got != tt.want {
+				t.Errorf("BackupAgeLabel(%d) = %q, want %q", tt.ageHours, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCertStatus(t *testing.T) {
+	// Each line is one case: a name, the input, then the answer we want.
+	tests := []struct {
+		name     string
+		daysLeft int
+		want     string
+	}{
+		{"long expired", -30, "expired"},
+		{"expired yesterday", -1, "expired"},
+		{"expires today", 0, "renew now"},
+		{"a few days", 3, "renew now"},
+		{"six days", 6, "renew now"},
+		{"a week", 7, "renew soon"},
+		{"a few weeks", 29, "renew soon"},
+		{"a month", 30, "valid"},
+		{"plenty", 90, "valid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CertStatus(tt.daysLeft); got != tt.want {
+				t.Errorf("CertStatus(%d) = %q, want %q", tt.daysLeft, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLogLevelFor(t *testing.T) {
+	// Each line is one case: a name, the inputs, then the answer we want.
+	tests := []struct {
+		name  string
+		env   string
+		debug bool
+		want  string
+	}{
+		{"debug wins in production", "production", true, "debug"},
+		{"debug in staging", "staging", true, "debug"},
+		{"production", "production", false, "warn"},
+		{"staging", "staging", false, "info"},
+		{"dev", "dev", false, "info"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := LogLevelFor(tt.env, tt.debug); got != tt.want {
+				t.Errorf("LogLevelFor(%q, %t) = %q, want %q", tt.env, tt.debug, got, tt.want)
+			}
+		})
+	}
+}

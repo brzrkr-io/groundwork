@@ -1,0 +1,157 @@
+package status
+
+import (
+	"encoding/json"
+	"maps"
+	"testing"
+	"time"
+)
+
+var (
+	started   = time.Date(2026, 10, 11, 9, 30, 0, 0, time.UTC)
+	generated = time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)
+)
+
+func TestDeploymentTags(t *testing.T) {
+	tests := []struct {
+		name string
+		dep  Deployment
+		want string
+	}{
+		{
+			name: "healthy, no error",
+			dep:  Deployment{Service: "api", Version: "1.4.2", Replicas: 3, Healthy: true, Started: started, AuthToken: "s3cr3t"},
+			want: `{"service":"api","version":"1.4.2","replicas":3,"healthy":true,"started":"2026-10-11T09:30:00Z"}`,
+		},
+		{
+			name: "unhealthy with error",
+			dep:  Deployment{Service: "worker", Version: "2.0.0", Replicas: 0, Healthy: false, Started: started, Error: "image pull failed", AuthToken: "t0ken"},
+			want: `{"service":"worker","version":"2.0.0","replicas":0,"healthy":false,"started":"2026-10-11T09:30:00Z","error":"image pull failed"}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, err := json.Marshal(tt.dep)
+			if err != nil {
+				t.Fatalf("json.Marshal(%+v) returned error: %v", tt.dep, err)
+			}
+			if got := string(b); got != tt.want {
+				t.Errorf("json.Marshal(%+v) =\n%s\nwant\n%s", tt.dep, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHealthCounts(t *testing.T) {
+	tests := []struct {
+		name string
+		deps []Deployment
+		want map[string]int
+	}{
+		{
+			name: "mixed",
+			deps: []Deployment{{Service: "api", Healthy: true}, {Service: "web", Healthy: true}, {Service: "worker"}},
+			want: map[string]int{"healthy": 2, "unhealthy": 1},
+		},
+		{
+			name: "all unhealthy",
+			deps: []Deployment{{Service: "db"}, {Service: "cache"}},
+			want: map[string]int{"healthy": 0, "unhealthy": 2},
+		},
+		{
+			name: "no deployments",
+			deps: nil,
+			want: map[string]int{"healthy": 0, "unhealthy": 0},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := HealthCounts(tt.deps)
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("HealthCounts(%v) = %v, want %v", tt.deps, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReportJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		deps []Deployment
+		want string
+	}{
+		{
+			name: "two deployments",
+			env:  "production",
+			deps: []Deployment{
+				{Service: "api", Version: "1.4.2", Replicas: 3, Healthy: true, Started: started, AuthToken: "s3cr3t"},
+				{Service: "worker", Version: "2.0.0", Replicas: 0, Healthy: false, Started: started, Error: "image pull failed"},
+			},
+			want: `{
+  "environment": "production",
+  "generated_at": "2026-10-11T10:00:00Z",
+  "counts": {
+    "healthy": 1,
+    "unhealthy": 1
+  },
+  "deployments": [
+    {
+      "service": "api",
+      "version": "1.4.2",
+      "replicas": 3,
+      "healthy": true,
+      "started": "2026-10-11T09:30:00Z"
+    },
+    {
+      "service": "worker",
+      "version": "2.0.0",
+      "replicas": 0,
+      "healthy": false,
+      "started": "2026-10-11T09:30:00Z",
+      "error": "image pull failed"
+    }
+  ]
+}`,
+		},
+		{
+			name: "nil deployments",
+			env:  "staging",
+			deps: nil,
+			want: `{
+  "environment": "staging",
+  "generated_at": "2026-10-11T10:00:00Z",
+  "counts": {
+    "healthy": 0,
+    "unhealthy": 0
+  },
+  "deployments": []
+}`,
+		},
+		{
+			name: "empty deployments",
+			env:  "dev",
+			deps: []Deployment{},
+			want: `{
+  "environment": "dev",
+  "generated_at": "2026-10-11T10:00:00Z",
+  "counts": {
+    "healthy": 0,
+    "unhealthy": 0
+  },
+  "deployments": []
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReportJSON(tt.env, generated, tt.deps)
+			if err != nil {
+				t.Fatalf("ReportJSON(%q, ...) returned error: %v", tt.env, err)
+			}
+			if got != tt.want {
+				t.Errorf("ReportJSON(%q, ...) =\n%s\nwant\n%s", tt.env, got, tt.want)
+			}
+		})
+	}
+}

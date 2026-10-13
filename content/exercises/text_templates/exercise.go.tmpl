@@ -1,0 +1,63 @@
+// Package render is the Gopherlings exercise "Text templates: render an nginx upstream block".
+package render
+
+import (
+	"strings"
+	"text/template"
+)
+
+// Render parses text as a template called name, executes it with data and
+// returns the output.
+func Render(name, text string, data any) (string, error) {
+	// TODO(1): Parse text into a template called name, execute it with data
+	// into a strings.Builder, and return the output. Return "" and the error
+	// if parsing or executing fails.
+	return "", nil
+}
+
+// Upstream is a group of backend servers that nginx load-balances across.
+type Upstream struct {
+	Name    string
+	Port    int
+	Servers []string
+}
+
+// upstreamTmpl renders an Upstream as an nginx upstream block.
+//
+// TODO(2): Add a range over .Servers that writes one "server" line per
+// address, using trim markers so there are no blank lines.
+const upstreamTmpl = `upstream {{.Name}} {
+}
+`
+
+// RenderUpstream renders u as an nginx upstream block.
+func RenderUpstream(u Upstream) (string, error) {
+	return Render("upstream", upstreamTmpl, u)
+}
+
+// summaryFuncs are the extra functions the summary template can call.
+//
+// TODO(3): Add a "join" function (strings.Join) BEFORE you use it in
+// summaryTmpl.
+var summaryFuncs = template.FuncMap{
+	"upper": strings.ToUpper,
+}
+
+// summaryTmpl renders a one-line summary of an Upstream.
+//
+// TODO(3): Upper-case the name, then list the servers joined by ", ", or
+// "no servers" when there are none.
+const summaryTmpl = `{{.Name}}: {{.Servers}}`
+
+// Summary renders a one-line summary of u for a status page.
+func Summary(u Upstream) (string, error) {
+	tmpl, err := template.New("summary").Funcs(summaryFuncs).Parse(summaryTmpl)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	if err := tmpl.Execute(&b, u); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}

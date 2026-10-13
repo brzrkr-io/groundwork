@@ -1,0 +1,172 @@
+package dashboard
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+// testServer is a fake service:
+//
+//	/version  answers "v1.4.2"
+//	/broken   answers 503 Service Unavailable
+//	/slow     never answers; it waits until the client gives up
+type testServer struct {
+	*httptest.Server
+	hits    atomic.Int32  // how many requests arrived
+	arrived chan struct{} // receives a value when a /slow request arrives
+}
+
+func newTestServer(t *testing.T) *testServer {
+	t.Helper()
+	ts := &testServer{arrived: make(chan struct{}, 10)}
+	release := make(chan struct{}) // closed when the test ends
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+		ts.hits.Add(1)
+		w.Write([]byte("v1.4.2"))
+	})
+	mux.HandleFunc("/broken", func(w http.ResponseWriter, r *http.Request) {
+		ts.hits.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	mux.HandleFunc("/slow", func(w http.ResponseWriter, r *http.Request) {
+		ts.hits.Add(1)
+		ts.arrived <- struct{}{}
+		select {
+		case <-r.Context().Done(): // the client cancelled the request
+		case <-release: // the test is over
+		}
+	})
+
+	ts.Server = httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { close(release) }) // runs first, so Close doesn't wait on /slow
+	return ts
+}
+
+// result is what Fetch or FetchWithTimeout returned.
+type result struct {
+	body string
+	err  error
+}
+
+// waitFor waits up to 2 seconds for a value on ch, and fails the test if it
+// doesn't arrive.
+func waitFor[T any](t *testing.T, ch <-chan T, what string) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(2 * time.Second):
+		t.Fatalf("waited 2s for %s", what)
+		panic("unreachable")
+	}
+}
+
+func TestFetch(t *testing.T) {
+	t.Run("returns the body", func(t *testing.T) {
+		srv := newTestServer(t)
+		got, err := Fetch(context.Background(), srv.Client(), srv.URL+"/version")
+		if got != "v1.4.2" || err != nil {
+			t.Errorf("Fetch(/version) = %q, %v, want %q, nil", got, err, "v1.4.2")
+		}
+	})
+
+	t.Run("bad status", func(t *testing.T) {
+		srv := newTestServer(t)
+		_, err := Fetch(context.Background(), srv.Client(), srv.URL+"/broken")
+		if err == nil || err.Error() != "unexpected status 503" {
+			t.Errorf("Fetch(/broken) error = %v, want %q", err, "unexpected status 503")
+		}
+	})
+
+	t.Run("cancelled while waiting", func(t *testing.T) {
+		srv := newTestServer(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		results := make(chan result, 1)
+		go func() {
+			body, err := Fetch(ctx, srv.Client(), srv.URL+"/slow")
+			results <- result{body, err}
+		}()
+
+		waitFor(t, srv.arrived, "the request to reach the server")
+		cancel()
+		got := waitFor(t, results, "Fetch to return after cancel(); is the request built with ctx?")
+
+		if !errors.Is(got.err, context.Canceled) {
+			t.Errorf("Fetch(/slow) after cancel() = %q, %v, want an error matching context.Canceled", got.body, got.err)
+		}
+	})
+}
+
+func TestFetchWithTimeout(t *testing.T) {
+	t.Run("fast enough", func(t *testing.T) {
+		srv := newTestServer(t)
+		got, err := FetchWithTimeout(srv.Client(), srv.URL+"/version", time.Second)
+		if got != "v1.4.2" || err != nil {
+			t.Errorf("FetchWithTimeout(/version, 1s) = %q, %v, want %q, nil", got, err, "v1.4.2")
+		}
+	})
+
+	t.Run("too slow", func(t *testing.T) {
+		srv := newTestServer(t)
+		results := make(chan result, 1)
+		go func() {
+			body, err := FetchWithTimeout(srv.Client(), srv.URL+"/slow", 20*time.Millisecond)
+			results <- result{body, err}
+		}()
+
+		got := waitFor(t, results, "FetchWithTimeout(/slow, 20ms) to give up")
+		if !errors.Is(got.err, context.DeadlineExceeded) {
+			t.Errorf("FetchWithTimeout(/slow, 20ms) = %q, %v, want an error matching context.DeadlineExceeded", got.body, got.err)
+		}
+	})
+}
+
+func TestVersions(t *testing.T) {
+	t.Run("all succeed", func(t *testing.T) {
+		srv := newTestServer(t)
+		urls := []string{srv.URL + "/version", srv.URL + "/version"}
+		got, err := Versions(context.Background(), srv.Client(), urls)
+		want := []string{"v1.4.2", "v1.4.2"}
+		if !slices.Equal(got, want) || err != nil {
+			t.Errorf("Versions(two /version URLs) = %q, %v, want %q, nil", got, err, want)
+		}
+	})
+
+	t.Run("stops at the first error", func(t *testing.T) {
+		srv := newTestServer(t)
+		urls := []string{srv.URL + "/version", srv.URL + "/broken", srv.URL + "/version"}
+		got, err := Versions(context.Background(), srv.Client(), urls)
+		if got != nil || err == nil || err.Error() != "unexpected status 503" {
+			t.Errorf("Versions(/version, /broken, /version) = %q, %v, want nil, %q", got, err, "unexpected status 503")
+		}
+		if n := srv.hits.Load(); n != 2 {
+			t.Errorf("the server got %d requests, want 2 (Versions should stop after /broken)", n)
+		}
+	})
+
+	t.Run("already cancelled", func(t *testing.T) {
+		srv := newTestServer(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		urls := []string{srv.URL + "/version", srv.URL + "/version"}
+		got, err := Versions(ctx, srv.Client(), urls)
+		if got != nil || !errors.Is(err, context.Canceled) {
+			t.Errorf("Versions(cancelled ctx) = %q, %v, want nil and an error matching context.Canceled", got, err)
+		}
+		if n := srv.hits.Load(); n != 0 {
+			t.Errorf("the server got %d requests, want 0: a cancelled ctx should stop Versions before it sends anything", n)
+		}
+	})
+}

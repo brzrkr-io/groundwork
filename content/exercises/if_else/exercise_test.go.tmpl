@@ -1,0 +1,76 @@
+package ifelse
+
+import "testing"
+
+func TestDiskAlert(t *testing.T) {
+	// Each line is one case: a name, the input, then the answer we want.
+	tests := []struct {
+		name        string
+		usedPercent int
+		want        string
+	}{
+		{"mostly empty", 42, "ok"},
+		{"just below warning", 79, "ok"},
+		{"warning starts", 80, "warning"},
+		{"top of warning", 89, "warning"},
+		{"critical starts", 90, "critical"},
+		{"full", 100, "critical"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DiskAlert(tt.usedPercent); got != tt.want {
+				t.Errorf("DiskAlert(%d) = %q, want %q", tt.usedPercent, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClampReplicas(t *testing.T) {
+	// Each line is one case: a name, the input, then the answer we want.
+	tests := []struct {
+		name      string
+		requested int
+		want      int
+	}{
+		{"negative", -3, 1},
+		{"zero", 0, 1},
+		{"minimum", 1, 1},
+		{"in range", 4, 4},
+		{"maximum", 10, 10},
+		{"too many", 25, 10},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ClampReplicas(tt.requested); got != tt.want {
+				t.Errorf("ClampReplicas(%d) = %d, want %d", tt.requested, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScaleAdvice(t *testing.T) {
+	// Each line is one case: a name, the inputs, then the answer we want.
+	tests := []struct {
+		name          string
+		totalRequests int
+		replicas      int
+		want          string
+	}{
+		{"no replicas", 1000, 0, "no replicas"},
+		{"negative replicas", 1000, -1, "no replicas"},
+		{"busy", 1000, 5, "scale up"},
+		{"just over 100", 202, 2, "scale up"},
+		{"exactly 100", 500, 5, "steady"},
+		{"steady", 300, 5, "steady"},
+		{"exactly 20", 100, 5, "steady"},
+		{"quiet", 50, 5, "scale down"},
+		{"integer division", 59, 3, "scale down"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ScaleAdvice(tt.totalRequests, tt.replicas); got != tt.want {
+				t.Errorf("ScaleAdvice(%d, %d) = %q, want %q", tt.totalRequests, tt.replicas, got, tt.want)
+			}
+		})
+	}
+}

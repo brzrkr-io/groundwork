@@ -1,0 +1,65 @@
+package conversion
+
+import "testing"
+
+func TestAvgMemoryMiB(t *testing.T) {
+	tests := []struct {
+		name     string
+		totalMiB int
+		pods     int
+		want     float64
+	}{
+		{name: "four pods", totalMiB: 1000, pods: 4, want: 250},
+		{name: "eight pods", totalMiB: 1000, pods: 8, want: 125},
+		{name: "keeps the fraction", totalMiB: 3, pods: 2, want: 1.5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := AvgMemoryMiB(tt.totalMiB, tt.pods)
+			if got != tt.want {
+				t.Errorf("AvgMemoryMiB(%d, %d) = %v, want %v", tt.totalMiB, tt.pods, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPortLabel(t *testing.T) {
+	tests := []struct {
+		name string
+		port int
+		want string
+	}{
+		{name: "http alt", port: 8080, want: "port 8080"},
+		{name: "https", port: 443, want: "port 443"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := PortLabel(tt.port)
+			if got != tt.want {
+				t.Errorf("PortLabel(%d) = %q, want %q", tt.port, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAffordableReplicas(t *testing.T) {
+	tests := []struct {
+		name   string
+		budget float64
+		cost   float64
+		want   int
+	}{
+		{name: "drops the fraction", budget: 100, cost: 30, want: 3},
+		{name: "exact fit", budget: 90, cost: 30, want: 3},
+		{name: "fractional price", budget: 250, cost: 12.5, want: 20},
+		{name: "not enough for one", budget: 29.99, cost: 30, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := AffordableReplicas(tt.budget, tt.cost)
+			if got != tt.want {
+				t.Errorf("AffordableReplicas(%v, %v) = %d, want %d", tt.budget, tt.cost, got, tt.want)
+			}
+		})
+	}
+}

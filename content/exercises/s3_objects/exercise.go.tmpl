@@ -1,0 +1,85 @@
+// Package configstore is the Gopherlings exercise "S3 objects: upload, verify and list configs".
+package configstore
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+// ObjectAPI is the part of the S3 client that this package uses.
+type ObjectAPI interface {
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+}
+
+// The real S3 client satisfies ObjectAPI.
+var _ ObjectAPI = (*s3.Client)(nil)
+
+// ErrChecksumMismatch means a downloaded object does not match the sha256
+// stored in its metadata.
+var ErrChecksumMismatch = errors.New("checksum mismatch")
+
+// Checksum returns the sha256 of data as a lowercase hex string.
+func Checksum(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// UploadConfig stores data at s3://bucket/key as JSON, with its sha256 in
+// the object's metadata.
+func UploadConfig(ctx context.Context, api ObjectAPI, bucket, key string, data []byte) error {
+	_, err := api.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+		// TODO(1): Set Body, ContentType and Metadata (add the import "bytes").
+	})
+	if err != nil {
+		return fmt.Errorf("upload s3://%s/%s: %w", bucket, key, err)
+	}
+	return nil
+}
+
+// DownloadConfig reads s3://bucket/key and checks it against the sha256
+// stored in the object's metadata.
+func DownloadConfig(ctx context.Context, api ObjectAPI, bucket, key string) ([]byte, error) {
+	out, err := api.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("download s3://%s/%s: %w", bucket, key, err)
+	}
+	defer out.Body.Close() // the body is a network stream: always close it
+
+	// TODO(2): Read out.Body, verify its checksum, and return the data
+	// (add the import "io").
+	return nil, nil
+}
+
+// ListConfigs returns the keys under prefix in bucket, without folder
+// markers.
+func ListConfigs(ctx context.Context, api ObjectAPI, bucket, prefix string) ([]string, error) {
+	p := s3.NewListObjectsV2Paginator(api, &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+		// TODO(3): Only list keys under prefix.
+	})
+	var keys []string
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list s3://%s/%s: %w", bucket, prefix, err)
+		}
+		for _, obj := range page.Contents {
+			// TODO(3): Skip folder markers (add the import "strings").
+			keys = append(keys, aws.ToString(obj.Key))
+		}
+	}
+	return keys, nil
+}

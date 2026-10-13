@@ -1,0 +1,14 @@
+package uptime
+
+import (
+	"context"
+	"time"
+)
+
+// Every calls fn straight away and then once every interval until ctx is
+// cancelled. It returns ctx.Err().
+func Every(ctx context.Context, interval time.Duration, fn func(ctx context.Context)) error {
+	// TODO(5): Call fn now, then on every tick of a time.Ticker, until ctx
+	// is cancelled.
+	return nil
+}

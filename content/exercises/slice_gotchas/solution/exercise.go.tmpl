@@ -1,0 +1,27 @@
+// Package rollout is the Gopherlings exercise "Slice gotchas: shared memory".
+package rollout
+
+import "slices"
+
+// Canaries returns an independent copy of the first n hosts.
+func Canaries(hosts []string, n int) []string {
+	return slices.Clone(hosts[:n])
+}
+
+// WithExtra returns base with extra added at the end, without writing into
+// base's spare capacity.
+func WithExtra(base []string, extra string) []string {
+	// cap == len, so append has to copy into a new array.
+	return append(base[:len(base):len(base)], extra)
+}
+
+// Tail returns a copy of the last n lines (all lines if n is bigger), with
+// len and cap equal to the number of lines returned.
+func Tail(lines []string, n int) []string {
+	if n > len(lines) {
+		n = len(lines)
+	}
+	out := make([]string, n)
+	copy(out, lines[len(lines)-n:])
+	return out
+}

@@ -1,0 +1,51 @@
+// Package manifests is the Gopherlings exercise "YAML manifests: reading them into Go".
+package manifests
+
+import (
+	"strings"
+
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
+)
+
+// ParseDeployment reads one YAML document into a Deployment.
+func ParseDeployment(data []byte) (*appsv1.Deployment, error) {
+	// TODO(1): Unmarshal data into an appsv1.Deployment with yaml.Unmarshal.
+	// Wrap errors with "parse deployment: %w".
+	return nil, nil
+}
+
+// ReadType reads only the apiVersion and kind of one YAML document.
+func ReadType(data []byte) (metav1.TypeMeta, error) {
+	var tm metav1.TypeMeta
+	if err := yaml.Unmarshal(data, &tm); err != nil {
+		// TODO(2): Wrap the error with "read type: %w".
+		return tm, err
+	}
+	// TODO(2): Return the error "read type: missing kind" when tm.Kind is empty.
+	return tm, nil
+}
+
+// SplitDocuments splits a multi-document YAML stream on lines that are
+// exactly "---". It returns the trimmed, non-empty documents in order.
+func SplitDocuments(stream string) []string {
+	var docs []string
+	var current []string
+
+	// TODO(3): Loop over the lines of stream with strings.SplitSeq. On a "---"
+	// line, finish the current document with addDocument and start a new one.
+	// Otherwise, append the line to current.
+
+	return addDocument(docs, current)
+}
+
+// addDocument joins lines into one document, trims it, and appends it to
+// docs unless it is empty.
+func addDocument(docs []string, lines []string) []string {
+	doc := strings.TrimSpace(strings.Join(lines, "\n"))
+	if doc == "" {
+		return docs
+	}
+	return append(docs, doc)
+}

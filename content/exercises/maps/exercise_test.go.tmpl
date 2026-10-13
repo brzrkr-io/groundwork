@@ -1,0 +1,129 @@
+package registry
+
+import (
+	"maps"
+	"testing"
+)
+
+func TestPortFor(t *testing.T) {
+	ports := map[string]int{"api": 8080, "redis": 6379, "postgres": 5432, "sidecar": 0}
+	tests := []struct {
+		name     string
+		service  string
+		wantPort int
+		wantOK   bool
+	}{
+		{"api", "api", 8080, true},
+		{"redis", "redis", 6379, true},
+		{"postgres", "postgres", 5432, true},
+		{"registered on port 0", "sidecar", 0, true},
+		{"missing", "nginx", 0, false},
+		{"missing, other name", "kafka", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port, ok := PortFor(ports, tt.service)
+			if port != tt.wantPort || ok != tt.wantOK {
+				t.Errorf("PortFor(%v, %q) = %d, %t, want %d, %t",
+					ports, tt.service, port, ok, tt.wantPort, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestDeregister(t *testing.T) {
+	tests := []struct {
+		name    string
+		ports   map[string]int
+		service string
+		want    bool
+		after   map[string]int // what ports should hold afterwards
+	}{
+		{
+			"registered",
+			map[string]int{"api": 8080, "redis": 6379},
+			"redis",
+			true,
+			map[string]int{"api": 8080},
+		},
+		{
+			"registered on port 0",
+			map[string]int{"api": 8080, "sidecar": 0},
+			"sidecar",
+			true,
+			map[string]int{"api": 8080},
+		},
+		{
+			"the only service",
+			map[string]int{"api": 8080},
+			"api",
+			true,
+			map[string]int{},
+		},
+		{
+			"missing",
+			map[string]int{"api": 8080, "redis": 6379},
+			"nginx",
+			false,
+			map[string]int{"api": 8080, "redis": 6379},
+		},
+		{
+			"empty registry",
+			map[string]int{},
+			"api",
+			false,
+			map[string]int{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := maps.Clone(tt.ports) // a copy, for the failure message
+			got := Deregister(tt.ports, tt.service)
+			if got != tt.want {
+				t.Errorf("Deregister(%v, %q) = %t, want %t", before, tt.service, got, tt.want)
+			}
+			if !maps.Equal(tt.ports, tt.after) {
+				t.Errorf("after Deregister(%v, %q), ports = %v, want %v",
+					before, tt.service, tt.ports, tt.after)
+			}
+		})
+	}
+}
+
+func TestCountByRegion(t *testing.T) {
+	tests := []struct {
+		name    string
+		regions []string
+		want    map[string]int
+	}{
+		{
+			"two regions",
+			[]string{"eu-west-1", "us-east-1", "eu-west-1"},
+			map[string]int{"eu-west-1": 2, "us-east-1": 1},
+		},
+		{
+			"three regions",
+			[]string{"us-east-1", "ap-south-1", "us-east-1", "eu-west-1", "us-east-1"},
+			map[string]int{"us-east-1": 3, "ap-south-1": 1, "eu-west-1": 1},
+		},
+		{
+			"one host",
+			[]string{"eu-central-1"},
+			map[string]int{"eu-central-1": 1},
+		},
+		{
+			"no hosts",
+			nil,
+			map[string]int{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CountByRegion(tt.regions)
+			// maps.Equal checks the keys and values, in any order.
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("CountByRegion(%q) = %v, want %v", tt.regions, got, tt.want)
+			}
+		})
+	}
+}

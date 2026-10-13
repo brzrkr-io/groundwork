@@ -1,0 +1,42 @@
+// Package timeouts is the Gopherlings exercise "select and timeouts".
+package timeouts
+
+import (
+	"errors"
+	"time"
+)
+
+// ErrNotReady is returned by WaitReady when the timeout passes first.
+var ErrNotReady = errors.New("service not ready before timeout")
+
+// FirstReply returns the first answer to arrive on either channel.
+func FirstReply(primary, replica <-chan string) string {
+	select {
+	case answer := <-primary:
+		return answer
+	case answer := <-replica:
+		return answer
+	}
+}
+
+// WaitReady waits for ready to be closed. It returns nil if that happens
+// within timeout, and ErrNotReady otherwise.
+func WaitReady(ready <-chan struct{}, timeout time.Duration) error {
+	select {
+	case <-ready:
+		return nil
+	case <-time.After(timeout):
+		return ErrNotReady
+	}
+}
+
+// TryNotify sends msg on alerts if that can happen without waiting, and
+// reports whether it did.
+func TryNotify(alerts chan<- string, msg string) bool {
+	select {
+	case alerts <- msg:
+		return true
+	default:
+		return false
+	}
+}

@@ -1,0 +1,33 @@
+package rollout
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestSteps(t *testing.T) {
+	tests := []struct {
+		name             string
+		service, version string
+		hosts            []string
+		want             []string
+	}{
+		{
+			"two hosts", "payments", "v1.4.2", []string{"web-1", "web-2"},
+			[]string{"deploy payments-v1-4-2 to web-1", "deploy payments-v1-4-2 to web-2"},
+		},
+		{
+			"one host", "checkout", "v2.0.0", []string{"canary-1"},
+			[]string{"deploy checkout-v2-0-0 to canary-1"},
+		},
+		{"no hosts", "auth", "v1", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Steps(tt.service, tt.version, tt.hosts)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Steps(%q, %q, %q) = %q, want %q", tt.service, tt.version, tt.hosts, got, tt.want)
+			}
+		})
+	}
+}

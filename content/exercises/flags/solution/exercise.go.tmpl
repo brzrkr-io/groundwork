@@ -1,0 +1,69 @@
+// Package flags is the Gopherlings exercise "Flags: parsing options with a FlagSet".
+package flags
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+)
+
+// Options holds everything the deploy tool needs to know.
+type Options struct {
+	Service  string
+	Replicas int
+	DryRun   bool
+	Timeout  time.Duration
+	Hosts    []string
+}
+
+// ParseArgs parses the deploy flags from args (os.Args[1:]).
+// flag's own messages go to stderr.
+func ParseArgs(args []string, stderr io.Writer) (Options, error) {
+	fs := flag.NewFlagSet("deploy", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
+	service := fs.String("service", "", "service to deploy (required)")
+	replicas := fs.Int("replicas", 1, "number of replicas")
+	dryRun := fs.Bool("dry-run", false, "print the plan, change nothing")
+	timeout := fs.Duration("timeout", 30*time.Second, "how long to wait for the rollout")
+
+	if err := fs.Parse(args); err != nil {
+		return Options{}, err
+	}
+
+	if *service == "" {
+		// Print it the way flag prints its own errors, so the caller
+		// never has to print anything.
+		fmt.Fprintln(stderr, "deploy: -service is required")
+		fs.Usage()
+		return Options{}, errors.New("-service is required")
+	}
+
+	opts := Options{
+		Service:  *service,
+		Replicas: *replicas,
+		DryRun:   *dryRun,
+		Timeout:  *timeout,
+		Hosts:    fs.Args(),
+	}
+	return opts, nil
+}
+
+// Run is the whole deploy tool. args is os.Args[1:].
+// It returns the exit code.
+func Run(args []string, stdout, stderr io.Writer) int {
+	opts, err := ParseArgs(args, stderr)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+
+	fmt.Fprintf(stdout, "deploy %s: replicas=%d timeout=%s dry-run=%t hosts=%s\n",
+		opts.Service, opts.Replicas, opts.Timeout, opts.DryRun, strings.Join(opts.Hosts, ","))
+	return 0
+}

@@ -1,0 +1,160 @@
+package middleware
+
+import (
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// okHandler is the "real" handler the middleware wraps. It answers "ok".
+var okHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "ok")
+})
+
+func TestLogging(t *testing.T) {
+	// Each line is one case: the request, then the log line we want.
+	tests := []struct {
+		method  string
+		target  string
+		wantLog string
+	}{
+		{"GET", "/healthz", "GET /healthz\n"},
+		{"POST", "/deploys", "POST /deploys\n"},
+		{"GET", "/logs?limit=5", "GET /logs\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.target, func(t *testing.T) {
+			var log strings.Builder
+			h := Logging(&log)(okHandler)
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.target, nil))
+
+			if got := log.String(); got != tt.wantLog {
+				t.Errorf("log = %q, want %q", got, tt.wantLog)
+			}
+			if got := rec.Body.String(); got != "ok" {
+				t.Errorf("body = %q, want %q (the next handler must still run)", got, "ok")
+			}
+		})
+	}
+}
+
+func TestRequestID(t *testing.T) {
+	// Each case: the X-Request-ID the client sent ("" for none), the ID
+	// newID makes up, and the ID we want everyone to see.
+	tests := []struct {
+		name      string
+		incoming  string
+		generated string
+		want      string
+	}{
+		{"no incoming ID", "", "req-7f3a", "req-7f3a"},
+		{"another missing ID", "", "req-0042", "req-0042"},
+		{"incoming ID is kept", "abc-123", "req-7f3a", "abc-123"},
+		{"another incoming ID", "trace-9", "req-0042", "trace-9"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			newID := func() string {
+				calls++
+				return tt.generated
+			}
+			// The inner handler remembers which ID it saw on the request.
+			var seen string
+			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				seen = r.Header.Get("X-Request-ID")
+			})
+			h := RequestID(newID)(inner)
+
+			req := httptest.NewRequest("GET", "/healthz", nil)
+			if tt.incoming != "" {
+				req.Header.Set("X-Request-ID", tt.incoming)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if got := rec.Header().Get("X-Request-ID"); got != tt.want {
+				t.Errorf("response X-Request-ID = %q, want %q", got, tt.want)
+			}
+			if seen != tt.want {
+				t.Errorf("request X-Request-ID seen by the next handler = %q, want %q", seen, tt.want)
+			}
+			wantCalls := 0
+			if tt.incoming == "" {
+				wantCalls = 1
+			}
+			if calls != wantCalls {
+				t.Errorf("newID was called %d times, want %d", calls, wantCalls)
+			}
+		})
+	}
+}
+
+func TestRecover(t *testing.T) {
+	// Each case: what the inner handler does, then the response and log
+	// line we want.
+	tests := []struct {
+		name     string
+		inner    http.HandlerFunc
+		wantCode int
+		wantBody string
+		wantLog  string
+	}{
+		{
+			name:     "panic with a string",
+			inner:    func(w http.ResponseWriter, r *http.Request) { panic("boom") },
+			wantCode: 500,
+			wantBody: "internal server error\n",
+			wantLog:  "panic: boom\n",
+		},
+		{
+			name: "panic with an error",
+			inner: func(w http.ResponseWriter, r *http.Request) {
+				panic(errors.New("assignment to entry in nil map"))
+			},
+			wantCode: 500,
+			wantBody: "internal server error\n",
+			wantLog:  "panic: assignment to entry in nil map\n",
+		},
+		{
+			name:     "no panic",
+			inner:    okHandler,
+			wantCode: 200,
+			wantBody: "ok",
+			wantLog:  "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var log strings.Builder
+			h := Recover(&log)(tt.inner)
+			rec := httptest.NewRecorder()
+
+			// If the panic gets past Recover, catch it here so the test
+			// fails with a message instead of crashing.
+			func() {
+				defer func() {
+					if v := recover(); v != nil {
+						t.Fatalf("the panic %q got past Recover", fmt.Sprint(v))
+					}
+				}()
+				h.ServeHTTP(rec, httptest.NewRequest("GET", "/deploys", nil))
+			}()
+
+			if rec.Code != tt.wantCode {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantCode)
+			}
+			if got := rec.Body.String(); got != tt.wantBody {
+				t.Errorf("body = %q, want %q", got, tt.wantBody)
+			}
+			if got := log.String(); got != tt.wantLog {
+				t.Errorf("log = %q, want %q", got, tt.wantLog)
+			}
+		})
+	}
+}

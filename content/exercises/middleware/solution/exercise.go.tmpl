@@ -1,0 +1,55 @@
+// Package middleware is the Gopherlings exercise "Middleware: logging, request IDs and panics".
+package middleware
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+)
+
+// Middleware wraps a handler with extra behaviour and returns the wrapped
+// handler.
+type Middleware func(http.Handler) http.Handler
+
+// Logging returns middleware that writes one line per request to out, then
+// calls the next handler.
+func Logging(out io.Writer) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(out, "%s %s\n", r.Method, r.URL.Path)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequestID returns middleware that makes sure every request carries an
+// X-Request-ID header, and sends the same ID back in the response.
+func RequestID(newID func() string) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := r.Header.Get("X-Request-ID")
+			if id == "" {
+				id = newID()
+				r.Header.Set("X-Request-ID", id)
+			}
+			w.Header().Set("X-Request-ID", id)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// Recover returns middleware that turns a panic in the next handler into a
+// 500 response and a log line on out.
+func Recover(out io.Writer) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if v := recover(); v != nil {
+					fmt.Fprintf(out, "panic: %v\n", v)
+					http.Error(w, "internal server error", http.StatusInternalServerError)
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
+}

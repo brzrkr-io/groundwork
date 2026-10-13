@@ -1,0 +1,16 @@
+package commits
+
+import "testing"
+
+func TestShortSHA(t *testing.T) {
+	sha := "9f86d081884c7d659a2feaa0c55ad015"
+	got := ShortSHA(sha)
+	// TODO(2): This expected value is wrong. Fix it to match the README.
+	want := "9f86d081"
+	if got != want {
+		// TODO(1): This line can never make the test fail. Fix that.
+		t.Logf("ShortSHA(%q) = %q, want %q", sha, got, want)
+	}
+
+	// TODO(3): Check that ShortSHA("a1b2c") returns "a1b2c" unchanged.
+}

@@ -1,0 +1,36 @@
+// Package deployconf is the Gopherlings exercise "Maps: fix the config bugs".
+package deployconf
+
+import "maps"
+
+// Replicas returns how many copies of service to run: the value in replicas,
+// or 2 when the service isn't listed.
+func Replicas(replicas map[string]int, service string) int {
+	// TODO(1): A service listed with 0 must get 0, not the default.
+	n := replicas[service]
+	if n == 0 {
+		return 2
+	}
+	return n
+}
+
+// Unset deletes keys from env and returns how many of them were there.
+func Unset(env map[string]string, keys ...string) int {
+	removed := 0
+	for _, k := range keys {
+		// TODO(2): Only count keys that were really in env.
+		delete(env, k)
+		removed++
+	}
+	return removed
+}
+
+// Merge returns a new map with every entry of defaults, replaced or extended
+// by overrides. It doesn't change either argument.
+func Merge(defaults, overrides map[string]string) map[string]string {
+	// TODO(3): Stop the panic.
+	var merged map[string]string
+	maps.Copy(merged, defaults)
+	maps.Copy(merged, overrides)
+	return merged
+}

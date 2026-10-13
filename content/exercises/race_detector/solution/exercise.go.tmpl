@@ -1,0 +1,58 @@
+// Package races is the Gopherlings exercise "The race detector".
+package races
+
+import (
+	"sync"
+	"sync/atomic"
+)
+
+// TotalBytes measures every file at the same time and returns the sum of
+// their sizes.
+func TotalBytes(files []string, size func(file string) int) int {
+	var total atomic.Int64
+	var wg sync.WaitGroup
+	for _, file := range files {
+		wg.Go(func() {
+			total.Add(int64(size(file)))
+		})
+	}
+	wg.Wait()
+	return int(total.Load())
+}
+
+// CheckAll checks every host at the same time and returns each host's
+// result.
+func CheckAll(hosts []string, check func(host string) bool) map[string]bool {
+	results := make(map[string]bool)
+	var mu sync.Mutex // protects results
+	var wg sync.WaitGroup
+	for _, host := range hosts {
+		wg.Go(func() {
+			ok := check(host) // the slow part runs without the lock
+			mu.Lock()
+			defer mu.Unlock()
+			results[host] = ok
+		})
+	}
+	wg.Wait()
+	return results
+}
+
+// FailedHosts checks every host at the same time and returns the hosts whose
+// check failed, in any order.
+func FailedHosts(hosts []string, check func(host string) bool) []string {
+	var failed []string
+	var mu sync.Mutex // protects failed
+	var wg sync.WaitGroup
+	for _, host := range hosts {
+		wg.Go(func() {
+			if !check(host) {
+				mu.Lock()
+				defer mu.Unlock()
+				failed = append(failed, host)
+			}
+		})
+	}
+	wg.Wait()
+	return failed
+}

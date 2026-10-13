@@ -1,0 +1,26 @@
+// Package text is the Gopherlings exercise "Strings: clean up config and logs".
+package text
+
+import "strings"
+
+// Redact returns line with every copy of secret replaced by stars.
+func Redact(line, secret string) string {
+	return strings.ReplaceAll(line, secret, strings.Repeat("*", len(secret)))
+}
+
+// HostFromURL returns the lowercase host name from a URL like
+// "https://api.example.com/".
+func HostFromURL(url string) string {
+	host := strings.TrimPrefix(url, "https://")
+	host = strings.TrimSuffix(host, "/")
+	return strings.ToLower(host)
+}
+
+// EnvVarName returns the environment variable name for a service setting,
+// such as "CHECKOUT_API_DB_URL".
+func EnvVarName(service, setting string) string {
+	name := service + "_" + setting
+	name = strings.ReplaceAll(name, "-", "_")
+	name = strings.ReplaceAll(name, " ", "_")
+	return strings.ToUpper(name)
+}

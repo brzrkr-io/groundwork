@@ -1,0 +1,75 @@
+// Package fanin is the Gopherlings exercise "Pipelines: fan-in and cancellation".
+package fanin
+
+import (
+	"context"
+	"sync"
+)
+
+// Generate sends every line on the returned channel, then closes it. It stops
+// early, and closes the channel, when ctx is cancelled.
+func Generate(ctx context.Context, lines []string) <-chan string {
+	out := make(chan string)
+	go func() {
+		defer close(out)
+		for _, line := range lines {
+			select {
+			case out <- line:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out
+}
+
+// Merge returns a channel that carries every value from every input, in any
+// order. It is closed once every input is closed and drained, or once ctx is
+// cancelled.
+func Merge(ctx context.Context, inputs ...<-chan string) <-chan string {
+	out := make(chan string)
+	var wg sync.WaitGroup
+	for _, in := range inputs {
+		wg.Go(func() {
+			for v := range in {
+				select {
+				case out <- v:
+				case <-ctx.Done():
+					return
+				}
+			}
+		})
+	}
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+	return out
+}
+
+// checkStage checks every host from hosts and sends the results on the
+// returned channel, which it closes when hosts runs out or ctx is cancelled.
+func checkStage(ctx context.Context, hosts <-chan string, check func(host string) string) <-chan string {
+	out := make(chan string)
+	go func() {
+		defer close(out)
+		for host := range hosts {
+			select {
+			case out <- check(host):
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out
+}
+
+// FanOut checks hosts with workers copies of checkStage running at the same
+// time, and merges their results into one channel.
+func FanOut(ctx context.Context, hosts <-chan string, workers int, check func(host string) string) <-chan string {
+	outputs := make([]<-chan string, workers)
+	for i := range outputs {
+		outputs[i] = checkStage(ctx, hosts, check)
+	}
+	return Merge(ctx, outputs...)
+}

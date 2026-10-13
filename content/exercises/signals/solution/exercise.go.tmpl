@@ -1,0 +1,58 @@
+// Package signals is the Gopherlings exercise "Signals: graceful stop for a rolling drain".
+package signals
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+)
+
+// Drain drains each host in order, logging progress to log. It stops
+// between hosts once ctx is cancelled, and returns how many hosts it drained.
+func Drain(ctx context.Context, hosts []string, drain func(host string) error, log io.Writer) (int, error) {
+	drained := 0
+	for _, host := range hosts {
+		// Check before starting a host, never in the middle of one.
+		if ctx.Err() != nil {
+			fmt.Fprintf(log, "stopping: %d hosts not drained\n", len(hosts)-drained)
+			return drained, ctx.Err()
+		}
+		if err := drain(host); err != nil {
+			return drained, fmt.Errorf("drain %s: %w", host, err)
+		}
+		fmt.Fprintf(log, "drained %s\n", host)
+		drained++
+	}
+	return drained, nil
+}
+
+// ExitCode turns the result of Drain into a process exit code.
+func ExitCode(err error) int {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, context.Canceled):
+		return 130
+	default:
+		return 1
+	}
+}
+
+// WatchSignals reacts to signals arriving on sigs. The first signal calls
+// cancel for a graceful stop; the second calls force.
+func WatchSignals(sigs <-chan os.Signal, cancel func(), force func(), log io.Writer) {
+	first := true
+	for sig := range sigs {
+		if first {
+			fmt.Fprintf(log, "received %v: finishing current host (send again to force quit)\n", sig)
+			cancel()
+			first = false
+			continue
+		}
+		fmt.Fprintf(log, "received %v again: forcing exit\n", sig)
+		force()
+		return
+	}
+}

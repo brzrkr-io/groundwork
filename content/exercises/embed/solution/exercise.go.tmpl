@@ -1,0 +1,69 @@
+// Package notify writes deploy notifications from templates that are built
+// into the program.
+package notify
+
+import (
+	"embed"
+	"encoding/json"
+	"strings"
+	"text/template"
+)
+
+// Config holds the notifier settings.
+type Config struct {
+	Channel  string `json:"channel"`
+	Username string `json:"username"`
+	Retries  int    `json:"retries"`
+}
+
+// Deploy describes one deploy event. Templates can use all of its fields.
+type Deploy struct {
+	Service string
+	Version string
+	Env     string
+	User    string
+}
+
+// defaultConfig holds the contents of defaults.json.
+//
+//go:embed defaults.json
+var defaultConfig []byte
+
+// templates holds every file in the templates folder.
+//
+//go:embed templates
+var templates embed.FS
+
+// DefaultConfig returns the settings from the embedded defaults.json.
+func DefaultConfig() (Config, error) {
+	var c Config
+	err := json.Unmarshal(defaultConfig, &c)
+	return c, err
+}
+
+// Kinds returns the names of the embedded templates without their ".txt"
+// ending, sorted: "deploy", "failed", ...
+func Kinds() ([]string, error) {
+	entries, err := templates.ReadDir("templates")
+	if err != nil {
+		return nil, err
+	}
+	var kinds []string
+	for _, entry := range entries {
+		kinds = append(kinds, strings.TrimSuffix(entry.Name(), ".txt"))
+	}
+	return kinds, nil
+}
+
+// Render executes templates/<kind>.txt with d and returns the result.
+func Render(kind string, d Deploy) (string, error) {
+	tmpl, err := template.ParseFS(templates, "templates/"+kind+".txt")
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	if err := tmpl.Execute(&b, d); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}

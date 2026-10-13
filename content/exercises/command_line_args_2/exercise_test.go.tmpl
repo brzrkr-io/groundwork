@@ -1,0 +1,64 @@
+package waitport
+
+import (
+	"bytes"
+	"testing"
+)
+
+type runCase struct {
+	name       string
+	args       []string
+	wantCode   int
+	wantStdout string
+	wantStderr string
+}
+
+// checkRun calls Run with each case's args and compares the exit code and
+// everything written to stdout and stderr.
+func checkRun(t *testing.T, tests []runCase) {
+	t.Helper()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(tt.args, &stdout, &stderr)
+			if code != tt.wantCode {
+				t.Errorf("Run(%q) exit code = %d, want %d", tt.args, code, tt.wantCode)
+			}
+			if got := stdout.String(); got != tt.wantStdout {
+				t.Errorf("Run(%q) stdout = %q, want %q", tt.args, got, tt.wantStdout)
+			}
+			if got := stderr.String(); got != tt.wantStderr {
+				t.Errorf("Run(%q) stderr = %q, want %q", tt.args, got, tt.wantStderr)
+			}
+		})
+	}
+}
+
+func TestHostAndPort(t *testing.T) {
+	checkRun(t, []runCase{
+		{"database", []string{"waitport", "db.internal", "5432", "10"}, 0, "waiting up to 10s for db.internal:5432\n", ""},
+		{"web", []string{"./waitport", "localhost", "8080", "5"}, 0, "waiting up to 5s for localhost:8080\n", ""},
+		{"port zero", []string{"waitport", "db", "0", "5"}, 2, "", "waitport: port must be 1-65535, got \"0\"\n"},
+		{"port too big", []string{"waitport", "db", "70000", "5"}, 2, "", "waitport: port must be 1-65535, got \"70000\"\n"},
+		{"port not a number", []string{"waitport", "db", "http", "5"}, 2, "", "waitport: port must be 1-65535, got \"http\"\n"},
+	})
+}
+
+func TestUsage(t *testing.T) {
+	checkRun(t, []runCase{
+		{"no arguments", []string{"./waitport"}, 2, "", "usage: ./waitport HOST PORT [TIMEOUT_SECONDS]\n"},
+		{"host only", []string{"waitport", "db"}, 2, "", "usage: waitport HOST PORT [TIMEOUT_SECONDS]\n"},
+		{"too many", []string{"waitport", "db", "5432", "10", "extra"}, 2, "", "usage: waitport HOST PORT [TIMEOUT_SECONDS]\n"},
+	})
+}
+
+func TestTimeout(t *testing.T) {
+	checkRun(t, []runCase{
+		{"default for cache", []string{"waitport", "cache", "6379"}, 0, "waiting up to 30s for cache:6379\n", ""},
+		{"default for db", []string{"waitport", "db.internal", "5432"}, 0, "waiting up to 30s for db.internal:5432\n", ""},
+		{"given", []string{"waitport", "db", "5432", "90"}, 0, "waiting up to 90s for db:5432\n", ""},
+		{"word", []string{"waitport", "db", "5432", "soon"}, 2, "", "waitport: timeout must be a whole number >= 1, got \"soon\"\n"},
+		{"zero", []string{"waitport", "db", "5432", "0"}, 2, "", "waitport: timeout must be a whole number >= 1, got \"0\"\n"},
+		{"negative", []string{"./waitport", "db", "5432", "-5"}, 2, "", "./waitport: timeout must be a whole number >= 1, got \"-5\"\n"},
+	})
+}

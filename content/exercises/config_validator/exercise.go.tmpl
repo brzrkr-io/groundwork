@@ -1,0 +1,69 @@
+// Package config is the Gopherlings exercise "Practice: config validator".
+package config
+
+import "errors"
+
+// Config describes one service to deploy.
+type Config struct {
+	Name     string
+	Image    string
+	Port     int
+	Replicas int
+	Env      map[string]string
+}
+
+// Error categories. A FieldError wraps one of these, so callers can ask
+// errors.Is(err, ErrRequired) without parsing messages.
+var (
+	ErrRequired   = errors.New("required")
+	ErrOutOfRange = errors.New("out of range")
+	ErrInvalid    = errors.New("invalid")
+)
+
+// FieldError reports a problem with one field of a Config.
+type FieldError struct {
+	Field string // which field is wrong, such as "port" or "env.LOG_LEVEL"
+	Err   error  // what is wrong; wraps one of the Err* categories
+}
+
+// Error returns the field name and the problem, such as "name: required".
+func (e *FieldError) Error() string {
+	// TODO(1): Return the field, a colon and a space, then the message of e.Err.
+	return e.Field
+}
+
+// Unwrap returns the error inside e, so errors.Is and errors.AsType can see it.
+func (e *FieldError) Unwrap() error {
+	// TODO(1): Return the wrapped error.
+	return nil
+}
+
+// Validate checks every field of c and reports all problems at once, joined
+// with errors.Join. It returns nil when c is valid.
+func Validate(c Config) error {
+	var errs []error
+
+	// TODO(2): Check Name, then Port, then Replicas.
+	// TODO(3): Check Image (between Name and Port), then every Env key in sorted order.
+
+	return errors.Join(errs...)
+}
+
+// ValidEnvName reports whether name is a valid environment variable name.
+func ValidEnvName(name string) bool {
+	// TODO(3): Return true only for non-empty names made of A-Z, 0-9 and _.
+	return true
+}
+
+// FieldNames returns the Field of every *FieldError in err, in order.
+func FieldNames(err error) []string {
+	// TODO(4): Look inside the joined error and collect the field names.
+	return nil
+}
+
+// FieldsWith returns the Field of every *FieldError in err whose error
+// matches kind according to errors.Is.
+func FieldsWith(err error, kind error) []string {
+	// TODO(5): Like FieldNames, but keep only the fields whose error is kind.
+	return nil
+}

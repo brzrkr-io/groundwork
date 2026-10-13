@@ -1,0 +1,240 @@
+package drift
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"reflect"
+	"slices"
+	"strings"
+	"testing"
+
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/smithy-go"
+)
+
+func TestLoadDesired(t *testing.T) {
+	t.Run("valid file", func(t *testing.T) {
+		got, err := LoadDesired("testdata/desired.json")
+		if err != nil {
+			t.Fatalf("LoadDesired(%q) error = %v, want nil", "testdata/desired.json", err)
+		}
+		want := []Resource{
+			{Kind: "bucket", Name: "acme-artifacts", Tags: map[string]string{"Env": "prod", "Owner": "ci"}},
+			{Kind: "bucket", Name: "acme-logs", Tags: map[string]string{"Env": "prod", "Owner": "platform"}},
+			{Kind: "instance", Name: "web-1", Tags: map[string]string{"Env": "prod", "Owner": "web"}},
+			{Kind: "instance", Name: "web-2", Tags: map[string]string{"Env": "prod", "Owner": "web"}},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("LoadDesired(%q) = %+v, want %+v", "testdata/desired.json", got, want)
+		}
+	})
+
+	t.Run("missing file", func(t *testing.T) {
+		path := "testdata/missing.json"
+		_, err := LoadDesired(path)
+		if err == nil {
+			t.Fatalf("LoadDesired(%q) error = nil, want an error", path)
+		}
+		if !strings.HasPrefix(err.Error(), "load desired state: ") {
+			t.Errorf("LoadDesired(%q) error = %q, want it to start with %q", path, err, "load desired state: ")
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("LoadDesired(%q) error = %v, want it to wrap fs.ErrNotExist (use %%w)", path, err)
+		}
+	})
+
+	t.Run("broken JSON", func(t *testing.T) {
+		path := "testdata/broken.json"
+		_, err := LoadDesired(path)
+		if err == nil {
+			t.Fatalf("LoadDesired(%q) error = nil, want an error", path)
+		}
+		if !strings.HasPrefix(err.Error(), "load desired state: ") {
+			t.Errorf("LoadDesired(%q) error = %q, want it to start with %q", path, err, "load desired state: ")
+		}
+		if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
+			t.Errorf("LoadDesired(%q) error = %v, want it to wrap a *json.SyntaxError (use %%w)", path, err)
+		}
+	})
+}
+
+// res is a short way to build a Resource in the tables below.
+func res(kind, name string, tags map[string]string) Resource {
+	return Resource{Kind: kind, Name: name, Tags: tags}
+}
+
+func TestDiff(t *testing.T) {
+	prod := map[string]string{"Env": "prod", "Owner": "web"}
+
+	tests := []struct {
+		name    string
+		desired []Resource
+		actual  []Resource
+		want    []Change
+	}{
+		{
+			name:    "in sync",
+			desired: []Resource{res("bucket", "acme-logs", prod), res("instance", "web-1", prod)},
+			actual:  []Resource{res("instance", "web-1", prod), res("bucket", "acme-logs", prod)},
+			want:    nil,
+		},
+		{
+			name:    "bucket was deleted by hand",
+			desired: []Resource{res("bucket", "acme-logs", prod), res("bucket", "acme-artifacts", prod)},
+			actual:  []Resource{res("bucket", "acme-logs", prod)},
+			want:    []Change{{Action: "create", ID: "bucket/acme-artifacts"}},
+		},
+		{
+			name:    "tag value changed in the console",
+			desired: []Resource{res("instance", "web-2", prod)},
+			actual:  []Resource{res("instance", "web-2", map[string]string{"Env": "staging", "Owner": "web"})},
+			want:    []Change{{Action: "update", ID: "instance/web-2", Keys: []string{"Env"}}},
+		},
+		{
+			name:    "hotfix tag added and Owner removed",
+			desired: []Resource{res("instance", "web-1", prod)},
+			actual:  []Resource{res("instance", "web-1", map[string]string{"Env": "prod", "hotfix": "true"})},
+			want:    []Change{{Action: "update", ID: "instance/web-1", Keys: []string{"Owner", "hotfix"}}},
+		},
+		{
+			name:    "unmanaged resources",
+			desired: []Resource{res("bucket", "acme-logs", prod)},
+			actual:  []Resource{res("instance", "debug-box", nil), res("bucket", "acme-logs", prod), res("bucket", "old-tmp", nil)},
+			want: []Change{
+				{Action: "delete", ID: "bucket/old-tmp"},
+				{Action: "delete", ID: "instance/debug-box"},
+			},
+		},
+		{
+			name: "everything at once, sorted by ID",
+			desired: []Resource{
+				res("instance", "web-2", prod),
+				res("bucket", "acme-logs", prod),
+				res("bucket", "acme-artifacts", prod),
+			},
+			actual: []Resource{
+				res("bucket", "old-tmp", nil),
+				res("instance", "web-2", map[string]string{"Env": "staging", "Owner": "alice"}),
+				res("bucket", "acme-logs", prod),
+			},
+			want: []Change{
+				{Action: "create", ID: "bucket/acme-artifacts"},
+				{Action: "delete", ID: "bucket/old-tmp"},
+				{Action: "update", ID: "instance/web-2", Keys: []string{"Env", "Owner"}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Diff(tt.desired, tt.actual)
+			if !sameChanges(got, tt.want) {
+				t.Errorf("Diff(%v, %v) = %+v, want %+v", tt.desired, tt.actual, got, tt.want)
+			}
+		})
+	}
+}
+
+// sameChanges reports whether two change lists are equal. A nil list and an
+// empty list both mean "no changes".
+func sameChanges(a, b []Change) bool {
+	return slices.EqualFunc(a, b, func(x, y Change) bool {
+		return x.Action == y.Action && x.ID == y.ID && slices.Equal(x.Keys, y.Keys)
+	})
+}
+
+// drifted is an AWS account that has drifted from testdata/desired.json:
+// acme-artifacts is missing, web-2's tags were edited, old-tmp is unmanaged.
+func drifted() (*fakeS3, *fakeEC2) {
+	buckets := &fakeS3{buckets: []fakeBucket{
+		{name: "acme-logs", tags: map[string]string{"Env": "prod", "Owner": "platform"}},
+		{name: "old-tmp"},
+	}}
+	instances := &fakeEC2{pages: [][]ec2types.Instance{
+		{instance("i-0a1", "web-1", "running", map[string]string{"Env": "prod", "Owner": "web"})},
+		{instance("i-0b2", "web-2", "running", map[string]string{"Env": "staging", "Owner": "alice"})},
+	}}
+	return buckets, instances
+}
+
+// inSync is an AWS account that matches testdata/desired.json. The old
+// terminated instance does not count.
+func inSync() (*fakeS3, *fakeEC2) {
+	buckets := &fakeS3{buckets: []fakeBucket{
+		{name: "acme-artifacts", tags: map[string]string{"Env": "prod", "Owner": "ci"}},
+		{name: "acme-logs", tags: map[string]string{"Env": "prod", "Owner": "platform"}},
+	}}
+	instances := &fakeEC2{pages: [][]ec2types.Instance{
+		{
+			instance("i-0a1", "web-1", "running", map[string]string{"Env": "prod", "Owner": "web"}),
+			instance("i-0b2", "web-2", "stopped", map[string]string{"Env": "prod", "Owner": "web"}),
+		},
+		{instance("i-0c3", "web-0", "terminated", map[string]string{"Env": "prod"})},
+	}}
+	return buckets, instances
+}
+
+func TestPlan(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("drift", func(t *testing.T) {
+		buckets, instances := drifted()
+		want := "+ bucket/acme-artifacts\n" +
+			"- bucket/old-tmp\n" +
+			"~ instance/web-2 (tags: Env, Owner)\n" +
+			"Plan: 1 to add, 1 to change, 1 to destroy.\n"
+		got, code := Plan(ctx, "testdata/desired.json", buckets, instances)
+		if got != want || code != 2 {
+			t.Errorf("Plan(desired.json, drifted account) = %q, %d, want %q, %d", got, code, want, 2)
+		}
+	})
+
+	t.Run("hotfix tag only", func(t *testing.T) {
+		buckets, instances := inSync()
+		instances.pages[0][0] = instance("i-0a1", "web-1", "running", map[string]string{"Env": "prod", "Owner": "web", "hotfix": "INC-4211"})
+		want := "~ instance/web-1 (tags: hotfix)\n" +
+			"Plan: 0 to add, 1 to change, 0 to destroy.\n"
+		got, code := Plan(ctx, "testdata/desired.json", buckets, instances)
+		if got != want || code != 2 {
+			t.Errorf("Plan(desired.json, account with hotfix tag) = %q, %d, want %q, %d", got, code, want, 2)
+		}
+	})
+
+	t.Run("no drift", func(t *testing.T) {
+		buckets, instances := inSync()
+		want := "No changes. AWS matches the desired state.\n"
+		got, code := Plan(ctx, "testdata/desired.json", buckets, instances)
+		if got != want || code != 0 {
+			t.Errorf("Plan(desired.json, matching account) = %q, %d, want %q, %d", got, code, want, 0)
+		}
+	})
+
+	t.Run("missing desired file", func(t *testing.T) {
+		buckets, instances := inSync()
+		got, code := Plan(ctx, "testdata/missing.json", buckets, instances)
+		if !strings.HasPrefix(got, "Error: load desired state: ") || code != 1 {
+			t.Errorf("Plan(missing.json, ...) = %q, %d, want text starting with %q, %d", got, code, "Error: load desired state: ", 1)
+		}
+	})
+
+	t.Run("ListBuckets fails", func(t *testing.T) {
+		buckets, instances := inSync()
+		buckets.listErr = &smithy.GenericAPIError{Code: "AccessDenied", Message: "Access Denied"}
+		want := "Error: list buckets: api error AccessDenied: Access Denied\n"
+		got, code := Plan(ctx, "testdata/desired.json", buckets, instances)
+		if got != want || code != 1 {
+			t.Errorf("Plan(desired.json, account denying ListBuckets) = %q, %d, want %q, %d", got, code, want, 1)
+		}
+	})
+
+	t.Run("GetBucketTagging fails", func(t *testing.T) {
+		buckets, instances := inSync()
+		buckets.tagErr = &smithy.GenericAPIError{Code: "SlowDown", Message: "Please reduce your request rate."}
+		want := "Error: get tags for bucket acme-artifacts: api error SlowDown: Please reduce your request rate.\n"
+		got, code := Plan(ctx, "testdata/desired.json", buckets, instances)
+		if got != want || code != 1 {
+			t.Errorf("Plan(desired.json, throttled account) = %q, %d, want %q, %d", got, code, want, 1)
+		}
+	})
+}

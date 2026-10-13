@@ -1,0 +1,34 @@
+// Package customtypes3 is the Gopherlings exercise "Custom types: Kubernetes memory quantities".
+package customtypes3
+
+// Bytes is an amount of memory, in bytes.
+type Bytes int64
+
+// Memory units, in the powers of 1024 that Kubernetes uses.
+const (
+	KiB Bytes = 1024
+	MiB       = 1024 * KiB
+	GiB       = 1024 * MiB
+)
+
+// Human formats b with the largest fitting unit, such as "1.5 GiB" or
+// "900 B".
+func (b Bytes) Human() string {
+	// TODO(1): Pick GiB, MiB, KiB or plain bytes, and format b with it.
+	return ""
+}
+
+// ParseMemory converts a Kubernetes memory quantity such as "512Mi" into
+// Bytes. It returns an error if the quantity is not valid.
+func ParseMemory(s string) (Bytes, error) {
+	// TODO(2): Strip an optional Ki, Mi or Gi suffix, parse the number, and
+	// multiply by the unit. Reject numbers that are invalid or negative.
+	return 0, nil
+}
+
+// FitsOnNode reports whether the memory requests, added together, fit in
+// free. It returns an error if any request is not a valid quantity.
+func FitsOnNode(requests []string, free Bytes) (bool, error) {
+	// TODO(3): Parse and add up every request, then compare with free.
+	return false, nil
+}

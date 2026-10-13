@@ -1,0 +1,77 @@
+package schedule
+
+import (
+	"testing"
+	"time"
+)
+
+func TestArchiveName(t *testing.T) {
+	plusTwo := time.FixedZone("UTC+2", 2*60*60)
+	tests := []struct {
+		name string
+		host string
+		at   time.Time
+		want string
+	}{
+		{"afternoon", "db-01", time.Date(2026, 3, 9, 14, 5, 0, 0, time.UTC), "db-01-20260309-1405.tar.gz"},
+		{"just after midnight", "web-02", time.Date(2026, 12, 31, 0, 30, 0, 0, time.UTC), "web-02-20261231-0030.tar.gz"},
+		{"converted to UTC", "cache-1", time.Date(2026, 10, 11, 3, 15, 0, 0, plusTwo), "cache-1-20261011-0115.tar.gz"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ArchiveName(tt.host, tt.at)
+			if got != tt.want {
+				t.Errorf("ArchiveName(%q, %v) = %q, want %q", tt.host, tt.at, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRetryDelay(t *testing.T) {
+	tests := []struct {
+		attempt int
+		want    time.Duration
+	}{
+		{1, 30 * time.Second},
+		{2, time.Minute},
+		{4, 2 * time.Minute},
+		{10, 5 * time.Minute},
+		{11, 5 * time.Minute},
+		{25, 5 * time.Minute},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want.String(), func(t *testing.T) {
+			got := RetryDelay(tt.attempt)
+			if got != tt.want {
+				t.Errorf("RetryDelay(%d) = %v, want %v", tt.attempt, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNextRun(t *testing.T) {
+	at := func(hour, minute, second int) time.Time {
+		return time.Date(2026, 10, 11, hour, minute, second, 0, time.UTC)
+	}
+	tests := []struct {
+		name  string
+		now   time.Time
+		every time.Duration
+		want  time.Time
+	}{
+		{"hourly", at(14, 37, 0), time.Hour, at(15, 0, 0)},
+		{"every 15 minutes", at(14, 37, 0), 15 * time.Minute, at(14, 45, 0)},
+		{"every 5 minutes", at(9, 3, 59), 5 * time.Minute, at(9, 5, 0)},
+		{"on the boundary", at(15, 0, 0), time.Hour, at(16, 0, 0)},
+		{"one second past", at(15, 0, 1), time.Hour, at(16, 0, 0)},
+		{"crosses midnight", at(23, 50, 0), 30 * time.Minute, time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextRun(tt.now, tt.every)
+			if !got.Equal(tt.want) {
+				t.Errorf("NextRun(%v, %v) = %v, want %v", tt.now, tt.every, got, tt.want)
+			}
+		})
+	}
+}

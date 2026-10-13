@@ -1,0 +1,20 @@
+package uptime
+
+import "context"
+
+// Check makes one GET request to target.URL, limited to m.Timeout, and
+// reports the outcome. A target is up when it answers with a 2xx status.
+func (m *Monitor) Check(ctx context.Context, target Target) Result {
+	// TODO(2): Make one request with a per-attempt timeout and fill in a
+	// Result. Add "fmt", "net/http" and "time" to the imports.
+	return Result{Target: target}
+}
+
+// CheckWithRetry calls Check up to 1+m.Retries times, waiting m.RetryDelay
+// between attempts, and stops at the first attempt that is up. It returns the
+// last attempt's Result with Attempts set.
+func (m *Monitor) CheckWithRetry(ctx context.Context, target Target) Result {
+	// TODO(3): Retry failed checks, waiting between attempts. Stop waiting
+	// if ctx is cancelled.
+	return m.Check(ctx, target)
+}

@@ -1,0 +1,105 @@
+package server
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"gopherlings.local/inventory_service/internal/hosts"
+)
+
+// writeJSON sends v as a JSON body with the given status code.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+// writeError sends {"error": msg} with the given status code.
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// writeStoreError turns an error from the store into a response:
+//
+//	hosts.ErrNotFound  404  {"error":"host not found"}
+//	hosts.ErrInvalid   400  {"error":"invalid host: <reason>"}
+//	anything else      500  {"error":"internal error"}
+func writeStoreError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, hosts.ErrNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, hosts.ErrInvalid):
+		writeError(w, http.StatusBadRequest, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, "internal error")
+	}
+}
+
+// handleList serves GET /hosts: 200 with a JSON array of hosts.
+func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.store.List())
+}
+
+// handleGet serves GET /hosts/{id}: 200 with the host, or 404.
+func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
+	h, err := s.store.Get(r.PathValue("id"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h)
+}
+
+// handleCreate serves POST /hosts.
+//
+//	body is not valid JSON   400  {"error":"invalid JSON body"}
+//	host fails validation    400  {"error":"invalid host: <reason>"}
+//	created                  201  the stored host as JSON, plus a
+//	                              Location: /hosts/<id> header
+func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
+	var h hosts.Host
+	if err := json.NewDecoder(r.Body).Decode(&h); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	created, err := s.store.Create(h)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.Header().Set("Location", "/hosts/"+created.ID)
+	writeJSON(w, http.StatusCreated, created)
+}
+
+// handleUpdate serves PUT /hosts/{id}.
+//
+//	body is not valid JSON   400  {"error":"invalid JSON body"}
+//	unknown ID               404  {"error":"host not found"}
+//	host fails validation    400  {"error":"invalid host: <reason>"}
+//	updated                  200  the stored host as JSON
+func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	var h hosts.Host
+	if err := json.NewDecoder(r.Body).Decode(&h); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	updated, err := s.store.Update(r.PathValue("id"), h)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// handleDelete serves DELETE /hosts/{id}.
+//
+//	unknown ID   404  {"error":"host not found"}
+//	deleted      204  no body
+func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.Delete(r.PathValue("id")); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

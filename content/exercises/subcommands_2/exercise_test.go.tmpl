@@ -1,0 +1,97 @@
+package dispatch
+
+import (
+	"strings"
+	"testing"
+)
+
+// testCase is one nodectl command line and the exact result we expect.
+type testCase struct {
+	name       string
+	args       []string
+	wantCode   int
+	wantStdout string
+	wantStderr string
+}
+
+// check runs Run with tc.args and compares the exit code and both streams.
+func check(t *testing.T, tc testCase) {
+	t.Helper()
+	var stdout, stderr strings.Builder
+	code := Run(tc.args, &stdout, &stderr)
+	if code != tc.wantCode {
+		t.Errorf("Run(%q) = %d, want %d", tc.args, code, tc.wantCode)
+	}
+	if got := stdout.String(); got != tc.wantStdout {
+		t.Errorf("Run(%q) stdout = %q, want %q", tc.args, got, tc.wantStdout)
+	}
+	if got := stderr.String(); got != tc.wantStderr {
+		t.Errorf("Run(%q) stderr = %q, want %q", tc.args, got, tc.wantStderr)
+	}
+}
+
+func TestDispatch(t *testing.T) {
+	tests := []testCase{
+		{"cordon", []string{"cordon", "node-3"}, 0, "cordoning node-3\n", ""},
+		{"cordon another node", []string{"cordon", "worker-12"}, 0, "cordoning worker-12\n", ""},
+		{"drain", []string{"drain", "node-7"}, 0, "draining node-7 (grace period 30s)\n", ""},
+		{"drain with -grace", []string{"drain", "-grace", "2m", "node-7"}, 0,
+			"draining node-7 (grace period 2m0s)\n", ""},
+		{"drain without node", []string{"drain"}, 2, "",
+			"nodectl: drain needs exactly one NODE\n"},
+		{"cordon two nodes", []string{"cordon", "node-3", "node-4"}, 2, "",
+			"nodectl: cordon needs exactly one NODE\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			check(t, tc)
+		})
+	}
+}
+
+func TestUncordon(t *testing.T) {
+	tests := []testCase{
+		{"one node", []string{"uncordon", "node-3"}, 0, "uncordoning node-3\n", ""},
+		{"another node", []string{"uncordon", "worker-12"}, 0, "uncordoning worker-12\n", ""},
+		{"no node", []string{"uncordon"}, 2, "",
+			"nodectl: uncordon needs exactly one NODE\n"},
+		{"two nodes", []string{"uncordon", "node-3", "node-4"}, 2, "",
+			"nodectl: uncordon needs exactly one NODE\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			check(t, tc)
+		})
+	}
+}
+
+// wantUsage is the help text once all three commands are registered.
+const wantUsage = `usage: nodectl <command> [flags] NODE
+
+commands:
+  cordon    stop scheduling new pods on a node
+  drain     evict all pods from a node
+  uncordon  allow new pods on a node again
+`
+
+func TestHelp(t *testing.T) {
+	tests := []testCase{
+		{"help", []string{"help"}, 0, wantUsage, ""},
+		{"--help", []string{"--help"}, 0, wantUsage, ""},
+		{"no arguments", []string{}, 2, "", wantUsage},
+		{"unknown command", []string{"reboot", "node-3"}, 2, "",
+			"nodectl: unknown command \"reboot\"\n" + wantUsage},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Map order changes from run to run, so try several times: an
+			// unsorted loop over the map would get the order wrong sooner or later.
+			for range 20 {
+				check(t, tc)
+				if t.Failed() {
+					return
+				}
+			}
+		})
+	}
+}

@@ -1,0 +1,41 @@
+// Package pointers2 is the Gopherlings exercise "Pointers: fix the silent no-ops".
+package pointers2
+
+// Host is one machine in the fleet.
+type Host struct {
+	Name     string
+	Drained  bool
+	Sessions int
+}
+
+// SwapPorts swaps the ports that live and standby point to.
+func SwapPorts(live, standby *int) {
+	// TODO(1): Fix the bug: swap the ints, not the pointers.
+	live, standby = standby, live
+}
+
+// CloneHost returns a pointer to a new Host with the same fields as *h.
+func CloneHost(h *Host) *Host {
+	// TODO(2): Fix the bug: return a copy, not h itself.
+	return h
+}
+
+// markDrained marks a host as drained and drops its sessions to 0.
+//
+// TODO(3): Fix the bug: take a *Host so the caller's host changes.
+func markDrained(h Host) {
+	h.Drained = true
+	h.Sessions = 0
+}
+
+// DrainHost drains the host called name and reports whether it found one.
+func DrainHost(hosts []Host, name string) bool {
+	for i := range hosts {
+		if hosts[i].Name == name {
+			// TODO(3): Pass a pointer to the host inside hosts.
+			markDrained(hosts[i])
+			return true
+		}
+	}
+	return false
+}

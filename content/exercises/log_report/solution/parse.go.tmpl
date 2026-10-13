@@ -1,0 +1,111 @@
+// Package logreport is the Gopherlings exercise "Project: access log report".
+package logreport
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Entry is one request from an access log.
+type Entry struct {
+	IP       string
+	Time     time.Time
+	Method   string
+	Path     string // without the query string: "/api/orders", not "/api/orders?page=2"
+	Status   int
+	Bytes    int
+	Duration time.Duration
+}
+
+// ErrMalformed means a line does not look like an access log line at all.
+var ErrMalformed = errors.New("malformed line")
+
+// timeLayout is the reference time written the way nginx writes timestamps.
+const timeLayout = "02/Jan/2006:15:04:05 -0700"
+
+// linePattern matches one access log line, for example:
+//
+//	10.0.0.7 - - [11/Oct/2026:13:55:36 +0000] "GET /api/orders HTTP/1.1" 200 512 0.043
+var linePattern = regexp.MustCompile(
+	`^(?P<ip>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] ` +
+		`"(?P<method>[A-Z]+) (?P<path>\S+) [^"]*" ` +
+		`(?P<status>\d{3}) (?P<bytes>\d+) (?P<duration>\d+\.\d+)$`,
+)
+
+// ParseLine turns one access log line into an Entry.
+func ParseLine(line string) (Entry, error) {
+	m := linePattern.FindStringSubmatch(line)
+	if m == nil {
+		return Entry{}, fmt.Errorf("%w: %q", ErrMalformed, line)
+	}
+	group := func(name string) string {
+		return m[linePattern.SubexpIndex(name)]
+	}
+
+	t, err := time.Parse(timeLayout, group("time"))
+	if err != nil {
+		return Entry{}, fmt.Errorf("bad time %q: %w", group("time"), err)
+	}
+	status, err := strconv.Atoi(group("status"))
+	if err != nil {
+		return Entry{}, fmt.Errorf("bad status %q: %w", group("status"), err)
+	}
+	bytes, err := strconv.Atoi(group("bytes"))
+	if err != nil {
+		return Entry{}, fmt.Errorf("bad bytes %q: %w", group("bytes"), err)
+	}
+	// "0.043" plus "s" is "0.043s", which ParseDuration reads exactly.
+	// Multiplying a float64 by time.Second could be off by a nanosecond.
+	duration, err := time.ParseDuration(group("duration") + "s")
+	if err != nil {
+		return Entry{}, fmt.Errorf("bad duration %q: %w", group("duration"), err)
+	}
+	path, _, _ := strings.Cut(group("path"), "?")
+
+	return Entry{
+		IP:       group("ip"),
+		Time:     t,
+		Method:   group("method"),
+		Path:     path,
+		Status:   status,
+		Bytes:    bytes,
+		Duration: duration,
+	}, nil
+}
+
+// Log is everything ReadLog found in an access log.
+type Log struct {
+	Entries  []Entry // the lines that parsed, in file order
+	Problems []error // one error per line that did not parse, in file order
+}
+
+// ReadLog parses every line of r. Lines that fail to parse are recorded in
+// Problems; only a failure to read r is returned as an error.
+func ReadLog(r io.Reader) (Log, error) {
+	var log Log
+	sc := bufio.NewScanner(r)
+	n := 0
+	for sc.Scan() {
+		n++
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		entry, err := ParseLine(line)
+		if err != nil {
+			log.Problems = append(log.Problems, fmt.Errorf("line %d: %w", n, err))
+			continue
+		}
+		log.Entries = append(log.Entries, entry)
+	}
+	if err := sc.Err(); err != nil {
+		return Log{}, err
+	}
+	return log, nil
+}

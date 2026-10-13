@@ -1,0 +1,70 @@
+package inventory
+
+import (
+	"fmt"
+	"slices"
+	"testing"
+)
+
+// slices.Equal reports whether two slices have the same elements in the same
+// order. A nil slice and an empty slice count as equal.
+
+func TestSkipHeader(t *testing.T) {
+	cases := []struct {
+		lines []string
+		want  []string
+	}{
+		{[]string{"name", "web-1", "web-2", "web-3"}, []string{"web-1", "web-2", "web-3"}},
+		{[]string{"name", "db-1", "db-2"}, []string{"db-1", "db-2"}},
+		{[]string{"name", "cache-1"}, []string{"cache-1"}},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_lines", len(c.lines)), func(t *testing.T) {
+			if got := SkipHeader(c.lines); !slices.Equal(got, c.want) {
+				t.Errorf("SkipHeader(%q) = %q, want %q", c.lines, got, c.want)
+			}
+		})
+	}
+}
+
+func TestDrain(t *testing.T) {
+	cases := []struct {
+		hosts      []string
+		i          int
+		wantBefore []string
+		wantAfter  []string
+	}{
+		{[]string{"web-1", "web-2", "web-3", "web-4"}, 1, []string{"web-1"}, []string{"web-3", "web-4"}},
+		{[]string{"web-1", "web-2", "web-3", "web-4"}, 0, []string{}, []string{"web-2", "web-3", "web-4"}},
+		{[]string{"web-1", "web-2", "web-3"}, 2, []string{"web-1", "web-2"}, []string{}},
+		{[]string{"web-1"}, 0, []string{}, []string{}},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_of_%d", c.i, len(c.hosts)), func(t *testing.T) {
+			before, after := Drain(c.hosts, c.i)
+			if !slices.Equal(before, c.wantBefore) || !slices.Equal(after, c.wantAfter) {
+				t.Errorf("Drain(%q, %d) = %q, %q, want %q, %q", c.hosts, c.i, before, after, c.wantBefore, c.wantAfter)
+			}
+		})
+	}
+}
+
+func TestLastHost(t *testing.T) {
+	cases := []struct {
+		name  string
+		hosts []string
+		want  string
+	}{
+		{"two_hosts", []string{"web-1", "web-2"}, "web-2"},
+		{"one_host", []string{"db-1"}, "db-1"},
+		{"empty", []string{}, ""},
+		{"nil", nil, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := LastHost(c.hosts); got != c.want {
+				t.Errorf("LastHost(%q) = %q, want %q", c.hosts, got, c.want)
+			}
+		})
+	}
+}

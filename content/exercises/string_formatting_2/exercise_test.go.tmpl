@@ -1,0 +1,65 @@
+package formatting
+
+import "testing"
+
+func TestScaleMessage(t *testing.T) {
+	tests := []struct {
+		name    string
+		service string
+		from    int
+		to      int
+		want    string
+	}{
+		{name: "scale up", service: "api", from: 2, to: 5, want: "scaling api from 2 to 5 replicas"},
+		{name: "scale down", service: "worker", from: 10, to: 4, want: "scaling worker from 10 to 4 replicas"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ScaleMessage(tt.service, tt.from, tt.to)
+			if got != tt.want {
+				t.Errorf("ScaleMessage(%q, %d, %d) = %q, want %q", tt.service, tt.from, tt.to, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLogLine(t *testing.T) {
+	tests := []struct {
+		name       string
+		level      string
+		msg        string
+		durationMs int
+		want       string
+	}{
+		{name: "info", level: "info", msg: "deploy finished", durationMs: 1530, want: `level=info msg="deploy finished" duration_ms=1530`},
+		{name: "error", level: "error", msg: "health check failed", durationMs: 87, want: `level=error msg="health check failed" duration_ms=87`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := LogLine(tt.level, tt.msg, tt.durationMs)
+			if got != tt.want {
+				t.Errorf("LogLine(%q, %q, %d) = %q, want %q", tt.level, tt.msg, tt.durationMs, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIncidentID(t *testing.T) {
+	tests := []struct {
+		name string
+		n    int
+		want string
+	}{
+		{name: "two digits", n: 42, want: "INC-00042"},
+		{name: "one digit", n: 7, want: "INC-00007"},
+		{name: "six digits", n: 123456, want: "INC-123456"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IncidentID(tt.n)
+			if got != tt.want {
+				t.Errorf("IncidentID(%d) = %q, want %q", tt.n, got, tt.want)
+			}
+		})
+	}
+}

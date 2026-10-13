@@ -1,0 +1,81 @@
+package pointers2
+
+import "testing"
+
+func TestSwapPorts(t *testing.T) {
+	// Each line is one case: the live and standby ports before the swap.
+	tests := []struct {
+		live    int
+		standby int
+	}{
+		{8080, 8081},
+		{443, 8443},
+		{9000, 9000},
+	}
+	for _, tt := range tests {
+		t.Run("", func(t *testing.T) {
+			live, standby := tt.live, tt.standby
+			SwapPorts(&live, &standby)
+			if live != tt.standby || standby != tt.live {
+				t.Errorf("SwapPorts(&%d, &%d): live = %d, standby = %d, want live = %d, standby = %d",
+					tt.live, tt.standby, live, standby, tt.standby, tt.live)
+			}
+		})
+	}
+}
+
+func TestCloneHost(t *testing.T) {
+	// Each line is one host to clone.
+	tests := []Host{
+		{Name: "node-1", Drained: false, Sessions: 4},
+		{Name: "db-primary", Drained: true, Sessions: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.Name, func(t *testing.T) {
+			orig := tt
+			c := CloneHost(&orig)
+			if c == nil {
+				t.Fatalf("CloneHost(&%v) = nil, want a pointer to a copy", tt)
+			}
+			if c == &orig {
+				t.Fatalf("CloneHost(&%v) returned the same pointer it was given, want a pointer to a new Host", tt)
+			}
+			if *c != tt {
+				t.Fatalf("CloneHost(&%v) = &%v, want &%v", tt, *c, tt)
+			}
+			c.Name = "changed"
+			c.Sessions = 99
+			if orig != tt {
+				t.Errorf("CloneHost(&%v): changing the clone changed the original to %v", tt, orig)
+			}
+		})
+	}
+}
+
+func TestDrainHost(t *testing.T) {
+	// Each line is one case: the host name to drain, whether DrainHost
+	// should find it, then the whole slice we want afterwards.
+	tests := []struct {
+		name  string
+		found bool
+		want  []Host
+	}{
+		{"node-1", true, []Host{{"node-1", true, 0}, {"node-2", false, 3}, {"node-3", false, 0}}},
+		{"node-2", true, []Host{{"node-1", false, 12}, {"node-2", true, 0}, {"node-3", false, 0}}},
+		{"node-3", true, []Host{{"node-1", false, 12}, {"node-2", false, 3}, {"node-3", true, 0}}},
+		{"node-9", false, []Host{{"node-1", false, 12}, {"node-2", false, 3}, {"node-3", false, 0}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hosts := []Host{{"node-1", false, 12}, {"node-2", false, 3}, {"node-3", false, 0}}
+			if got := DrainHost(hosts, tt.name); got != tt.found {
+				t.Errorf("DrainHost(hosts, %q) = %t, want %t", tt.name, got, tt.found)
+			}
+			for i := range tt.want {
+				if hosts[i] != tt.want[i] {
+					t.Errorf("after DrainHost(hosts, %q): hosts[%d] = %v, want %v", tt.name, i, hosts[i], tt.want[i])
+				}
+			}
+		})
+	}
+}

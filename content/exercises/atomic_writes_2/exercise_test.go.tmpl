@@ -1,0 +1,129 @@
+package envconf
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+)
+
+func TestSetLine(t *testing.T) {
+	tests := []struct {
+		name       string
+		lines      []string
+		key, value string
+		want       []string
+	}{
+		{"replace first", []string{"LOG_LEVEL=info", "PORT=8080"}, "LOG_LEVEL", "debug", []string{"LOG_LEVEL=debug", "PORT=8080"}},
+		{"replace last", []string{"# api", "LOG_LEVEL=info", "PORT=8080"}, "PORT", "9090", []string{"# api", "LOG_LEVEL=info", "PORT=9090"}},
+		{"append missing key", []string{"PORT=8080"}, "REPLICAS", "3", []string{"PORT=8080", "REPLICAS=3"}},
+		{"append to empty", nil, "REGION", "eu-west-1", []string{"REGION=eu-west-1"}},
+		{"similar key is not a match", []string{"PORT_ADMIN=9000"}, "PORT", "8080", []string{"PORT_ADMIN=9000", "PORT=8080"}},
+		{"comment is not a match", []string{"# PORT=80", "", "PORT=8080"}, "PORT", "443", []string{"# PORT=80", "", "PORT=443"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := slices.Clone(tt.lines)
+			got := setLine(in, tt.key, tt.value)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("setLine(%q, %q, %q) = %q, want %q", tt.lines, tt.key, tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSetKey(t *testing.T) {
+	tests := []struct {
+		name       string
+		old        string // existing content; "" means no file yet
+		key, value string
+		want       string
+	}{
+		{"change a setting", "# api\nLOG_LEVEL=info\nPORT=8080\n", "LOG_LEVEL", "debug", "# api\nLOG_LEVEL=debug\nPORT=8080\n"},
+		{"add a setting", "# api\nPORT=8080\n\n", "REPLICAS", "3", "# api\nPORT=8080\n\nREPLICAS=3\n"},
+		{"no final newline", "PORT=8080", "PORT", "9090", "PORT=9090\n"},
+		{"missing file", "", "PORT", "9090", "PORT=9090\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "app.env")
+			var before os.FileInfo
+			if tt.old != "" {
+				if err := os.WriteFile(path, []byte(tt.old), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				var err error
+				if before, err = os.Stat(path); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := SetKey(path, tt.key, tt.value); err != nil {
+				t.Fatalf("SetKey(%q, %q, %q) = %v, want nil", path, tt.key, tt.value, err)
+			}
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading back %q: %v", path, err)
+			}
+			if got := string(data); got != tt.want {
+				t.Errorf("after SetKey(%q, %q, %q), file holds %q, want %q", path, tt.key, tt.value, got, tt.want)
+			}
+			if before != nil {
+				after, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if os.SameFile(before, after) {
+					t.Errorf("SetKey rewrote %q in place, want it replaced with writeFileAtomic", path)
+				}
+			}
+		})
+	}
+
+	t.Run("path is a directory", func(t *testing.T) {
+		path := t.TempDir()
+		if err := SetKey(path, "PORT", "9090"); err == nil {
+			t.Errorf("SetKey(%q, \"PORT\", \"9090\") = nil, want an error", path)
+		}
+	})
+}
+
+func TestWriteFileAtomicCleansUp(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{"one setting", "PORT=8080\n"},
+		{"two settings", "PORT=8080\nREPLICAS=3\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "app.env")
+			// A non-empty directory where the file should be makes Rename fail.
+			if err := os.Mkdir(path, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(path, "keep"), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := writeFileAtomic(path, []byte(tt.data)); err == nil {
+				t.Errorf("writeFileAtomic(%q, %q) = nil, want an error", path, tt.data)
+			}
+
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var names []string
+			for _, e := range entries {
+				names = append(names, e.Name())
+			}
+			if want := []string{"app.env"}; !slices.Equal(names, want) {
+				t.Errorf("directory holds %q, want %q (no leftover temp files)", names, want)
+			}
+		})
+	}
+}

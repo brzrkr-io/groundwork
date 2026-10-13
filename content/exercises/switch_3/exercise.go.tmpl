@@ -1,0 +1,14 @@
+// Package switches is the Gopherlings exercise "Switch: container supervisor".
+package switches
+
+// PortService names the service usually found on a port.
+func PortService(port int) string {
+	// TODO(1): Use a switch to name the service, as in the README table.
+	return "unknown"
+}
+
+// ContainerAction decides what the supervisor does with a container.
+func ContainerAction(state string, exitCode, restarts int) string {
+	// TODO(2): Use a switch on state, as in the README table.
+	return "inspect"
+}

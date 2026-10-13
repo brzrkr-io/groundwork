@@ -1,0 +1,110 @@
+package main
+
+import (
+	"runtime/debug"
+	"slices"
+	"testing"
+)
+
+// testInfo has two dependencies; golang.org/x/net was replaced.
+func testInfo() *debug.BuildInfo {
+	return &debug.BuildInfo{
+		GoVersion: "go1.26.1",
+		Main:      debug.Module{Path: "example.com/depcheck", Version: "(devel)"},
+		Deps: []*debug.Module{
+			{Path: "k8s.io/client-go", Version: "v0.37.1"},
+			{
+				Path:    "golang.org/x/net",
+				Version: "v0.30.0",
+				Replace: &debug.Module{Path: "golang.org/x/net", Version: "v0.38.0"},
+			},
+			{
+				Path:    "sigs.k8s.io/yaml",
+				Version: "v1.6.0",
+				Replace: &debug.Module{Path: "example.com/yaml-fork", Version: "v1.6.1-fixed"},
+			},
+		},
+	}
+}
+
+func TestDepVersion(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"k8s.io/client-go", "v0.37.1"},
+		{"golang.org/x/net", "v0.38.0"},
+		{"sigs.k8s.io/yaml", "v1.6.1-fixed"},
+		{"github.com/nope/x", "not found"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := DepVersion(testInfo(), tt.path); got != tt.want {
+				t.Errorf("DepVersion(info, %q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+	t.Run("nil info", func(t *testing.T) {
+		if got := DepVersion(nil, "k8s.io/client-go"); got != "not found" {
+			t.Errorf("DepVersion(nil, %q) = %q, want %q", "k8s.io/client-go", got, "not found")
+		}
+	})
+}
+
+func TestBuildTime(t *testing.T) {
+	withTime := func(value string) *debug.BuildInfo {
+		info := testInfo()
+		info.Settings = []debug.BuildSetting{
+			{Key: "vcs.revision", Value: "3f2a9c1e8b7d"},
+			{Key: "vcs.time", Value: value},
+		}
+		return info
+	}
+	tests := []struct {
+		name string
+		info *debug.BuildInfo
+		want string
+	}{
+		{"UTC", withTime("2026-10-01T14:03:27Z"), "2026-10-01 14:03 UTC"},
+		{"other time zone", withTime("2026-10-01T16:03:27+02:00"), "2026-10-01 14:03 UTC"},
+		{"previous day in UTC", withTime("2026-03-02T01:30:00+03:00"), "2026-03-01 22:30 UTC"},
+		{"not a time", withTime("yesterday"), "unknown"},
+		{"no vcs.time", testInfo(), "unknown"},
+		{"nil info", nil, "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := BuildTime(tt.info); got != tt.want {
+				t.Errorf("BuildTime(info) = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReport(t *testing.T) {
+	tests := []struct {
+		name  string
+		paths []string
+		want  []string
+	}{
+		{
+			"two paths",
+			[]string{"golang.org/x/net", "github.com/nope/x"},
+			[]string{"golang.org/x/net v0.38.0", "github.com/nope/x not found"},
+		},
+		{
+			"order follows paths",
+			[]string{"sigs.k8s.io/yaml", "k8s.io/client-go"},
+			[]string{"sigs.k8s.io/yaml v1.6.1-fixed", "k8s.io/client-go v0.37.1"},
+		},
+		{"no paths", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Report(testInfo(), tt.paths)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Report(info, %q) = %q, want %q", tt.paths, got, tt.want)
+			}
+		})
+	}
+}

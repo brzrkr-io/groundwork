@@ -1,0 +1,37 @@
+// Package creds holds login details for deploy targets without leaking the
+// secret part.
+package creds
+
+// Credential is the login for one deploy target. Other packages can read
+// User, but only this package should see the token.
+type Credential struct {
+	User  string
+	Token string // TODO(2): Unexport this field so other packages can't read the secret.
+}
+
+// newCredential returns a Credential for user with the given secret token.
+//
+// TODO(1): Export this function so other packages can call it.
+func newCredential(user, token string) Credential {
+	return Credential{User: user, Token: token}
+}
+
+// Header returns the value for an HTTP Authorization header: "Bearer <token>".
+func (c Credential) Header() string {
+	return "Bearer " + c.Token
+}
+
+// masked returns the credential in a form that is safe to print in logs,
+// such as "deploy-bot:s3****".
+//
+// TODO(1): Export this method.
+func (c Credential) masked() string {
+	return c.User + ":" + mask(c.Token)
+}
+
+// mask hides a token so it can be logged.
+func mask(token string) string {
+	// TODO(3): Return "****" for tokens of 4 characters or fewer. Otherwise
+	// keep the first 2 characters and add "****".
+	return token
+}

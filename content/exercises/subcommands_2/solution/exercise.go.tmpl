@@ -1,0 +1,114 @@
+// Package dispatch is the Gopherlings exercise "Subcommands: a command table and generated help".
+package dispatch
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"maps"
+	"slices"
+	"time"
+)
+
+// command is one nodectl subcommand: a one-line summary for the help text
+// and the function that does the work.
+type command struct {
+	summary string
+	run     func(args []string, stdout, stderr io.Writer) int
+}
+
+// commands maps each command name to its command.
+var commands = map[string]command{
+	"drain":    {summary: "evict all pods from a node", run: runDrain},
+	"cordon":   {summary: "stop scheduling new pods on a node", run: runCordon},
+	"uncordon": {summary: "allow new pods on a node again", run: runUncordon},
+}
+
+// Run is the whole nodectl program. args is os.Args[1:], so args[0] is the
+// command name. Run returns the exit code: 0 for success and 2 for a usage
+// error.
+func Run(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		writeUsage(stderr)
+		return 2
+	}
+	name := args[0]
+	if name == "help" || name == "-h" || name == "--help" {
+		writeUsage(stdout)
+		return 0
+	}
+	cmd, ok := commands[name]
+	if !ok {
+		fmt.Fprintf(stderr, "nodectl: unknown command %q\n", name)
+		writeUsage(stderr)
+		return 2
+	}
+	return cmd.run(args[1:], stdout, stderr)
+}
+
+// writeUsage writes the help text to w, listing every command in commands.
+func writeUsage(w io.Writer) {
+	fmt.Fprintln(w, "usage: nodectl <command> [flags] NODE")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "commands:")
+	// Map order is random; sorting keeps the help text the same every time.
+	for _, name := range slices.Sorted(maps.Keys(commands)) {
+		fmt.Fprintf(w, "  %-9s %s\n", name, commands[name].summary)
+	}
+}
+
+// runCordon handles "nodectl cordon NODE".
+func runCordon(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("cordon", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "nodectl: cordon needs exactly one NODE")
+		return 2
+	}
+	fmt.Fprintf(stdout, "cordoning %s\n", fs.Arg(0))
+	return 0
+}
+
+// runDrain handles "nodectl drain [-grace DURATION] NODE".
+func runDrain(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("drain", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	grace := fs.Duration("grace", 30*time.Second, "how long each pod gets to shut down")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "nodectl: drain needs exactly one NODE")
+		return 2
+	}
+	fmt.Fprintf(stdout, "draining %s (grace period %s)\n", fs.Arg(0), *grace)
+	return 0
+}
+
+// runUncordon handles "nodectl uncordon NODE".
+func runUncordon(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("uncordon", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "nodectl: uncordon needs exactly one NODE")
+		return 2
+	}
+	fmt.Fprintf(stdout, "uncordoning %s\n", fs.Arg(0))
+	return 0
+}

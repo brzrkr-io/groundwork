@@ -1,0 +1,65 @@
+package conversion
+
+import "testing"
+
+func TestMiBToGiB(t *testing.T) {
+	tests := []struct {
+		name string
+		mib  int
+		want float64
+	}{
+		{name: "one and a half", mib: 1536, want: 1.5},
+		{name: "two", mib: 2048, want: 2},
+		{name: "half", mib: 512, want: 0.5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MiBToGiB(tt.mib)
+			if got != tt.want {
+				t.Errorf("MiBToGiB(%d) = %v, want %v", tt.mib, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGiBString(t *testing.T) {
+	tests := []struct {
+		name string
+		mib  int
+		want string
+	}{
+		{name: "one and a half", mib: 1536, want: "1.5 GiB"},
+		{name: "whole number", mib: 3072, want: "3.0 GiB"},
+		{name: "rounds up", mib: 1000, want: "1.0 GiB"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GiBString(tt.mib)
+			if got != tt.want {
+				t.Errorf("GiBString(%d) = %q, want %q", tt.mib, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDiskLine(t *testing.T) {
+	tests := []struct {
+		name     string
+		mount    string
+		usedMiB  int
+		totalMiB int
+		want     string
+	}{
+		{name: "three quarters", mount: "/var", usedMiB: 1536, totalMiB: 2048, want: "/var: 1.5 GiB of 2.0 GiB used (75%)"},
+		{name: "two thirds", mount: "/data", usedMiB: 2048, totalMiB: 3072, want: "/data: 2.0 GiB of 3.0 GiB used (66%)"},
+		{name: "full", mount: "/", usedMiB: 1000, totalMiB: 1000, want: "/: 1.0 GiB of 1.0 GiB used (100%)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DiskLine(tt.mount, tt.usedMiB, tt.totalMiB)
+			if got != tt.want {
+				t.Errorf("DiskLine(%q, %d, %d) = %q, want %q", tt.mount, tt.usedMiB, tt.totalMiB, got, tt.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,36 @@
+// Package ranking is the Gopherlings exercise "Sorting".
+package ranking
+
+import (
+	"cmp"
+	"maps"
+	"slices"
+)
+
+// SortedHosts returns a copy of hosts in alphabetical order. The caller's
+// slice keeps its original order.
+func SortedHosts(hosts []string) []string {
+	out := slices.Clone(hosts)
+	slices.Sort(out)
+	return out
+}
+
+// ServiceNames returns the keys of errs (the service names) in alphabetical
+// order.
+func ServiceNames(errs map[string]int) []string {
+	return slices.Sorted(maps.Keys(errs))
+}
+
+// RankByErrors returns the service names in errs, most errors first.
+// Services with the same number of errors are in alphabetical order.
+func RankByErrors(errs map[string]int) []string {
+	names := ServiceNames(errs)
+	slices.SortFunc(names, func(a, b string) int {
+		// b before a: the bigger count comes first.
+		if c := cmp.Compare(errs[b], errs[a]); c != 0 {
+			return c
+		}
+		return cmp.Compare(a, b)
+	})
+	return names
+}

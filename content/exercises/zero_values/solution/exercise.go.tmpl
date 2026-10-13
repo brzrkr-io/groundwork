@@ -1,0 +1,34 @@
+// Package zerovalues is the Gopherlings exercise "Zero values: default the config".
+package zerovalues
+
+import "fmt"
+
+// ZeroSummary shows the zero value of four common types.
+func ZeroSummary() string {
+	var port int
+	var host string
+	var debug bool
+	var ratio float64
+
+	return fmt.Sprintf("port=%d host=%q debug=%t ratio=%v", port, host, debug, ratio)
+}
+
+// PortOrDefault returns port, or 8080 when port is unset (0).
+func PortOrDefault(port int) int {
+	if port == 0 {
+		return 8080
+	}
+	return port
+}
+
+// ConnectionString fills in defaults and returns "host:port timeout=Ns".
+func ConnectionString(host string, port, timeoutSeconds int) string {
+	if host == "" {
+		host = "localhost"
+	}
+	port = PortOrDefault(port)
+	if timeoutSeconds == 0 {
+		timeoutSeconds = 30
+	}
+	return fmt.Sprintf("%s:%d timeout=%ds", host, port, timeoutSeconds)
+}

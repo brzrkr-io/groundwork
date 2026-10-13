@@ -1,0 +1,113 @@
+package ipaddr
+
+import "testing"
+
+func TestClassify(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"127.0.0.1", "ipv4 loopback"},
+		{"127.0.0.53", "ipv4 loopback"},
+		{"10.20.30.40", "ipv4 private"},
+		{"172.17.0.2", "ipv4 private"},
+		{"192.168.1.1", "ipv4 private"},
+		{"8.8.8.8", "ipv4 public"},
+		{"::1", "ipv6 loopback"},
+		{"fd00::5", "ipv6 private"},
+		{"2001:4860:4860::8888", "ipv6 public"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := Classify(tt.in)
+			if err != nil {
+				t.Fatalf("Classify(%q) returned error %v, want nil", tt.in, err)
+			}
+			if got != tt.want {
+				t.Errorf("Classify(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+
+	for _, bad := range []string{"not-an-ip", "999.1.1.1", "10.0.0.0/8"} {
+		t.Run(bad, func(t *testing.T) {
+			got, err := Classify(bad)
+			if err == nil {
+				t.Errorf("Classify(%q) = %q, nil; want an error", bad, got)
+			}
+		})
+	}
+}
+
+func TestAllowed(t *testing.T) {
+	office := []string{"192.168.0.0/16", "10.0.0.0/8"}
+	tests := []struct {
+		name      string
+		ip        string
+		allowlist []string
+		want      bool
+		wantErr   bool
+	}{
+		{"in second range", "10.0.3.7", office, true, false},
+		{"in first range", "192.168.50.2", office, true, false},
+		{"not in any range", "8.8.8.8", office, false, false},
+		{"just outside /24", "10.1.1.0", []string{"10.1.0.0/24"}, false, false},
+		{"single host /32", "203.0.113.9", []string{"203.0.113.9/32"}, true, false},
+		{"ipv6 range", "2001:db8::42", []string{"2001:db8::/32"}, true, false},
+		{"ipv6 address, ipv4 range", "::1", []string{"0.0.0.0/0"}, false, false},
+		{"empty allowlist", "10.0.3.7", nil, false, false},
+		{"bad ip", "10.0.3", office, false, true},
+		{"bad cidr", "10.0.3.7", []string{"10.0.0.0/99"}, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Allowed(tt.ip, tt.allowlist)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Allowed(%q, %q) = %v, nil; want an error", tt.ip, tt.allowlist, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Allowed(%q, %q) returned error %v, want nil", tt.ip, tt.allowlist, err)
+			}
+			if got != tt.want {
+				t.Errorf("Allowed(%q, %q) = %v, want %v", tt.ip, tt.allowlist, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOverlaps(t *testing.T) {
+	tests := []struct {
+		name    string
+		a, b    string
+		want    bool
+		wantErr bool
+	}{
+		{"one inside the other", "10.0.0.0/16", "10.0.5.0/24", true, false},
+		{"other way round", "10.0.5.0/24", "10.0.0.0/16", true, false},
+		{"same range", "172.31.0.0/16", "172.31.0.0/16", true, false},
+		{"neighbours", "10.0.0.0/16", "10.1.0.0/16", false, false},
+		{"far apart", "10.0.0.0/8", "192.168.0.0/16", false, false},
+		{"bad second", "10.0.0.0/16", "banana", false, true},
+		{"bad first", "10.0.0.0", "10.0.0.0/16", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Overlaps(tt.a, tt.b)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Overlaps(%q, %q) = %v, nil; want an error", tt.a, tt.b, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Overlaps(%q, %q) returned error %v, want nil", tt.a, tt.b, err)
+			}
+			if got != tt.want {
+				t.Errorf("Overlaps(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}

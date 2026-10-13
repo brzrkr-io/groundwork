@@ -1,0 +1,70 @@
+package errvalues2
+
+import "testing"
+
+// errText turns an error into text for comparing: "<nil>" means no error.
+func errText(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	return err.Error()
+}
+
+type replicaCase struct {
+	in      string
+	want    int
+	wantErr string
+}
+
+func checkParseReplicas(t *testing.T, tests []replicaCase) {
+	t.Helper()
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := ParseReplicas(tt.in)
+			if got != tt.want || errText(err) != tt.wantErr {
+				t.Errorf("ParseReplicas(%q) = %d, %q, want %d, %q", tt.in, got, errText(err), tt.want, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseReplicasNotANumber(t *testing.T) {
+	checkParseReplicas(t, []replicaCase{
+		{"4", 4, "<nil>"},
+		{"12", 12, "<nil>"},
+		{"three", 0, `replicas "three" is not a number`},
+		{"", 0, `replicas "" is not a number`},
+	})
+}
+
+func TestParseReplicasNegative(t *testing.T) {
+	checkParseReplicas(t, []replicaCase{
+		{"0", 0, "<nil>"},
+		{"-2", 0, "replicas -2 must not be negative"},
+		{"-10", 0, "replicas -10 must not be negative"},
+	})
+}
+
+func TestScale(t *testing.T) {
+	tests := []struct {
+		current int
+		input   string
+		want    string
+		wantErr string
+	}{
+		{3, "5", "scaled from 3 to 5 replicas", "<nil>"},
+		{4, "0", "scaled from 4 to 0 replicas", "<nil>"},
+		{3, "3", "already at 3 replicas", "<nil>"},
+		{3, "lots", "", `scale: replicas "lots" is not a number`},
+		{0, "", "", `scale: replicas "" is not a number`},
+		{3, "-1", "", "scale: replicas -1 must not be negative"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := Scale(tt.current, tt.input)
+			if got != tt.want || errText(err) != tt.wantErr {
+				t.Errorf("Scale(%d, %q) = %q, %q, want %q, %q", tt.current, tt.input, got, errText(err), tt.want, tt.wantErr)
+			}
+		})
+	}
+}

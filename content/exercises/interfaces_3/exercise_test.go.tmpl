@@ -1,0 +1,140 @@
+package interfaces3
+
+import (
+	"maps"
+	"testing"
+)
+
+func TestMemoryStoreGet(t *testing.T) {
+	store := MemoryStore{Values: map[string]string{
+		"region":    "eu-west-1",
+		"log_level": "info",
+		"proxy":     "",
+	}}
+
+	tests := []struct {
+		name      string
+		store     MemoryStore
+		key       string
+		wantValue string
+		wantOK    bool
+	}{
+		{"region", store, "region", "eu-west-1", true},
+		{"log level", store, "log_level", "info", true},
+		{"set but empty", store, "proxy", "", true},
+		{"missing key", store, "db_host", "", false},
+		{"no values at all", MemoryStore{}, "region", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value, ok := tt.store.Get(tt.key)
+			if value != tt.wantValue || ok != tt.wantOK {
+				t.Errorf("%#v.Get(%q) = (%q, %t), want (%q, %t)",
+					tt.store, tt.key, value, ok, tt.wantValue, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestResolve(t *testing.T) {
+	// MemoryStore stands in for the real EnvStore, so this test doesn't
+	// depend on the environment variables of the machine running it.
+	store := MemoryStore{Values: map[string]string{
+		"db_host":   "db-1.internal",
+		"db_port":   "5432",
+		"region":    "us-east-1",
+		"log_level": "debug",
+	}}
+
+	tests := []struct {
+		name    string
+		keys    []string
+		want    map[string]string
+		wantErr string // "" means no error
+	}{
+		{
+			name: "database settings",
+			keys: []string{"db_host", "db_port"},
+			want: map[string]string{"db_host": "db-1.internal", "db_port": "5432"},
+		},
+		{
+			name: "three keys",
+			keys: []string{"region", "log_level", "db_host"},
+			want: map[string]string{"region": "us-east-1", "log_level": "debug", "db_host": "db-1.internal"},
+		},
+		{
+			name: "no keys",
+			keys: []string{},
+			want: map[string]string{},
+		},
+		{
+			name:    "last key missing",
+			keys:    []string{"db_host", "db_password"},
+			wantErr: `missing config key "db_password"`,
+		},
+		{
+			name:    "first key missing",
+			keys:    []string{"tls_cert", "region"},
+			wantErr: `missing config key "tls_cert"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Resolve(store, tt.keys)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Errorf("Resolve(store, %q) error = %v, want %q", tt.keys, err, tt.wantErr)
+				}
+				if got != nil {
+					t.Errorf("Resolve(store, %q) = %v, want nil when a key is missing", tt.keys, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Resolve(store, %q) error = %q, want no error", tt.keys, err)
+			}
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("Resolve(store, %q) = %v, want %v", tt.keys, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLayeredGet(t *testing.T) {
+	overrides := MemoryStore{Values: map[string]string{
+		"log_level": "debug",
+	}}
+	defaults := MemoryStore{Values: map[string]string{
+		"log_level": "info",
+		"region":    "eu-west-1",
+	}}
+
+	tests := []struct {
+		name      string
+		layers    []Store
+		key       string
+		wantValue string
+		wantOK    bool
+	}{
+		{"override wins", []Store{overrides, defaults}, "log_level", "debug", true},
+		{"falls back to defaults", []Store{overrides, defaults}, "region", "eu-west-1", true},
+		{"order matters", []Store{defaults, overrides}, "log_level", "info", true},
+		{"missing everywhere", []Store{overrides, defaults}, "db_host", "", false},
+		{"no layers", []Store{}, "region", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Ask "does Layered satisfy Store?" without breaking the build
+			// while the method is still missing.
+			s, ok := any(Layered{Layers: tt.layers}).(Store)
+			if !ok {
+				t.Fatal("Layered does not satisfy Store yet: it needs a method Get(key string) (string, bool)")
+			}
+			value, ok := s.Get(tt.key)
+			if value != tt.wantValue || ok != tt.wantOK {
+				t.Errorf("Layered{%#v}.Get(%q) = (%q, %t), want (%q, %t)",
+					tt.layers, tt.key, value, ok, tt.wantValue, tt.wantOK)
+			}
+		})
+	}
+}

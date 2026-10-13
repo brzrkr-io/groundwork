@@ -1,0 +1,54 @@
+// Package ipaddr is the Gopherlings exercise "CIDRs: normalize and audit subnet rules".
+package ipaddr
+
+import (
+	"fmt"
+	"net/netip"
+)
+
+// NormalizeCIDR returns the standard form of cidr, with the free bits
+// zeroed: "10.1.2.3/16" becomes "10.1.0.0/16".
+func NormalizeCIDR(cidr string) (string, error) {
+	p, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return "", err
+	}
+	return p.Masked().String(), nil
+}
+
+// FindOverlaps returns "A overlaps B" for each pair of overlapping CIDRs,
+// where A comes before B in cidrs.
+func FindOverlaps(cidrs []string) ([]string, error) {
+	var prefixes []netip.Prefix
+	for _, c := range cidrs {
+		p, err := netip.ParsePrefix(c)
+		if err != nil {
+			return nil, err
+		}
+		prefixes = append(prefixes, p)
+	}
+
+	var found []string
+	for i := range prefixes {
+		// Start after i: skip comparing a CIDR with itself and with the
+		// earlier CIDRs, whose pairs were already checked.
+		for j := i + 1; j < len(prefixes); j++ {
+			if prefixes[i].Overlaps(prefixes[j]) {
+				found = append(found, fmt.Sprintf("%s overlaps %s", cidrs[i], cidrs[j]))
+			}
+		}
+	}
+	return found, nil
+}
+
+// Size returns the number of addresses in an IPv4 CIDR.
+func Size(cidr string) (int, error) {
+	p, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return 0, err
+	}
+	if !p.Addr().Is4() {
+		return 0, fmt.Errorf("size: CIDR is not IPv4")
+	}
+	return 1 << (32 - p.Bits()), nil
+}

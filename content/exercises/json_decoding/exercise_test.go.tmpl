@@ -1,0 +1,213 @@
+package config
+
+import (
+	"encoding/json"
+	"errors"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+const fullConfig = `{"service":"checkout","port":8080,"replicas":3,` +
+	`"regions":["eu-west-1","us-east-1"],` +
+	`"healthcheck":{"path":"/healthz","interval":"10s"},` +
+	`"labels":{"team":"payments","tier":"backend"}}`
+
+func TestParseConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want Config
+	}{
+		{
+			name: "full config",
+			data: fullConfig,
+			want: Config{
+				Service:     "checkout",
+				Port:        8080,
+				Replicas:    3,
+				Regions:     []string{"eu-west-1", "us-east-1"},
+				HealthCheck: HealthCheck{Path: "/healthz", Interval: "10s"},
+				Labels:      map[string]string{"team": "payments", "tier": "backend"},
+			},
+		},
+		{
+			name: "missing replicas defaults to 1",
+			data: `{"service":"checkout","port":8080}`,
+			want: Config{Service: "checkout", Port: 8080, Replicas: 1},
+		},
+		{
+			name: "zero replicas defaults to 1",
+			data: `{"service":"search","port":9200,"replicas":0}`,
+			want: Config{Service: "search", Port: 9200, Replicas: 1},
+		},
+		{
+			name: "replicas kept when set",
+			data: `{"service":"checkout","replicas":5}`,
+			want: Config{Service: "checkout", Replicas: 5},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseConfig([]byte(tt.data))
+			if err != nil {
+				t.Fatalf("ParseConfig(%q) error = %v, want nil", tt.data, err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ParseConfig(%q) = %+v, want %+v", tt.data, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("broken JSON is a wrapped syntax error", func(t *testing.T) {
+		data := `{"service": checkout}`
+		got, err := ParseConfig([]byte(data))
+		if err == nil {
+			t.Fatalf("ParseConfig(%q) error = nil, want an error", data)
+		}
+		if !strings.HasPrefix(err.Error(), "parse config: ") {
+			t.Errorf("ParseConfig(%q) error = %q, want it to start with %q", data, err, "parse config: ")
+		}
+		if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
+			t.Errorf("ParseConfig(%q) error = %v, want errors.AsType to find a *json.SyntaxError (did you use %%w?)", data, err)
+		}
+		if !reflect.DeepEqual(got, Config{}) {
+			t.Errorf("ParseConfig(%q) = %+v, want Config{} on error", data, got)
+		}
+	})
+
+	t.Run("wrong type is an error", func(t *testing.T) {
+		data := `{"service":"checkout","port":"8080"}`
+		_, err := ParseConfig([]byte(data))
+		if err == nil {
+			t.Fatalf("ParseConfig(%q) error = nil, want an error", data)
+		}
+		if !strings.HasPrefix(err.Error(), "parse config: ") {
+			t.Errorf("ParseConfig(%q) error = %q, want it to start with %q", data, err, "parse config: ")
+		}
+	})
+}
+
+func TestLoadStrict(t *testing.T) {
+	valid := []struct {
+		name string
+		data string
+		want Config
+	}{
+		{
+			name: "small config",
+			data: `{"service":"api","replicas":2}`,
+			want: Config{Service: "api", Replicas: 2},
+		},
+		{
+			name: "full config",
+			data: fullConfig,
+			want: Config{
+				Service:     "checkout",
+				Port:        8080,
+				Replicas:    3,
+				Regions:     []string{"eu-west-1", "us-east-1"},
+				HealthCheck: HealthCheck{Path: "/healthz", Interval: "10s"},
+				Labels:      map[string]string{"team": "payments", "tier": "backend"},
+			},
+		},
+	}
+	for _, tt := range valid {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := LoadStrict(strings.NewReader(tt.data))
+			if err != nil {
+				t.Fatalf("LoadStrict(%q) error = %v, want nil", tt.data, err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("LoadStrict(%q) = %+v, want %+v", tt.data, got, tt.want)
+			}
+		})
+	}
+
+	typos := []struct {
+		name string
+		data string
+		key  string
+	}{
+		{name: "replica instead of replicas", data: `{"service":"api","replica":2}`, key: "replica"},
+		{name: "regoins instead of regions", data: `{"service":"api","regoins":["eu-west-1"]}`, key: "regoins"},
+	}
+	for _, tt := range typos {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := LoadStrict(strings.NewReader(tt.data))
+			if err == nil {
+				t.Fatalf("LoadStrict(%q) error = nil, want an unknown field error", tt.data)
+			}
+			if !strings.HasPrefix(err.Error(), "load config: ") {
+				t.Errorf("LoadStrict(%q) error = %q, want it to start with %q", tt.data, err, "load config: ")
+			}
+			wantPart := `unknown field "` + tt.key + `"`
+			if !strings.Contains(err.Error(), wantPart) {
+				t.Errorf("LoadStrict(%q) error = %q, want it to contain %q", tt.data, err, wantPart)
+			}
+			if !reflect.DeepEqual(got, Config{}) {
+				t.Errorf("LoadStrict(%q) = %+v, want Config{} on error", tt.data, got)
+			}
+		})
+	}
+}
+
+func TestSeverity(t *testing.T) {
+	found := []struct {
+		name string
+		data string
+		want string
+	}{
+		{
+			name: "critical",
+			data: `{"status":"firing","labels":{"alertname":"DiskFull","severity":"critical"}}`,
+			want: "critical",
+		},
+		{
+			name: "warning",
+			data: `{"labels":{"severity":"warning","host":"web-3"},"value":97.5}`,
+			want: "warning",
+		},
+	}
+	for _, tt := range found {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Severity([]byte(tt.data))
+			if err != nil {
+				t.Fatalf("Severity(%q) error = %v, want nil", tt.data, err)
+			}
+			if got != tt.want {
+				t.Errorf("Severity(%q) = %q, want %q", tt.data, got, tt.want)
+			}
+		})
+	}
+
+	missing := []struct {
+		name string
+		data string
+	}{
+		{name: "no labels", data: `{"status":"firing"}`},
+		{name: "labels is a string", data: `{"labels":"severity=critical"}`},
+		{name: "no severity", data: `{"labels":{"alertname":"DiskFull"}}`},
+		{name: "severity is a number", data: `{"labels":{"severity":3}}`},
+		{name: "severity is null", data: `{"labels":{"severity":null}}`},
+	}
+	for _, tt := range missing {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Severity([]byte(tt.data))
+			if !errors.Is(err, ErrNoSeverity) {
+				t.Errorf("Severity(%q) error = %v, want ErrNoSeverity", tt.data, err)
+			}
+			if got != "" {
+				t.Errorf("Severity(%q) = %q, want %q", tt.data, got, "")
+			}
+		})
+	}
+
+	t.Run("broken JSON", func(t *testing.T) {
+		data := `not json`
+		_, err := Severity([]byte(data))
+		if _, ok := errors.AsType[*json.SyntaxError](err); !ok {
+			t.Errorf("Severity(%q) error = %v, want a *json.SyntaxError", data, err)
+		}
+	})
+}

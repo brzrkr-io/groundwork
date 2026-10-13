@@ -1,0 +1,24 @@
+// Package variables is the Gopherlings exercise "Variables".
+package variables
+
+// ServiceLabel returns the label for a service in an environment, such as
+// "production/api".
+func ServiceLabel(name, env string) string {
+	return env + "/" + name
+}
+
+// ImageRef returns a container image reference, such as
+// "ghcr.io/acme/api:v1.4.2".
+func ImageRef(registry, name, tag string) string {
+	ref := registry + "/" + name + ":" + tag
+	return ref
+}
+
+// DeployPath returns the deploy API path for a service in an environment,
+// such as "/v1/environments/production/services/api".
+func DeployPath(env, service string) string {
+	path := "/v1"
+	path = path + "/environments/" + env
+	path = path + "/services/" + service
+	return path
+}

@@ -1,0 +1,92 @@
+package methods3
+
+import (
+	"slices"
+	"testing"
+)
+
+// fleet is the inventory most tests ask questions about.
+var fleet = Inventory{Hosts: []Host{
+	{Name: "web-1", Region: "eu-west-1", Healthy: true},
+	{Name: "web-2", Region: "eu-west-1", Healthy: false},
+	{Name: "db-1", Region: "us-east-1", Healthy: true},
+	{Name: "web-3", Region: "eu-west-1", Healthy: true},
+	{Name: "cache-1", Region: "us-east-1", Healthy: false},
+}}
+
+func TestHealthyCount(t *testing.T) {
+	tests := []struct {
+		name string
+		inv  Inventory
+		want int
+	}{
+		{"mixed fleet", fleet, 3},
+		{"one healthy host", Inventory{Hosts: []Host{{Name: "web-1", Region: "eu-west-1", Healthy: true}}}, 1},
+		{"all unhealthy", Inventory{Hosts: []Host{
+			{Name: "web-1", Region: "eu-west-1", Healthy: false},
+			{Name: "web-2", Region: "eu-west-1", Healthy: false},
+		}}, 0},
+		{"empty inventory", Inventory{}, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.inv.HealthyCount(); got != tc.want {
+				t.Errorf("HealthyCount() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInRegion(t *testing.T) {
+	tests := []struct {
+		name   string
+		inv    Inventory
+		region string
+		want   []Host
+	}{
+		{"eu-west-1", fleet, "eu-west-1", []Host{
+			{Name: "web-1", Region: "eu-west-1", Healthy: true},
+			{Name: "web-2", Region: "eu-west-1", Healthy: false},
+			{Name: "web-3", Region: "eu-west-1", Healthy: true},
+		}},
+		{"us-east-1", fleet, "us-east-1", []Host{
+			{Name: "db-1", Region: "us-east-1", Healthy: true},
+			{Name: "cache-1", Region: "us-east-1", Healthy: false},
+		}},
+		{"no hosts in region", fleet, "ap-south-1", nil},
+		{"empty inventory", Inventory{}, "eu-west-1", nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.inv.InRegion(tc.region)
+			// slices.Equal treats nil and an empty slice as equal.
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("InRegion(%q) = %v, want %v", tc.region, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFind(t *testing.T) {
+	tests := []struct {
+		name      string
+		inv       Inventory
+		host      string
+		wantHost  Host
+		wantFound bool
+	}{
+		{"exact name", fleet, "db-1", Host{Name: "db-1", Region: "us-east-1", Healthy: true}, true},
+		{"upper case", fleet, "WEB-2", Host{Name: "web-2", Region: "eu-west-1", Healthy: false}, true},
+		{"mixed case", fleet, "Cache-1", Host{Name: "cache-1", Region: "us-east-1", Healthy: false}, true},
+		{"unknown host", fleet, "web-9", Host{}, false},
+		{"empty inventory", Inventory{}, "web-1", Host{}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, found := tc.inv.Find(tc.host)
+			if got != tc.wantHost || found != tc.wantFound {
+				t.Errorf("Find(%q) = %v, %v, want %v, %v", tc.host, got, found, tc.wantHost, tc.wantFound)
+			}
+		})
+	}
+}

@@ -1,0 +1,143 @@
+package portcheck
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"slices"
+	"testing"
+	"time"
+)
+
+func TestAddress(t *testing.T) {
+	tests := []struct {
+		host string
+		port int
+		want string
+	}{
+		{"db.internal", 5432, "db.internal:5432"},
+		{"10.0.0.5", 6379, "10.0.0.5:6379"},
+		{"::1", 5432, "[::1]:5432"},
+		{"fd00::5", 443, "[fd00::5]:443"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := Address(tt.host, tt.port); got != tt.want {
+				t.Errorf("Address(%q, %d) = %q, want %q", tt.host, tt.port, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseTarget(t *testing.T) {
+	good := []struct {
+		target string
+		host   string
+		port   int
+	}{
+		{"db.internal:5432", "db.internal", 5432},
+		{"10.0.0.5:1", "10.0.0.5", 1},
+		{"[::1]:6379", "::1", 6379},
+		{"cache:65535", "cache", 65535},
+	}
+	for _, tt := range good {
+		t.Run(tt.target, func(t *testing.T) {
+			host, port, err := ParseTarget(tt.target)
+			if err != nil {
+				t.Fatalf("ParseTarget(%q) returned error %v, want nil", tt.target, err)
+			}
+			if host != tt.host || port != tt.port {
+				t.Errorf("ParseTarget(%q) = %q, %d, want %q, %d", tt.target, host, port, tt.host, tt.port)
+			}
+		})
+	}
+
+	bad := []string{
+		"db.internal",       // no port
+		"::1:5432",          // IPv6 without brackets
+		":5432",             // no host
+		"db.internal:http",  // port is not a number
+		"db.internal:0",     // port too small
+		"db.internal:65536", // port too big
+		"db.internal:-1",    // negative port
+	}
+	for _, target := range bad {
+		t.Run(target, func(t *testing.T) {
+			host, port, err := ParseTarget(target)
+			if err == nil {
+				t.Errorf("ParseTarget(%q) = %q, %d, nil, want an error", target, host, port)
+			}
+		})
+	}
+}
+
+// fakeConn is a pretend connection that only remembers whether it was closed.
+type fakeConn struct {
+	net.Conn
+	closed bool
+}
+
+func (c *fakeConn) Close() error {
+	c.closed = true
+	return nil
+}
+
+func TestWaitForPort(t *testing.T) {
+	errRefused := errors.New("connection refused")
+
+	tests := []struct {
+		name       string
+		failures   int // how many dials fail before one succeeds
+		attempts   int
+		wantDials  int
+		wantSleeps int
+		wantErr    string // "" means WaitForPort should return nil
+	}{
+		{"ready at once", 0, 3, 1, 0, ""},
+		{"ready on the third try", 2, 5, 3, 2, ""},
+		{"ready on the last try", 2, 3, 3, 2, ""},
+		{"never ready", 10, 3, 3, 2, "db:5432 not ready after 3 attempts: connection refused"},
+		{"never ready, two tries", 10, 2, 2, 1, "db:5432 not ready after 2 attempts: connection refused"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dials := 0
+			conn := &fakeConn{}
+			dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+				dials++
+				if network != "tcp" || address != "db:5432" {
+					t.Errorf("dial(%q, %q), want dial(%q, %q)", network, address, "tcp", "db:5432")
+				}
+				if dials <= tt.failures {
+					return nil, errRefused
+				}
+				return conn, nil
+			}
+			var slept []time.Duration
+			sleep := func(d time.Duration) { slept = append(slept, d) }
+
+			err := WaitForPort(dial, "db:5432", tt.attempts, sleep)
+			call := fmt.Sprintf("WaitForPort(dial, %q, %d, sleep)", "db:5432", tt.attempts)
+
+			switch {
+			case tt.wantErr == "" && err != nil:
+				t.Errorf("%s = %q, want nil", call, err.Error())
+			case tt.wantErr != "" && err == nil:
+				t.Errorf("%s = nil, want error %q", call, tt.wantErr)
+			case tt.wantErr != "" && err.Error() != tt.wantErr:
+				t.Errorf("%s = %q, want %q", call, err.Error(), tt.wantErr)
+			}
+			if dials != tt.wantDials {
+				t.Errorf("%s dialed %d times, want %d", call, dials, tt.wantDials)
+			}
+			wantSlept := slices.Repeat([]time.Duration{time.Second}, tt.wantSleeps)
+			if !slices.Equal(slept, wantSlept) {
+				t.Errorf("%s slept %v, want %v", call, slept, wantSlept)
+			}
+			if tt.wantErr == "" && !conn.closed {
+				t.Errorf("%s left the connection open, want it closed", call)
+			}
+		})
+	}
+}

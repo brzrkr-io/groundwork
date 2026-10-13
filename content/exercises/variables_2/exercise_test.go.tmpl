@@ -1,0 +1,64 @@
+package variables
+
+import "testing"
+
+func TestFQDN(t *testing.T) {
+	tests := []struct {
+		name   string
+		host   string
+		domain string
+		want   string
+	}{
+		{name: "prod web host", host: "web-01", domain: "prod.example.com", want: "web-01.prod.example.com"},
+		{name: "staging db host", host: "db-02", domain: "staging.example.com", want: "db-02.staging.example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FQDN(tt.host, tt.domain)
+			if got != tt.want {
+				t.Errorf("FQDN(%q, %q) = %q, want %q", tt.host, tt.domain, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLogPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		service string
+		date    string
+		want    string
+	}{
+		{name: "nginx", service: "nginx", date: "2026-10-11", want: "/var/log/nginx/2026-10-11.log"},
+		{name: "api", service: "api", date: "2026-01-31", want: "/var/log/api/2026-01-31.log"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := LogPath(tt.service, tt.date)
+			if got != tt.want {
+				t.Errorf("LogPath(%q, %q) = %q, want %q", tt.service, tt.date, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAlertTitle(t *testing.T) {
+	tests := []struct {
+		name     string
+		severity string
+		service  string
+		summary  string
+		want     string
+	}{
+		{name: "critical disk", severity: "critical", service: "api", summary: "disk almost full", want: "[critical] api: disk almost full"},
+		{name: "slow billing", severity: "warning", service: "billing", summary: "slow responses", want: "[warning] billing: slow responses"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := AlertTitle(tt.severity, tt.service, tt.summary)
+			if got != tt.want {
+				t.Errorf("AlertTitle(%q, %q, %q) = %q, want %q", tt.severity, tt.service, tt.summary, got, tt.want)
+			}
+		})
+	}
+}

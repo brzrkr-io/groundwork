@@ -1,0 +1,151 @@
+package signals
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"slices"
+	"strings"
+	"syscall"
+	"testing"
+)
+
+func TestDrain(t *testing.T) {
+	tests := []struct {
+		name     string
+		hosts    []string
+		cancelOn string // the fake drain cancels ctx while draining this host
+		want     int
+		wantErr  error
+		wantLog  string
+	}{
+		{
+			name:    "no signal drains everything",
+			hosts:   []string{"web-1", "web-2"},
+			want:    2,
+			wantLog: "drained web-1\ndrained web-2\n",
+		},
+		{
+			name:     "cancel during web-2 of 4",
+			hosts:    []string{"web-1", "web-2", "web-3", "web-4"},
+			cancelOn: "web-2",
+			want:     2,
+			wantErr:  context.Canceled,
+			wantLog:  "drained web-1\ndrained web-2\nstopping: 2 hosts not drained\n",
+		},
+		{
+			name:     "cancel during db-1 of 4",
+			hosts:    []string{"db-1", "db-2", "db-3", "db-4"},
+			cancelOn: "db-1",
+			want:     1,
+			wantErr:  context.Canceled,
+			wantLog:  "drained db-1\nstopping: 3 hosts not drained\n",
+		},
+		{
+			name:     "cancelled before starting",
+			hosts:    []string{"cache-1", "cache-2", "cache-3"},
+			cancelOn: "before",
+			want:     0,
+			wantErr:  context.Canceled,
+			wantLog:  "stopping: 3 hosts not drained\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tt.cancelOn == "before" {
+				cancel()
+			}
+
+			var started []string
+			drain := func(host string) error {
+				started = append(started, host)
+				if host == tt.cancelOn {
+					cancel() // a signal arrives while this host is being drained
+				}
+				return nil
+			}
+
+			var log strings.Builder
+			got, err := Drain(ctx, tt.hosts, drain, &log)
+			if got != tt.want || !errors.Is(err, tt.wantErr) {
+				t.Errorf("Drain(%q) = %d, %v, want %d, %v", tt.hosts, got, err, tt.want, tt.wantErr)
+			}
+			if wantStarted := tt.hosts[:tt.want]; !slices.Equal(started, wantStarted) {
+				t.Errorf("Drain(%q) started hosts %q, want %q", tt.hosts, started, wantStarted)
+			}
+			if log.String() != tt.wantLog {
+				t.Errorf("Drain(%q) log = %q, want %q", tt.hosts, log.String(), tt.wantLog)
+			}
+		})
+	}
+}
+
+func TestExitCode(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"success", nil, 0},
+		{"cancelled", context.Canceled, 130},
+		{"wrapped cancel", fmt.Errorf("drain: %w", context.Canceled), 130},
+		{"plain failure", errors.New("disk full"), 1},
+		{"wrapped failure", fmt.Errorf("drain web-1: %w", errors.New("timeout")), 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ExitCode(tt.err); got != tt.want {
+				t.Errorf("ExitCode(%v) = %d, want %d", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWatchSignals(t *testing.T) {
+	const (
+		firstInt  = "received interrupt: finishing current host (send again to force quit)\n"
+		firstTerm = "received terminated: finishing current host (send again to force quit)\n"
+		againInt  = "received interrupt again: forcing exit\n"
+		againTerm = "received terminated again: forcing exit\n"
+	)
+	tests := []struct {
+		name       string
+		send       []os.Signal
+		wantCancel int
+		wantForce  int
+		wantLog    string
+	}{
+		{"no signals", nil, 0, 0, ""},
+		{"one Ctrl-C", []os.Signal{os.Interrupt}, 1, 0, firstInt},
+		{"one SIGTERM", []os.Signal{syscall.SIGTERM}, 1, 0, firstTerm},
+		{"two Ctrl-C", []os.Signal{os.Interrupt, os.Interrupt}, 1, 1, firstInt + againInt},
+		{"two SIGTERM", []os.Signal{syscall.SIGTERM, syscall.SIGTERM}, 1, 1, firstTerm + againTerm},
+		{"third signal is ignored", []os.Signal{os.Interrupt, os.Interrupt, os.Interrupt}, 1, 1, firstInt + againInt},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Put the signals in a buffered channel, then close it so the
+			// range loop in WatchSignals ends.
+			sigs := make(chan os.Signal, len(tt.send))
+			for _, s := range tt.send {
+				sigs <- s
+			}
+			close(sigs)
+
+			cancels, forces := 0, 0
+			var log strings.Builder
+			WatchSignals(sigs, func() { cancels++ }, func() { forces++ }, &log)
+
+			if cancels != tt.wantCancel || forces != tt.wantForce {
+				t.Errorf("WatchSignals(%v) called cancel %d and force %d times, want %d and %d",
+					tt.send, cancels, forces, tt.wantCancel, tt.wantForce)
+			}
+			if log.String() != tt.wantLog {
+				t.Errorf("WatchSignals(%v) log = %q, want %q", tt.send, log.String(), tt.wantLog)
+			}
+		})
+	}
+}

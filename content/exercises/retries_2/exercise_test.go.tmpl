@@ -1,0 +1,222 @@
+package retry
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+// fakeSleeper records every wait it is asked for and returns at once.
+type fakeSleeper struct {
+	slept []time.Duration
+}
+
+func (f *fakeSleeper) Sleep(ctx context.Context, d time.Duration) error {
+	f.slept = append(f.slept, d)
+	return nil
+}
+
+var (
+	errFlaky     = errors.New("flaky")
+	errForbidden = errors.New("forbidden")
+)
+
+func TestDo(t *testing.T) {
+	tests := []struct {
+		name        string
+		maxAttempts int
+		failures    int   // how many calls fail before op succeeds
+		failWith    error // what the failing calls wrap
+		wantCalls   int
+		wantSlept   []time.Duration
+		wantErr     string // "" means nil
+	}{
+		{
+			name:        "gives up after 3 attempts",
+			maxAttempts: 3,
+			failures:    10,
+			failWith:    errFlaky,
+			wantCalls:   3,
+			wantSlept:   []time.Duration{time.Second, 2 * time.Second},
+			wantErr:     "call 3: flaky",
+		},
+		{
+			name:        "gives up after 5 attempts",
+			maxAttempts: 5,
+			failures:    10,
+			failWith:    errFlaky,
+			wantCalls:   5,
+			wantSlept:   []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 4 * time.Second},
+			wantErr:     "call 5: flaky",
+		},
+		{
+			name:        "one attempt means no retries",
+			maxAttempts: 1,
+			failures:    10,
+			failWith:    errFlaky,
+			wantCalls:   1,
+			wantSlept:   nil,
+			wantErr:     "call 1: flaky",
+		},
+		{
+			name:        "succeeds on the last attempt",
+			maxAttempts: 3,
+			failures:    2,
+			failWith:    errFlaky,
+			wantCalls:   3,
+			wantSlept:   []time.Duration{time.Second, 2 * time.Second},
+			wantErr:     "",
+		},
+		{
+			name:        "error that should not be retried",
+			maxAttempts: 3,
+			failures:    10,
+			failWith:    errForbidden,
+			wantCalls:   1,
+			wantSlept:   nil,
+			wantErr:     "call 1: forbidden",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sleeper := &fakeSleeper{}
+			p := Policy{
+				MaxAttempts: tt.maxAttempts,
+				Base:        time.Second,
+				Max:         4 * time.Second,
+				ShouldRetry: func(err error) bool { return errors.Is(err, errFlaky) },
+				Sleep:       sleeper.Sleep,
+			}
+			calls := 0
+			op := func(ctx context.Context) error {
+				calls++
+				if calls <= tt.failures {
+					return fmt.Errorf("call %d: %w", calls, tt.failWith)
+				}
+				return nil
+			}
+
+			err := Do(context.Background(), p, op)
+
+			if got := errText(err); got != tt.wantErr {
+				t.Errorf("Do() error = %q, want %q", got, tt.wantErr)
+			}
+			if calls != tt.wantCalls {
+				t.Errorf("Do() called op %d times, want %d", calls, tt.wantCalls)
+			}
+			if !slices.Equal(sleeper.slept, tt.wantSlept) {
+				t.Errorf("Do() slept %v, want %v", sleeper.slept, tt.wantSlept)
+			}
+		})
+	}
+}
+
+// errText returns err's message, or "" for a nil error.
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// dnsError is a different error type that also implements Retryable.
+type dnsError struct {
+	temporary bool
+}
+
+func (e dnsError) Error() string   { return "dns lookup failed" }
+func (e dnsError) Retryable() bool { return e.temporary }
+
+func TestIsRetryable(t *testing.T) {
+	tests := []struct {
+		err  error
+		want bool
+	}{
+		{&StatusError{Code: 429}, true},
+		{&StatusError{Code: 502}, true},
+		{&StatusError{Code: 503}, true},
+		{&StatusError{Code: 504}, true},
+		{&StatusError{Code: 400}, false},
+		{&StatusError{Code: 401}, false},
+		{&StatusError{Code: 404}, false},
+		{&StatusError{Code: 500}, false},
+		{fmt.Errorf("pull nginx:1.27: %w", &StatusError{Code: 503}), true},
+		{fmt.Errorf("deploy web: %w", fmt.Errorf("pull nginx:1.27: %w", &StatusError{Code: 429})), true},
+		{fmt.Errorf("pull nginx:1.27: %w", &StatusError{Code: 404}), false},
+		{fmt.Errorf("resolve registry.local: %w", dnsError{temporary: true}), true},
+		{fmt.Errorf("resolve registry.local: %w", dnsError{temporary: false}), false},
+		{errors.New("disk full"), false},
+		{nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprint(tt.err), func(t *testing.T) {
+			if got := IsRetryable(tt.err); got != tt.want {
+				t.Errorf("IsRetryable(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSleepCtx(t *testing.T) {
+	// Each subtest runs inside a synctest bubble with a fake clock, so
+	// these waits take no real time but time.Since still measures them.
+	t.Run("waits 3s", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			start := time.Now()
+			err := SleepCtx(context.Background(), 3*time.Second)
+			if err != nil {
+				t.Errorf("SleepCtx(ctx, 3s) = %v, want nil", err)
+			}
+			if got := time.Since(start); got != 3*time.Second {
+				t.Errorf("SleepCtx(ctx, 3s) took %v, want 3s", got)
+			}
+		})
+	})
+	t.Run("waits 500ms", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			start := time.Now()
+			err := SleepCtx(context.Background(), 500*time.Millisecond)
+			if err != nil {
+				t.Errorf("SleepCtx(ctx, 500ms) = %v, want nil", err)
+			}
+			if got := time.Since(start); got != 500*time.Millisecond {
+				t.Errorf("SleepCtx(ctx, 500ms) took %v, want 500ms", got)
+			}
+		})
+	})
+	t.Run("cancelled after 2s", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			time.AfterFunc(2*time.Second, cancel)
+
+			start := time.Now()
+			err := SleepCtx(ctx, 10*time.Second)
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("SleepCtx(ctx, 10s) = %v, want %v", err, context.Canceled)
+			}
+			if got := time.Since(start); got != 2*time.Second {
+				t.Errorf("SleepCtx(ctx, 10s) took %v, want 2s (the moment ctx was cancelled)", got)
+			}
+		})
+	})
+	t.Run("deadline after 1s", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+
+			start := time.Now()
+			err := SleepCtx(ctx, time.Minute)
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("SleepCtx(ctx, 1m) = %v, want %v", err, context.DeadlineExceeded)
+			}
+			if got := time.Since(start); got != time.Second {
+				t.Errorf("SleepCtx(ctx, 1m) took %v, want 1s (the deadline)", got)
+			}
+		})
+	})
+}

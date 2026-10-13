@@ -1,0 +1,32 @@
+// Package labels is the Gopherlings exercise "The strings package".
+package labels
+
+import "strings"
+
+// HostFromURL returns the host part of url: without "https://" or "http://"
+// in front, and without anything from the first "/" onwards.
+func HostFromURL(url string) string {
+	// TODO(1): Remove the scheme, then everything from the first "/".
+	return url
+}
+
+// ParseLabels turns "app=web,env=prod" into a map of label keys to values.
+// Pairs without "=" are skipped.
+func ParseLabels(s string) map[string]string {
+	labels := make(map[string]string)
+	// TODO(2): Split s into pairs, cut each pair at the first "=", trim the
+	// key and value, and store them in labels.
+	return labels
+}
+
+// BuildCommand returns binary followed by args, separated by spaces. Any
+// argument that contains a space is wrapped in double quotes.
+func BuildCommand(binary string, args []string) string {
+	var b strings.Builder
+	b.WriteString(binary)
+	for _, arg := range args {
+		// TODO(3): Write a space before arg, and quote arg if it contains a space.
+		b.WriteString(arg)
+	}
+	return b.String()
+}

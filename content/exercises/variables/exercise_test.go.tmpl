@@ -1,0 +1,64 @@
+package variables
+
+import "testing"
+
+func TestServiceLabel(t *testing.T) {
+	tests := []struct {
+		name    string
+		service string
+		env     string
+		want    string
+	}{
+		{name: "api in production", service: "api", env: "production", want: "production/api"},
+		{name: "worker in staging", service: "worker", env: "staging", want: "staging/worker"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ServiceLabel(tt.service, tt.env)
+			if got != tt.want {
+				t.Errorf("ServiceLabel(%q, %q) = %q, want %q", tt.service, tt.env, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestImageRef(t *testing.T) {
+	tests := []struct {
+		name     string
+		registry string
+		image    string
+		tag      string
+		want     string
+	}{
+		{name: "github registry", registry: "ghcr.io/acme", image: "api", tag: "v1.4.2", want: "ghcr.io/acme/api:v1.4.2"},
+		{name: "internal registry", registry: "registry.internal", image: "worker", tag: "latest", want: "registry.internal/worker:latest"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ImageRef(tt.registry, tt.image, tt.tag)
+			if got != tt.want {
+				t.Errorf("ImageRef(%q, %q, %q) = %q, want %q", tt.registry, tt.image, tt.tag, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDeployPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     string
+		service string
+		want    string
+	}{
+		{name: "api in production", env: "production", service: "api", want: "/v1/environments/production/services/api"},
+		{name: "billing in staging", env: "staging", service: "billing", want: "/v1/environments/staging/services/billing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DeployPath(tt.env, tt.service)
+			if got != tt.want {
+				t.Errorf("DeployPath(%q, %q) = %q, want %q", tt.env, tt.service, got, tt.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,48 @@
+// Package logscan is the Gopherlings exercise "Reading input line by line: scanning logs".
+package logscan
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"strings"
+)
+
+// FindPanics returns the 1-based line numbers of the lines in r that contain
+// "panic:".
+func FindPanics(r io.Reader) ([]int, error) {
+	sc := bufio.NewScanner(r)
+	var found []int
+	lineNo := 0
+	for sc.Scan() {
+		lineNo++
+		if strings.Contains(sc.Text(), "panic:") {
+			found = append(found, lineNo)
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return found, nil
+}
+
+// Grep returns the lines in r that contain word, each formatted as
+// "<line number>: <line>".
+func Grep(r io.Reader, word string) ([]string, error) {
+	sc := bufio.NewScanner(r)
+	// Start with 64 KiB and let single lines grow up to 1 MiB.
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var matches []string
+	lineNo := 0
+	for sc.Scan() {
+		lineNo++
+		line := sc.Text()
+		if strings.Contains(line, word) {
+			matches = append(matches, fmt.Sprintf("%d: %s", lineNo, line))
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return matches, nil
+}

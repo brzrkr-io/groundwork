@@ -1,0 +1,65 @@
+// Package fileio is the Gopherlings exercise "Files: read, scan and write".
+package fileio
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"strings"
+)
+
+// DefaultBanner is shown when no banner file exists.
+const DefaultBanner = "Authorized access only.\n"
+
+// LoadBanner returns the contents of the banner file at path, or
+// DefaultBanner if the file does not exist.
+func LoadBanner(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return DefaultBanner, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// ReadHosts returns the hosts listed in the file at path, one per line,
+// skipping blank lines and # comments.
+func ReadHosts(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var hosts []string
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		hosts = append(hosts, line)
+	}
+	return hosts, sc.Err()
+}
+
+// WriteHosts writes hosts to the file at path, one per line, replacing any
+// existing contents.
+func WriteHosts(path string, hosts []string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	for _, h := range hosts {
+		if _, err := fmt.Fprintln(f, h); err != nil {
+			f.Close() // already failing; the write error matters more
+			return err
+		}
+	}
+	// Close can report a failed write, so its error is returned, not ignored.
+	return f.Close()
+}

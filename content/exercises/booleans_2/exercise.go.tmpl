@@ -1,0 +1,23 @@
+// Package booleans is the Gopherlings exercise "Booleans: fix the alert rules".
+package booleans
+
+// ShouldPage reports whether an alert should page the on-call engineer:
+// it is critical and nobody has acknowledged it yet.
+func ShouldPage(severity string, acknowledged bool) bool {
+	// TODO(1): Fix the expression so only unacknowledged critical alerts page.
+	return severity == "critical" || acknowledged
+}
+
+// IsHealthy reports whether a service is healthy: error rate below 0.01
+// and latency at most 500 ms.
+func IsHealthy(errorRate float64, latencyMs int) bool {
+	// TODO(2): Fix the latency comparison so exactly 500 ms is healthy.
+	return errorRate < 0.01 && latencyMs < 500
+}
+
+// InMaintenanceWindow reports whether hour (0-23) falls in the nightly
+// maintenance window, 22:00 to 01:59.
+func InMaintenanceWindow(hour int) bool {
+	// TODO(3): Fix the expression so the window wraps past midnight.
+	return hour >= 22 && hour < 2
+}

@@ -1,0 +1,172 @@
+package generics2
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestSum(t *testing.T) {
+	requestTests := []struct {
+		name     string
+		requests []int
+		want     int
+	}{
+		{"three counts", []int{120, 80, 45}, 245},
+		{"two counts", []int{10, 5}, 15},
+		{"empty", []int{}, 0},
+	}
+	for _, tt := range requestTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Sum(tt.requests); got != tt.want {
+				t.Errorf("Sum(%v) = %v, want %v", tt.requests, got, tt.want)
+			}
+		})
+	}
+
+	cpuTests := []struct {
+		name    string
+		seconds []float64
+		want    float64
+	}{
+		{"cpu seconds", []float64{0.5, 1.25, 2}, 3.75},
+		{"halves", []float64{1.5, 1.5}, 3},
+	}
+	for _, tt := range cpuTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Sum(tt.seconds); got != tt.want {
+				t.Errorf("Sum(%v) = %v, want %v", tt.seconds, got, tt.want)
+			}
+		})
+	}
+
+	diskTests := []struct {
+		name  string
+		disks []Bytes
+		want  Bytes
+	}{
+		{"two disks", []Bytes{512, 1024}, 1536},
+		{"three disks", []Bytes{100, 200, 300}, 600},
+	}
+	for _, tt := range diskTests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Sum(tt.disks); got != tt.want {
+				t.Errorf("Sum(%v) = %v, want %v", tt.disks, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSortedKeys(t *testing.T) {
+	configTests := []struct {
+		name   string
+		config map[string]string
+		want   []string
+	}{
+		{
+			"deployment settings",
+			map[string]string{"replicas": "3", "image": "api:1.4", "port": "8080"},
+			[]string{"image", "port", "replicas"},
+		},
+		{
+			"environment variables",
+			map[string]string{"LOG_LEVEL": "info", "DB_HOST": "db-1", "REGION": "eu-west-1", "API_KEY": "secret"},
+			[]string{"API_KEY", "DB_HOST", "LOG_LEVEL", "REGION"},
+		},
+		{"empty", map[string]string{}, []string{}},
+	}
+	for _, tt := range configTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SortedKeys(tt.config)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("SortedKeys(%v) = %q, want %q", tt.config, got, tt.want)
+			}
+		})
+	}
+
+	portTests := []struct {
+		name     string
+		services map[int]string
+		want     []int
+	}{
+		{"well-known ports", map[int]string{443: "https", 22: "ssh", 80: "http"}, []int{22, 80, 443}},
+		{"app ports", map[int]string{9090: "metrics", 8080: "api"}, []int{8080, 9090}},
+	}
+	for _, tt := range portTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SortedKeys(tt.services)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("SortedKeys(%v) = %v, want %v", tt.services, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGroupBy(t *testing.T) {
+	byNode := func(p Pod) string { return p.Node }
+	podTests := []struct {
+		name string
+		pods []Pod
+		want map[string][]Pod
+	}{
+		{
+			"two nodes",
+			[]Pod{
+				{Name: "api-1", Node: "node-a"},
+				{Name: "api-2", Node: "node-b"},
+				{Name: "web-1", Node: "node-a"},
+			},
+			map[string][]Pod{
+				"node-a": {{Name: "api-1", Node: "node-a"}, {Name: "web-1", Node: "node-a"}},
+				"node-b": {{Name: "api-2", Node: "node-b"}},
+			},
+		},
+		{
+			"one node",
+			[]Pod{
+				{Name: "db-1", Node: "node-c"},
+				{Name: "db-2", Node: "node-c"},
+				{Name: "db-3", Node: "node-c"},
+			},
+			map[string][]Pod{
+				"node-c": {{Name: "db-1", Node: "node-c"}, {Name: "db-2", Node: "node-c"}, {Name: "db-3", Node: "node-c"}},
+			},
+		},
+		{"no pods", []Pod{}, map[string][]Pod{}},
+	}
+	for _, tt := range podTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GroupBy(tt.pods, byNode)
+			if len(got) != len(tt.want) {
+				t.Errorf("GroupBy(%v, byNode) has %d groups, want %d", tt.pods, len(got), len(tt.want))
+			}
+			for node, want := range tt.want {
+				if !slices.Equal(got[node], want) {
+					t.Errorf("GroupBy(%v, byNode)[%q] = %v, want %v", tt.pods, node, got[node], want)
+				}
+			}
+		})
+	}
+
+	byClass := func(code int) int { return code / 100 }
+	codeTests := []struct {
+		name  string
+		codes []int
+		want  map[int][]int
+	}{
+		{"success and errors", []int{200, 503, 204, 500}, map[int][]int{2: {200, 204}, 5: {503, 500}}},
+		{"redirects", []int{301, 302, 404}, map[int][]int{3: {301, 302}, 4: {404}}},
+	}
+	for _, tt := range codeTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GroupBy(tt.codes, byClass)
+			if len(got) != len(tt.want) {
+				t.Errorf("GroupBy(%v, byClass) has %d groups, want %d", tt.codes, len(got), len(tt.want))
+			}
+			for class, want := range tt.want {
+				if !slices.Equal(got[class], want) {
+					t.Errorf("GroupBy(%v, byClass)[%d] = %v, want %v", tt.codes, class, got[class], want)
+				}
+			}
+		})
+	}
+}

@@ -1,0 +1,20 @@
+// Package formatting is the Gopherlings exercise "Formatting with fmt".
+package formatting
+
+import "fmt"
+
+// StatusLine returns a one-line status, such as "api: 3 replicas ready".
+func StatusLine(service string, replicas int) string {
+	return fmt.Sprintf("%s: %d replicas ready", service, replicas)
+}
+
+// RolloutProgress returns a rollout progress message, such as
+// `rollout "api" 42.5% complete`.
+func RolloutProgress(service string, percent float64) string {
+	return fmt.Sprintf("rollout %q %.1f%% complete", service, percent)
+}
+
+// TableRow returns one aligned row of a service table.
+func TableRow(service string, replicas int, status string) string {
+	return fmt.Sprintf("%-10s | %5d | %s", service, replicas, status)
+}

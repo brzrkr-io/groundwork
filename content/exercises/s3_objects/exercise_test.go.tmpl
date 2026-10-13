@@ -1,0 +1,158 @@
+package configstore
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+)
+
+// The fake bucket lives in fakes_test.go.
+
+func TestUploadConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		data string
+	}{
+		{"checkout prod", "checkout/prod.json", `{"replicas": 3}`},
+		{"billing staging", "billing/staging.json", `{"replicas": 1, "debug": true}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFakeS3("ops-configs")
+			err := UploadConfig(context.Background(), f, "ops-configs", tt.key, []byte(tt.data))
+			if err != nil {
+				t.Fatalf("UploadConfig(%q) = %v, want nil", tt.key, err)
+			}
+			obj, ok := f.objects[tt.key]
+			if !ok {
+				t.Fatalf("UploadConfig(%q) stored nothing at that key", tt.key)
+			}
+			if got := string(obj.body); got != tt.data {
+				t.Errorf("UploadConfig(%q) stored body %q, want %q", tt.key, got, tt.data)
+			}
+			if obj.contentType != "application/json" {
+				t.Errorf("UploadConfig(%q) stored ContentType %q, want %q", tt.key, obj.contentType, "application/json")
+			}
+			if got, want := obj.metadata["sha256"], Checksum([]byte(tt.data)); got != want {
+				t.Errorf("UploadConfig(%q) stored Metadata[\"sha256\"] %q, want %q", tt.key, got, want)
+			}
+		})
+	}
+
+	t.Run("missing bucket", func(t *testing.T) {
+		f := newFakeS3("ops-configs")
+		err := UploadConfig(context.Background(), f, "no-such-bucket", "checkout/prod.json", []byte(`{}`))
+		if _, ok := errors.AsType[*types.NoSuchBucket](err); !ok {
+			t.Fatalf("UploadConfig(bucket %q) = %v, want an error wrapping *types.NoSuchBucket", "no-such-bucket", err)
+		}
+	})
+}
+
+func TestDownloadConfig(t *testing.T) {
+	const checkout = `{"service": "checkout", "replicas": 3}`
+	const billing = `{"service": "billing", "replicas": 2}`
+
+	f := newFakeS3("ops-configs")
+	f.put("checkout/prod.json", checkout, map[string]string{"sha256": Checksum([]byte(checkout))})
+	f.put("billing/prod.json", billing, map[string]string{"sha256": Checksum([]byte(billing))})
+	// Someone edited this object by hand, so the stored sha256 is stale.
+	f.put("checkout/staging.json", `{"replicas": 99}`, map[string]string{"sha256": Checksum([]byte(checkout))})
+	// This object was uploaded without any metadata at all.
+	f.put("search/prod.json", `{"replicas": 2}`, nil)
+
+	t.Run("valid objects", func(t *testing.T) {
+		tests := []struct{ key, want string }{
+			{"checkout/prod.json", checkout},
+			{"billing/prod.json", billing},
+		}
+		for _, tt := range tests {
+			got, err := DownloadConfig(context.Background(), f, "ops-configs", tt.key)
+			if err != nil {
+				t.Errorf("DownloadConfig(%q) error = %v, want nil", tt.key, err)
+				continue
+			}
+			if string(got) != tt.want {
+				t.Errorf("DownloadConfig(%q) = %q, want %q", tt.key, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("checksum mismatch", func(t *testing.T) {
+		tests := []struct{ key, wantErr string }{
+			{"checkout/staging.json", "s3://ops-configs/checkout/staging.json: checksum mismatch"},
+			{"search/prod.json", "s3://ops-configs/search/prod.json: checksum mismatch"},
+		}
+		for _, tt := range tests {
+			got, err := DownloadConfig(context.Background(), f, "ops-configs", tt.key)
+			if !errors.Is(err, ErrChecksumMismatch) {
+				t.Errorf("DownloadConfig(%q) error = %v, want an error wrapping ErrChecksumMismatch", tt.key, err)
+				continue
+			}
+			if err.Error() != tt.wantErr {
+				t.Errorf("DownloadConfig(%q) error = %q, want %q", tt.key, err.Error(), tt.wantErr)
+			}
+			if got != nil {
+				t.Errorf("DownloadConfig(%q) = %q, want nil data on a mismatch", tt.key, got)
+			}
+		}
+	})
+
+	t.Run("missing key", func(t *testing.T) {
+		_, err := DownloadConfig(context.Background(), f, "ops-configs", "payments/prod.json")
+		if _, ok := errors.AsType[*types.NoSuchKey](err); !ok {
+			t.Errorf("DownloadConfig(%q) error = %v, want an error wrapping *types.NoSuchKey", "payments/prod.json", err)
+		}
+	})
+
+	if f.closed != f.opened {
+		t.Errorf("closed %d of %d GetObject bodies, want all of them closed", f.closed, f.opened)
+	}
+}
+
+func TestListConfigs(t *testing.T) {
+	f := newFakeS3("ops-configs")
+	for _, key := range []string{
+		"billing/",
+		"billing/canary/prod.json",
+		"billing/prod.json",
+		"checkout/",
+		"checkout/dev.json",
+		"checkout/prod.json",
+		"checkout/staging.json",
+		"checkout-old/prod.json",
+		"inventory.json",
+	} {
+		f.put(key, `{}`, nil)
+	}
+
+	tests := []struct {
+		name   string
+		prefix string
+		want   []string
+	}{
+		{"one service", "checkout/", []string{"checkout/dev.json", "checkout/prod.json", "checkout/staging.json"}},
+		{"nested keys", "billing/", []string{"billing/canary/prod.json", "billing/prod.json"}},
+		{"whole bucket", "", []string{
+			"billing/canary/prod.json", "billing/prod.json",
+			"checkout-old/prod.json",
+			"checkout/dev.json", "checkout/prod.json", "checkout/staging.json",
+			"inventory.json",
+		}},
+		{"no matches", "payments/", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ListConfigs(context.Background(), f, "ops-configs", tt.prefix)
+			if err != nil {
+				t.Fatalf("ListConfigs(%q) error = %v, want nil", tt.prefix, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ListConfigs(%q) = %q, want %q", tt.prefix, got, tt.want)
+			}
+		})
+	}
+}

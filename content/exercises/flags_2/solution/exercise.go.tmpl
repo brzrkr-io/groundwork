@@ -1,0 +1,60 @@
+// Package silence is the Gopherlings exercise "Flags: repeatable and validated flags".
+package silence
+
+import (
+	"errors"
+	"flag"
+	"io"
+	"strings"
+	"time"
+)
+
+// Options describes one alert silence.
+type Options struct {
+	Env    string
+	Labels map[string]string
+	For    time.Duration
+	Author string
+}
+
+// ParseArgs parses the silence flags from args (os.Args[1:]).
+// flag's own messages go to stderr.
+func ParseArgs(args []string, stderr io.Writer) (Options, error) {
+	fs := flag.NewFlagSet("silence", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
+	duration := fs.Duration("for", time.Hour, "how long the silence lasts")
+	author := fs.String("author", "oncall", "who created the silence")
+
+	labels := map[string]string{}
+	fs.Func("label", "match alerts with this key=value label (repeatable)", func(s string) error {
+		key, value, ok := strings.Cut(s, "=")
+		if !ok || key == "" || value == "" {
+			return errors.New("label must look like key=value")
+		}
+		labels[key] = value
+		return nil
+	})
+
+	env := "dev"
+	fs.Func("env", "environment: dev, staging or prod (default dev)", func(s string) error {
+		switch s {
+		case "dev", "staging", "prod":
+			env = s
+			return nil
+		}
+		return errors.New("env must be dev, staging or prod")
+	})
+
+	if err := fs.Parse(args); err != nil {
+		return Options{}, err
+	}
+
+	opts := Options{
+		Env:    env,
+		Labels: labels,
+		For:    *duration,
+		Author: *author,
+	}
+	return opts, nil
+}

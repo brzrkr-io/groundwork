@@ -1,0 +1,70 @@
+package labels
+
+import (
+	"maps"
+	"testing"
+)
+
+func TestHostFromURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"https with path", "https://api.example.com/health", "api.example.com"},
+		{"http with port", "http://localhost:8080/metrics", "localhost:8080"},
+		{"no path", "https://grafana.internal", "grafana.internal"},
+		{"long path", "http://registry.local/v2/team/app/tags", "registry.local"},
+		{"no scheme", "db.internal/admin", "db.internal"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := HostFromURL(tc.url); got != tc.want {
+				t.Errorf("HostFromURL(%q) = %q, want %q", tc.url, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseLabels(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want map[string]string
+	}{
+		{"two labels", "app=web,env=prod", map[string]string{"app": "web", "env": "prod"}},
+		{"spaces are trimmed", "app=web, env = prod ", map[string]string{"app": "web", "env": "prod"}},
+		{"value contains =", "selector=a=b", map[string]string{"selector": "a=b"}},
+		{"pairs without = are skipped", "team=core,canary,tier=backend", map[string]string{"team": "core", "tier": "backend"}},
+		{"empty string", "", map[string]string{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ParseLabels(tc.s)
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("ParseLabels(%q) = %v, want %v", tc.s, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildCommand(t *testing.T) {
+	tests := []struct {
+		name   string
+		binary string
+		args   []string
+		want   string
+	}{
+		{"quoted argument", "kubectl", []string{"get", "pods", "-l", "app=web tier"}, `kubectl get pods -l "app=web tier"`},
+		{"no spaces", "docker", []string{"ps", "-a"}, "docker ps -a"},
+		{"two quoted arguments", "git", []string{"commit", "-m", "fix probe", "--author", "Ops Bot"}, `git commit -m "fix probe" --author "Ops Bot"`},
+		{"no arguments", "uptime", nil, "uptime"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := BuildCommand(tc.binary, tc.args); got != tc.want {
+				t.Errorf("BuildCommand(%q, %q) = %q, want %q", tc.binary, tc.args, got, tc.want)
+			}
+		})
+	}
+}

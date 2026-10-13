@@ -1,0 +1,59 @@
+package ifelse
+
+import "testing"
+
+func TestInDeployWindow(t *testing.T) {
+	// Each line is one case: a name, the inputs, then the answer we want.
+	tests := []struct {
+		name string
+		env  string
+		hour int
+		want bool
+	}{
+		{"staging at night", "staging", 3, true},
+		{"dev late", "dev", 23, true},
+		{"production opens", "production", 10, true},
+		{"production last hour", "production", 15, true},
+		{"production closed at 16", "production", 16, false},
+		{"production too early", "production", 9, false},
+		{"production at night", "production", 2, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := InDeployWindow(tt.env, tt.hour); got != tt.want {
+				t.Errorf("InDeployWindow(%q, %d) = %t, want %t", tt.env, tt.hour, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDeployGate(t *testing.T) {
+	// Each line is one case: a name, the inputs, then the answer we want.
+	tests := []struct {
+		name          string
+		env           string
+		hour          int
+		testsPassed   bool
+		failingChecks int
+		want          string
+	}{
+		{"tests fail first", "production", 11, false, 2, "blocked: tests failing"},
+		{"tests fail outside window", "production", 20, false, 0, "blocked: tests failing"},
+		{"one check", "production", 11, true, 1, "blocked: 1 check failing"},
+		{"several checks", "staging", 3, true, 4, "blocked: 4 checks failing"},
+		{"checks before window", "production", 20, true, 2, "blocked: 2 checks failing"},
+		{"outside window", "production", 20, true, 0, "blocked: outside deploy window"},
+		{"too early", "production", 9, true, 0, "blocked: outside deploy window"},
+		{"production in window", "production", 11, true, 0, "go"},
+		{"staging at night", "staging", 20, true, 0, "go"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DeployGate(tt.env, tt.hour, tt.testsPassed, tt.failingChecks)
+			if got != tt.want {
+				t.Errorf("DeployGate(%q, %d, %t, %d) = %q, want %q",
+					tt.env, tt.hour, tt.testsPassed, tt.failingChecks, got, tt.want)
+			}
+		})
+	}
+}

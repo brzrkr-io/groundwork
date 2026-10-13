@@ -1,0 +1,191 @@
+package manifests
+
+import (
+	"fmt"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/yaml"
+)
+
+// describe summarises a decoded object in one line, so tests can compare text.
+func describe(obj runtime.Object) string {
+	switch o := obj.(type) {
+	case nil:
+		return "nil"
+	case *appsv1.Deployment:
+		replicas := "nil"
+		if o.Spec.Replicas != nil {
+			replicas = fmt.Sprint(*o.Spec.Replicas)
+		}
+		return fmt.Sprintf("Deployment %s replicas=%s", o.Name, replicas)
+	case *corev1.Service:
+		if len(o.Spec.Ports) == 0 {
+			return fmt.Sprintf("Service %s with no ports", o.Name)
+		}
+		return fmt.Sprintf("Service %s port=%d", o.Name, o.Spec.Ports[0].Port)
+	case *corev1.ConfigMap:
+		return fmt.Sprintf("ConfigMap %s LOG_LEVEL=%s", o.Name, o.Data["LOG_LEVEL"])
+	default:
+		return fmt.Sprintf("unexpected type %T", obj)
+	}
+}
+
+func TestDecodeObject(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  string
+		want string
+	}{
+		{"Deployment", `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+spec:
+  replicas: 3
+`, "Deployment checkout replicas=3"},
+		{"Service checkout", `
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout
+spec:
+  ports:
+    - port: 80
+`, "Service checkout port=80"},
+		{"Service web", `
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  ports:
+    - port: 443
+`, "Service web port=443"},
+		{"ConfigMap checkout-config", `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: checkout-config
+data:
+  LOG_LEVEL: debug
+`, "ConfigMap checkout-config LOG_LEVEL=debug"},
+		{"ConfigMap worker-config", `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-config
+data:
+  LOG_LEVEL: warn
+  QUEUE: payments
+`, "ConfigMap worker-config LOG_LEVEL=warn"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			obj, err := DecodeObject([]byte(tt.doc))
+			if err != nil {
+				t.Fatalf("DecodeObject(%s) error = %v, want nil", tt.name, err)
+			}
+			if got := describe(obj); got != tt.want {
+				t.Errorf("DecodeObject(%s) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+
+	errorTests := []struct {
+		name       string
+		doc        string
+		wantExact  string
+		wantPrefix string
+	}{
+		{name: "Ingress", doc: "apiVersion: networking.k8s.io/v1\nkind: Ingress\n", wantExact: `unsupported kind "Ingress"`},
+		{name: "Secret", doc: "apiVersion: v1\nkind: Secret\n", wantExact: `unsupported kind "Secret"`},
+		{name: "no kind", doc: "metadata:\n  name: web\n", wantExact: `unsupported kind ""`},
+		{name: "broken YAML", doc: "kind: [Service\n", wantPrefix: "decode: "},
+	}
+	for _, tt := range errorTests {
+		t.Run(tt.name, func(t *testing.T) {
+			obj, err := DecodeObject([]byte(tt.doc))
+			if err == nil {
+				t.Fatalf("DecodeObject(%q) error = nil, want an error", tt.doc)
+			}
+			if obj != nil {
+				t.Errorf("DecodeObject(%q) = %s with the error, want nil", tt.doc, describe(obj))
+			}
+			if tt.wantExact != "" && err.Error() != tt.wantExact {
+				t.Errorf("DecodeObject(%q) error = %q, want %q", tt.doc, err, tt.wantExact)
+			}
+			if tt.wantPrefix != "" && !strings.HasPrefix(err.Error(), tt.wantPrefix) {
+				t.Errorf("DecodeObject(%q) error = %q, want prefix %q", tt.doc, err, tt.wantPrefix)
+			}
+		})
+	}
+}
+
+func TestImageTag(t *testing.T) {
+	tests := []struct {
+		image string
+		want  string
+	}{
+		{"nginx:1.27", "1.27"},
+		{"busybox:latest", "latest"},
+		{"nginx", ""},
+		{"registry.example.com/shop/api:1.4.2", "1.4.2"},
+		{"registry.example.com/shop/api", ""},
+		{"registry.example.com:5000/ops/shipper", ""},
+		{"registry.example.com:5000/ops/shipper:2.0", "2.0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			if got := ImageTag(tt.image); got != tt.want {
+				t.Errorf("ImageTag(%q) = %q, want %q", tt.image, got, tt.want)
+			}
+		})
+	}
+}
+
+// readDeployment loads a Deployment manifest from the testdata folder.
+func readDeployment(t *testing.T, name string) *appsv1.Deployment {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d appsv1.Deployment
+	if err := yaml.Unmarshal(data, &d); err != nil {
+		t.Fatal(err)
+	}
+	return &d
+}
+
+func TestLint(t *testing.T) {
+	tests := []struct {
+		file string
+		want []string
+	}{
+		{"web.yaml", []string{
+			`container "web": image "nginx:latest" uses the latest tag`,
+			`container "web": no resource limits`,
+			`container "log-shipper": image "registry.example.com:5000/ops/shipper" has no tag`,
+		}},
+		{"worker.yaml", []string{
+			`container "migrate": image "registry.example.com:5000/payments/migrate:latest" uses the latest tag`,
+			`container "worker": no resource limits`,
+		}},
+		{"api.yaml", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			got := Lint(readDeployment(t, tt.file))
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Lint(%s) = %q, want %q", tt.file, got, tt.want)
+			}
+		})
+	}
+}

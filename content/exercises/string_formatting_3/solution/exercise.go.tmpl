@@ -1,0 +1,19 @@
+// Package formatting is the Gopherlings exercise "Formatting: build an ops report".
+package formatting
+
+import "fmt"
+
+// UptimeLine reports a service's uptime against its target.
+func UptimeLine(service string, uptime, target float64) string {
+	return fmt.Sprintf("%s: %.2f%% uptime (target %.2f%%)", service, uptime, target)
+}
+
+// DiskAlert returns an alert line for a disk that is filling up.
+func DiskAlert(host, mount string, usedPercent float64, thresholdPercent int) string {
+	return fmt.Sprintf("ALERT host=%q mount=%q used=%.1f%% threshold=%d%%", host, mount, usedPercent, thresholdPercent)
+}
+
+// PodRow returns one aligned row of the busiest-pods table.
+func PodRow(name string, cpuPercent float64, memMiB int) string {
+	return fmt.Sprintf("%-16s %5.1f%% %5d MiB", name, cpuPercent, memMiB)
+}

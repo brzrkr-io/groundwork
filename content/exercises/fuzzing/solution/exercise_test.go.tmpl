@@ -1,0 +1,13 @@
+package target
+
+import "testing"
+
+func FuzzParseTarget(f *testing.F) {
+	f.Add("web-1:8080")
+	f.Add("[::1]:443")
+	f.Fuzz(func(t *testing.T, s string) {
+		// The property: ParseTarget never panics. Any host, port or error
+		// is fine, so the results are ignored.
+		ParseTarget(s)
+	})
+}

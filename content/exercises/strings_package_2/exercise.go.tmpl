@@ -1,0 +1,35 @@
+// Package bootstrap is the Gopherlings exercise "The strings package: fix the bootstrap parser".
+package bootstrap
+
+import "strings"
+
+// IsProduction reports whether env is "production", ignoring case and
+// surrounding whitespace.
+func IsProduction(env string) bool {
+	// TODO(1): Fix the bug: " Production\n" must count as production too.
+	return env == "production"
+}
+
+// ParseEnvLine splits a line like "PORT=8080" into its trimmed key and value.
+// The bool is false when the line has no "=".
+func ParseEnvLine(line string) (string, string, bool) {
+	// TODO(2): Fix the bug: a value that contains "=" must be kept whole.
+	parts := strings.Split(line, "=")
+	if len(parts) < 2 {
+		return "", "", false
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
+}
+
+// ParseHostsLine splits an /etc/hosts line into its IP address and host
+// names, ignoring any "#" comment. The bool is false when the line holds
+// fewer than two words.
+func ParseHostsLine(line string) (string, []string, bool) {
+	line, _, _ = strings.Cut(line, "#")
+	// TODO(3): Fix the bug: extra spaces and tabs must not matter.
+	words := strings.Split(line, " ")
+	if len(words) < 2 {
+		return "", nil, false
+	}
+	return words[0], words[1:], true
+}

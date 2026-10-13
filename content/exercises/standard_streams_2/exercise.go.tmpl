@@ -1,0 +1,37 @@
+// Package logscan is the Gopherlings exercise "Standard streams: grep-style exit codes".
+package logscan
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"strings"
+)
+
+// Run is the whole logscan program. args is os.Args[1:]. It copies the lines
+// of stdin that contain the pattern to stdout, and returns grep-style exit
+// codes: 0 if any line matched, 1 if none did, 2 for an error.
+func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "usage: logscan PATTERN")
+		return 2
+	}
+	pattern := args[0]
+
+	matches := 0
+	sc := bufio.NewScanner(stdin)
+	for sc.Scan() {
+		line := sc.Text()
+		if strings.Contains(line, pattern) {
+			fmt.Fprintln(stdout, line)
+			matches++
+		}
+	}
+	// TODO(3): Handle a read error: report it and return 2, with no summary.
+
+	// TODO(1): The summary is a diagnostic, not a result. Send it to the
+	// right stream.
+	fmt.Fprintf(stdout, "logscan: %d matching line(s)\n", matches)
+	// TODO(2): Return 0 only if at least one line matched, otherwise 1.
+	return 0
+}

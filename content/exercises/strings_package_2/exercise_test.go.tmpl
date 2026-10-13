@@ -1,0 +1,83 @@
+package bootstrap
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestIsProduction(t *testing.T) {
+	tests := []struct {
+		env  string
+		want bool
+	}{
+		{"production", true},
+		{"Production", true},
+		{"PRODUCTION", true},
+		{" Production\n", true},
+		{"\tproduction ", true},
+		{"staging", false},
+		{"prod", false},
+		{"", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.env, func(t *testing.T) {
+			if got := IsProduction(tc.env); got != tc.want {
+				t.Errorf("IsProduction(%q) = %t, want %t", tc.env, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseEnvLine(t *testing.T) {
+	tests := []struct {
+		name      string
+		line      string
+		wantKey   string
+		wantValue string
+		wantOK    bool
+	}{
+		{"simple", "PORT=8080", "PORT", "8080", true},
+		{"spaces are trimmed", " LOG_LEVEL = debug ", "LOG_LEVEL", "debug", true},
+		{"URL with =", "DB_URL=postgres://db/app?sslmode=disable", "DB_URL", "postgres://db/app?sslmode=disable", true},
+		{"flags with =", "JAVA_OPTS = -Xmx512m -Dfile.encoding=UTF-8", "JAVA_OPTS", "-Xmx512m -Dfile.encoding=UTF-8", true},
+		{"empty value", "PROXY=", "PROXY", "", true},
+		{"no =", "DEBUG", "", "", false},
+		{"empty line", "", "", "", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			key, value, ok := ParseEnvLine(tc.line)
+			if key != tc.wantKey || value != tc.wantValue || ok != tc.wantOK {
+				t.Errorf("ParseEnvLine(%q) = %q, %q, %t, want %q, %q, %t",
+					tc.line, key, value, ok, tc.wantKey, tc.wantValue, tc.wantOK)
+			}
+		})
+	}
+}
+
+func TestParseHostsLine(t *testing.T) {
+	tests := []struct {
+		name      string
+		line      string
+		wantIP    string
+		wantNames []string
+		wantOK    bool
+	}{
+		{"single spaces", "10.0.0.7 cache", "10.0.0.7", []string{"cache"}, true},
+		{"lined up with spaces", "127.0.0.1   localhost  localhost.localdomain", "127.0.0.1", []string{"localhost", "localhost.localdomain"}, true},
+		{"tabs and a comment", "\t10.0.0.5\tdb   # primary database", "10.0.0.5", []string{"db"}, true},
+		{"leading spaces", "  192.168.1.20 nas backup", "192.168.1.20", []string{"nas", "backup"}, true},
+		{"comment only", "# managed by ansible", "", nil, false},
+		{"blank line", "   ", "", nil, false},
+		{"ip only", "10.0.0.9   ", "", nil, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ip, names, ok := ParseHostsLine(tc.line)
+			if ip != tc.wantIP || !slices.Equal(names, tc.wantNames) || ok != tc.wantOK {
+				t.Errorf("ParseHostsLine(%q) = %q, %q, %t, want %q, %q, %t",
+					tc.line, ip, names, ok, tc.wantIP, tc.wantNames, tc.wantOK)
+			}
+		})
+	}
+}

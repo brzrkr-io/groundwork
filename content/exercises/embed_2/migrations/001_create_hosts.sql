@@ -1,0 +1,1 @@
+CREATE TABLE hosts (name TEXT PRIMARY KEY, region TEXT NOT NULL);

@@ -1,0 +1,156 @@
+package logging
+
+import (
+	"bytes"
+	"encoding/json"
+	"log/slog"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// parseLines decodes each line in buf as one JSON object.
+// JSON numbers become float64, and nested objects become map[string]any.
+func parseLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	t.Helper()
+	var records []map[string]any
+	for line := range strings.Lines(buf.String()) {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("log line is not JSON: %q", line)
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+func TestNewLogger(t *testing.T) {
+	tests := []struct {
+		name     string
+		level    slog.Level
+		wantMsgs []string
+	}{
+		{"debug shows everything", slog.LevelDebug, []string{"cache miss", "service started", "disk almost full"}},
+		{"info hides debug", slog.LevelInfo, []string{"service started", "disk almost full"}},
+		{"warn hides info", slog.LevelWarn, []string{"disk almost full"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := NewLogger(&buf, tt.level)
+			logger.Debug("cache miss", "key", "user:42")
+			logger.Info("service started", "service", "api", "port", 8080)
+			logger.Warn("disk almost full", "host", "web-1")
+
+			var gotMsgs []string
+			for _, record := range parseLines(t, &buf) {
+				gotMsgs = append(gotMsgs, record["msg"].(string))
+			}
+			if !slices.Equal(gotMsgs, tt.wantMsgs) {
+				t.Errorf("NewLogger(w, %v) logged messages %q, want %q", tt.level, gotMsgs, tt.wantMsgs)
+			}
+		})
+	}
+
+	t.Run("fields", func(t *testing.T) {
+		var buf bytes.Buffer
+		NewLogger(&buf, slog.LevelInfo).Info("service started", "service", "api", "port", 8080)
+		records := parseLines(t, &buf)
+		if len(records) != 1 {
+			t.Fatalf("got %d log lines, want 1", len(records))
+		}
+		r := records[0]
+		if r["level"] != "INFO" || r["service"] != "api" || r["port"] != 8080.0 {
+			t.Errorf("logged %v, want level INFO, service api, port 8080", r)
+		}
+	})
+}
+
+func TestDeployLogger(t *testing.T) {
+	tests := []struct {
+		name   string
+		deploy Deploy
+	}{
+		{"checkout", Deploy{ID: "d-101", Service: "checkout", Region: "eu-west-1"}},
+		{"search", Deploy{ID: "d-205", Service: "search", Region: "us-east-2"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&buf, nil))
+			DeployLogger(logger, tt.deploy).Info("rollout started", "replicas", 3)
+			logger.Info("idle")
+
+			records := parseLines(t, &buf)
+			if len(records) != 2 {
+				t.Fatalf("got %d log lines, want 2", len(records))
+			}
+
+			r := records[0]
+			if got := r["deploy_id"]; got != tt.deploy.ID {
+				t.Errorf("DeployLogger(logger, %+v) logged deploy_id = %v, want %q", tt.deploy, got, tt.deploy.ID)
+			}
+			target, ok := r["target"].(map[string]any)
+			if !ok {
+				t.Fatalf("DeployLogger(logger, %+v) logged target = %v, want a group", tt.deploy, r["target"])
+			}
+			if target["service"] != tt.deploy.Service || target["region"] != tt.deploy.Region {
+				t.Errorf("DeployLogger(logger, %+v) logged target = %v, want service %q and region %q",
+					tt.deploy, target, tt.deploy.Service, tt.deploy.Region)
+			}
+			if r["replicas"] != 3.0 {
+				t.Errorf("DeployLogger(logger, %+v) logged replicas = %v, want 3", tt.deploy, r["replicas"])
+			}
+
+			if _, ok := records[1]["deploy_id"]; ok {
+				t.Errorf("the original logger logged deploy_id too: %v", records[1])
+			}
+		})
+	}
+}
+
+func TestRedact(t *testing.T) {
+	tests := []struct {
+		name   string
+		groups []string
+		attr   slog.Attr
+		want   slog.Attr
+	}{
+		{"password", nil, slog.String("password", "hunter2"), slog.String("password", "REDACTED")},
+		{"token", nil, slog.String("token", "abc123"), slog.String("token", "REDACTED")},
+		{"token in a group", []string{"db"}, slog.String("token", "s3cr3t"), slog.String("token", "REDACTED")},
+		{"user is kept", nil, slog.String("user", "alice"), slog.String("user", "alice")},
+		{"port is kept", []string{"server"}, slog.Int("port", 8080), slog.Int("port", 8080)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Redact(tt.groups, tt.attr); !got.Equal(tt.want) {
+				t.Errorf("Redact(%q, %v) = %v, want %v", tt.groups, tt.attr, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("NewLogger redacts", func(t *testing.T) {
+		var buf bytes.Buffer
+		NewLogger(&buf, slog.LevelInfo).Info("login",
+			"user", "alice",
+			"password", "hunter2",
+			slog.Group("db", "host", "db-1", "token", "s3cr3t"),
+		)
+		if out := buf.String(); strings.Contains(out, "hunter2") || strings.Contains(out, "s3cr3t") {
+			t.Fatalf("a secret reached the log: %s", out)
+		}
+		records := parseLines(t, &buf)
+		if len(records) != 1 {
+			t.Fatalf("got %d log lines, want 1", len(records))
+		}
+		r := records[0]
+		if r["password"] != "REDACTED" || r["user"] != "alice" {
+			t.Errorf("logged %v, want password REDACTED and user alice", r)
+		}
+		db, _ := r["db"].(map[string]any)
+		if db["token"] != "REDACTED" || db["host"] != "db-1" {
+			t.Errorf("logged db = %v, want token REDACTED and host db-1", r["db"])
+		}
+	})
+}

@@ -1,0 +1,45 @@
+package placement
+
+import "testing"
+
+func TestProvider(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"us-east-1", "aws"},
+		{"ap-southeast-2", "aws"},
+		{"us-gov-west-1", "aws"},
+		{"europe-west4", "gcp"},
+		{"us-central1", "gcp"},
+		{"on-prem", "unknown"},
+		{"", "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Provider(tt.name); got != tt.want {
+				t.Errorf("Provider(%q) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDescribe(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"us-gov-west-1", "us-gov-west-1 is AWS, partition aws-us-gov"},
+		{"eu-west-2", "eu-west-2 is AWS, partition aws"},
+		{"cn-north-1", "cn-north-1 is AWS, partition aws-cn"},
+		{"europe-west4", "europe-west4 is GCP"},
+		{"on-prem", "on-prem is not a known region"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Describe(tt.name); got != tt.want {
+				t.Errorf("Describe(%q) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}

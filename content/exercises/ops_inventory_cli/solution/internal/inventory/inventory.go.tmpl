@@ -1,0 +1,78 @@
+// Package inventory loads, checks and filters the host inventory.
+package inventory
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/netip"
+	"slices"
+	"strings"
+)
+
+// Envs lists the environments a host may belong to, in the order they are
+// shown in error messages.
+var Envs = []string{"dev", "staging", "prod"}
+
+// Host is one machine in the inventory file.
+type Host struct {
+	Name    string   `json:"name"`
+	Env     string   `json:"env"`
+	Region  string   `json:"region"`
+	Address string   `json:"address"`
+	Tags    []string `json:"tags,omitempty"`
+}
+
+// Parse decodes an inventory: a JSON array of hosts.
+func Parse(r io.Reader) ([]Host, error) {
+	dec := json.NewDecoder(r)
+	// A typo such as "regoin" should fail loudly, not leave Region empty.
+	dec.DisallowUnknownFields()
+	var hosts []Host
+	if err := dec.Decode(&hosts); err != nil {
+		return nil, fmt.Errorf("parse inventory: %w", err)
+	}
+	return hosts, nil
+}
+
+// Validate checks every host and reports all problems at once, joined with
+// errors.Join. It returns nil when the inventory is valid.
+func Validate(hosts []Host) error {
+	var errs []error
+	firstSeen := map[string]int{}
+	for i, h := range hosts {
+		n := i + 1
+		where := label(n, h)
+		if h.Name == "" {
+			errs = append(errs, fmt.Errorf("%s: name is required", where))
+		}
+		if !slices.Contains(Envs, h.Env) {
+			errs = append(errs, fmt.Errorf("%s: env %q must be one of %s", where, h.Env, strings.Join(Envs, ", ")))
+		}
+		if h.Region == "" {
+			errs = append(errs, fmt.Errorf("%s: region is required", where))
+		}
+		if _, err := netip.ParseAddr(h.Address); err != nil {
+			errs = append(errs, fmt.Errorf("%s: address %q is not a valid IP address", where, h.Address))
+		}
+		if h.Name != "" {
+			if first, ok := firstSeen[h.Name]; ok {
+				errs = append(errs, fmt.Errorf("%s: duplicate name, first seen at host %d", where, first))
+			} else {
+				firstSeen[h.Name] = n
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// label names a host in error messages by its position in the file (counting
+// from 1) and its name: "host 3 (web-2)", or just "host 3" when the name is
+// empty.
+func label(n int, h Host) string {
+	if h.Name == "" {
+		return fmt.Sprintf("host %d", n)
+	}
+	return fmt.Sprintf("host %d (%s)", n, h.Name)
+}

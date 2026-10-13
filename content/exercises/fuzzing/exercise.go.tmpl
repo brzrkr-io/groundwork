@@ -1,0 +1,51 @@
+// Package target is the Gopherlings exercise "Fuzzing".
+package target
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// ParseTarget splits a scrape target such as "web-1:8080" into its host and
+// port. An IPv6 address goes in square brackets, as in "[::1]:443", because
+// the address itself contains colons. The host must not be empty and the
+// port must be a whole number from 1 to 65535. Anything else gives an error.
+//
+// This code has bugs: some inputs make it panic. Task 2 asks you to fix them.
+func ParseTarget(s string) (host string, port int, err error) {
+	return parseTarget(s)
+}
+
+// parseTarget points at the real implementation. Gopherlings' grader swaps in
+// broken versions to check that your test catches them.
+var parseTarget = realParseTarget
+
+func realParseTarget(s string) (string, int, error) {
+	var host, portText string
+	if s[0] == '[' {
+		// "[::1]:443": the host is between the brackets.
+		end := strings.Index(s, "]")
+		host = s[1:end]
+		rest := s[end+1:]
+		if !strings.HasPrefix(rest, ":") {
+			return "", 0, fmt.Errorf("target %q has no port", s)
+		}
+		portText = rest[1:]
+	} else {
+		// "web-1:8080": the port is after the last colon.
+		i := strings.LastIndex(s, ":")
+		if i < 0 {
+			return "", 0, fmt.Errorf("target %q has no port", s)
+		}
+		host, portText = s[:i], s[i+1:]
+	}
+	if host == "" {
+		return "", 0, fmt.Errorf("target %q has no host", s)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("target %q has an invalid port %q", s, portText)
+	}
+	return host, port, nil
+}

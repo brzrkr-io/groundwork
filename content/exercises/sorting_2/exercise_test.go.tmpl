@@ -1,0 +1,88 @@
+package nodes
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestSortedNodes(t *testing.T) {
+	tests := []struct {
+		name  string
+		nodes []string
+		want  []string
+	}{
+		{"three nodes", []string{"node-c", "node-a", "node-b"}, []string{"node-a", "node-b", "node-c"}},
+		{"two nodes", []string{"worker-9", "control-1"}, []string{"control-1", "worker-9"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			before := slices.Clone(tc.nodes)
+			got := SortedNodes(tc.nodes)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("SortedNodes(%q) = %q, want %q", before, got, tc.want)
+			}
+			if !slices.Equal(tc.nodes, before) {
+				t.Errorf("SortedNodes changed the caller's slice to %q, want it left as %q", tc.nodes, before)
+			}
+		})
+	}
+}
+
+func TestFullestFirst(t *testing.T) {
+	tests := []struct {
+		name  string
+		usage map[string]int
+		want  []string
+	}{
+		{"highest first", map[string]int{"node-a": 20, "node-b": 91, "node-c": 55}, []string{"node-b", "node-c", "node-a"}},
+		{"ties are alphabetical", map[string]int{"node-a": 40, "node-b": 91, "node-c": 40}, []string{"node-b", "node-a", "node-c"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FullestFirst(tc.usage)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("FullestFirst(%v) = %q, want %q", tc.usage, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLeastBusy(t *testing.T) {
+	tests := []struct {
+		name  string
+		nodes []string
+		pods  map[string]int
+		want  []string
+	}{
+		{
+			"fewest first",
+			[]string{"node-a", "node-b", "node-c"},
+			map[string]int{"node-a": 30, "node-b": 4, "node-c": 17},
+			[]string{"node-b", "node-c", "node-a"},
+		},
+		{
+			"ties are alphabetical",
+			[]string{"node-c", "node-b", "node-a"},
+			map[string]int{"node-a": 12, "node-b": 5, "node-c": 5},
+			[]string{"node-b", "node-c", "node-a"},
+		},
+		{
+			"all tied",
+			[]string{"worker-3", "worker-1", "worker-2"},
+			map[string]int{"worker-1": 8, "worker-2": 8, "worker-3": 8},
+			[]string{"worker-1", "worker-2", "worker-3"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			before := slices.Clone(tc.nodes)
+			got := LeastBusy(tc.nodes, tc.pods)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("LeastBusy(%q, %v) = %q, want %q", before, tc.pods, got, tc.want)
+			}
+			if !slices.Equal(tc.nodes, before) {
+				t.Errorf("LeastBusy changed the caller's slice to %q, want it left as %q", tc.nodes, before)
+			}
+		})
+	}
+}

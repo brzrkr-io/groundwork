@@ -1,0 +1,66 @@
+package main
+
+import (
+	"strings"
+	"testing"
+)
+
+// runCheck calls run and returns what it wrote and the exit code.
+func runCheck(args []string) (stdout, stderr string, code int) {
+	var out, errOut strings.Builder
+	code = run(args, &out, &errOut)
+	return out.String(), errOut.String(), code
+}
+
+func TestRunReport(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantOut  string
+		wantCode int
+	}{
+		{"all fine", []string{"web-1=72", "db-1=85"}, "web-1 72% ok\ndb-1 85% warn\n", 0},
+		{"one full", []string{"web-1=72", "web-2=91"}, "web-1 72% ok\nweb-2 91% full\n", 1},
+		{"completely full", []string{"cache-1=100"}, "cache-1 100% full\n", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, stderr, code := runCheck(tt.args)
+			if stdout != tt.wantOut {
+				t.Errorf("run(%q) stdout = %q, want %q", tt.args, stdout, tt.wantOut)
+			}
+			if stderr != "" {
+				t.Errorf("run(%q) stderr = %q, want %q", tt.args, stderr, "")
+			}
+			if code != tt.wantCode {
+				t.Errorf("run(%q) = %d, want %d", tt.args, code, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestRunErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{"no arguments", nil, "usage: diskcheck HOST=PERCENT...\n"},
+		{"missing =", []string{"web-1=72", "web-2"}, "diskcheck: bad reading \"web-2\": want HOST=PERCENT\n"},
+		{"not a number", []string{"web-1=lots"}, "diskcheck: bad percent in \"web-1=lots\": want 0-100\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdout, stderr, code := runCheck(tt.args)
+			if stdout != "" {
+				t.Errorf("run(%q) stdout = %q, want %q", tt.args, stdout, "")
+			}
+			if stderr != tt.wantErr {
+				t.Errorf("run(%q) stderr = %q, want %q", tt.args, stderr, tt.wantErr)
+			}
+			if code != 2 {
+				t.Errorf("run(%q) = %d, want 2", tt.args, code)
+			}
+		})
+	}
+}

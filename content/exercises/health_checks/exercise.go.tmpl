@@ -1,0 +1,61 @@
+// Package health is the Gopherlings exercise "Health checks: liveness and readiness".
+package health
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"time"
+)
+
+// Check is one named dependency check, such as "postgres" or "redis".
+// Run returns nil when the dependency is healthy.
+type Check struct {
+	Name string
+	Run  func(ctx context.Context) error
+}
+
+// Result is the outcome of running one Check.
+type Result struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+// Report is the JSON body that the readiness endpoint sends.
+type Report struct {
+	Status string   `json:"status"`
+	Checks []Result `json:"checks"`
+}
+
+// Livez answers the Kubernetes liveness probe. It never checks dependencies.
+func Livez(w http.ResponseWriter, r *http.Request) {
+	// TODO(1): Reply with status 200 and the body "ok\n".
+}
+
+// RunChecks runs every check, each with its own timeout, and returns the
+// results in the same order as checks.
+func RunChecks(ctx context.Context, checks []Check, timeout time.Duration) []Result {
+	results := make([]Result, 0, len(checks))
+	for _, c := range checks {
+		results = append(results, RunCheck(ctx, c, timeout))
+	}
+	return results
+}
+
+// RunCheck runs c with a context that expires after timeout.
+func RunCheck(ctx context.Context, c Check, timeout time.Duration) Result {
+	// TODO(2): Run c with its own timeout. Report "ok", or "fail" plus the error message.
+	return Result{Name: c.Name, Status: "unknown"}
+}
+
+// Readyz returns the handler for the Kubernetes readiness probe.
+func Readyz(checks []Check, timeout time.Duration) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		results := RunChecks(r.Context(), checks, timeout)
+		report := Report{Status: "ok", Checks: results}
+		// TODO(3): Mark the report "fail" if any check failed, set the
+		// Content-Type header, and reply 200 (all ok) or 503 (any failed).
+		json.NewEncoder(w).Encode(report)
+	})
+}

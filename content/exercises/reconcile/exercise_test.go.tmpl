@@ -1,0 +1,149 @@
+package reconcile
+
+import (
+	"errors"
+	"reflect"
+	"slices"
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
+)
+
+const (
+	img142 = "registry.example.com/shop/api:1.4.2"
+	img150 = "registry.example.com/shop/api:1.5.0"
+)
+
+// rolloutConfig returns the rollout-config ConfigMap with the given data.
+func rolloutConfig(data map[string]string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "rollout-config", Namespace: "shop"},
+		Data:       data,
+	}
+}
+
+// deployment returns the "api" Deployment with one container. A nil
+// replicas leaves Spec.Replicas unset.
+func deployment(replicas *int32, image string) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "shop"},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: replicas,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "api", Image: image}},
+				},
+			},
+		},
+	}
+}
+
+func TestDesiredFromConfigMap(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    map[string]string
+		want    Desired
+		wantErr error
+	}{
+		{"three replicas", map[string]string{"replicas": "3", "image": img150}, Desired{Replicas: 3, Image: img150}, nil},
+		{"zero replicas", map[string]string{"replicas": "0", "image": img142}, Desired{Replicas: 0, Image: img142}, nil},
+		{"replicas missing", map[string]string{"image": img150}, Desired{}, ErrMissingKey},
+		{"replicas empty", map[string]string{"replicas": "", "image": img150}, Desired{}, ErrMissingKey},
+		{"image missing", map[string]string{"replicas": "2"}, Desired{}, ErrMissingKey},
+		{"no data at all", nil, Desired{}, ErrMissingKey},
+		{"replicas not a number", map[string]string{"replicas": "three", "image": img150}, Desired{}, ErrInvalidReplicas},
+		{"replicas negative", map[string]string{"replicas": "-1", "image": img150}, Desired{}, ErrInvalidReplicas},
+		{"replicas too big for int32", map[string]string{"replicas": "5000000000", "image": img150}, Desired{}, ErrInvalidReplicas},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := DesiredFromConfigMap(rolloutConfig(tt.data))
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("DesiredFromConfigMap(%v) error = %v, want an error wrapping %v", tt.data, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("DesiredFromConfigMap(%v) error = %v, want nil", tt.data, err)
+			}
+			if got != tt.want {
+				t.Errorf("DesiredFromConfigMap(%v) = %+v, want %+v", tt.data, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDiff(t *testing.T) {
+	tests := []struct {
+		name    string
+		desired Desired
+		current *appsv1.Deployment
+		want    []string
+	}{
+		{"in sync", Desired{Replicas: 3, Image: img142}, deployment(new(int32(3)), img142), nil},
+		{"in sync with replicas unset", Desired{Replicas: 1, Image: img150}, deployment(nil, img150), nil},
+		{"replicas only", Desired{Replicas: 3, Image: img142}, deployment(new(int32(2)), img142),
+			[]string{"replicas: 2 -> 3"}},
+		{"replicas unset means 1", Desired{Replicas: 4, Image: img142}, deployment(nil, img142),
+			[]string{"replicas: 1 -> 4"}},
+		{"image only", Desired{Replicas: 2, Image: img150}, deployment(new(int32(2)), img142),
+			[]string{"image: " + img142 + " -> " + img150}},
+		{"both, replicas first", Desired{Replicas: 0, Image: img142}, deployment(new(int32(5)), img150),
+			[]string{"replicas: 5 -> 0", "image: " + img150 + " -> " + img142}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Diff(tt.desired, tt.current)
+			// slices.Equal treats nil and an empty slice as equal.
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Diff(%+v, current) = %q, want %q", tt.desired, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApply(t *testing.T) {
+	tests := []struct {
+		name        string
+		desired     Desired
+		current     *appsv1.Deployment
+		wantChanged bool
+	}{
+		{"in sync", Desired{Replicas: 3, Image: img142}, deployment(new(int32(3)), img142), false},
+		{"in sync with replicas unset", Desired{Replicas: 1, Image: img142}, deployment(nil, img142), false},
+		{"scale up", Desired{Replicas: 5, Image: img142}, deployment(new(int32(2)), img142), true},
+		{"scale unset to 0", Desired{Replicas: 0, Image: img142}, deployment(nil, img142), true},
+		{"new image", Desired{Replicas: 2, Image: img150}, deployment(new(int32(2)), img142), true},
+		{"both", Desired{Replicas: 1, Image: img150}, deployment(new(int32(4)), img142), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := tt.current.DeepCopy()
+
+			got, changed := Apply(tt.desired, tt.current)
+
+			if !reflect.DeepEqual(tt.current, before) {
+				t.Fatalf("Apply(%+v, current) modified current; work on current.DeepCopy() instead", tt.desired)
+			}
+			if got == tt.current {
+				t.Fatalf("Apply(%+v, current) returned current itself, want a copy", tt.desired)
+			}
+			if changed != tt.wantChanged {
+				t.Errorf("Apply(%+v, current) changed = %t, want %t", tt.desired, changed, tt.wantChanged)
+			}
+			// An unset Replicas counts as 1, just like in Kubernetes.
+			if r := ptr.Deref(got.Spec.Replicas, 1); r != tt.desired.Replicas {
+				t.Errorf("Apply(%+v, current) replicas = %d, want %d", tt.desired, r, tt.desired.Replicas)
+			}
+
+			// Idempotence: applying the result again must change nothing.
+			if _, again := Apply(tt.desired, got); again {
+				t.Errorf("Apply(%+v, Apply(...)) changed = true, want false (applying twice must be safe)", tt.desired)
+			}
+		})
+	}
+}

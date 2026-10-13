@@ -1,0 +1,33 @@
+package uptime
+
+import (
+	"context"
+	"sync"
+)
+
+// CheckAll checks every target with CheckWithRetry, running at most
+// m.Workers checks at the same time, and returns the results in the same
+// order as targets.
+func (m *Monitor) CheckAll(ctx context.Context, targets []Target) []Result {
+	jobs := make(chan int) // indexes into targets
+	go func() {
+		defer close(jobs)
+		for i := range targets {
+			jobs <- i
+		}
+	}()
+
+	// Each worker writes only results[i] for the indexes it receives, so the
+	// slice needs no lock, and wg.Wait() makes every write visible.
+	results := make([]Result, len(targets))
+	var wg sync.WaitGroup
+	for range m.Workers {
+		wg.Go(func() {
+			for i := range jobs {
+				results[i] = m.CheckWithRetry(ctx, targets[i])
+			}
+		})
+	}
+	wg.Wait()
+	return results
+}

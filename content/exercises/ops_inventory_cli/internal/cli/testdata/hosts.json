@@ -1,0 +1,7 @@
+[
+  {"name": "web-2", "env": "prod", "region": "us-east-1", "address": "10.0.1.12", "tags": ["web", "nginx"]},
+  {"name": "db-1", "env": "prod", "region": "us-east-1", "address": "10.0.2.10", "tags": ["db", "postgres"]},
+  {"name": "web-1", "env": "prod", "region": "eu-west-1", "address": "10.1.1.11", "tags": ["web", "nginx"]},
+  {"name": "cache-1", "env": "staging", "region": "eu-west-1", "address": "10.1.3.10", "tags": ["cache", "redis"]},
+  {"name": "build-1", "env": "dev", "region": "us-east-1", "address": "10.9.0.5"}
+]

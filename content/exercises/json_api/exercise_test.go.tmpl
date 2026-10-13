@@ -1,0 +1,184 @@
+package jsonapi
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// checkResponse compares the recorded status code, Content-Type and body
+// with what we want.
+func checkResponse(t *testing.T, rec *httptest.ResponseRecorder, wantCode int, wantBody string) {
+	t.Helper()
+	if rec.Code != wantCode {
+		t.Errorf("status = %d, want %d", rec.Code, wantCode)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", got, "application/json")
+	}
+	if got := rec.Body.String(); got != wantBody {
+		t.Errorf("body = %q, want %q", got, wantBody)
+	}
+}
+
+func TestWriteJSON(t *testing.T) {
+	// Each case calls one helper, then lists the response we want.
+	tests := []struct {
+		name     string
+		write    func(w http.ResponseWriter)
+		wantCode int
+		wantBody string
+	}{
+		{
+			name: "writeJSON with 200",
+			write: func(w http.ResponseWriter) {
+				writeJSON(w, http.StatusOK, Service{Name: "api", Port: 8080, Owner: "platform"})
+			},
+			wantCode: 200,
+			wantBody: `{"name":"api","port":8080,"owner":"platform"}` + "\n",
+		},
+		{
+			name: "writeJSON with 201",
+			write: func(w http.ResponseWriter) {
+				writeJSON(w, http.StatusCreated, Service{Name: "redis", Port: 6379, Owner: "data"})
+			},
+			wantCode: 201,
+			wantBody: `{"name":"redis","port":6379,"owner":"data"}` + "\n",
+		},
+		{
+			name: "writeError with 404",
+			write: func(w http.ResponseWriter) {
+				writeError(w, http.StatusNotFound, "service not found: web")
+			},
+			wantCode: 404,
+			wantBody: `{"error":"service not found: web"}` + "\n",
+		},
+		{
+			name: "writeError with 400",
+			write: func(w http.ResponseWriter) {
+				writeError(w, http.StatusBadRequest, "name is required")
+			},
+			wantCode: 400,
+			wantBody: `{"error":"name is required"}` + "\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			tt.write(rec)
+			checkResponse(t, rec, tt.wantCode, tt.wantBody)
+		})
+	}
+}
+
+func TestGetService(t *testing.T) {
+	store := NewStore(
+		Service{Name: "payments", Port: 8443, Owner: "billing"},
+		Service{Name: "search", Port: 9200, Owner: "discovery"},
+	)
+	api := NewAPI(store)
+
+	// Each line is one case: the request path, then the response we want.
+	tests := []struct {
+		path     string
+		wantCode int
+		wantBody string
+	}{
+		{"/services/payments", 200, `{"name":"payments","port":8443,"owner":"billing"}` + "\n"},
+		{"/services/search", 200, `{"name":"search","port":9200,"owner":"discovery"}` + "\n"},
+		{"/services/web", 404, `{"error":"service not found: web"}` + "\n"},
+		{"/services/billing", 404, `{"error":"service not found: billing"}` + "\n"},
+	}
+	for _, tt := range tests {
+		t.Run("GET "+tt.path, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			rec := httptest.NewRecorder()
+			api.Routes().ServeHTTP(rec, req)
+			checkResponse(t, rec, tt.wantCode, tt.wantBody)
+		})
+	}
+}
+
+func TestCreateService(t *testing.T) {
+	// A body just over 1 MiB. It would be valid JSON if the server read
+	// all of it.
+	tooBig := `{"name":"` + strings.Repeat("a", 1<<20) + `","port":8080}`
+
+	// Each case sends one request body. wantSaved is the service that
+	// should be in the store afterwards ("" when nothing is saved).
+	tests := []struct {
+		name      string
+		body      string
+		wantCode  int
+		wantBody  string
+		wantSaved string
+	}{
+		{
+			name:      "valid service",
+			body:      `{"name":"api","port":8080,"owner":"platform"}`,
+			wantCode:  201,
+			wantBody:  `{"name":"api","port":8080,"owner":"platform"}` + "\n",
+			wantSaved: "api",
+		},
+		{
+			name:      "valid service without owner",
+			body:      `{"name":"redis","port":6379}`,
+			wantCode:  201,
+			wantBody:  `{"name":"redis","port":6379,"owner":""}` + "\n",
+			wantSaved: "redis",
+		},
+		{
+			name:     "broken JSON",
+			body:     `{"name":"api",`,
+			wantCode: 400,
+			wantBody: `{"error":"invalid request body"}` + "\n",
+		},
+		{
+			name:     "unknown field (typo in port)",
+			body:     `{"name":"api","prot":8080}`,
+			wantCode: 400,
+			wantBody: `{"error":"invalid request body"}` + "\n",
+		},
+		{
+			name:     "body over 1 MiB",
+			body:     tooBig,
+			wantCode: 400,
+			wantBody: `{"error":"invalid request body"}` + "\n",
+		},
+		{
+			name:     "missing name",
+			body:     `{"port":8080}`,
+			wantCode: 400,
+			wantBody: `{"error":"name is required"}` + "\n",
+		},
+		{
+			name:     "port out of range",
+			body:     `{"name":"api","port":70000}`,
+			wantCode: 400,
+			wantBody: `{"error":"port must be between 1 and 65535"}` + "\n",
+		},
+		{
+			name:     "name already taken",
+			body:     `{"name":"payments","port":9000}`,
+			wantCode: 409,
+			wantBody: `{"error":"service already exists: payments"}` + "\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Every case starts with a store that holds only "payments".
+			store := NewStore(Service{Name: "payments", Port: 8443, Owner: "billing"})
+			req := httptest.NewRequest("POST", "/services", strings.NewReader(tt.body))
+			rec := httptest.NewRecorder()
+			NewAPI(store).Routes().ServeHTTP(rec, req)
+			checkResponse(t, rec, tt.wantCode, tt.wantBody)
+
+			if tt.wantSaved != "" {
+				if _, err := store.Get(tt.wantSaved); err != nil {
+					t.Errorf("store.Get(%q) = %v, want the new service to be saved", tt.wantSaved, err)
+				}
+			}
+		})
+	}
+}

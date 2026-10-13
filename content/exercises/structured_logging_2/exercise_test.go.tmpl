@@ -1,0 +1,130 @@
+package accesslog
+
+import (
+	"bytes"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// parseLines decodes each line in buf as one JSON object.
+// JSON numbers become float64.
+func parseLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	t.Helper()
+	var records []map[string]any
+	for line := range strings.Lines(buf.String()) {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("log line is not JSON: %q", line)
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+func TestStatusRecorder(t *testing.T) {
+	for _, code := range []int{http.StatusNotFound, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			inner := httptest.NewRecorder()
+			rec := &statusRecorder{ResponseWriter: inner, status: http.StatusOK}
+			rec.WriteHeader(code)
+			if rec.status != code {
+				t.Errorf("after WriteHeader(%d), status = %d, want %d", code, rec.status, code)
+			}
+			if inner.Code != code {
+				t.Errorf("after WriteHeader(%d), the wrapped writer got %d, want %d", code, inner.Code, code)
+			}
+		})
+	}
+}
+
+func TestAccessLog(t *testing.T) {
+	tests := []struct {
+		name      string
+		method    string
+		path      string
+		requestID string
+		status    int // 0: the handler only writes a body, so the status is 200
+		wantLevel string
+		wantCode  int
+	}{
+		{"ok without header", "GET", "/healthz", "", 0, "INFO", 200},
+		{"created", "POST", "/deploys", "r-7", http.StatusCreated, "INFO", 201},
+		{"not found", "GET", "/deploys/d-404", "r-9", http.StatusNotFound, "INFO", 404},
+		{"internal error", "DELETE", "/deploys/d-9", "r-8", http.StatusInternalServerError, "ERROR", 500},
+		{"unavailable", "GET", "/deploys", "r-42", http.StatusServiceUnavailable, "ERROR", 503},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&buf, nil))
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tt.status != 0 {
+					w.WriteHeader(tt.status)
+				}
+				w.Write([]byte("ok"))
+			})
+
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			if tt.requestID != "" {
+				req.Header.Set("X-Request-ID", tt.requestID)
+			}
+			resp := httptest.NewRecorder()
+			AccessLog(logger, next).ServeHTTP(resp, req)
+
+			if resp.Code != tt.wantCode {
+				t.Errorf("client got status %d, want %d", resp.Code, tt.wantCode)
+			}
+			records := parseLines(t, &buf)
+			if len(records) != 1 {
+				t.Fatalf("%s %s logged %d lines, want 1", tt.method, tt.path, len(records))
+			}
+			r := records[0]
+			checks := []struct {
+				key  string
+				want any
+			}{
+				{"level", tt.wantLevel},
+				{"msg", "request"},
+				{"method", tt.method},
+				{"path", tt.path},
+				{"status", float64(tt.wantCode)},
+				{"request_id", tt.requestID},
+			}
+			for _, c := range checks {
+				if got := r[c.key]; got != c.want {
+					t.Errorf("%s %s logged %s = %#v, want %#v", tt.method, tt.path, c.key, got, c.want)
+				}
+			}
+		})
+	}
+}
+
+func TestNewLeveledLogger(t *testing.T) {
+	var buf bytes.Buffer
+	logger, level := NewLeveledLogger(&buf)
+	if got := level.Level(); got != slog.LevelInfo {
+		t.Fatalf("NewLeveledLogger level starts at %v, want INFO", got)
+	}
+
+	logger.Debug("hidden at info")
+	logger.Info("deploy started")
+	level.Set(slog.LevelDebug)
+	logger.Debug("cache lookup")
+	level.Set(slog.LevelWarn)
+	logger.Info("hidden at warn")
+	logger.Warn("disk almost full")
+
+	var got []string
+	for _, record := range parseLines(t, &buf) {
+		got = append(got, record["msg"].(string))
+	}
+	want := []string{"deploy started", "cache lookup", "disk almost full"}
+	if !slices.Equal(got, want) {
+		t.Errorf("logged messages %q, want %q", got, want)
+	}
+}

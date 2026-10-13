@@ -1,0 +1,28 @@
+// Package cliargs is the Gopherlings exercise "Command-line arguments: os.Args and usage errors".
+package cliargs
+
+import (
+	"fmt"
+	"io"
+	"strconv"
+)
+
+// Run is the whole scale tool: scale SERVICE REPLICAS.
+// args is the full os.Args, so args[0] is the program name.
+// It returns the exit code: 0 for success, 2 for a usage error.
+func Run(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 3 {
+		fmt.Fprintf(stderr, "usage: %s SERVICE REPLICAS\n", args[0])
+		return 2
+	}
+	service := args[1]
+
+	replicas, err := strconv.Atoi(args[2])
+	if err != nil || replicas < 0 {
+		fmt.Fprintf(stderr, "%s: replicas must be a whole number >= 0, got %q\n", args[0], args[2])
+		return 2
+	}
+
+	fmt.Fprintf(stdout, "scaling %s to %d replicas\n", service, replicas)
+	return 0
+}

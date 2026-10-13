@@ -1,0 +1,82 @@
+package logreport
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"maps"
+	"slices"
+	"strings"
+	"time"
+)
+
+// Report is the summary of one access log.
+type Report struct {
+	Requests int            // lines that parsed
+	Skipped  int            // lines that did not parse
+	ByClass  map[string]int // "2xx" => 11, ...
+	TopPaths []PathCount    // the three busiest paths
+	P50      time.Duration  // median request duration
+	P95      time.Duration  // 95th percentile request duration
+}
+
+// Summarize builds a Report from a parsed log.
+func Summarize(parsed Log) Report {
+	durations := make([]time.Duration, len(parsed.Entries))
+	for i, e := range parsed.Entries {
+		durations[i] = e.Duration
+	}
+	return Report{
+		Requests: len(parsed.Entries),
+		Skipped:  len(parsed.Problems),
+		ByClass:  CountByClass(parsed.Entries),
+		TopPaths: TopPaths(parsed.Entries, 3),
+		P50:      Percentile(durations, 50),
+		P95:      Percentile(durations, 95),
+	}
+}
+
+// WriteText writes r as a plain-text report for humans.
+func WriteText(w io.Writer, r Report) error {
+	// Build the whole report first, so there is only one write error to check.
+	var b strings.Builder
+	fmt.Fprintf(&b, "requests: %d\n", r.Requests)
+	fmt.Fprintf(&b, "skipped: %d\n", r.Skipped)
+	b.WriteString("status classes:\n")
+	for _, class := range slices.Sorted(maps.Keys(r.ByClass)) {
+		fmt.Fprintf(&b, "  %s: %d\n", class, r.ByClass[class])
+	}
+	b.WriteString("top paths:\n")
+	for _, pc := range r.TopPaths {
+		fmt.Fprintf(&b, "  %s: %d\n", pc.Path, pc.Count)
+	}
+	fmt.Fprintf(&b, "latency: p50 %v, p95 %v\n", r.P50, r.P95)
+
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+// jsonReport is the shape of the JSON report. Durations become whole
+// milliseconds, because a time.Duration would encode as nanoseconds.
+type jsonReport struct {
+	Requests int            `json:"requests"`
+	Skipped  int            `json:"skipped"`
+	ByClass  map[string]int `json:"by_class"`
+	TopPaths []PathCount    `json:"top_paths"`
+	P50Ms    int64          `json:"p50_ms"`
+	P95Ms    int64          `json:"p95_ms"`
+}
+
+// WriteJSON writes r as indented JSON for other tools.
+func WriteJSON(w io.Writer, r Report) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(jsonReport{
+		Requests: r.Requests,
+		Skipped:  r.Skipped,
+		ByClass:  r.ByClass,
+		TopPaths: r.TopPaths,
+		P50Ms:    r.P50.Milliseconds(),
+		P95Ms:    r.P95.Milliseconds(),
+	})
+}

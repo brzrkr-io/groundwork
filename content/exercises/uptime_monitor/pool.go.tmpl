@@ -1,0 +1,13 @@
+package uptime
+
+import "context"
+
+// CheckAll checks every target with CheckWithRetry, running at most
+// m.Workers checks at the same time, and returns the results in the same
+// order as targets.
+func (m *Monitor) CheckAll(ctx context.Context, targets []Target) []Result {
+	// TODO(4): Check the targets with a pool of m.Workers goroutines and
+	// return one Result per target, in input order. Add "sync" to the
+	// imports.
+	return nil
+}

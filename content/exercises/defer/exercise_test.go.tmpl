@@ -1,0 +1,160 @@
+package cleanup
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"testing"
+)
+
+// checkErr compares err with want. An empty want means "no error".
+func checkErr(t *testing.T, call string, err error, want string) {
+	t.Helper()
+	if want == "" {
+		if err != nil {
+			t.Errorf("%s error = %q, want nil", call, err)
+		}
+		return
+	}
+	if err == nil {
+		t.Errorf("%s error = nil, want %q", call, want)
+	} else if err.Error() != want {
+		t.Errorf("%s error = %q, want %q", call, err, want)
+	}
+}
+
+// checkEvents compares the recorded events with want.
+func checkEvents(t *testing.T, call string, got, want []string) {
+	t.Helper()
+	if !slices.Equal(got, want) {
+		t.Errorf("%s events = %q, want %q", call, got, want)
+	}
+}
+
+func TestDeploy(t *testing.T) {
+	tests := []struct {
+		name    string
+		host    string
+		cmds    []string
+		failOn  string
+		wantErr string
+		want    []string
+	}{
+		{
+			name: "all commands work",
+			host: "web-1",
+			cmds: []string{"pull", "migrate", "restart"},
+			want: []string{"connect web-1", "run pull", "run migrate", "run restart", "close web-1"},
+		},
+		{
+			name: "no commands",
+			host: "web-2",
+			cmds: nil,
+			want: []string{"connect web-2", "close web-2"},
+		},
+		{
+			name:    "middle command fails",
+			host:    "web-1",
+			cmds:    []string{"pull", "migrate", "restart"},
+			failOn:  "migrate",
+			wantErr: "run migrate: command failed",
+			want:    []string{"connect web-1", "run pull", "run migrate", "close web-1"},
+		},
+		{
+			name:    "first command fails",
+			host:    "web-3",
+			cmds:    []string{"pull", "restart"},
+			failOn:  "pull",
+			wantErr: "run pull: command failed",
+			want:    []string{"connect web-3", "run pull", "close web-3"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Recorder{FailOn: tt.failOn}
+			err := Deploy(r, tt.host, tt.cmds)
+			call := fmt.Sprintf("Deploy(r, %q, %q) with FailOn %q", tt.host, tt.cmds, tt.failOn)
+			checkErr(t, call, err, tt.wantErr)
+			checkEvents(t, call, r.Events, tt.want)
+		})
+	}
+}
+
+func TestMigrate(t *testing.T) {
+	tests := []struct {
+		name    string
+		host    string
+		failOn  string
+		wantErr string
+		want    []string
+	}{
+		{
+			name: "migrate works on db-1",
+			host: "db-1",
+			want: []string{"lock migrations", "connect db-1", "run migrate", "close db-1", "unlock migrations"},
+		},
+		{
+			name: "migrate works on db-2",
+			host: "db-2",
+			want: []string{"lock migrations", "connect db-2", "run migrate", "close db-2", "unlock migrations"},
+		},
+		{
+			name:    "migrate fails",
+			host:    "db-1",
+			failOn:  "migrate",
+			wantErr: "run migrate: command failed",
+			want:    []string{"lock migrations", "connect db-1", "run migrate", "close db-1", "unlock migrations"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Recorder{FailOn: tt.failOn}
+			err := Migrate(r, tt.host)
+			call := fmt.Sprintf("Migrate(r, %q) with FailOn %q", tt.host, tt.failOn)
+			checkErr(t, call, err, tt.wantErr)
+			checkEvents(t, call, r.Events, tt.want)
+		})
+	}
+}
+
+func TestBackup(t *testing.T) {
+	tests := []struct {
+		name    string
+		host    string
+		failOn  string
+		wantErr string
+		want    []string
+	}{
+		{
+			name: "backup works",
+			host: "db-1",
+			want: []string{"connect db-1", "run dump", "run upload", "close db-1"},
+		},
+		{
+			name:    "dump fails",
+			host:    "db-2",
+			failOn:  "dump",
+			wantErr: "backup db-2: run dump: command failed",
+			want:    []string{"connect db-2", "run dump", "close db-2"},
+		},
+		{
+			name:    "upload fails",
+			host:    "db-1",
+			failOn:  "upload",
+			wantErr: "backup db-1: run upload: command failed",
+			want:    []string{"connect db-1", "run dump", "run upload", "close db-1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Recorder{FailOn: tt.failOn}
+			err := Backup(r, tt.host)
+			call := fmt.Sprintf("Backup(r, %q) with FailOn %q", tt.host, tt.failOn)
+			checkErr(t, call, err, tt.wantErr)
+			if tt.wantErr != "" && !errors.Is(err, ErrCommandFailed) {
+				t.Errorf("%s: errors.Is(err, ErrCommandFailed) = false, want true (wrap with %%w)", call)
+			}
+			checkEvents(t, call, r.Events, tt.want)
+		})
+	}
+}

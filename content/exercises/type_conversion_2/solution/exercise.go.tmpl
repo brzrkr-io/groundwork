@@ -1,0 +1,20 @@
+// Package conversion is the Gopherlings exercise "Type conversion: fix the capacity helpers".
+package conversion
+
+import "strconv"
+
+// AvgMemoryMiB returns the average memory per pod, in MiB.
+func AvgMemoryMiB(totalMiB, pods int) float64 {
+	return float64(totalMiB) / float64(pods)
+}
+
+// PortLabel returns a label for a port, such as "port 8080".
+func PortLabel(port int) string {
+	return "port " + strconv.Itoa(port)
+}
+
+// AffordableReplicas returns how many whole replicas fit in budget.
+func AffordableReplicas(budget, costPerReplica float64) int {
+	// Converting to int drops the fraction: you can't run 3.33 replicas.
+	return int(budget / costPerReplica)
+}

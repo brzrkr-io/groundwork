@@ -1,0 +1,29 @@
+// Package zerovalues is the Gopherlings exercise "Zero values: fix the log rotation defaults".
+package zerovalues
+
+import "fmt"
+
+// LogPath returns path, or "/var/log/app.log" when path is empty.
+func LogPath(path string) string {
+	// TODO(1): Fix the condition so the default is used only for an empty path.
+	if path != "" {
+		return "/var/log/app.log"
+	}
+	return path
+}
+
+// SampleRate returns rate, or 0.1 when rate is unset (0).
+func SampleRate(rate float64) float64 {
+	// TODO(2): Return 0.1 when rate is 0.
+	return rate
+}
+
+// RotationSummary fills in defaults and describes the rotation policy.
+func RotationSummary(path string, maxSizeMiB, keepFiles int) string {
+	path = LogPath(path)
+	// TODO(3): Default maxSizeMiB to 100, and fix the keepFiles default below.
+	if keepFiles == 0 {
+		maxSizeMiB = 5
+	}
+	return fmt.Sprintf("rotate %s at %dMiB, keep %d", path, maxSizeMiB, keepFiles)
+}

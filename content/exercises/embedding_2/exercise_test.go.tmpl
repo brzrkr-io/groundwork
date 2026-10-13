@@ -1,0 +1,92 @@
+package embedding2
+
+import "testing"
+
+func TestNewSecret(t *testing.T) {
+	tests := []struct {
+		namespace, name string
+		data            map[string]string
+		wantKey         string
+	}{
+		{"prod", "db-password", map[string]string{"password": "hunter2"}, "prod/db-password"},
+		{"ci", "registry-token", map[string]string{"token": "abc123"}, "ci/registry-token"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewSecret(tt.namespace, tt.name, tt.data)
+			if got := s.Key(); got != tt.wantKey {
+				t.Errorf("NewSecret(%q, %q, ...).Key() = %q, want %q", tt.namespace, tt.name, got, tt.wantKey)
+			}
+			// meta is the embedded ObjectMeta, even if Secret has its own Name.
+			meta := s.ObjectMeta
+			if meta.Name != tt.name {
+				t.Errorf("NewSecret(%q, %q, ...).ObjectMeta.Name = %q, want %q", tt.namespace, tt.name, meta.Name, tt.name)
+			}
+			if meta.Namespace != tt.namespace {
+				t.Errorf("NewSecret(%q, %q, ...).ObjectMeta.Namespace = %q, want %q", tt.namespace, tt.name, meta.Namespace, tt.namespace)
+			}
+			if len(s.Data) != len(tt.data) {
+				t.Errorf("NewSecret(%q, %q, ...).Data has %d keys, want %d", tt.namespace, tt.name, len(s.Data), len(tt.data))
+			}
+		})
+	}
+}
+
+func TestSecretValidate(t *testing.T) {
+	token := map[string]string{"token": "abc"}
+	tests := []struct {
+		name   string
+		secret Secret
+		want   string // the error message; "" means Validate returns nil
+	}{
+		{
+			"missing name",
+			Secret{ObjectMeta: ObjectMeta{Namespace: "prod"}, Data: token},
+			"name is required",
+		},
+		{
+			"missing namespace",
+			Secret{ObjectMeta: ObjectMeta{Name: "api-token"}, Data: token},
+			"namespace is required",
+		},
+		{
+			"metadata is checked before data",
+			Secret{ObjectMeta: ObjectMeta{Name: "api-token"}},
+			"namespace is required",
+		},
+		{
+			"no data",
+			Secret{ObjectMeta: ObjectMeta{Name: "api-token", Namespace: "prod"}},
+			"secret has no data",
+		},
+		{
+			"empty data map",
+			Secret{ObjectMeta: ObjectMeta{Name: "api-token", Namespace: "prod"}, Data: map[string]string{}},
+			"secret has no data",
+		},
+		{
+			"valid",
+			Secret{ObjectMeta: ObjectMeta{Name: "api-token", Namespace: "prod"}, Data: token},
+			"",
+		},
+		{
+			"valid with two keys",
+			Secret{ObjectMeta: ObjectMeta{Name: "db", Namespace: "staging"}, Data: map[string]string{"user": "app", "password": "s3cret"}},
+			"",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.secret.Validate()
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			if got != tt.want {
+				meta := tt.secret.ObjectMeta
+				t.Errorf("Secret{Name: %q, Namespace: %q, %d data keys}.Validate() error = %q, want %q",
+					meta.Name, meta.Namespace, len(tt.secret.Data), got, tt.want)
+			}
+		})
+	}
+}

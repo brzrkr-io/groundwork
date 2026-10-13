@@ -1,0 +1,39 @@
+// Package report prints hosts for people (a table) and for programs (JSON).
+package report
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+	"text/tabwriter"
+
+	"gopherlings.local/ops_inventory_cli/internal/inventory"
+)
+
+// WriteTable writes hosts as an aligned table with a header row.
+func WriteTable(w io.Writer, hosts []inventory.Host) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tENV\tREGION\tADDRESS\tTAGS")
+	for _, h := range hosts {
+		tags := "-"
+		if len(h.Tags) > 0 {
+			tags = strings.Join(h.Tags, ",")
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", h.Name, h.Env, h.Region, h.Address, tags)
+	}
+	// Nothing reaches w until Flush, because the tabwriter must see every
+	// row before it knows how wide each column is.
+	return tw.Flush()
+}
+
+// WriteJSON writes hosts as an indented JSON array.
+func WriteJSON(w io.Writer, hosts []inventory.Host) error {
+	if hosts == nil {
+		// A nil slice encodes as null; scripts piping into jq expect [].
+		hosts = []inventory.Host{}
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(hosts)
+}

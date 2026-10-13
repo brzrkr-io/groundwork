@@ -1,0 +1,39 @@
+// Package quota limits how many production deploys a team may run per day.
+package quota
+
+import "errors"
+
+// ErrExhausted is returned by Take when no deploys are left.
+var ErrExhausted = errors.New("deploy quota exhausted")
+
+// Quota counts deploys against a daily limit. Its fields are private so
+// callers can't raise their own limit.
+type Quota struct {
+	limit int
+	used  int
+}
+
+// New returns a Quota that allows limit deploys.
+func New(limit int) *Quota {
+	return &Quota{limit: limit}
+}
+
+// Limit returns how many deploys the quota allows.
+func (q *Quota) Limit() int {
+	return q.limit
+}
+
+// Used returns how many deploys have been taken.
+func (q *Quota) Used() int {
+	return q.used
+}
+
+// Take records one deploy. It returns ErrExhausted when the limit has been
+// reached.
+func (q *Quota) Take() error {
+	if q.used >= q.limit {
+		return ErrExhausted
+	}
+	q.used++
+	return nil
+}

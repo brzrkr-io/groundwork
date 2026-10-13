@@ -1,0 +1,54 @@
+// Package embedding2 is the Gopherlings exercise "Struct embedding: fix the Secret bugs".
+package embedding2
+
+import "errors"
+
+// ObjectMeta is the part every Kubernetes object shares.
+type ObjectMeta struct {
+	Name      string
+	Namespace string
+}
+
+// Key returns "namespace/name", the way kubectl and caches identify an
+// object.
+func (m ObjectMeta) Key() string {
+	return m.Namespace + "/" + m.Name
+}
+
+// Validate returns an error if the name or the namespace is missing.
+func (m ObjectMeta) Validate() error {
+	if m.Name == "" {
+		return errors.New("name is required")
+	}
+	if m.Namespace == "" {
+		return errors.New("namespace is required")
+	}
+	return nil
+}
+
+// Secret holds sensitive key/value data, such as passwords and tokens.
+type Secret struct {
+	ObjectMeta
+	Data map[string]string
+}
+
+// NewSecret returns a Secret with the given namespace, name and data.
+func NewSecret(namespace, name string, data map[string]string) Secret {
+	return Secret{
+		ObjectMeta: ObjectMeta{Name: name, Namespace: namespace},
+		Data:       data,
+	}
+}
+
+// Validate checks the metadata first, then that the secret has some data.
+func (s Secret) Validate() error {
+	// s.Validate() here would call this method again, forever.
+	err := s.ObjectMeta.Validate()
+	if err != nil {
+		return err
+	}
+	if len(s.Data) == 0 {
+		return errors.New("secret has no data")
+	}
+	return nil
+}

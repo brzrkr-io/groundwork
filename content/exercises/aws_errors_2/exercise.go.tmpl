@@ -1,0 +1,47 @@
+// Package cleanup is the Gopherlings exercise "AWS API errors: EC2 dry-run permission checks".
+package cleanup
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/smithy-go"
+)
+
+// Terminator is the one EC2 method the cleanup bot needs.
+type Terminator interface {
+	TerminateInstances(ctx context.Context, params *ec2.TerminateInstancesInput, optFns ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error)
+}
+
+// The real EC2 client satisfies Terminator.
+var _ Terminator = (*ec2.Client)(nil)
+
+// IsNotFound reports whether err says the EC2 instance does not exist
+// (error code "InvalidInstanceID.NotFound").
+func IsNotFound(err error) bool {
+	// TODO(1): This type assertion only looks at the outermost error, so it
+	// misses errors that come back from the SDK. Search the whole chain
+	// instead (add the "errors" import).
+	apiErr, ok := err.(smithy.APIError)
+	return ok && apiErr.ErrorCode() == "InvalidInstanceID.NotFound"
+}
+
+// CanTerminate asks EC2, with a dry run, whether the bot is allowed to
+// terminate instance id. Nothing is terminated.
+func CanTerminate(ctx context.Context, api Terminator, id string) (bool, error) {
+	_, err := api.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+		InstanceIds: []string{id},
+		DryRun:      aws.Bool(true),
+	})
+	if err == nil {
+		// A dry run always answers with an error, so this should never happen.
+		return false, fmt.Errorf("dry-run terminate %s: got no DryRunOperation error", id)
+	}
+	// TODO(2): Look at the error code:
+	//   "DryRunOperation"       => true, nil
+	//   "UnauthorizedOperation" => false, nil
+	//   anything else           => false, err wrapped as "dry-run terminate ID: <err>"
+	return false, err
+}

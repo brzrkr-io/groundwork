@@ -1,0 +1,140 @@
+package flags
+
+import (
+	"slices"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestParseArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want Options
+	}{
+		{
+			name: "defaults",
+			args: []string{"-service", "api"},
+			want: Options{Service: "api", Replicas: 1, DryRun: false, Timeout: 30 * time.Second},
+		},
+		{
+			name: "everything set",
+			args: []string{"-service=web", "-replicas", "3", "-dry-run", "-timeout", "5m", "web-1", "web-2"},
+			want: Options{Service: "web", Replicas: 3, DryRun: true, Timeout: 5 * time.Minute, Hosts: []string{"web-1", "web-2"}},
+		},
+		{
+			name: "double dashes and equals",
+			args: []string{"--service", "worker", "--replicas=0", "--dry-run=true", "--timeout=90s", "db-1"},
+			want: Options{Service: "worker", Replicas: 0, DryRun: true, Timeout: 90 * time.Second, Hosts: []string{"db-1"}},
+		},
+		{
+			name: "parsing stops at first host",
+			args: []string{"-service", "api", "web-1", "-dry-run"},
+			want: Options{Service: "api", Replicas: 1, DryRun: false, Timeout: 30 * time.Second, Hosts: []string{"web-1", "-dry-run"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr strings.Builder
+			got, err := ParseArgs(tt.args, &stderr)
+			if err != nil {
+				t.Fatalf("ParseArgs(%q) error = %v, want nil (stderr: %q)", tt.args, err, stderr.String())
+			}
+			if got.Service != tt.want.Service {
+				t.Errorf("ParseArgs(%q).Service = %q, want %q", tt.args, got.Service, tt.want.Service)
+			}
+			if got.Replicas != tt.want.Replicas {
+				t.Errorf("ParseArgs(%q).Replicas = %d, want %d", tt.args, got.Replicas, tt.want.Replicas)
+			}
+			if got.DryRun != tt.want.DryRun {
+				t.Errorf("ParseArgs(%q).DryRun = %t, want %t", tt.args, got.DryRun, tt.want.DryRun)
+			}
+			if got.Timeout != tt.want.Timeout {
+				t.Errorf("ParseArgs(%q).Timeout = %v, want %v", tt.args, got.Timeout, tt.want.Timeout)
+			}
+			// slices.Equal treats an empty slice and nil as equal.
+			if !slices.Equal(got.Hosts, tt.want.Hosts) {
+				t.Errorf("ParseArgs(%q).Hosts = %q, want %q", tt.args, got.Hosts, tt.want.Hosts)
+			}
+		})
+	}
+}
+
+func TestServiceRequired(t *testing.T) {
+	const wantStart = "deploy: -service is required\nUsage of deploy:\n"
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"no arguments", []string{}},
+		{"other flags only", []string{"-replicas", "2", "-dry-run"}},
+		{"empty service", []string{"-service=", "web-1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr strings.Builder
+			got, err := ParseArgs(tt.args, &stderr)
+			if err == nil {
+				t.Fatalf("ParseArgs(%q) error = nil, want an error", tt.args)
+			}
+			if got.Service != "" || got.Replicas != 0 || got.Hosts != nil {
+				t.Errorf("ParseArgs(%q) = %+v, want an empty Options", tt.args, got)
+			}
+			if !strings.HasPrefix(stderr.String(), wantStart) {
+				t.Errorf("ParseArgs(%q) stderr = %q, want it to start with %q", tt.args, stderr.String(), wantStart)
+			}
+			if n := strings.Count(stderr.String(), "-service is required"); n != 1 {
+				t.Errorf("ParseArgs(%q) printed %q %d times, want once", tt.args, "-service is required", n)
+			}
+		})
+	}
+}
+
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantCode   int
+		wantStdout string
+		// wantStderr must appear exactly once in stderr; "" means stderr must be empty.
+		wantStderr string
+	}{
+		{
+			name:       "deploy to two hosts",
+			args:       []string{"-service", "api", "-replicas", "3", "web-1", "web-2"},
+			wantCode:   0,
+			wantStdout: "deploy api: replicas=3 timeout=30s dry-run=false hosts=web-1,web-2\n",
+		},
+		{
+			name:       "dry run without hosts",
+			args:       []string{"-service=worker", "-dry-run", "-timeout=5m"},
+			wantCode:   0,
+			wantStdout: "deploy worker: replicas=1 timeout=5m0s dry-run=true hosts=\n",
+		},
+		{"short help", []string{"-h"}, 0, "", "Usage of deploy:"},
+		{"long help", []string{"--help"}, 0, "", "Usage of deploy:"},
+		{"unknown flag", []string{"-service", "api", "-bogus"}, 2, "", "flag provided but not defined: -bogus"},
+		{"bad number", []string{"-service", "api", "-replicas", "abc"}, 2, "", `invalid value "abc" for flag -replicas`},
+		{"missing service", []string{"-replicas", "2"}, 2, "", "deploy: -service is required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr strings.Builder
+			code := Run(tt.args, &stdout, &stderr)
+			if code != tt.wantCode {
+				t.Errorf("Run(%q) exit code = %d, want %d", tt.args, code, tt.wantCode)
+			}
+			if got := stdout.String(); got != tt.wantStdout {
+				t.Errorf("Run(%q) stdout = %q, want %q", tt.args, got, tt.wantStdout)
+			}
+			got := stderr.String()
+			if tt.wantStderr == "" && got != "" {
+				t.Errorf("Run(%q) stderr = %q, want %q", tt.args, got, "")
+			}
+			if tt.wantStderr != "" && strings.Count(got, tt.wantStderr) != 1 {
+				t.Errorf("Run(%q) stderr = %q, want it to contain %q exactly once", tt.args, got, tt.wantStderr)
+			}
+		})
+	}
+}

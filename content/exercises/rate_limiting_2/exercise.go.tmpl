@@ -1,0 +1,134 @@
+// Package ratelimit is the Gopherlings exercise "Rate limiting: fix the bucket".
+package ratelimit
+
+import (
+	"net"
+	"net/http"
+	"sync"
+	"time"
+)
+
+// Bucket is a token bucket rate limiter. It is safe to use from many
+// goroutines at once.
+type Bucket struct {
+	mu     sync.Mutex
+	rate   float64          // tokens added per second, always above 0
+	burst  float64          // the most tokens the bucket can hold
+	tokens float64          // tokens available right now
+	last   time.Time        // when tokens was last refilled
+	now    func() time.Time // the clock; tests pass a fake one
+}
+
+// NewBucket returns a full bucket that refills at rate tokens per second and
+// holds at most burst tokens.
+func NewBucket(rate float64, burst int, now func() time.Time) *Bucket {
+	return &Bucket{
+		rate:   rate,
+		burst:  float64(burst),
+		tokens: float64(burst),
+		last:   now(),
+		now:    now,
+	}
+}
+
+// refill adds the tokens earned since the last refill, never going above
+// burst. The caller must hold b.mu.
+func (b *Bucket) refill() {
+	// TODO(1): Fix the two bugs: the bucket can fill up past burst, and the
+	// same stretch of time is counted again on every call.
+	now := b.now()
+	b.tokens += now.Sub(b.last).Seconds() * b.rate
+}
+
+// Allow takes one token if there is one, and reports whether the request may
+// go ahead.
+func (b *Bucket) Allow() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.refill()
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
+}
+
+// RetryAfter returns how long until the bucket has one whole token, or 0 if
+// it has one now.
+func (b *Bucket) RetryAfter() time.Duration {
+	// TODO(2): Lock, refill, and work out the wait from the missing part of a
+	// token and the rate.
+	return 0
+}
+
+// client is one client's bucket, plus when the client was last seen.
+type client struct {
+	bucket *Bucket
+	seen   time.Time
+}
+
+// Limiter gives every client IP address its own Bucket.
+type Limiter struct {
+	mu      sync.Mutex
+	clients map[string]*client // client IP -> that client's state
+	rate    float64
+	burst   int
+	now     func() time.Time
+}
+
+// NewLimiter returns a Limiter whose buckets refill at rate tokens per
+// second and hold at most burst tokens.
+func NewLimiter(rate float64, burst int, now func() time.Time) *Limiter {
+	return &Limiter{
+		clients: make(map[string]*client),
+		rate:    rate,
+		burst:   burst,
+		now:     now,
+	}
+}
+
+// bucket returns the bucket for ip, creating it on first sight, and records
+// that the client was seen now.
+func (l *Limiter) bucket(ip string) *Bucket {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	c, ok := l.clients[ip]
+	if !ok {
+		c = &client{bucket: NewBucket(l.rate, l.burst, l.now)}
+		l.clients[ip] = c
+	}
+	c.seen = l.now()
+	return c.bucket
+}
+
+// Len returns how many clients the Limiter is tracking.
+func (l *Limiter) Len() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.clients)
+}
+
+// Middleware rejects requests with 429 Too Many Requests when the client's
+// bucket is empty, and passes the rest on to next.
+func (l *Limiter) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		b := l.bucket(ip)
+		if !b.Allow() {
+			// TODO(2): Send b.RetryAfter(), rounded up to whole seconds.
+			// Add "math" and "strconv" to the imports.
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Cleanup forgets every client that hasn't been seen for at least idle, and
+// returns how many it removed. It is safe to call while requests are being
+// served.
+func (l *Limiter) Cleanup(idle time.Duration) int {
+	// TODO(3): Delete idle clients from l.clients and count them.
+	return 0
+}

@@ -1,0 +1,78 @@
+package variables
+
+import "testing"
+
+func TestPodName(t *testing.T) {
+	tests := []struct {
+		name       string
+		deployment string
+		hash       string
+		suffix     string
+		want       string
+	}{
+		{name: "checkout pod", deployment: "checkout", hash: "7d9f8b6c5", suffix: "x2k4p", want: "checkout-7d9f8b6c5-x2k4p"},
+		{name: "api pod", deployment: "api", hash: "5f6d7c8b9", suffix: "q8w7e", want: "api-5f6d7c8b9-q8w7e"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := PodName(tt.deployment, tt.hash, tt.suffix)
+			if got != tt.want {
+				t.Errorf("PodName(%q, %q, %q) = %q, want %q", tt.deployment, tt.hash, tt.suffix, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSSHTarget(t *testing.T) {
+	tests := []struct {
+		name   string
+		user   string
+		host   string
+		domain string
+		want   string
+	}{
+		{name: "deploy user", user: "deploy", host: "web-01", domain: "prod.example.com", want: "deploy@web-01.prod.example.com"},
+		{name: "admin user", user: "admin", host: "db-02", domain: "staging.example.com", want: "admin@db-02.staging.example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SSHTarget(tt.user, tt.host, tt.domain)
+			if got != tt.want {
+				t.Errorf("SSHTarget(%q, %q, %q) = %q, want %q", tt.user, tt.host, tt.domain, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSetImageCommand(t *testing.T) {
+	tests := []struct {
+		name       string
+		namespace  string
+		deployment string
+		image      string
+		want       string
+	}{
+		{
+			name:       "checkout",
+			namespace:  "payments",
+			deployment: "checkout",
+			image:      "registry.internal/checkout:v2.1.0",
+			want:       "kubectl -n payments set image deployment/checkout checkout=registry.internal/checkout:v2.1.0",
+		},
+		{
+			name:       "api",
+			namespace:  "web",
+			deployment: "api",
+			image:      "ghcr.io/acme/api:v1.4.2",
+			want:       "kubectl -n web set image deployment/api api=ghcr.io/acme/api:v1.4.2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SetImageCommand(tt.namespace, tt.deployment, tt.image)
+			if got != tt.want {
+				t.Errorf("SetImageCommand(%q, %q, %q) = %q, want %q", tt.namespace, tt.deployment, tt.image, got, tt.want)
+			}
+		})
+	}
+}

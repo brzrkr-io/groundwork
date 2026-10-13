@@ -1,0 +1,135 @@
+// Package backupcfg is the Gopherlings exercise "Config precedence: fix the backup job config".
+package backupcfg
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"time"
+)
+
+// Settings is the final configuration of the backup job.
+type Settings struct {
+	Interval time.Duration
+	Compress bool
+	Proxy    string
+	// Source maps each setting key ("interval", "compress", "proxy") to
+	// where its value came from: "default", "file", "env" or "flag".
+	Source map[string]string
+}
+
+// Defaults returns the built-in settings.
+func Defaults() Settings {
+	return Settings{
+		Interval: time.Hour,
+		Compress: true,
+		Proxy:    "",
+		Source: map[string]string{
+			"interval": "default",
+			"compress": "default",
+			"proxy":    "default",
+		},
+	}
+}
+
+// fileSettings mirrors the JSON config file. A field is nil when its key is
+// missing from the file.
+type fileSettings struct {
+	Interval *string `json:"interval"` // a duration such as "30m"
+	Compress *bool   `json:"compress"`
+	Proxy    *string `json:"proxy"`
+}
+
+// ApplyFile overrides s with the settings present in the JSON config data.
+func (s *Settings) ApplyFile(data []byte) error {
+	var f fileSettings
+	if err := json.Unmarshal(data, &f); err != nil {
+		return err
+	}
+	if f.Interval != nil {
+		d, err := time.ParseDuration(*f.Interval)
+		if err != nil {
+			return fmt.Errorf("invalid interval %q: %w", *f.Interval, err)
+		}
+		s.Interval = d
+		s.Source["interval"] = "file"
+	}
+	if f.Compress != nil {
+		s.Compress = *f.Compress
+		s.Source["compress"] = "file"
+	}
+	if f.Proxy != nil {
+		s.Proxy = *f.Proxy
+		s.Source["proxy"] = "file"
+	}
+	return nil
+}
+
+// ApplyEnv overrides s with the BACKUP_INTERVAL, BACKUP_COMPRESS and
+// HTTPS_PROXY environment variables that lookup reports as set.
+func (s *Settings) ApplyEnv(lookup func(string) (string, bool)) error {
+	// TODO(3): Apply BACKUP_INTERVAL (time.ParseDuration) and
+	// BACKUP_COMPRESS (strconv.ParseBool). A value that doesn't parse is an
+	// error that mentions the variable's name.
+
+	// TODO(2): HTTPS_PROXY="" should disable the proxy, but this skips it.
+	if v, _ := lookup("HTTPS_PROXY"); v != "" {
+		s.Proxy = v
+		s.Source["proxy"] = "env"
+	}
+	return nil
+}
+
+// cliFlags holds the command-line flag values after parsing.
+type cliFlags struct {
+	config   string
+	interval time.Duration
+	compress bool
+	proxy    string
+}
+
+// Load builds the settings from defaults, the -config file, the environment
+// and flags.
+func Load(args []string, lookup func(string) (string, bool)) (Settings, error) {
+	var cli cliFlags
+	fs := flag.NewFlagSet("backup", flag.ContinueOnError)
+	fs.SetOutput(io.Discard) // the caller prints errors
+	fs.StringVar(&cli.config, "config", "", "path to a JSON config file")
+	fs.DurationVar(&cli.interval, "interval", 0, "time between backups")
+	fs.BoolVar(&cli.compress, "compress", false, "gzip the backup")
+	fs.StringVar(&cli.proxy, "proxy", "", "HTTPS proxy for uploads")
+	if err := fs.Parse(args); err != nil {
+		return Settings{}, err
+	}
+
+	s := Defaults()
+	if cli.config != "" {
+		data, err := os.ReadFile(cli.config)
+		if err != nil {
+			return Settings{}, err
+		}
+		if err := s.ApplyFile(data); err != nil {
+			return Settings{}, err
+		}
+	}
+	// TODO(1): The layers below are applied in the wrong order.
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "interval":
+			s.Interval = cli.interval
+			s.Source["interval"] = "flag"
+		case "compress":
+			s.Compress = cli.compress
+			s.Source["compress"] = "flag"
+		case "proxy":
+			s.Proxy = cli.proxy
+			s.Source["proxy"] = "flag"
+		}
+	})
+	if err := s.ApplyEnv(lookup); err != nil {
+		return Settings{}, err
+	}
+	return s, nil
+}

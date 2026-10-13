@@ -1,0 +1,59 @@
+// Package status is the Gopherlings exercise "Encoding JSON: a deployment status report".
+package status
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// Deployment is the state of one service rollout.
+type Deployment struct {
+	Service   string    `json:"service"`
+	Version   string    `json:"version"`
+	Replicas  int       `json:"replicas"`
+	Healthy   bool      `json:"healthy"`
+	Started   time.Time `json:"started"`
+	Error     string    `json:"error,omitempty"`
+	AuthToken string    `json:"-"`
+}
+
+// Report is the status report sent to the deploy dashboard.
+type Report struct {
+	Environment string         `json:"environment"`
+	GeneratedAt time.Time      `json:"generated_at"`
+	Counts      map[string]int `json:"counts"`
+	Deployments []Deployment   `json:"deployments"`
+}
+
+// HealthCounts counts healthy and unhealthy deployments.
+// Both keys are always present, even when a count is zero.
+func HealthCounts(deps []Deployment) map[string]int {
+	counts := map[string]int{"healthy": 0, "unhealthy": 0}
+	for _, d := range deps {
+		if d.Healthy {
+			counts["healthy"]++
+		} else {
+			counts["unhealthy"]++
+		}
+	}
+	return counts
+}
+
+// ReportJSON builds a Report and encodes it as indented JSON.
+func ReportJSON(env string, generatedAt time.Time, deps []Deployment) (string, error) {
+	// A nil slice encodes as null; the dashboard wants [].
+	if deps == nil {
+		deps = []Deployment{}
+	}
+	report := Report{
+		Environment: env,
+		GeneratedAt: generatedAt,
+		Counts:      HealthCounts(deps),
+		Deployments: deps,
+	}
+	b, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}

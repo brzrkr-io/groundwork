@@ -1,0 +1,49 @@
+// Package methods3 is the Gopherlings exercise "Methods: host inventory".
+package methods3
+
+import "strings"
+
+// Host is one server in the fleet.
+type Host struct {
+	Name    string
+	Region  string
+	Healthy bool
+}
+
+// Inventory is the list of hosts in the fleet.
+type Inventory struct {
+	Hosts []Host
+}
+
+// HealthyCount returns how many hosts are healthy.
+func (inv Inventory) HealthyCount() int {
+	count := 0
+	for _, h := range inv.Hosts {
+		if h.Healthy {
+			count++
+		}
+	}
+	return count
+}
+
+// InRegion returns the hosts in region, in inventory order.
+func (inv Inventory) InRegion(region string) []Host {
+	var hosts []Host
+	for _, h := range inv.Hosts {
+		if h.Region == region {
+			hosts = append(hosts, h)
+		}
+	}
+	return hosts
+}
+
+// Find returns the first host whose name matches name, ignoring case, and
+// true. It returns Host{} and false if no host matches.
+func (inv Inventory) Find(name string) (Host, bool) {
+	for _, h := range inv.Hosts {
+		if strings.EqualFold(h.Name, name) {
+			return h, true
+		}
+	}
+	return Host{}, false
+}

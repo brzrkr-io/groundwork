@@ -1,0 +1,144 @@
+package atomicwrite
+
+import (
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+)
+
+// dirNames returns the sorted names of the entries in dir.
+func dirNames(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
+}
+
+func TestWriteFileAtomic(t *testing.T) {
+	tests := []struct {
+		name string
+		old  string // existing content; "" means no file yet
+		data string
+	}{
+		{"new file", "", "port = 8080\n"},
+		{"new empty file", "", ""},
+		{"replace longer file", "port = 8080\nworkers = 16\nlog = debug\n", "port = 9090\n"},
+		{"replace shorter file", "port = 80\n", "port = 443\ntls = on\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "app.conf")
+			var before fs.FileInfo
+			if tt.old != "" {
+				if err := os.WriteFile(path, []byte(tt.old), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				var err error
+				if before, err = os.Stat(path); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := WriteFileAtomic(path, []byte(tt.data), 0o644); err != nil {
+				t.Fatalf("WriteFileAtomic(%q, %q, 0o644) = %v, want nil", path, tt.data, err)
+			}
+
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading back %q: %v", path, err)
+			}
+			if string(got) != tt.data {
+				t.Errorf("after WriteFileAtomic, %q holds %q, want %q", path, got, tt.data)
+			}
+			if before != nil {
+				after, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if os.SameFile(before, after) {
+					t.Errorf("WriteFileAtomic rewrote %q in place, want it replaced by a renamed temp file", path)
+				}
+			}
+			if names, want := dirNames(t, dir), []string{"app.conf"}; !slices.Equal(names, want) {
+				t.Errorf("directory holds %q, want %q (no leftover temp files)", names, want)
+			}
+		})
+	}
+}
+
+func TestWriteFileAtomicCleansUp(t *testing.T) {
+	t.Run("target is a non-empty directory", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "app.conf")
+		if err := os.Mkdir(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(path, "keep"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteFileAtomic(path, []byte("port = 8080\n"), 0o644); err == nil {
+			t.Errorf("WriteFileAtomic(%q, ...) = nil, want an error (it is a directory)", path)
+		}
+		if names, want := dirNames(t, dir), []string{"app.conf"}; !slices.Equal(names, want) {
+			t.Errorf("directory holds %q, want %q (no leftover temp files)", names, want)
+		}
+	})
+
+	t.Run("parent directory missing", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "nope", "app.conf")
+		if err := WriteFileAtomic(path, []byte("port = 8080\n"), 0o644); err == nil {
+			t.Errorf("WriteFileAtomic(%q, ...) = nil, want an error", path)
+		}
+		if names := dirNames(t, dir); len(names) != 0 {
+			t.Errorf("directory holds %q, want it empty", names)
+		}
+	})
+}
+
+func TestWriteFileAtomicPermissions(t *testing.T) {
+	tests := []struct {
+		name    string
+		oldMode fs.FileMode // mode of the existing file; 0 means no file yet
+		perm    fs.FileMode
+		want    fs.FileMode
+	}{
+		{"existing 0o600 keeps its mode", 0o600, 0o644, 0o600},
+		{"existing 0o640 keeps its mode", 0o640, 0o600, 0o640},
+		{"new file gets perm 0o640", 0, 0o640, 0o640},
+		{"new file gets perm 0o644", 0, 0o644, 0o644},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "secret.env")
+			if tt.oldMode != 0 {
+				if err := os.WriteFile(path, []byte("TOKEN=old\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				// Chmod ignores the umask, so the mode is exactly oldMode.
+				if err := os.Chmod(path, tt.oldMode); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := WriteFileAtomic(path, []byte("TOKEN=new\n"), tt.perm); err != nil {
+				t.Fatalf("WriteFileAtomic(%q, ..., %#o) = %v, want nil", path, tt.perm, err)
+			}
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := info.Mode().Perm(); got != tt.want {
+				t.Errorf("WriteFileAtomic(%q, ..., %#o) left mode %#o, want %#o", path, tt.perm, got, tt.want)
+			}
+		})
+	}
+}

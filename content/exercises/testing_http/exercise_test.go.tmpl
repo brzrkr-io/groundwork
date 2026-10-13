@@ -1,0 +1,37 @@
+package httptesting
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestHostHandler(t *testing.T) {
+	h := NewHandler(Directory{"web-1": "10.0.0.5", "db-1": "10.0.1.7"})
+
+	tests := []struct {
+		name     string
+		path     string
+		wantCode int
+		wantBody string
+	}{
+		{"known host", "/hosts/web-1", http.StatusOK, "10.0.0.5\n"},
+		// TODO(1): Add a case for db-1 and a case for a host that isn't in
+		// the directory.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			// TODO(2): Check rec.Code, the Content-Type header and
+			// rec.Body.String() against the case.
+		})
+	}
+}
+
+func TestFetchIP(t *testing.T) {
+	// TODO(3): Start a fake host lookup server with httptest.NewServer and
+	// check FetchIP against it, for a known host and an unknown one.
+}

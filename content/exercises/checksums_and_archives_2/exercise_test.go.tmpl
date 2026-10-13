@@ -1,0 +1,215 @@
+package release
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"io"
+	"io/fs"
+	"maps"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// writeFiles creates each file (relative name -> contents) under dir.
+func writeFiles(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for name, contents := range files {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// sum is the test's own SHA-256 helper.
+func sum(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+// readArchive checks that data is a complete .tar.gz and returns its files
+// (name -> contents).
+func readArchive(t *testing.T, data []byte) map[string]string {
+	t.Helper()
+	zr, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("reading archive: %v", err)
+	}
+	raw, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("reading archive: %v", err)
+	}
+	// A complete tar stream ends with two zero-filled 512-byte blocks. The
+	// tar writer only adds them in Close.
+	if len(raw) < 1024 || len(raw)%512 != 0 || !bytes.Equal(raw[len(raw)-1024:], make([]byte, 1024)) {
+		t.Fatalf("archive is truncated: the tar end-of-archive marker is missing (was the tar writer closed after the gzip writer?)")
+	}
+
+	files := map[string]string{}
+	tr := tar.NewReader(bytes.NewReader(raw))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return files
+		}
+		if err != nil {
+			t.Fatalf("reading archive: %v", err)
+		}
+		contents, err := io.ReadAll(tr)
+		if err != nil {
+			t.Fatalf("reading archive entry %s: %v", hdr.Name, err)
+		}
+		files[hdr.Name] = string(contents)
+	}
+}
+
+func TestPack(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+	}{
+		{"single binary", map[string]string{"agent": "agent v1.4.2 binary\n"}},
+		{"nested service bundle", map[string]string{
+			"bin/web":           "#!/bin/sh\necho serving\n",
+			"config/app.yaml":   "port: 8080\nregion: eu-west-1\n",
+			"systemd/web.unit":  "[Service]\nExecStart=/opt/web/bin/web\n",
+			"docs/CHANGELOG.md": "v2.0.0: new health endpoint\n",
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := t.TempDir()
+			writeFiles(t, src, tt.files)
+
+			var buf bytes.Buffer
+			if err := Pack(src, &buf); err != nil {
+				t.Fatalf("Pack(%q) = %v, want nil", src, err)
+			}
+			got := readArchive(t, buf.Bytes())
+			if !maps.Equal(got, tt.files) {
+				t.Errorf("Pack(%q) archive holds %v, want %v", src, got, tt.files)
+			}
+		})
+	}
+}
+
+func TestWriteChecksums(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{
+			"sorted by name",
+			map[string]string{
+				"web.tar.gz":         "web",
+				"agent-linux-amd64":  "linux agent",
+				"agent-darwin-arm64": "mac agent",
+			},
+			sum([]byte("mac agent")) + "  agent-darwin-arm64\n" +
+				sum([]byte("linux agent")) + "  agent-linux-amd64\n" +
+				sum([]byte("web")) + "  web.tar.gz\n",
+		},
+		{
+			"skips directories and the old SHA256SUMS",
+			map[string]string{
+				"web.tar.gz":     "web v2.0.0",
+				"SHA256SUMS":     "stale sums from the last run\n",
+				"notes/todo.txt": "inside a subdirectory\n",
+			},
+			sum([]byte("web v2.0.0")) + "  web.tar.gz\n",
+		},
+		{"empty release", map[string]string{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFiles(t, dir, tt.files)
+
+			var out bytes.Buffer
+			if err := WriteChecksums(dir, &out); err != nil {
+				t.Fatalf("WriteChecksums(%q) returned error: %v", dir, err)
+			}
+			if got := out.String(); got != tt.want {
+				t.Errorf("WriteChecksums(%q) wrote\n%s\nwant\n%s", dir, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("missing directory", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "dist")
+		if err := WriteChecksums(dir, io.Discard); err == nil {
+			t.Errorf("WriteChecksums(%q) = nil, want an error", dir)
+		}
+	})
+}
+
+func TestBundle(t *testing.T) {
+	tests := []struct {
+		name     string
+		release  string
+		files    map[string]string
+		existing map[string]string // files already in dist
+		earlier  string            // expected SHA256SUMS lines before the new archive
+	}{
+		{
+			name:    "first release into a new dist",
+			release: "agent-v1.4.2",
+			files:   map[string]string{"agent": "agent binary\n", "agent.yaml": "interval: 30s\n"},
+		},
+		{
+			name:     "dist already has an older release",
+			release:  "web-v2.0.0",
+			files:    map[string]string{"bin/web": "web binary\n", "config/app.yaml": "port: 8080\n"},
+			existing: map[string]string{"web-v1.9.0.tar.gz": "old archive", "SHA256SUMS": "stale\n"},
+			earlier:  sum([]byte("old archive")) + "  web-v1.9.0.tar.gz\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := filepath.Join(t.TempDir(), "src")
+			writeFiles(t, src, tt.files)
+			dist := filepath.Join(t.TempDir(), "dist")
+			writeFiles(t, dist, tt.existing)
+
+			if err := Bundle(src, dist, tt.release); err != nil {
+				t.Fatalf("Bundle(%q, %q, %q) = %v, want nil", src, dist, tt.release, err)
+			}
+
+			archiveName := tt.release + ".tar.gz"
+			data, err := os.ReadFile(filepath.Join(dist, archiveName))
+			if err != nil {
+				t.Fatalf("after Bundle, reading %s: %v", archiveName, err)
+			}
+			if got := readArchive(t, data); !maps.Equal(got, tt.files) {
+				t.Errorf("after Bundle, %s holds %v, want %v", archiveName, got, tt.files)
+			}
+
+			want := tt.earlier + sum(data) + "  " + archiveName + "\n"
+			got, err := os.ReadFile(filepath.Join(dist, ChecksumsFile))
+			if err != nil {
+				t.Fatalf("after Bundle, reading %s: %v", ChecksumsFile, err)
+			}
+			if string(got) != want {
+				t.Errorf("after Bundle, %s =\n%s\nwant\n%s", ChecksumsFile, got, want)
+			}
+		})
+	}
+
+	t.Run("missing source directory", func(t *testing.T) {
+		src := filepath.Join(t.TempDir(), "nope")
+		dist := filepath.Join(t.TempDir(), "dist")
+		err := Bundle(src, dist, "app-v1.0.0")
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("Bundle(%q, %q, %q) = %v, want an error wrapping fs.ErrNotExist", src, dist, "app-v1.0.0", err)
+		}
+	})
+}

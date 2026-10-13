@@ -1,0 +1,39 @@
+// Package waitport is the Gopherlings exercise "Command-line arguments: fix the port waiter".
+package waitport
+
+import (
+	"fmt"
+	"io"
+	"strconv"
+)
+
+// Run is the whole waitport tool: waitport HOST PORT [TIMEOUT_SECONDS].
+// args is the full os.Args, so args[0] is the program name.
+// It returns the exit code: 0 for success, 2 for a usage error.
+func Run(args []string, stdout, stderr io.Writer) int {
+	prog := args[0]
+
+	if len(args) < 3 || len(args) > 4 {
+		fmt.Fprintf(stderr, "usage: %s HOST PORT [TIMEOUT_SECONDS]\n", prog)
+		return 2
+	}
+
+	host := args[1]
+	port, err := strconv.Atoi(args[2])
+	if err != nil || port < 1 || port > 65535 {
+		fmt.Fprintf(stderr, "%s: port must be 1-65535, got %q\n", prog, args[2])
+		return 2
+	}
+
+	timeout := 30
+	if len(args) == 4 {
+		timeout, err = strconv.Atoi(args[3])
+		if err != nil || timeout < 1 {
+			fmt.Fprintf(stderr, "%s: timeout must be a whole number >= 1, got %q\n", prog, args[3])
+			return 2
+		}
+	}
+
+	fmt.Fprintf(stdout, "waiting up to %ds for %s:%d\n", timeout, host, port)
+	return 0
+}

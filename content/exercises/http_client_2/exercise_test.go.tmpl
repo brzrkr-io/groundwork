@@ -1,0 +1,170 @@
+package httpclient
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+// closeTracker is a fake transport. It sends requests through the real one
+// and remembers whether the response body was closed.
+type closeTracker struct {
+	base   http.RoundTripper
+	closed bool
+}
+
+func (c *closeTracker) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := c.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &trackedBody{ReadCloser: resp.Body, tracker: c}
+	return resp, nil
+}
+
+type trackedBody struct {
+	io.ReadCloser
+	tracker *closeTracker
+}
+
+func (b *trackedBody) Close() error {
+	b.tracker.closed = true
+	return b.ReadCloser.Close()
+}
+
+func TestGetVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		code    int
+		body    string
+		want    string
+		wantErr string // "" means GetVersion should succeed
+	}{
+		{name: "version with newline", code: http.StatusOK, body: "v1.4.2\n", want: "v1.4.2"},
+		{name: "version with spaces", code: http.StatusOK, body: "  v2.0.0  ", want: "v2.0.0"},
+		{name: "server error", code: http.StatusInternalServerError, body: "internal error\n", wantErr: "version: unexpected status 500"},
+		{name: "not found", code: http.StatusNotFound, body: "404 page not found\n", wantErr: "version: unexpected status 404"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.code)
+				io.WriteString(w, tt.body)
+			}))
+			defer srv.Close()
+			tracker := &closeTracker{base: srv.Client().Transport}
+			client := &http.Client{Transport: tracker, Timeout: time.Second}
+			url := srv.URL + "/version"
+
+			got, err := GetVersion(client, url)
+
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("GetVersion(client, %q) returned error %q, want nil", url, err.Error())
+				} else if got != tt.want {
+					t.Errorf("GetVersion(client, %q) = %q, want %q", url, got, tt.want)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("GetVersion(client, %q) = %q, nil, want error %q", url, got, tt.wantErr)
+				} else if err.Error() != tt.wantErr {
+					t.Errorf("GetVersion(client, %q) returned error %q, want %q", url, err.Error(), tt.wantErr)
+				}
+			}
+			if !tracker.closed {
+				t.Errorf("GetVersion(client, %q) did not close the response body", url)
+			}
+		})
+	}
+}
+
+func TestNewDeployRequest(t *testing.T) {
+	tests := []struct {
+		url string
+		ev  DeployEvent
+	}{
+		{"http://hooks.internal/deploys", DeployEvent{Service: "payments", Version: "v1.4.2", Env: "production"}},
+		{"https://chat.example.com/hooks/abc", DeployEvent{Service: "checkout", Version: "v2.0.0", Env: "staging"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.ev.Service, func(t *testing.T) {
+			ctx := t.Context()
+			call := fmt.Sprintf("NewDeployRequest(ctx, %q, %+v)", tt.url, tt.ev)
+
+			req, err := NewDeployRequest(ctx, tt.url, tt.ev)
+			if err != nil {
+				t.Fatalf("%s returned error %v, want nil", call, err)
+			}
+			if req.Method != http.MethodPost {
+				t.Errorf("%s method = %q, want %q", call, req.Method, http.MethodPost)
+			}
+			if got := req.URL.String(); got != tt.url {
+				t.Errorf("%s URL = %q, want %q", call, got, tt.url)
+			}
+			if got, want := req.Header.Get("Content-Type"), "application/json"; got != want {
+				t.Errorf("%s Content-Type header = %q, want %q", call, got, want)
+			}
+			if req.Context() != ctx {
+				t.Errorf("%s did not use ctx", call)
+			}
+			if req.Body == nil {
+				t.Fatalf("%s has no body, want the event as JSON", call)
+			}
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got DeployEvent
+			if err := json.Unmarshal(body, &got); err != nil {
+				t.Fatalf("%s body %q is not JSON: %v", call, body, err)
+			}
+			if got != tt.ev {
+				t.Errorf("%s body decodes to %+v, want %+v", call, got, tt.ev)
+			}
+		})
+	}
+}
+
+func TestNotifyDeploy(t *testing.T) {
+	tests := []struct {
+		code    int
+		wantErr string // "" means NotifyDeploy should succeed
+	}{
+		{http.StatusOK, ""},
+		{http.StatusCreated, ""},
+		{http.StatusAccepted, ""},
+		{http.StatusNoContent, ""},
+		{http.StatusBadRequest, "notify: unexpected status 400"},
+		{http.StatusInternalServerError, "notify: unexpected status 500"},
+		{http.StatusServiceUnavailable, "notify: unexpected status 503"},
+	}
+	for _, tt := range tests {
+		t.Run(http.StatusText(tt.code), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.code)
+			}))
+			defer srv.Close()
+			req, err := http.NewRequest(http.MethodPost, srv.URL+"/deploys", strings.NewReader(`{"service":"payments"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			call := fmt.Sprintf("NotifyDeploy (server answers %d)", tt.code)
+
+			err = NotifyDeploy(srv.Client(), req)
+
+			switch {
+			case tt.wantErr == "" && err != nil:
+				t.Errorf("%s = %q, want nil", call, err.Error())
+			case tt.wantErr != "" && err == nil:
+				t.Errorf("%s = nil, want error %q", call, tt.wantErr)
+			case tt.wantErr != "" && err.Error() != tt.wantErr:
+				t.Errorf("%s = %q, want %q", call, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}

@@ -1,0 +1,39 @@
+// Package heartbeat is the Gopherlings exercise "select: tickers and deadlines".
+package heartbeat
+
+import "time"
+
+// CollectFor collects events until window has passed or events is closed,
+// whichever comes first.
+func CollectFor(events <-chan string, window time.Duration) []string {
+	var collected []string
+	deadline := time.After(window) // one timer for the whole call
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return collected
+			}
+			collected = append(collected, event)
+		case <-deadline:
+			return collected
+		}
+	}
+}
+
+// Heartbeat calls beat once every interval until stop is closed, then
+// returns how many times it called beat.
+func Heartbeat(interval time.Duration, stop <-chan struct{}, beat func()) int {
+	beats := 0
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			beat()
+			beats++
+		case <-stop:
+			return beats
+		}
+	}
+}

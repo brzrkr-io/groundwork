@@ -1,0 +1,41 @@
+// Package pods is the Gopherlings exercise "The strings package: which pods are broken?".
+package pods
+
+import (
+	"slices"
+	"strings"
+)
+
+// IsReady reports whether a READY value like "2/3" means every container is
+// ready.
+func IsReady(ready string) bool {
+	running, total, found := strings.Cut(ready, "/")
+	return found && running == total
+}
+
+// NotReadyPods returns the names of the pods in kubectl get pods output that
+// are not ready and not Completed, in alphabetical order.
+func NotReadyPods(output string) []string {
+	var names []string
+	for line := range strings.SplitSeq(output, "\n") {
+		columns := strings.Fields(line)
+		if len(columns) < 3 || columns[0] == "NAME" {
+			continue
+		}
+		name, ready, status := columns[0], columns[1], columns[2]
+		if !IsReady(ready) && status != "Completed" {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+// Report returns a one-line summary of output for the team chat.
+func Report(output string) string {
+	names := NotReadyPods(output)
+	if len(names) == 0 {
+		return "all pods ready"
+	}
+	return "not ready: " + strings.Join(names, ", ")
+}

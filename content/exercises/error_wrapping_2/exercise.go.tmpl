@@ -1,0 +1,83 @@
+// Package wrapping2 is the Gopherlings exercise "Wrapping errors: fix the secrets fetcher".
+package wrapping2
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+// ErrSecretNotFound means the vault has no secret at the requested path.
+var ErrSecretNotFound = errors.New("secret not found")
+
+// ErrTimeout means the vault did not answer in time.
+var ErrTimeout = errors.New("vault timed out")
+
+// AccessDeniedError means a role tried to read a secret it may not see.
+type AccessDeniedError struct {
+	Role string
+	Path string
+}
+
+func (e *AccessDeniedError) Error() string {
+	return fmt.Sprintf("role %q may not read %q", e.Role, e.Path)
+}
+
+// Vault is a fake secrets store.
+type Vault struct {
+	Secrets map[string]string // secret values, keyed by path
+	Down    bool              // when true, every read times out
+}
+
+// read returns the secret at path. Only the "deployer" role may read
+// secrets under "prod/".
+func (v *Vault) read(role, path string) (string, error) {
+	if v.Down {
+		return "", ErrTimeout
+	}
+	if strings.HasPrefix(path, "prod/") && role != "deployer" {
+		return "", &AccessDeniedError{Role: role, Path: path}
+	}
+	value, ok := v.Secrets[path]
+	if !ok {
+		return "", ErrSecretNotFound
+	}
+	return value, nil
+}
+
+// FetchSecret reads a secret from the vault and adds the path as context.
+func FetchSecret(v *Vault, role, path string) (string, error) {
+	value, err := v.read(role, path)
+	if err != nil {
+		// TODO(1): Fix this line so callers can still find the original error.
+		return "", fmt.Errorf("fetch secret %q: %v", path, err)
+	}
+	return value, nil
+}
+
+// DatabasePassword fetches the database password for an environment.
+func DatabasePassword(v *Vault, role, env string) (string, error) {
+	password, err := FetchSecret(v, role, env+"/db/password")
+	if err != nil {
+		return "", fmt.Errorf("database password for %s: %w", env, err)
+	}
+	return password, nil
+}
+
+// ShouldRetry reports whether err is a timeout that is worth retrying.
+func ShouldRetry(err error) bool {
+	// TODO(2): Fix this check so it also works on wrapped errors.
+	return err == ErrTimeout
+}
+
+// Explain turns an error into advice for the person running the deploy.
+func Explain(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	// TODO(3): Fix this check so it also works on wrapped errors.
+	if denied, ok := err.(*AccessDeniedError); ok {
+		return fmt.Sprintf("ask an admin to let role %q read %q", denied.Role, denied.Path)
+	}
+	return "failed: " + err.Error()
+}

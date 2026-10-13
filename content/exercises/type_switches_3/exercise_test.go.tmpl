@@ -1,0 +1,121 @@
+package typeswitches3
+
+import (
+	"maps"
+	"net"
+	"testing"
+	"time"
+)
+
+func TestScalar(t *testing.T) {
+	// Each line is one case: the value, then the answers we want.
+	tests := []struct {
+		v      any
+		want   string
+		wantOK bool
+	}{
+		{"eu-west-1", "eu-west-1", true},
+		{"", "", true},
+		{5432, "5432", true},
+		{-1, "-1", true},
+		{0.75, "0.75", true},
+		{float64(30), "30", true},
+		{true, "true", true},
+		{false, "false", true},
+		{30 * time.Second, "30s", true},
+		{90 * time.Minute, "1h30m0s", true},
+		{net.ParseIP("10.0.0.1"), "10.0.0.1", true},
+		{[]string{"a", "b"}, "", false},
+		{map[string]any{"port": 5432}, "", false},
+		{nil, "", false},
+	}
+	for _, tt := range tests {
+		t.Run("", func(t *testing.T) {
+			got, ok := Scalar(tt.v)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("Scalar(%#v) = %q, %t, want %q, %t", tt.v, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestFlatten(t *testing.T) {
+	// Each line is one case: the config, then the flat keys or the error we want.
+	tests := []struct {
+		name    string
+		cfg     map[string]any
+		want    map[string]string
+		wantErr string
+	}{
+		{
+			name: "top level only",
+			cfg:  map[string]any{"service": "api", "replicas": 3, "debug": false},
+			want: map[string]string{"service": "api", "replicas": "3", "debug": "false"},
+		},
+		{
+			name: "nested blocks",
+			cfg: map[string]any{
+				"service": "api",
+				"db": map[string]any{
+					"port":    5432,
+					"timeout": 30 * time.Second,
+					"primary": map[string]any{"host": "10.0.0.5"},
+				},
+			},
+			want: map[string]string{
+				"service":         "api",
+				"db.port":         "5432",
+				"db.timeout":      "30s",
+				"db.primary.host": "10.0.0.5",
+			},
+		},
+		{
+			name: "three levels deep",
+			cfg: map[string]any{
+				"cache": map[string]any{
+					"redis": map[string]any{
+						"tls": map[string]any{"enabled": true, "min_version": 1.2},
+					},
+					"ttl": 5 * time.Minute,
+				},
+				"alerts": map[string]any{},
+			},
+			want: map[string]string{
+				"cache.redis.tls.enabled":     "true",
+				"cache.redis.tls.min_version": "1.2",
+				"cache.ttl":                   "5m0s",
+			},
+		},
+		{
+			name: "unsupported nested value",
+			cfg: map[string]any{
+				"service": "api",
+				"db":      map[string]any{"hosts": []string{"a", "b"}},
+			},
+			wantErr: `unsupported value for "db.hosts": []string`,
+		},
+		{
+			name: "unsupported top-level value",
+			cfg: map[string]any{
+				"port":  int64(8080),
+				"debug": true,
+			},
+			wantErr: `unsupported value for "port": int64`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Flatten(tt.cfg)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr || got != nil {
+					t.Errorf("Flatten(%v) = %v, %v, want nil, error %q", tt.cfg, got, err, tt.wantErr)
+				}
+				return
+			}
+			// maps.Equal reports whether both maps have the same keys and values.
+			if err != nil || !maps.Equal(got, tt.want) {
+				t.Errorf("Flatten(%v) = %v, %v, want %v, nil", tt.cfg, got, err, tt.want)
+			}
+		})
+	}
+}

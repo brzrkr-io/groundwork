@@ -1,0 +1,48 @@
+// Package reconcile is the Gopherlings exercise "Reconcile loops: desired vs actual".
+package reconcile
+
+import (
+	"errors"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+)
+
+// ErrMissingKey means a required key is absent or empty in the ConfigMap.
+var ErrMissingKey = errors.New("missing key")
+
+// ErrInvalidReplicas means the "replicas" value is not a whole number from 0
+// up to the int32 limit.
+var ErrInvalidReplicas = errors.New("invalid replicas")
+
+// Desired is the state that the rollout-config ConfigMap asks for.
+type Desired struct {
+	Replicas int32
+	Image    string
+}
+
+// DesiredFromConfigMap reads the desired state from the "replicas" and
+// "image" keys of cm.Data.
+func DesiredFromConfigMap(cm *corev1.ConfigMap) (Desired, error) {
+	// TODO(1): Read "replicas" and "image" from cm.Data. Return an error
+	// wrapping ErrMissingKey or ErrInvalidReplicas when a value is bad.
+	// Add "fmt" and "strconv" to the imports.
+	return Desired{}, errors.New("not implemented")
+}
+
+// Diff lists the differences between desired and current, replicas first,
+// then image. It returns no entries when current is in sync.
+func Diff(desired Desired, current *appsv1.Deployment) []string {
+	// TODO(2): Compare replicas, then the first container's image, and add
+	// one "field: old -> new" entry for each difference.
+	// Add "k8s.io/utils/ptr" to the imports.
+	return nil
+}
+
+// Apply returns a copy of current changed to match desired, and whether
+// anything had to change. It never modifies current.
+func Apply(desired Desired, current *appsv1.Deployment) (*appsv1.Deployment, bool) {
+	// TODO(3): Work on current.DeepCopy(), set replicas and image when they
+	// differ, and report whether you changed anything.
+	return current, false
+}

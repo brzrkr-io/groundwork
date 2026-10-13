@@ -1,0 +1,86 @@
+package customerr
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestValidationErrorMessage(t *testing.T) {
+	tests := []struct {
+		field, reason string
+		want          string
+	}{
+		{"replicas", "must be at least 1", "replicas: must be at least 1"},
+		{"image", "must not be empty", "image: must not be empty"},
+		{"port", "must be at most 65535", "port: must be at most 65535"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.field, func(t *testing.T) {
+			err := &ValidationError{Field: tt.field, Reason: tt.reason}
+			if got := err.Error(); got != tt.want {
+				t.Errorf("(&ValidationError{Field: %q, Reason: %q}).Error() = %q, want %q",
+					tt.field, tt.reason, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckReplicas(t *testing.T) {
+	tests := []struct {
+		name       string
+		n          int
+		wantReason string // "" means CheckReplicas must return nil
+	}{
+		{"zero", 0, "must be at least 1"},
+		{"negative", -3, "must be at least 1"},
+		{"just too many", 51, "must be at most 50"},
+		{"far too many", 500, "must be at most 50"},
+		{"one", 1, ""},
+		{"three", 3, ""},
+		{"fifty", 50, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckReplicas(tt.n)
+
+			if tt.wantReason == "" {
+				if err != nil {
+					t.Errorf("CheckReplicas(%d) = %v, want nil", tt.n, err)
+				}
+				return
+			}
+
+			verr, ok := err.(*ValidationError)
+			if !ok {
+				t.Fatalf("CheckReplicas(%d) = %v (type %T), want a *ValidationError", tt.n, err, err)
+			}
+			if verr.Field != "replicas" {
+				t.Errorf("CheckReplicas(%d).Field = %q, want %q", tt.n, verr.Field, "replicas")
+			}
+			if verr.Reason != tt.wantReason {
+				t.Errorf("CheckReplicas(%d).Reason = %q, want %q", tt.n, verr.Reason, tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestExitCode(t *testing.T) {
+	tests := []struct {
+		name string // the argument, written as Go code
+		err  error
+		want int
+	}{
+		{`nil`, nil, 0},
+		{`&ValidationError{Field: "replicas", Reason: "must be at least 1"}`, &ValidationError{Field: "replicas", Reason: "must be at least 1"}, 2},
+		{`&ValidationError{Field: "image", Reason: "must not be empty"}`, &ValidationError{Field: "image", Reason: "must not be empty"}, 2},
+		{`errors.New("registry unreachable")`, errors.New("registry unreachable"), 1},
+		{`errors.New("permission denied")`, errors.New("permission denied"), 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ExitCode(tt.err); got != tt.want {
+				t.Errorf("ExitCode(%s) = %d, want %d", tt.name, got, tt.want)
+			}
+		})
+	}
+}

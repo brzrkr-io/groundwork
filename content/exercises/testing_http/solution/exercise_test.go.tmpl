@@ -1,0 +1,64 @@
+package httptesting
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestHostHandler(t *testing.T) {
+	h := NewHandler(Directory{"web-1": "10.0.0.5", "db-1": "10.0.1.7"})
+
+	tests := []struct {
+		name     string
+		path     string
+		wantCode int
+		wantBody string
+	}{
+		{"known host", "/hosts/web-1", http.StatusOK, "10.0.0.5\n"},
+		{"another known host", "/hosts/db-1", http.StatusOK, "10.0.1.7\n"},
+		{"unknown host", "/hosts/db-9", http.StatusNotFound, "unknown host: db-9\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantCode {
+				t.Errorf("GET %s: status = %d, want %d", tt.path, rec.Code, tt.wantCode)
+			}
+			wantType := "text/plain; charset=utf-8"
+			if got := rec.Header().Get("Content-Type"); got != wantType {
+				t.Errorf("GET %s: Content-Type = %q, want %q", tt.path, got, wantType)
+			}
+			if got := rec.Body.String(); got != tt.wantBody {
+				t.Errorf("GET %s: body = %q, want %q", tt.path, got, tt.wantBody)
+			}
+		})
+	}
+}
+
+func TestFetchIP(t *testing.T) {
+	// The fake server knows only web-1. The mux answers 404 for every other
+	// path, so a client that asks for the wrong path gets an error.
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /hosts/web-1", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "10.0.0.5\n")
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ip, err := FetchIP(srv.Client(), srv.URL, "web-1")
+	if err != nil {
+		t.Fatalf("FetchIP(%q) returned error: %v", "web-1", err)
+	}
+	if ip != "10.0.0.5" {
+		t.Errorf("FetchIP(%q) = %q, want %q", "web-1", ip, "10.0.0.5")
+	}
+
+	if _, err := FetchIP(srv.Client(), srv.URL, "db-9"); err == nil {
+		t.Errorf("FetchIP(%q) returned no error, want an error", "db-9")
+	}
+}

@@ -1,0 +1,81 @@
+// Package awsclients is the Gopherlings exercise "SDK clients: small interfaces and fakes".
+package awsclients
+
+import (
+	"context"
+	"fmt"
+	"slices"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+)
+
+// BucketLister is the one S3 method the inventory tool needs.
+type BucketLister interface {
+	ListBuckets(ctx context.Context, params *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error)
+}
+
+// The real S3 client must satisfy BucketLister.
+var _ BucketLister = (*s3.Client)(nil)
+
+// BucketNames returns the names of all buckets in the account, sorted.
+func BucketNames(ctx context.Context, api BucketLister) ([]string, error) {
+	out, err := api.ListBuckets(ctx, &s3.ListBucketsInput{})
+	if err != nil {
+		return nil, fmt.Errorf("list buckets: %w", err)
+	}
+	var names []string
+	for _, b := range out.Buckets {
+		names = append(names, aws.ToString(b.Name))
+	}
+	slices.Sort(names)
+	return names, nil
+}
+
+// FakeBucketLister is a fake S3 client for tests. It returns Err if set,
+// otherwise one bucket for each name in Names.
+type FakeBucketLister struct {
+	Names []string
+	Err   error
+}
+
+// ListBuckets returns the fake's buckets, or its error.
+func (f *FakeBucketLister) ListBuckets(ctx context.Context, params *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error) {
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	out := &s3.ListBucketsOutput{}
+	for _, name := range f.Names {
+		out.Buckets = append(out.Buckets, s3types.Bucket{Name: aws.String(name)})
+	}
+	return out, nil
+}
+
+// InstanceDescriber is the one EC2 method the inventory tool needs.
+type InstanceDescriber interface {
+	DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+}
+
+// The real EC2 client must satisfy InstanceDescriber.
+var _ InstanceDescriber = (*ec2.Client)(nil)
+
+// RunningInstanceIDs returns the IDs of all running instances, sorted.
+func RunningInstanceIDs(ctx context.Context, api InstanceDescriber) ([]string, error) {
+	out, err := api.DescribeInstances(ctx, &ec2.DescribeInstancesInput{})
+	if err != nil {
+		return nil, fmt.Errorf("describe instances: %w", err)
+	}
+	var ids []string
+	for _, r := range out.Reservations {
+		for _, inst := range r.Instances {
+			if inst.State != nil && inst.State.Name == ec2types.InstanceStateNameRunning {
+				ids = append(ids, aws.ToString(inst.InstanceId))
+			}
+		}
+	}
+	slices.Sort(ids)
+	return ids, nil
+}

@@ -1,0 +1,27 @@
+// Package customerr is the Gopherlings exercise "Custom error types".
+package customerr
+
+// ValidationError reports a config field that holds a bad value.
+type ValidationError struct {
+	Field  string
+	Reason string
+}
+
+// Error returns the field and the reason, for example
+// "replicas: must be at least 1".
+func (e *ValidationError) Error() string {
+	// TODO(1): Return e.Field, then ": ", then e.Reason.
+	return ""
+}
+
+// CheckReplicas validates a replica count. Counts from 1 to 50 are valid.
+func CheckReplicas(n int) error {
+	// TODO(2): Return a *ValidationError when n is below 1 or above 50.
+	return nil
+}
+
+// ExitCode picks the deploy tool's exit code for err.
+func ExitCode(err error) int {
+	// TODO(3): Return 0 for nil, 2 for a *ValidationError and 1 for any other error.
+	return 0
+}

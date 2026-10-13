@@ -1,0 +1,641 @@
+package controller
+
+import (
+	"context"
+	"errors"
+	"maps"
+	"slices"
+	"testing"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/util/workqueue"
+)
+
+func TestKeyAndExposed(t *testing.T) {
+	tests := []struct {
+		namespace, name string
+		labels          map[string]string
+		wantKey         string
+		wantExposed     bool
+	}{
+		{"shop", "web", map[string]string{ExposeLabel: "true"}, "shop/web", true},
+		{"payments", "checkout", map[string]string{"app": "checkout", ExposeLabel: "true"}, "payments/checkout", true},
+		{"shop", "api", map[string]string{ExposeLabel: "false"}, "shop/api", false},
+		{"shop", "worker", map[string]string{ExposeLabel: "yes"}, "shop/worker", false},
+		{"monitoring", "grafana", map[string]string{"app": "grafana"}, "monitoring/grafana", false},
+		{"staging", "web", nil, "staging/web", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.wantKey, func(t *testing.T) {
+			d := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+				Namespace: tt.namespace, Name: tt.name, Labels: tt.labels,
+			}}
+			if got := Key(d); got != tt.wantKey {
+				t.Errorf("Key(%s) = %q, want %q", tt.wantKey, got, tt.wantKey)
+			}
+			if got := Exposed(d); got != tt.wantExposed {
+				t.Errorf("Exposed(labels %v) = %t, want %t", tt.labels, got, tt.wantExposed)
+			}
+		})
+	}
+}
+
+func TestDesiredService(t *testing.T) {
+	tests := []struct {
+		name      string
+		d         testDeployment
+		wantPorts []corev1.ServicePort
+	}{
+		{
+			name:      "one container, one port",
+			d:         deployment("shop", "web", "true", port("http", 8080)),
+			wantPorts: []corev1.ServicePort{servicePort("http", 8080)},
+		},
+		{
+			name: "two containers, three ports",
+			d: deployment("payments", "checkout", "true", port("http", 8080), port("grpc", 9000)).
+				withContainer(port("metrics", 9090)),
+			wantPorts: []corev1.ServicePort{
+				servicePort("http", 8080), servicePort("grpc", 9000), servicePort("metrics", 9090),
+			},
+		},
+		{
+			name:      "unnamed port",
+			d:         deployment("staging", "api", "true", port("", 3000)),
+			wantPorts: []corev1.ServicePort{servicePort("", 3000)},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := DesiredService(tt.d.Deployment)
+			key := tt.d.Namespace + "/" + tt.d.Name
+			if svc == nil {
+				t.Fatalf("DesiredService(%s) = nil, want a Service", key)
+			}
+			if svc.Namespace != tt.d.Namespace || svc.Name != tt.d.Name {
+				t.Errorf("DesiredService(%s) is named %q, want %q", key, svc.Namespace+"/"+svc.Name, key)
+			}
+			if svc.Spec.Type != corev1.ServiceTypeClusterIP {
+				t.Errorf("DesiredService(%s).Spec.Type = %q, want %q", key, svc.Spec.Type, corev1.ServiceTypeClusterIP)
+			}
+			checkSpec(t, "DesiredService("+key+")", svc, map[string]string{"app": tt.d.Name}, tt.wantPorts)
+			checkOwner(t, "DesiredService("+key+")", svc, tt.d.Deployment)
+		})
+	}
+}
+
+func TestReconcileCreatesAndUpdates(t *testing.T) {
+	web := deployment("shop", "web", "true", port("http", 8080))
+	checkout := deployment("payments", "checkout", "true", port("http", 8080), port("grpc", 9000))
+	webPorts := []corev1.ServicePort{servicePort("http", 8080)}
+	checkoutPorts := []corev1.ServicePort{servicePort("http", 8080), servicePort("grpc", 9000)}
+
+	tests := []struct {
+		name       string
+		d          testDeployment
+		existing   *corev1.Service
+		wantPorts  []corev1.ServicePort
+		wantErr    error
+		wantWrites []string
+	}{
+		{
+			name:       "creates a missing Service",
+			d:          web,
+			wantPorts:  webPorts,
+			wantWrites: []string{"create services"},
+		},
+		{
+			name:       "creates a missing Service with two ports",
+			d:          checkout,
+			wantPorts:  checkoutPorts,
+			wantWrites: []string{"create services"},
+		},
+		{
+			name:       "updates drifted ports",
+			d:          web,
+			existing:   service(web, web.Deployment, map[string]string{"app": "web"}, servicePort("http", 80)),
+			wantPorts:  webPorts,
+			wantWrites: []string{"update services"},
+		},
+		{
+			name:       "updates a drifted selector",
+			d:          checkout,
+			existing:   service(checkout, checkout.Deployment, map[string]string{"app": "old-checkout"}, checkoutPorts...),
+			wantPorts:  checkoutPorts,
+			wantWrites: []string{"update services"},
+		},
+		{
+			name:       "leaves an in-sync Service alone",
+			d:          web,
+			existing:   service(web, web.Deployment, map[string]string{"app": "web"}, webPorts...),
+			wantPorts:  webPorts,
+			wantWrites: nil,
+		},
+		{
+			name:       "leaves another in-sync Service alone",
+			d:          checkout,
+			existing:   service(checkout, checkout.Deployment, map[string]string{"app": "checkout"}, checkoutPorts...),
+			wantPorts:  checkoutPorts,
+			wantWrites: nil,
+		},
+		{
+			name:       "refuses a Service without an owner",
+			d:          web,
+			existing:   service(web, nil, map[string]string{"team": "frontend"}, servicePort("http", 80)),
+			wantErr:    ErrNotOwned,
+			wantWrites: nil,
+		},
+		{
+			name:       "refuses a Service owned by another Deployment",
+			d:          checkout,
+			existing:   service(checkout, deployment("payments", "legacy", "").Deployment, map[string]string{"app": "legacy"}, servicePort("http", 80)),
+			wantErr:    ErrNotOwned,
+			wantWrites: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var objects []runtime.Object
+			if tt.existing != nil {
+				objects = append(objects, tt.existing)
+			}
+			c, cs := newTestController(t, []*appsv1.Deployment{tt.d.Deployment}, objects...)
+			key := tt.d.Namespace + "/" + tt.d.Name
+			call := "Reconcile(" + key + ")"
+
+			err := c.Reconcile(t.Context(), key)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("%s returned error %v, want %v", call, err, tt.wantErr)
+			}
+			if got := writes(cs); !slices.Equal(got, tt.wantWrites) {
+				t.Errorf("%s made API writes %q, want %q", call, got, tt.wantWrites)
+			}
+			if tt.wantErr != nil {
+				return
+			}
+			svc, err := cs.CoreV1().Services(tt.d.Namespace).Get(t.Context(), tt.d.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("after %s, getting Service %s: %v", call, key, err)
+			}
+			checkSpec(t, "after "+call+", Service", svc, map[string]string{"app": tt.d.Name}, tt.wantPorts)
+			checkOwner(t, "after "+call+", Service", svc, tt.d.Deployment)
+		})
+	}
+}
+
+func TestReconcileRemoves(t *testing.T) {
+	webOff := deployment("shop", "web", "false", port("http", 8080))
+	apiPlain := deployment("payments", "api", "", port("http", 8080))
+	frontend := deployment("shop", "frontend", "", port("http", 8080))
+
+	tests := []struct {
+		name        string
+		d           testDeployment
+		cached      bool // is the Deployment still in the informer cache?
+		existing    *corev1.Service
+		wantWrites  []string
+		wantDeleted bool
+	}{
+		{
+			name:        "label set to false: deletes its own Service",
+			d:           webOff,
+			cached:      true,
+			existing:    service(webOff, webOff.Deployment, map[string]string{"app": "web"}, servicePort("http", 8080)),
+			wantWrites:  []string{"delete services"},
+			wantDeleted: true,
+		},
+		{
+			name:        "label missing: deletes its own Service",
+			d:           apiPlain,
+			cached:      true,
+			existing:    service(apiPlain, apiPlain.Deployment, map[string]string{"app": "api"}, servicePort("http", 8080)),
+			wantWrites:  []string{"delete services"},
+			wantDeleted: true,
+		},
+		{
+			name:       "keeps a Service without an owner",
+			d:          webOff,
+			cached:     true,
+			existing:   service(webOff, nil, map[string]string{"app": "web"}, servicePort("http", 8080)),
+			wantWrites: nil,
+		},
+		{
+			name:       "keeps a Service owned by another Deployment",
+			d:          webOff,
+			cached:     true,
+			existing:   service(webOff, frontend.Deployment, map[string]string{"app": "frontend"}, servicePort("http", 8080)),
+			wantWrites: nil,
+		},
+		{
+			name:       "no Service: nothing to do",
+			d:          apiPlain,
+			cached:     true,
+			wantWrites: nil,
+		},
+		{
+			name:       "Deployment deleted: garbage collection handles it",
+			d:          deployment("shop", "web", "true", port("http", 8080)),
+			cached:     false,
+			existing:   service(webOff, webOff.Deployment, map[string]string{"app": "web"}, servicePort("http", 8080)),
+			wantWrites: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cached []*appsv1.Deployment
+			if tt.cached {
+				cached = append(cached, tt.d.Deployment)
+			}
+			var objects []runtime.Object
+			if tt.existing != nil {
+				objects = append(objects, tt.existing)
+			}
+			c, cs := newTestController(t, cached, objects...)
+			key := tt.d.Namespace + "/" + tt.d.Name
+			call := "Reconcile(" + key + ")"
+
+			if err := c.Reconcile(t.Context(), key); err != nil {
+				t.Fatalf("%s returned error %v, want nil", call, err)
+			}
+			if got := writes(cs); !slices.Equal(got, tt.wantWrites) {
+				t.Errorf("%s made API writes %q, want %q", call, got, tt.wantWrites)
+			}
+			if tt.existing == nil {
+				return
+			}
+			_, err := cs.CoreV1().Services(tt.d.Namespace).Get(t.Context(), tt.d.Name, metav1.GetOptions{})
+			if deleted := apierrors.IsNotFound(err); deleted != tt.wantDeleted {
+				t.Errorf("after %s, Service deleted = %t, want %t", call, deleted, tt.wantDeleted)
+			}
+		})
+	}
+}
+
+func TestEventHandlers(t *testing.T) {
+	web := deployment("shop", "web", "true").Deployment
+	checkout := deployment("payments", "checkout", "true").Deployment
+	webOff := deployment("shop", "web", "false").Deployment
+	webPlain := deployment("shop", "web", "").Deployment
+	worker := deployment("shop", "worker", "").Deployment
+	workerOff := deployment("shop", "worker", "false").Deployment
+
+	addTests := []struct {
+		name string
+		d    *appsv1.Deployment
+		want []string
+	}{
+		{"exposed", web, []string{"shop/web"}},
+		{"exposed in another namespace", checkout, []string{"payments/checkout"}},
+		{"label set to false", webOff, nil},
+		{"no label", worker, nil},
+	}
+	for _, tt := range addTests {
+		t.Run("add "+tt.name, func(t *testing.T) {
+			c, _ := newTestController(t, nil)
+			c.onAdd(tt.d)
+			if got := queued(c); !slices.Equal(got, tt.want) {
+				t.Errorf("onAdd(%s with labels %v) queued %q, want %q", tt.d.Name, tt.d.Labels, got, tt.want)
+			}
+		})
+	}
+
+	updateTests := []struct {
+		name     string
+		old, new *appsv1.Deployment
+		want     []string
+	}{
+		{"still exposed", web, web, []string{"shop/web"}},
+		{"label added", webPlain, web, []string{"shop/web"}},
+		{"label removed", web, webPlain, []string{"shop/web"}},
+		{"label set to false", web, webOff, []string{"shop/web"}},
+		{"never exposed", worker, worker, nil},
+		{"never exposed, label changed", worker, workerOff, nil},
+	}
+	for _, tt := range updateTests {
+		t.Run("update "+tt.name, func(t *testing.T) {
+			c, _ := newTestController(t, nil)
+			c.onUpdate(tt.old, tt.new)
+			if got := queued(c); !slices.Equal(got, tt.want) {
+				t.Errorf("onUpdate(labels %v -> %v) queued %q, want %q", tt.old.Labels, tt.new.Labels, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProcessNextItem(t *testing.T) {
+	for _, d := range []testDeployment{
+		deployment("shop", "web", "true", port("http", 8080)),
+		deployment("payments", "checkout", "true", port("grpc", 9000)),
+	} {
+		key := d.Namespace + "/" + d.Name
+		t.Run("success "+key, func(t *testing.T) {
+			c, cs := newTestController(t, []*appsv1.Deployment{d.Deployment})
+			c.queue.Add(key)
+
+			if !c.processNextItem(t.Context()) {
+				t.Fatal("processNextItem() = false, want true while the queue is running")
+			}
+			if got, want := writes(cs), []string{"create services"}; !slices.Equal(got, want) {
+				t.Errorf("processNextItem() made API writes %q, want %q (did you call Reconcile?)", got, want)
+			}
+			if n := c.queue.NumRequeues(key); n != 0 {
+				t.Errorf("after a success, NumRequeues(%q) = %d, want 0 (did you call Forget?)", key, n)
+			}
+			// If Done was called, adding the key again puts it straight
+			// back in the queue.
+			c.queue.Add(key)
+			if n := c.queue.Len(); n != 1 {
+				t.Errorf("after processNextItem() and Add(%q), Len() = %d, want 1 (did you call Done?)", key, n)
+			}
+		})
+	}
+
+	t.Run("failures are retried with backoff", func(t *testing.T) {
+		d := deployment("shop", "web", "true", port("http", 8080))
+		key := "shop/web"
+		c, cs := newTestController(t, []*appsv1.Deployment{d.Deployment})
+		failures := 2
+		cs.PrependReactor("create", "services", func(k8stesting.Action) (bool, runtime.Object, error) {
+			if failures > 0 {
+				failures--
+				return true, nil, errors.New("api server unavailable")
+			}
+			return false, nil, nil // fall through to the normal fake behaviour
+		})
+		c.queue.Add(key)
+
+		for attempt := 1; attempt <= 2; attempt++ {
+			if !c.processNextItem(t.Context()) {
+				t.Fatal("processNextItem() = false, want true while the queue is running")
+			}
+			if n := c.queue.NumRequeues(key); n != attempt {
+				t.Fatalf("after %d failed attempts, NumRequeues(%q) = %d, want %d (did you call AddRateLimited?)", attempt, key, n, attempt)
+			}
+			waitFor(t, "the failed key to come back to the queue", func() bool { return c.queue.Len() == 1 })
+		}
+
+		if !c.processNextItem(t.Context()) {
+			t.Fatal("processNextItem() = false, want true while the queue is running")
+		}
+		if n := c.queue.NumRequeues(key); n != 0 {
+			t.Errorf("after the retry succeeded, NumRequeues(%q) = %d, want 0 (did you call Forget?)", key, n)
+		}
+		if _, err := cs.CoreV1().Services("shop").Get(t.Context(), "web", metav1.GetOptions{}); err != nil {
+			t.Errorf("after the retry succeeded, getting Service shop/web: %v", err)
+		}
+	})
+
+	t.Run("shut down queue", func(t *testing.T) {
+		c, _ := newTestController(t, nil)
+		c.queue.ShutDown()
+		if c.processNextItem(t.Context()) {
+			t.Error("processNextItem() after ShutDown = true, want false")
+		}
+	})
+}
+
+func TestRun(t *testing.T) {
+	web := deployment("shop", "web", "true", port("http", 8080))
+	checkout := deployment("payments", "checkout", "true", port("grpc", 9000))
+	worker := deployment("shop", "worker", "", port("metrics", 9090))
+	cs := fake.NewClientset(web.Deployment, checkout.Deployment, worker.Deployment)
+	c, err := newController(cs, fastLimiter())
+	if err != nil {
+		t.Fatalf("newController: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx, 2) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Run() returned %v after cancel, want nil", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("Run() did not return within 5s of cancelling its context")
+		}
+	})
+
+	services := cs.CoreV1().Services
+	serviceExists := func(namespace, name string) func() bool {
+		return func() bool {
+			_, err := services(namespace).Get(ctx, name, metav1.GetOptions{})
+			return err == nil
+		}
+	}
+
+	t.Log("1. Both exposed Deployments get a Service.")
+	waitFor(t, "Service shop/web", serviceExists("shop", "web"))
+	waitFor(t, "Service payments/checkout", serviceExists("payments", "checkout"))
+	list, err := services(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		t.Fatalf("listing Services: %v", err)
+	}
+	if n := len(list.Items); n != 2 {
+		t.Errorf("found %d Services, want 2 (shop/worker is not exposed)", n)
+	}
+
+	t.Log("2. Changing a container port updates the Service.")
+	d, err := cs.AppsV1().Deployments("payments").Get(ctx, "checkout", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("getting Deployment payments/checkout: %v", err)
+	}
+	d.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort = 9001
+	if _, err := cs.AppsV1().Deployments("payments").Update(ctx, d, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("updating Deployment payments/checkout: %v", err)
+	}
+	waitFor(t, "Service payments/checkout to use port 9001", func() bool {
+		svc, err := services("payments").Get(ctx, "checkout", metav1.GetOptions{})
+		return err == nil && len(svc.Spec.Ports) == 1 && svc.Spec.Ports[0].Port == 9001
+	})
+
+	t.Log("3. Removing the label deletes the Service.")
+	d, err = cs.AppsV1().Deployments("shop").Get(ctx, "web", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("getting Deployment shop/web: %v", err)
+	}
+	delete(d.Labels, ExposeLabel)
+	if _, err := cs.AppsV1().Deployments("shop").Update(ctx, d, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("updating Deployment shop/web: %v", err)
+	}
+	waitFor(t, "Service shop/web to be deleted", func() bool { return !serviceExists("shop", "web")() })
+}
+
+// ---- helpers ----
+
+// testDeployment wraps a Deployment so tests can add containers fluently.
+type testDeployment struct{ *appsv1.Deployment }
+
+// deployment builds a Deployment selecting app=<name> with one container.
+// expose is the value of the ExposeLabel label; "" leaves the label out.
+func deployment(namespace, name, expose string, ports ...corev1.ContainerPort) testDeployment {
+	labels := map[string]string{"app": name}
+	if expose != "" {
+		labels[ExposeLabel] = expose
+	}
+	return testDeployment{&appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+			// The real API server gives every object a unique UID. The
+			// fake clientset doesn't, so the tests set one.
+			UID:    types.UID("uid-" + namespace + "-" + name),
+			Labels: labels,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{
+					Name:  name,
+					Image: "registry.example.com/shop/" + name + ":1.4.2",
+					Ports: ports,
+				}}},
+			},
+		},
+	}}
+}
+
+// withContainer adds a sidecar container with the given ports.
+func (d testDeployment) withContainer(ports ...corev1.ContainerPort) testDeployment {
+	d.Spec.Template.Spec.Containers = append(d.Spec.Template.Spec.Containers, corev1.Container{
+		Name:  "sidecar",
+		Image: "registry.example.com/shop/sidecar:0.3.0",
+		Ports: ports,
+	})
+	return d
+}
+
+func port(name string, number int32) corev1.ContainerPort {
+	return corev1.ContainerPort{Name: name, ContainerPort: number}
+}
+
+func servicePort(name string, number int32) corev1.ServicePort {
+	return corev1.ServicePort{
+		Name:       name,
+		Port:       number,
+		TargetPort: intstr.FromInt32(number),
+		Protocol:   corev1.ProtocolTCP,
+	}
+}
+
+// service builds an existing Service for d. owner may be nil (no owner).
+func service(d testDeployment, owner *appsv1.Deployment, selector map[string]string, ports ...corev1.ServicePort) *corev1.Service {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Namespace: d.Namespace, Name: d.Name},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: selector,
+			Ports:    ports,
+		},
+	}
+	if owner != nil {
+		svc.OwnerReferences = []metav1.OwnerReference{
+			*metav1.NewControllerRef(owner, appsv1.SchemeGroupVersion.WithKind("Deployment")),
+		}
+	}
+	return svc
+}
+
+// fastLimiter retries after 1ms, 2ms, 4ms, ... so retries finish quickly.
+func fastLimiter() workqueue.TypedRateLimiter[string] {
+	return workqueue.NewTypedItemExponentialFailureRateLimiter[string](time.Millisecond, 50*time.Millisecond)
+}
+
+// newTestController builds a Controller whose informer cache holds exactly
+// the cached Deployments and whose fake clientset holds objects. The
+// informer is never started, so no events fire on their own.
+func newTestController(t *testing.T, cached []*appsv1.Deployment, objects ...runtime.Object) (*Controller, *fake.Clientset) {
+	t.Helper()
+	cs := fake.NewClientset(objects...)
+	c, err := newController(cs, fastLimiter())
+	if err != nil {
+		t.Fatalf("newController: %v", err)
+	}
+	t.Cleanup(func() {
+		c.queue.ShutDown()
+		c.factory.Shutdown()
+	})
+	cache := c.factory.Apps().V1().Deployments().Informer().GetIndexer()
+	for _, d := range cached {
+		if err := cache.Add(d); err != nil {
+			t.Fatalf("adding %s to the cache: %v", d.Name, err)
+		}
+	}
+	return c, cs
+}
+
+// writes lists the create/update/delete calls made through cs, such as
+// "create services". Reads (get, list, watch) are left out.
+func writes(cs *fake.Clientset) []string {
+	var out []string
+	for _, a := range cs.Actions() {
+		switch a.GetVerb() {
+		case "create", "update", "delete":
+			out = append(out, a.GetVerb()+" "+a.GetResource().Resource)
+		}
+	}
+	return out
+}
+
+// queued empties the queue and returns the keys that were in it.
+func queued(c *Controller) []string {
+	var keys []string
+	for c.queue.Len() > 0 {
+		key, _ := c.queue.Get()
+		c.queue.Done(key)
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+// waitFor checks cond every 10ms and fails the test if it is still false
+// after 5s.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	err := wait.PollUntilContextTimeout(t.Context(), 10*time.Millisecond, 5*time.Second, true,
+		func(context.Context) (bool, error) { return cond(), nil })
+	if err != nil {
+		t.Fatalf("gave up after 5s waiting for %s", what)
+	}
+}
+
+func checkSpec(t *testing.T, what string, svc *corev1.Service, wantSelector map[string]string, wantPorts []corev1.ServicePort) {
+	t.Helper()
+	if !maps.Equal(svc.Spec.Selector, wantSelector) {
+		t.Errorf("%s has selector %v, want %v", what, svc.Spec.Selector, wantSelector)
+	}
+	if !slices.Equal(svc.Spec.Ports, wantPorts) {
+		t.Errorf("%s has ports\n  %+v\nwant\n  %+v", what, svc.Spec.Ports, wantPorts)
+	}
+}
+
+func checkOwner(t *testing.T, what string, svc *corev1.Service, d *appsv1.Deployment) {
+	t.Helper()
+	refs := svc.OwnerReferences
+	if len(refs) != 1 {
+		t.Errorf("%s has %d owner references, want 1", what, len(refs))
+		return
+	}
+	ref := refs[0]
+	if ref.APIVersion != "apps/v1" || ref.Kind != "Deployment" || ref.Name != d.Name || ref.UID != d.UID {
+		t.Errorf("%s is owned by %s %s %q (UID %q), want apps/v1 Deployment %q (UID %q)",
+			what, ref.APIVersion, ref.Kind, ref.Name, ref.UID, d.Name, d.UID)
+	}
+	if ref.Controller == nil || !*ref.Controller {
+		t.Errorf("%s owner reference has Controller unset, want true (use metav1.NewControllerRef)", what)
+	}
+}

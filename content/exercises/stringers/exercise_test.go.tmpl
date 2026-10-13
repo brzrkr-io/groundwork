@@ -1,0 +1,82 @@
+package stringers
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestSeverityString(t *testing.T) {
+	tests := []struct {
+		name string
+		sev  Severity
+		want string
+	}{
+		{"debug", Debug, "DEBUG"},
+		{"info", Info, "INFO"},
+		{"warning", Warning, "WARNING"},
+		{"error", Error, "ERROR"},
+		{"critical", Critical, "CRITICAL"},
+		{"unknown 7", Severity(7), "Severity(7)"},
+		{"unknown -1", Severity(-1), "Severity(-1)"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.sev.String(); got != tc.want {
+				t.Errorf("Severity(%d).String() = %q, want %q", int(tc.sev), got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHostString(t *testing.T) {
+	web := Host{Name: "web-1", IP: "10.0.0.5", Port: 8080}
+	db := Host{Name: "db-1", IP: "10.0.0.9", Port: 5432}
+
+	t.Run("one host", func(t *testing.T) {
+		tests := []struct {
+			host Host
+			want string
+		}{
+			{web, "web-1 (10.0.0.5:8080)"},
+			{db, "db-1 (10.0.0.9:5432)"},
+		}
+		for _, tc := range tests {
+			if got := fmt.Sprint(tc.host); got != tc.want {
+				t.Errorf("fmt.Sprint(%#v) = %q, want %q", tc.host, got, tc.want)
+			}
+		}
+	})
+
+	t.Run("slice of hosts", func(t *testing.T) {
+		hosts := []Host{web, db}
+		want := "[web-1 (10.0.0.5:8080) db-1 (10.0.0.9:5432)]"
+		if got := fmt.Sprintf("%v", hosts); got != want {
+			t.Errorf("fmt.Sprintf(%q, hosts) = %q, want %q", "%v", got, want)
+		}
+	})
+}
+
+func TestDiskString(t *testing.T) {
+	t.Run("one disk", func(t *testing.T) {
+		tests := []struct {
+			disk Disk
+			want string
+		}{
+			{Disk{Mount: "/var", UsedPercent: 91}, "/var 91% used"},
+			{Disk{Mount: "/home", UsedPercent: 7}, "/home 7% used"},
+		}
+		for _, tc := range tests {
+			if got := fmt.Sprint(tc.disk); got != tc.want {
+				t.Errorf("fmt.Sprint(%#v) = %q, want %q", tc.disk, got, tc.want)
+			}
+		}
+	})
+
+	t.Run("slice of disks", func(t *testing.T) {
+		disks := []Disk{{Mount: "/", UsedPercent: 40}, {Mount: "/data", UsedPercent: 100}}
+		want := "[/ 40% used /data 100% used]"
+		if got := fmt.Sprint(disks); got != want {
+			t.Errorf("fmt.Sprint(disks) = %q, want %q", got, want)
+		}
+	})
+}

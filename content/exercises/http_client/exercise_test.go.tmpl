@@ -1,0 +1,183 @@
+package httpclient
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestNewClient(t *testing.T) {
+	c := NewClient()
+	if c == nil {
+		t.Fatal("NewClient() = nil, want a client")
+	}
+	if c == http.DefaultClient {
+		t.Error("NewClient() returned http.DefaultClient, want a new client")
+	}
+	if c.Timeout != 5*time.Second {
+		t.Errorf("NewClient().Timeout = %v, want %v", c.Timeout, 5*time.Second)
+	}
+}
+
+func TestNewStatusRequest(t *testing.T) {
+	tests := []struct {
+		baseURL, service, token string
+		wantURL                 string
+	}{
+		{"http://status.internal", "payments", "s3cret", "http://status.internal/status/payments"},
+		{"https://ops.example.com:8443", "checkout", "abc123", "https://ops.example.com:8443/status/checkout"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.service, func(t *testing.T) {
+			ctx := t.Context()
+
+			req, err := NewStatusRequest(ctx, tt.baseURL, tt.service, tt.token)
+			call := fmt.Sprintf("NewStatusRequest(ctx, %q, %q, %q)", tt.baseURL, tt.service, tt.token)
+			if err != nil {
+				t.Fatalf("%s returned error %v, want nil", call, err)
+			}
+			if req == nil {
+				t.Fatalf("%s returned a nil request", call)
+			}
+			if req.Method != http.MethodGet {
+				t.Errorf("%s method = %q, want %q", call, req.Method, http.MethodGet)
+			}
+			if got := req.URL.String(); got != tt.wantURL {
+				t.Errorf("%s URL = %q, want %q", call, got, tt.wantURL)
+			}
+			if got, want := req.Header.Get("Authorization"), "Bearer "+tt.token; got != want {
+				t.Errorf("%s Authorization header = %q, want %q", call, got, want)
+			}
+			if got, want := req.Header.Get("Accept"), "application/json"; got != want {
+				t.Errorf("%s Accept header = %q, want %q", call, got, want)
+			}
+			if req.Context() != ctx {
+				t.Errorf("%s did not use ctx; build it with http.NewRequestWithContext", call)
+			}
+		})
+	}
+
+	t.Run("bad base URL", func(t *testing.T) {
+		req, err := NewStatusRequest(t.Context(), "://status.internal", "payments", "s3cret")
+		if err == nil {
+			t.Errorf("NewStatusRequest(ctx, %q, ...) = %v, nil, want an error", "://status.internal", req)
+		}
+	})
+}
+
+// closeTracker is a fake transport. It sends requests through the real one
+// and remembers whether the response body was closed.
+type closeTracker struct {
+	base   http.RoundTripper
+	closed bool
+}
+
+func (c *closeTracker) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := c.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &trackedBody{ReadCloser: resp.Body, tracker: c}
+	return resp, nil
+}
+
+type trackedBody struct {
+	io.ReadCloser
+	tracker *closeTracker
+}
+
+func (b *trackedBody) Close() error {
+	b.tracker.closed = true
+	return b.ReadCloser.Close()
+}
+
+func TestFetchStatus(t *testing.T) {
+	tests := []struct {
+		name    string
+		code    int
+		body    string
+		want    ServiceStatus
+		wantErr string // "" means FetchStatus should succeed
+	}{
+		{
+			name: "healthy",
+			code: http.StatusOK,
+			body: `{"name":"payments","version":"1.4.2","healthy":true}`,
+			want: ServiceStatus{Name: "payments", Version: "1.4.2", Healthy: true},
+		},
+		{
+			name: "unhealthy",
+			code: http.StatusOK,
+			body: `{"name":"checkout","version":"2.0.0","healthy":false}`,
+			want: ServiceStatus{Name: "checkout", Version: "2.0.0", Healthy: false},
+		},
+		{
+			name:    "service unavailable",
+			code:    http.StatusServiceUnavailable,
+			body:    `{"name":"payments","version":"1.4.2","healthy":false}`,
+			wantErr: "unexpected status 503",
+		},
+		{
+			name:    "not found",
+			code:    http.StatusNotFound,
+			body:    `{"name":"","version":"","healthy":false}`,
+			wantErr: "unexpected status 404",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.code)
+				io.WriteString(w, tt.body)
+			}))
+			defer srv.Close()
+			tracker := &closeTracker{base: srv.Client().Transport}
+			client := &http.Client{Transport: tracker, Timeout: time.Second}
+			req, err := http.NewRequest(http.MethodGet, srv.URL+"/status/x", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := FetchStatus(client, req)
+
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("FetchStatus(...) returned error %q, want nil", err.Error())
+				} else if got != tt.want {
+					t.Errorf("FetchStatus(...) = %+v, want %+v", got, tt.want)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("FetchStatus(...) = %+v, nil, want error %q", got, tt.wantErr)
+				} else if err.Error() != tt.wantErr {
+					t.Errorf("FetchStatus(...) returned error %q, want %q", err.Error(), tt.wantErr)
+				}
+			}
+			if !tracker.closed {
+				t.Error("FetchStatus(...) did not close the response body")
+			}
+		})
+	}
+
+	t.Run("body larger than 1 MiB", func(t *testing.T) {
+		// Valid JSON, but the closing } comes after 2 MiB of spaces.
+		huge := `{"name":"payments","version":"1.4.2","healthy":true` + strings.Repeat(" ", 2<<20) + `}`
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, huge)
+		}))
+		defer srv.Close()
+		req, err := http.NewRequest(http.MethodGet, srv.URL+"/status/x", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := FetchStatus(srv.Client(), req)
+		if err == nil {
+			t.Errorf("FetchStatus(...) = %+v, nil, want an error because the body is over 1 MiB", got)
+		}
+	})
+}

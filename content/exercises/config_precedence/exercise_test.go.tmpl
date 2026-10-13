@@ -1,0 +1,171 @@
+package config
+
+import (
+	"maps"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// envFrom returns a lookup function backed by a map, standing in for
+// os.LookupEnv.
+func envFrom(env map[string]string) func(string) (string, bool) {
+	return func(key string) (string, bool) {
+		v, ok := env[key]
+		return v, ok
+	}
+}
+
+// sources builds a Source map for port, log_level and region.
+func sources(port, logLevel, region string) map[string]string {
+	return map[string]string{"port": port, "log_level": logLevel, "region": region}
+}
+
+// checkSettings reports a failure when got and want differ.
+func checkSettings(t *testing.T, call string, got, want Settings) {
+	t.Helper()
+	if got.Port != want.Port || got.LogLevel != want.LogLevel || got.Region != want.Region ||
+		!maps.Equal(got.Source, want.Source) {
+		t.Errorf("%s = %+v, want %+v", call, got, want)
+	}
+}
+
+func TestApplyFile(t *testing.T) {
+	tests := []struct {
+		data string
+		want Settings
+	}{
+		{
+			data: `{}`,
+			want: Settings{8080, "info", "us-east-1", sources("default", "default", "default")},
+		},
+		{
+			data: `{"log_level": "debug"}`,
+			want: Settings{8080, "debug", "us-east-1", sources("default", "file", "default")},
+		},
+		{
+			data: `{"region": "eu-west-1", "port": 9000}`,
+			want: Settings{9000, "info", "eu-west-1", sources("file", "default", "file")},
+		},
+		{
+			data: `{"port": 0, "log_level": "warn", "region": "ap-south-1"}`,
+			want: Settings{0, "warn", "ap-south-1", sources("file", "file", "file")},
+		},
+	}
+	for _, tt := range tests {
+		s := Defaults()
+		if err := s.ApplyFile([]byte(tt.data)); err != nil {
+			t.Errorf("ApplyFile(%s) error = %v, want nil", tt.data, err)
+			continue
+		}
+		checkSettings(t, "ApplyFile("+tt.data+")", s, tt.want)
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		s := Defaults()
+		if err := s.ApplyFile([]byte(`{"port": "eighty"`)); err == nil {
+			t.Errorf("ApplyFile(invalid JSON) error = nil, want an error")
+		}
+	})
+}
+
+func TestApplyEnv(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want Settings
+	}{
+		{
+			name: "nothing set",
+			env:  map[string]string{"HOME": "/root"},
+			want: Settings{8080, "info", "us-east-1", sources("default", "default", "default")},
+		},
+		{
+			name: "port and region",
+			env:  map[string]string{"APP_PORT": "9100", "APP_REGION": "eu-west-1"},
+			want: Settings{9100, "info", "eu-west-1", sources("env", "default", "env")},
+		},
+		{
+			name: "everything",
+			env:  map[string]string{"APP_PORT": "443", "APP_LOG_LEVEL": "error", "APP_REGION": "us-west-2"},
+			want: Settings{443, "error", "us-west-2", sources("env", "env", "env")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := Defaults()
+			if err := s.ApplyEnv(envFrom(tt.env)); err != nil {
+				t.Fatalf("ApplyEnv(%v) error = %v, want nil", tt.env, err)
+			}
+			checkSettings(t, "ApplyEnv(…)", s, tt.want)
+		})
+	}
+
+	for _, bad := range []string{"eighty", "80a"} {
+		t.Run("invalid APP_PORT "+bad, func(t *testing.T) {
+			s := Defaults()
+			err := s.ApplyEnv(envFrom(map[string]string{"APP_PORT": bad}))
+			if err == nil || !strings.Contains(err.Error(), "APP_PORT") {
+				t.Errorf("ApplyEnv(APP_PORT=%q) error = %v, want an error mentioning APP_PORT", bad, err)
+			}
+		})
+	}
+}
+
+func TestLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ingest.json")
+	file := `{"port": 9000, "log_level": "debug", "region": "eu-west-1"}`
+	if err := os.WriteFile(path, []byte(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		args []string
+		env  map[string]string
+		want Settings
+	}{
+		{
+			name: "defaults only",
+			want: Settings{8080, "info", "us-east-1", sources("default", "default", "default")},
+		},
+		{
+			name: "file beats defaults",
+			args: []string{"-config", path},
+			want: Settings{9000, "debug", "eu-west-1", sources("file", "file", "file")},
+		},
+		{
+			name: "env beats file",
+			args: []string{"-config", path},
+			env:  map[string]string{"APP_PORT": "9100"},
+			want: Settings{9100, "debug", "eu-west-1", sources("env", "file", "file")},
+		},
+		{
+			name: "flag beats env and file",
+			args: []string{"-config", path, "-port", "9200", "-region", "ap-south-1"},
+			env:  map[string]string{"APP_PORT": "9100", "APP_REGION": "us-west-2"},
+			want: Settings{9200, "debug", "ap-south-1", sources("flag", "file", "flag")},
+		},
+		{
+			name: "flag equal to the default still wins",
+			args: []string{"-config", path, "-log-level", "info"},
+			env:  map[string]string{"APP_LOG_LEVEL": "warn"},
+			want: Settings{9000, "info", "eu-west-1", sources("file", "flag", "file")},
+		},
+		{
+			name: "flags without a file",
+			args: []string{"-port", "0"},
+			want: Settings{0, "info", "us-east-1", sources("flag", "default", "default")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Load(tt.args, envFrom(tt.env))
+			if err != nil {
+				t.Fatalf("Load(%q) error = %v, want nil", tt.args, err)
+			}
+			checkSettings(t, "Load(…)", got, tt.want)
+		})
+	}
+}

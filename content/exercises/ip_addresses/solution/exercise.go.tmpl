@@ -1,0 +1,58 @@
+// Package ipaddr is the Gopherlings exercise "IP addresses: classify, allowlist, overlap".
+package ipaddr
+
+import "net/netip"
+
+// Classify returns "FAMILY KIND" for the address s, for example
+// "ipv4 private" or "ipv6 loopback".
+func Classify(s string) (string, error) {
+	addr, err := netip.ParseAddr(s)
+	if err != nil {
+		return "", err
+	}
+
+	family := "ipv4"
+	if addr.Is6() {
+		family = "ipv6"
+	}
+
+	kind := "public"
+	if addr.IsLoopback() {
+		kind = "loopback"
+	} else if addr.IsPrivate() {
+		kind = "private"
+	}
+
+	return family + " " + kind, nil
+}
+
+// Allowed reports whether ip is inside any of the CIDR ranges in allowlist.
+func Allowed(ip string, allowlist []string) (bool, error) {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return false, err
+	}
+	for _, cidr := range allowlist {
+		prefix, err := netip.ParsePrefix(cidr)
+		if err != nil {
+			return false, err
+		}
+		if prefix.Contains(addr) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Overlaps reports whether the CIDR ranges a and b share any address.
+func Overlaps(a, b string) (bool, error) {
+	pa, err := netip.ParsePrefix(a)
+	if err != nil {
+		return false, err
+	}
+	pb, err := netip.ParsePrefix(b)
+	if err != nil {
+		return false, err
+	}
+	return pa.Overlaps(pb), nil
+}

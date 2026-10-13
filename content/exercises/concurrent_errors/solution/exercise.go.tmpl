@@ -1,0 +1,53 @@
+// Package fleetops is the Gopherlings exercise "Collecting errors from goroutines".
+package fleetops
+
+import (
+	"errors"
+	"fmt"
+	"sync"
+)
+
+// RunAll runs every task at the same time and returns all of their errors
+// joined together, in task order. It returns nil if every task succeeded.
+func RunAll(tasks []func() error) error {
+	errs := make([]error, len(tasks))
+	var wg sync.WaitGroup
+	for i, task := range tasks {
+		wg.Go(func() {
+			errs[i] = task()
+		})
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+// RunLimited is like RunAll, but never runs more than limit tasks at once.
+func RunLimited(tasks []func() error, limit int) error {
+	errs := make([]error, len(tasks))
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+	for i, task := range tasks {
+		sem <- struct{}{} // wait for a free slot
+		wg.Go(func() {
+			defer func() { <-sem }()
+			errs[i] = task()
+		})
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+// CheckHosts calls check for every host, at most limit at once, and returns
+// every failure wrapped as "<host>: <error>", joined together.
+func CheckHosts(hosts []string, limit int, check func(host string) error) error {
+	var tasks []func() error
+	for _, host := range hosts {
+		tasks = append(tasks, func() error {
+			if err := check(host); err != nil {
+				return fmt.Errorf("%s: %w", host, err)
+			}
+			return nil
+		})
+	}
+	return RunLimited(tasks, limit)
+}

@@ -1,0 +1,37 @@
+// Package text is the Gopherlings exercise "Bytes, runes and UTF-8".
+package text
+
+import "unicode/utf8"
+
+// CharCount returns the number of characters (runes) in s.
+func CharCount(s string) int {
+	return utf8.RuneCountInString(s)
+}
+
+// Truncate shortens msg to at most n characters, adding "..." when it cuts.
+func Truncate(msg string, n int) string {
+	runes := []rune(msg)
+	if len(runes) <= n {
+		return msg
+	}
+	return string(runes[:n]) + "..."
+}
+
+// isAlphaNum reports whether r is an ASCII letter or digit.
+func isAlphaNum(r rune) bool {
+	return ('a' <= r && r <= 'z') || ('A' <= r && r <= 'Z') || ('0' <= r && r <= '9')
+}
+
+// ValidLabel reports whether s is a valid Kubernetes label value.
+func ValidLabel(s string) bool {
+	runes := []rune(s)
+	if len(runes) < 1 || len(runes) > 63 {
+		return false
+	}
+	for _, r := range runes {
+		if !isAlphaNum(r) && r != '-' && r != '_' && r != '.' {
+			return false
+		}
+	}
+	return isAlphaNum(runes[0]) && isAlphaNum(runes[len(runes)-1])
+}

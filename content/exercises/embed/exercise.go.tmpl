@@ -1,0 +1,61 @@
+// Package notify writes deploy notifications from templates that are built
+// into the program.
+package notify
+
+import (
+	"embed"
+	"encoding/json"
+)
+
+// Config holds the notifier settings.
+type Config struct {
+	Channel  string `json:"channel"`
+	Username string `json:"username"`
+	Retries  int    `json:"retries"`
+}
+
+// Deploy describes one deploy event. Templates can use all of its fields.
+type Deploy struct {
+	Service string
+	Version string
+	Env     string
+	User    string
+}
+
+// defaultConfig holds the contents of defaults.json.
+//
+// TODO(1): Embed defaults.json into this variable.
+var defaultConfig []byte
+
+// templates holds every file in the templates folder.
+//
+// TODO(2): Embed the templates folder into this variable.
+var templates embed.FS
+
+// DefaultConfig returns the settings from the embedded defaults.json.
+func DefaultConfig() (Config, error) {
+	var c Config
+	err := json.Unmarshal(defaultConfig, &c)
+	return c, err
+}
+
+// Kinds returns the names of the embedded templates without their ".txt"
+// ending, sorted: "deploy", "failed", ...
+func Kinds() ([]string, error) {
+	entries, err := templates.ReadDir("templates")
+	if err != nil {
+		return nil, err
+	}
+	var kinds []string
+	for _, entry := range entries {
+		// TODO(2): Trim ".txt" from the end of each name.
+		kinds = append(kinds, entry.Name())
+	}
+	return kinds, nil
+}
+
+// Render executes templates/<kind>.txt with d and returns the result.
+func Render(kind string, d Deploy) (string, error) {
+	// TODO(3): Parse the template from the embedded files and execute it.
+	return "", nil
+}

@@ -1,0 +1,21 @@
+// Package text is the Gopherlings exercise "Bytes, runes and UTF-8".
+package text
+
+// CharCount returns the number of characters (runes) in s.
+func CharCount(s string) int {
+	// TODO(1): Count characters, not bytes. Add "unicode/utf8" to the imports.
+	return len(s)
+}
+
+// Truncate shortens msg to at most n characters, adding "..." when it cuts.
+func Truncate(msg string, n int) string {
+	// TODO(2): If msg has more than n characters, keep the first n and add "...".
+	return msg
+}
+
+// ValidLabel reports whether s is a valid Kubernetes label value.
+func ValidLabel(s string) bool {
+	// TODO(3): Write an isAlphaNum(r rune) bool helper, then check the length,
+	// every character, and the first and last character.
+	return false
+}

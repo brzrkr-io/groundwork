@@ -1,0 +1,70 @@
+package closures
+
+import (
+	"strconv"
+	"testing"
+)
+
+func TestNewErrorCounter(t *testing.T) {
+	t.Run("counts up from 1", func(t *testing.T) {
+		count := NewErrorCounter()
+		for want := 1; want <= 4; want++ {
+			if got := count(); got != want {
+				t.Fatalf("call %d: counter() = %d, want %d", want, got, want)
+			}
+		}
+	})
+	t.Run("counters are independent", func(t *testing.T) {
+		db := NewErrorCounter()
+		cache := NewErrorCounter()
+		db()
+		db()
+		if got := cache(); got != 1 {
+			t.Errorf("first cache() after two db() calls = %d, want 1", got)
+		}
+	})
+}
+
+func TestNewIDGenerator(t *testing.T) {
+	// Each line is one case: the prefix; we call the generator three times.
+	tests := []struct {
+		name   string
+		prefix string
+	}{
+		{"requests", "req"},
+		{"jobs", "job"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			next := NewIDGenerator(tt.prefix)
+			for n := 1; n <= 3; n++ {
+				want := tt.prefix + "-" + strconv.Itoa(n)
+				if got := next(); got != want {
+					t.Fatalf("call %d: NewIDGenerator(%q)() = %q, want %q", n, tt.prefix, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestNewRateLimiter(t *testing.T) {
+	tests := []struct {
+		name  string
+		limit int
+	}{
+		{"limit 2", 2},
+		{"limit 3", 3},
+		{"limit 0", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			allow := NewRateLimiter(tt.limit)
+			for call := 1; call <= tt.limit+2; call++ {
+				want := call <= tt.limit
+				if got := allow(); got != want {
+					t.Fatalf("call %d: NewRateLimiter(%d)() = %t, want %t", call, tt.limit, got, want)
+				}
+			}
+		})
+	}
+}

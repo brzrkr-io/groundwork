@@ -1,0 +1,46 @@
+// Package ratelimit is the Gopherlings exercise "Pointer receivers: the leaky rate limiter".
+package ratelimit
+
+// RateLimiter is a token bucket for one API client. Each request takes one
+// token; the bucket never holds more than Max tokens.
+type RateLimiter struct {
+	Tokens int
+	Max    int
+}
+
+// Take uses up one token if there is one, and reports whether it did.
+// TODO(1): Make the token really get used up.
+func (l RateLimiter) Take() bool {
+	if l.Tokens == 0 {
+		return false
+	}
+	l.Tokens--
+	return true
+}
+
+// TakeN takes up to n tokens, stopping when the bucket runs out, and
+// returns how many it took.
+// TODO(2): Make the tokens taken here come out of the caller's bucket.
+func (l RateLimiter) TakeN(n int) int {
+	taken := 0
+	for range n {
+		if !l.Take() {
+			break
+		}
+		taken++
+	}
+	return taken
+}
+
+// Refill adds n tokens, never going above Max.
+func (l *RateLimiter) Refill(n int) {
+	l.Tokens = min(l.Tokens+n, l.Max)
+}
+
+// RefillAll adds n tokens to every limiter in limiters.
+func RefillAll(limiters []RateLimiter, n int) {
+	// TODO(3): Refill the limiters in the slice, not copies of them.
+	for _, lim := range limiters {
+		lim.Refill(n)
+	}
+}

@@ -1,0 +1,65 @@
+// Package runcmd is the Gopherlings exercise "Running commands: output, exit codes and timeouts".
+package runcmd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+)
+
+// Output runs the program name with args and returns what it printed to
+// stdout, with surrounding whitespace trimmed.
+func Output(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+// ExitStatus runs the program name with args and reports its exit code and
+// its combined stdout and stderr, trimmed. A non-zero exit code is not an
+// error. If the program cannot be started at all, ExitStatus returns -1 and
+// the error.
+func ExitStatus(name string, args ...string) (code int, output string, err error) {
+	out, err := exec.Command(name, args...).CombinedOutput()
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		return exitErr.ExitCode(), strings.TrimSpace(string(out)), nil
+	}
+	if err != nil {
+		return -1, "", err
+	}
+	return 0, strings.TrimSpace(string(out)), nil
+}
+
+// Options controls how Run starts a program.
+type Options struct {
+	Dir     string        // working directory; "" means the current one
+	Env     []string      // extra "KEY=value" variables on top of ours
+	Timeout time.Duration // stop the program after this long
+}
+
+// Run runs the program name with args, using the working directory,
+// extra environment variables and timeout in opts. It returns the trimmed
+// stdout. If the timeout passes, the program is killed and the error wraps
+// context.DeadlineExceeded.
+func Run(opts Options, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+
+	cmd.Dir = opts.Dir
+	cmd.Env = append(os.Environ(), opts.Env...)
+
+	out, err := cmd.Output()
+	if err != nil {
+		// A killed program fails with "signal: killed"; ctx.Err() says why.
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("timed out after %v: %w", opts.Timeout, ctx.Err())
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}

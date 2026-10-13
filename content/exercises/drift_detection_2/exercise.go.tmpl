@@ -1,0 +1,51 @@
+// Package stackdrift checks the payments stack for drift every night.
+package stackdrift
+
+import "slices"
+
+// ChangedKeys returns the sorted tag keys whose values differ between want
+// and got, including keys that only one side has. Keys that start with "aws:"
+// belong to AWS and never count as drift.
+//
+// TODO(1): Fix the bug: AWS-managed "aws:" tags are reported as drift.
+func ChangedKeys(want, got map[string]string) []string {
+	var keys []string
+	for k, v := range want {
+		if gv, ok := got[k]; !ok || gv != v {
+			keys = append(keys, k)
+		}
+	}
+	for k := range got {
+		if _, ok := want[k]; !ok {
+			keys = append(keys, k)
+		}
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// Diff lists the changes that would turn actual into desired, sorted by ID.
+//
+// TODO(2): Fix the bug: the changes come out in a different order every run.
+func Diff(desired, actual []Resource) []Change {
+	want := byID(desired)
+	got := byID(actual)
+
+	var changes []Change
+	for id, w := range want {
+		g, ok := got[id]
+		if !ok {
+			changes = append(changes, Change{Action: "create", ID: id})
+			continue
+		}
+		if keys := ChangedKeys(w.Tags, g.Tags); len(keys) > 0 {
+			changes = append(changes, Change{Action: "update", ID: id, Keys: keys})
+		}
+	}
+	for id := range got {
+		if _, ok := want[id]; !ok {
+			changes = append(changes, Change{Action: "delete", ID: id})
+		}
+	}
+	return changes
+}

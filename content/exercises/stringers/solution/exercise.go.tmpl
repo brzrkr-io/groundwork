@@ -1,0 +1,59 @@
+// Package stringers is the Gopherlings exercise "Stringers".
+package stringers
+
+import "fmt"
+
+// Severity says how serious an alert is.
+type Severity int
+
+// The alert severities, from least to most serious.
+const (
+	Debug Severity = iota
+	Info
+	Warning
+	Error
+	Critical
+)
+
+// String returns the severity's name, such as "ERROR".
+func (s Severity) String() string {
+	switch s {
+	case Debug:
+		return "DEBUG"
+	case Info:
+		return "INFO"
+	case Warning:
+		return "WARNING"
+	case Error:
+		return "ERROR"
+	case Critical:
+		return "CRITICAL"
+	default:
+		// int(s) has no String method, so this cannot call String again.
+		return fmt.Sprintf("Severity(%d)", int(s))
+	}
+}
+
+// Host is a machine that runs one service.
+type Host struct {
+	Name string
+	IP   string
+	Port int
+}
+
+// String returns the host as "name (ip:port)", such as "web-1 (10.0.0.5:8080)".
+func (h Host) String() string {
+	return fmt.Sprintf("%s (%s:%d)", h.Name, h.IP, h.Port)
+}
+
+// Disk is one mounted filesystem and how full it is.
+type Disk struct {
+	Mount       string
+	UsedPercent int
+}
+
+// String returns the disk usage, such as "/var 91% used".
+// The value receiver means both Disk and *Disk print this way.
+func (d Disk) String() string {
+	return fmt.Sprintf("%s %d%% used", d.Mount, d.UsedPercent)
+}

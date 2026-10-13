@@ -1,0 +1,116 @@
+package triage
+
+import "testing"
+
+func TestStatusClass(t *testing.T) {
+	// Each line is one case: the input, then the answer we want.
+	tests := []struct {
+		code int
+		want string
+	}{
+		{100, "informational"},
+		{199, "informational"},
+		{200, "success"},
+		{204, "success"},
+		{299, "success"},
+		{301, "redirect"},
+		{399, "redirect"},
+		{400, "client error"},
+		{404, "client error"},
+		{499, "client error"},
+		{500, "server error"},
+		{503, "server error"},
+		{599, "server error"},
+		{99, "unknown"},
+		{600, "unknown"},
+		{0, "unknown"},
+	}
+	for _, tt := range tests {
+		if got := StatusClass(tt.code); got != tt.want {
+			t.Errorf("StatusClass(%d) = %q, want %q", tt.code, got, tt.want)
+		}
+	}
+}
+
+func TestShouldRetry(t *testing.T) {
+	tests := []struct {
+		code int
+		want bool
+	}{
+		{429, true},
+		{502, true},
+		{503, true},
+		{504, true},
+		{200, false},
+		{404, false},
+		{500, false},
+		{501, false},
+		{505, false},
+	}
+	for _, tt := range tests {
+		if got := ShouldRetry(tt.code); got != tt.want {
+			t.Errorf("ShouldRetry(%d) = %t, want %t", tt.code, got, tt.want)
+		}
+	}
+}
+
+func TestParseStatus(t *testing.T) {
+	valid := []struct {
+		text string
+		want int
+	}{
+		{"503", 503},
+		{"200", 200},
+		{" 404 ", 404},
+		{"100", 100},
+		{"599", 599},
+	}
+	for _, tt := range valid {
+		t.Run(tt.text, func(t *testing.T) {
+			got, err := ParseStatus(tt.text)
+			if err != nil {
+				t.Fatalf("ParseStatus(%q) returned error %v, want nil", tt.text, err)
+			}
+			if got != tt.want {
+				t.Errorf("ParseStatus(%q) = %d, want %d", tt.text, got, tt.want)
+			}
+		})
+	}
+
+	invalid := []string{"abc", "", "42", "99", "600", "5o3", "-200"}
+	for _, text := range invalid {
+		t.Run(text, func(t *testing.T) {
+			got, err := ParseStatus(text)
+			if err == nil {
+				t.Fatalf("ParseStatus(%q) returned a nil error, want an error", text)
+			}
+			if got != 0 {
+				t.Errorf("ParseStatus(%q) = %d with an error, want 0", text, got)
+			}
+		})
+	}
+}
+
+func TestTriage(t *testing.T) {
+	tests := []struct {
+		service, statusText string
+		want                string
+	}{
+		{"checkout", "503", "checkout: 503 server error, retry"},
+		{"gateway", "429", "gateway: 429 client error, retry"},
+		{"search", "404", "search: 404 client error, no retry"},
+		{"api", "200", "api: 200 success, no retry"},
+		{"payments", "500", "payments: 500 server error, no retry"},
+		{"web", " 301", "web: 301 redirect, no retry"},
+		{"billing", "oops", `billing: invalid status "oops"`},
+		{"auth", "700", `auth: invalid status "700"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.service, func(t *testing.T) {
+			got := Triage(tt.service, tt.statusText)
+			if got != tt.want {
+				t.Errorf("Triage(%q, %q) = %q, want %q", tt.service, tt.statusText, got, tt.want)
+			}
+		})
+	}
+}

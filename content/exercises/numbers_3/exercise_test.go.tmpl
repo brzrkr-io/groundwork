@@ -1,0 +1,66 @@
+package numbers
+
+import "testing"
+
+func TestRequestsPerDay(t *testing.T) {
+	tests := []struct {
+		name string
+		rps  int
+		want int
+	}{
+		{name: "one per second", rps: 1, want: 86400},
+		{name: "ten per second", rps: 10, want: 864000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := RequestsPerDay(tt.rps)
+			if got != tt.want {
+				t.Errorf("RequestsPerDay(%d) = %d, want %d", tt.rps, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNodesNeeded(t *testing.T) {
+	tests := []struct {
+		name       string
+		replicas   int
+		perReplica int
+		perNode    int
+		want       int
+	}{
+		{name: "two and a half nodes", replicas: 10, perReplica: 500, perNode: 2000, want: 3},
+		{name: "exactly one node", replicas: 4, perReplica: 500, perNode: 2000, want: 1},
+		{name: "just over one node", replicas: 3, perReplica: 1500, perNode: 4000, want: 2},
+		{name: "no replicas", replicas: 0, perReplica: 500, perNode: 2000, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NodesNeeded(tt.replicas, tt.perReplica, tt.perNode)
+			if got != tt.want {
+				t.Errorf("NodesNeeded(%d, %d, %d) = %d, want %d", tt.replicas, tt.perReplica, tt.perNode, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMonthlyCost(t *testing.T) {
+	tests := []struct {
+		name        string
+		hourlyPrice float64
+		instances   float64
+		want        float64
+	}{
+		{name: "four small instances", hourlyPrice: 0.125, instances: 4, want: 365},
+		{name: "two bigger instances", hourlyPrice: 0.5, instances: 2, want: 730},
+		{name: "one tiny instance", hourlyPrice: 0.0625, instances: 1, want: 45.625},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MonthlyCost(tt.hourlyPrice, tt.instances)
+			if got != tt.want {
+				t.Errorf("MonthlyCost(%v, %v) = %v, want %v", tt.hourlyPrice, tt.instances, got, tt.want)
+			}
+		})
+	}
+}

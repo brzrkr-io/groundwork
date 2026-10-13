@@ -1,0 +1,26 @@
+package alerts
+
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
+
+func FuzzTruncate(f *testing.F) {
+	f.Add("disk 92% full on db-1", 10)
+	f.Add("disk full", -1)
+	f.Fuzz(func(t *testing.T, msg string, limit int) {
+		got := Truncate(msg, limit)
+		if limit >= 0 && len(got) > limit {
+			t.Errorf("Truncate(%q, %d) = %q, which is %d bytes, more than %d", msg, limit, got, len(got), limit)
+		}
+		if !strings.HasPrefix(msg, got) {
+			t.Errorf("Truncate(%q, %d) = %q, which is not the start of the message", msg, limit, got)
+		}
+		// The fuzzer also makes invalid UTF-8, so only valid input has to
+		// give valid output.
+		if utf8.ValidString(msg) && !utf8.ValidString(got) {
+			t.Errorf("Truncate(%q, %d) = %q, which cuts a character in half", msg, limit, got)
+		}
+	})
+}

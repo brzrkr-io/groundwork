@@ -1,0 +1,26 @@
+package inventory
+
+// Filter selects hosts. An empty field matches every host.
+type Filter struct {
+	Env    string   // keep hosts in this env
+	Region string   // keep hosts in this region
+	Tags   []string // keep hosts that have every one of these tags
+}
+
+// Match reports whether h passes every part of the filter.
+func (f Filter) Match(h Host) bool {
+	// TODO(3): Return false if Env or Region is set and differs from the
+	// host's, or if the host is missing any of f.Tags. Otherwise return true.
+	return false
+}
+
+// Apply returns the hosts that match the filter, in their original order.
+func (f Filter) Apply(hosts []Host) []Host {
+	var kept []Host
+	for _, h := range hosts {
+		if f.Match(h) {
+			kept = append(kept, h)
+		}
+	}
+	return kept
+}

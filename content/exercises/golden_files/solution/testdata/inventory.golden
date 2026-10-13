@@ -1,0 +1,4 @@
+NAME         IP              REGION
+web-1        10.0.1.15       eu-west-1
+web-2        10.0.1.16       eu-west-1
+db-primary   10.0.2.5        us-east-1

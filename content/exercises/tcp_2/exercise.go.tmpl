@@ -1,0 +1,52 @@
+// Package tcp is the Gopherlings exercise "TCP: banner grabbing with deadlines".
+package tcp
+
+import (
+	"bufio"
+	"fmt"
+	"net"
+	"slices"
+	"time"
+)
+
+// HandleStats writes one "name value" line per counter in stats, sorted by
+// name, and then ends the reply by closing conn.
+func HandleStats(conn net.Conn, stats map[string]int) {
+	// TODO(1): Fix the bug: conn is never closed, so clients reading until
+	// EOF wait forever.
+	var names []string
+	for name := range stats {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	for _, name := range names {
+		fmt.Fprintf(conn, "%s %d\n", name, stats[name])
+	}
+}
+
+// IsTimeout reports whether err is, or wraps, a net.Error that timed out.
+func IsTimeout(err error) bool {
+	// TODO(2): Use errors.As to look for a net.Error and ask it Timeout().
+	// Add the errors import.
+	return false
+}
+
+// ReadBanner connects to addr and returns the first line the server sends,
+// waiting at most timeout for it.
+func ReadBanner(addr string, timeout time.Duration) (string, error) {
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+
+	// TODO(3): Set a read deadline timeout from now.
+
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	// TODO(3): Trim the trailing "\r\n". Add the strings import.
+	return line, nil
+}

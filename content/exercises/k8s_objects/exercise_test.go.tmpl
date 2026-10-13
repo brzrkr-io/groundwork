@@ -1,0 +1,107 @@
+package objects
+
+import (
+	"maps"
+	"testing"
+)
+
+func TestLabels(t *testing.T) {
+	tests := []struct {
+		app, env string
+		want     map[string]string
+	}{
+		{"checkout", "production", map[string]string{"app": "checkout", "env": "production"}},
+		{"api", "staging", map[string]string{"app": "api", "env": "staging"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.app, func(t *testing.T) {
+			got := Labels(tt.app, tt.env)
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("Labels(%q, %q) = %v, want %v", tt.app, tt.env, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewDeployment(t *testing.T) {
+	tests := []struct {
+		app, ns, env string
+		replicas     int32
+	}{
+		{"checkout", "shop", "production", 3},
+		{"worker", "payments", "staging", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.app, func(t *testing.T) {
+			d := NewDeployment(tt.app, tt.ns, tt.env, "registry.example.com/shop/"+tt.app+":1.4.2", tt.replicas)
+			wantLabels := map[string]string{"app": tt.app, "env": tt.env}
+
+			if d.Name != tt.app {
+				t.Errorf("Name = %q, want %q", d.Name, tt.app)
+			}
+			if d.Namespace != tt.ns {
+				t.Errorf("Namespace = %q, want %q", d.Namespace, tt.ns)
+			}
+			if !maps.Equal(d.Labels, wantLabels) {
+				t.Errorf("Labels = %v, want %v", d.Labels, wantLabels)
+			}
+			if d.Spec.Replicas == nil {
+				t.Errorf("Spec.Replicas is nil, want a pointer to %d", tt.replicas)
+			} else if *d.Spec.Replicas != tt.replicas {
+				t.Errorf("*Spec.Replicas = %d, want %d", *d.Spec.Replicas, tt.replicas)
+			}
+			if d.Spec.Selector == nil {
+				t.Fatalf("Spec.Selector is nil, want MatchLabels %v", wantLabels)
+			}
+			if !maps.Equal(d.Spec.Selector.MatchLabels, wantLabels) {
+				t.Errorf("Spec.Selector.MatchLabels = %v, want %v", d.Spec.Selector.MatchLabels, wantLabels)
+			}
+		})
+	}
+}
+
+func TestAppContainer(t *testing.T) {
+	tests := []struct {
+		name, image string
+		port        int32
+	}{
+		{"checkout", "registry.example.com/shop/checkout:1.4.2", 8080},
+		{"metrics", "registry.example.com/ops/metrics:2.0.0", 9090},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := AppContainer(tt.name, tt.image, tt.port)
+
+			if c.Name != tt.name {
+				t.Errorf("Name = %q, want %q", c.Name, tt.name)
+			}
+			if c.Image != tt.image {
+				t.Errorf("Image = %q, want %q", c.Image, tt.image)
+			}
+			if len(c.Ports) != 1 {
+				t.Fatalf("len(Ports) = %d, want 1", len(c.Ports))
+			}
+			if c.Ports[0].Name != "http" {
+				t.Errorf("Ports[0].Name = %q, want %q", c.Ports[0].Name, "http")
+			}
+			if c.Ports[0].ContainerPort != tt.port {
+				t.Errorf("Ports[0].ContainerPort = %d, want %d", c.Ports[0].ContainerPort, tt.port)
+			}
+
+			res := c.Resources
+			checks := []struct {
+				field, got, want string
+			}{
+				{"Requests cpu", res.Requests.Cpu().String(), "100m"},
+				{"Requests memory", res.Requests.Memory().String(), "128Mi"},
+				{"Limits cpu", res.Limits.Cpu().String(), "500m"},
+				{"Limits memory", res.Limits.Memory().String(), "256Mi"},
+			}
+			for _, ch := range checks {
+				if ch.got != ch.want {
+					t.Errorf("Resources %s = %q, want %q", ch.field, ch.got, ch.want)
+				}
+			}
+		})
+	}
+}

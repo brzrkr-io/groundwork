@@ -1,0 +1,42 @@
+// Package accesslog is the Gopherlings exercise "Structured logging: access logs".
+package accesslog
+
+import (
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+)
+
+// statusRecorder wraps a ResponseWriter and remembers the status code sent.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+// WriteHeader records code and passes it on to the wrapped ResponseWriter.
+func (r *statusRecorder) WriteHeader(code int) {
+	// TODO(1): Store code in r.status.
+	r.ResponseWriter.WriteHeader(code)
+}
+
+// AccessLog is middleware that logs one "request" line per request.
+func AccessLog(logger *slog.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+
+		// TODO(2): Log "request" with method, path, status and request_id,
+		// at Error level for 5xx statuses and Info otherwise.
+		logger.Info(fmt.Sprintf("%s %s -> %d", r.Method, r.URL.Path, rec.status))
+	})
+}
+
+// NewLeveledLogger returns a JSON logger and the LevelVar that controls its
+// minimum level. The level starts at Info.
+func NewLeveledLogger(w io.Writer) (*slog.Logger, *slog.LevelVar) {
+	level := new(slog.LevelVar)
+	// TODO(3): Use level as the handler's Level.
+	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
+	return slog.New(slog.NewJSONHandler(w, opts)), level
+}

@@ -1,0 +1,43 @@
+package upstream
+
+import (
+	"flag"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+var update = flag.Bool("update", false, "rewrite golden files")
+
+func TestWriteUpstreamConfig(t *testing.T) {
+	input, err := os.ReadFile(filepath.Join("testdata", "backends.txt"))
+	if err != nil {
+		t.Fatalf("reading fixture: %v", err)
+	}
+	backends := strings.Fields(string(input))
+
+	dir := t.TempDir()
+	if err := WriteUpstreamConfig(dir, "api", backends); err != nil {
+		t.Fatalf("WriteUpstreamConfig(%q, %q, %q) returned error: %v", dir, "api", backends, err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "api.conf"))
+	if err != nil {
+		t.Fatalf("reading written config: %v", err)
+	}
+
+	golden := filepath.Join("testdata", "api.conf.golden")
+	if *update {
+		if err := os.WriteFile(golden, got, 0o644); err != nil {
+			t.Fatalf("updating %s: %v", golden, err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("reading %s: %v", golden, err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("api.conf differs from %s\ngot:\n%s\nwant:\n%s", golden, got, want)
+	}
+}

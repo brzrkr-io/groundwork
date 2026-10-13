@@ -1,0 +1,36 @@
+// Package closures is the Gopherlings exercise "Functions as values: retries and a circuit breaker".
+package closures
+
+// RetryWithBackoff calls op with attempt numbers 1 to attempts until it
+// succeeds, calling sleep with a doubling wait before each retry. It reports
+// whether any attempt succeeded.
+func RetryWithBackoff(attempts, baseSeconds int, op func(attempt int) bool, sleep func(seconds int)) bool {
+	wait := baseSeconds
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if op(attempt) {
+			return true
+		}
+		if attempt < attempts {
+			sleep(wait)
+			wait *= 2
+		}
+	}
+	return false
+}
+
+// NewCircuitBreaker returns a record function for call results and an isOpen
+// function that reports whether the last threshold results all failed.
+func NewCircuitBreaker(threshold int) (record func(ok bool), isOpen func() bool) {
+	failures := 0
+	record = func(ok bool) {
+		if ok {
+			failures = 0
+		} else {
+			failures++
+		}
+	}
+	isOpen = func() bool {
+		return failures >= threshold
+	}
+	return record, isOpen
+}

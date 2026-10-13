@@ -1,0 +1,30 @@
+// Package alerts is the Gopherlings exercise "Fuzzing: properties of a truncated alert".
+package alerts
+
+import "unicode/utf8"
+
+// Truncate shortens an alert message to at most limit bytes, because chat and
+// pager APIs reject longer messages. It never cuts a UTF-8 character in half:
+// if the cut would land inside one, the whole character is dropped. The
+// result is always the start of msg. A negative limit counts as 0.
+func Truncate(msg string, limit int) string {
+	return truncate(msg, limit)
+}
+
+// truncate points at the real implementation. Gopherlings' grader swaps in
+// broken versions to check that your test catches them.
+var truncate = realTruncate
+
+func realTruncate(msg string, limit int) string {
+	limit = max(limit, 0)
+	if len(msg) <= limit {
+		return msg
+	}
+	// msg[limit] is the first byte that doesn't fit. While it is not the
+	// start of a character, we are inside one, so step back.
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(msg[cut]) {
+		cut--
+	}
+	return msg[:cut]
+}

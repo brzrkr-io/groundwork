@@ -1,0 +1,37 @@
+package inventory
+
+import "slices"
+
+// Filter selects hosts. An empty field matches every host.
+type Filter struct {
+	Env    string   // keep hosts in this env
+	Region string   // keep hosts in this region
+	Tags   []string // keep hosts that have every one of these tags
+}
+
+// Match reports whether h passes every part of the filter.
+func (f Filter) Match(h Host) bool {
+	if f.Env != "" && h.Env != f.Env {
+		return false
+	}
+	if f.Region != "" && h.Region != f.Region {
+		return false
+	}
+	for _, tag := range f.Tags {
+		if !slices.Contains(h.Tags, tag) {
+			return false
+		}
+	}
+	return true
+}
+
+// Apply returns the hosts that match the filter, in their original order.
+func (f Filter) Apply(hosts []Host) []Host {
+	var kept []Host
+	for _, h := range hosts {
+		if f.Match(h) {
+			kept = append(kept, h)
+		}
+	}
+	return kept
+}

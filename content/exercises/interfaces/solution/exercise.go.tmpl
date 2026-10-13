@@ -1,0 +1,56 @@
+// Package interfaces is the Gopherlings exercise "Interfaces".
+package interfaces
+
+import "fmt"
+
+// Alert describes a problem with one service.
+type Alert struct {
+	Service string
+	Message string
+}
+
+// Notifier is anything that can send an alert somewhere. Notify returns the
+// line it sent.
+type Notifier interface {
+	Notify(a Alert) string
+}
+
+// Slack sends alerts to a Slack channel.
+type Slack struct {
+	Channel string // the channel name without "#", like "ops"
+}
+
+// Notify formats a for Slack, like "slack #ops: [api] disk full".
+func (s Slack) Notify(a Alert) string {
+	return fmt.Sprintf("slack #%s: [%s] %s", s.Channel, a.Service, a.Message)
+}
+
+// Email sends alerts to an email address.
+type Email struct {
+	To string
+}
+
+// Notify formats a for email, like "email oncall@example.com: [api] disk full".
+func (e Email) Notify(a Alert) string {
+	return fmt.Sprintf("email %s: [%s] %s", e.To, a.Service, a.Message)
+}
+
+// NotifyAll sends a to every notifier in ns and returns the lines they sent,
+// in the same order.
+func NotifyAll(ns []Notifier, a Alert) []string {
+	var sent []string
+	for _, n := range ns {
+		sent = append(sent, n.Notify(a))
+	}
+	return sent
+}
+
+// PagerDuty pages the on-call engineer through a PagerDuty service key.
+type PagerDuty struct {
+	ServiceKey string
+}
+
+// Notify formats a for PagerDuty, like "pagerduty key-123: [api] disk full".
+func (p PagerDuty) Notify(a Alert) string {
+	return fmt.Sprintf("pagerduty %s: [%s] %s", p.ServiceKey, a.Service, a.Message)
+}

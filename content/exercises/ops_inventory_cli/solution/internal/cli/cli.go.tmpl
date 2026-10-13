@@ -1,0 +1,113 @@
+// Package cli turns command-line arguments into an inventory report.
+package cli
+
+import (
+	"cmp"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"slices"
+	"strings"
+
+	"gopherlings.local/ops_inventory_cli/internal/inventory"
+	"gopherlings.local/ops_inventory_cli/internal/report"
+)
+
+// options holds everything the command line asked for.
+type options struct {
+	file   string           // inventory path, or "-" for stdin
+	json   bool             // print JSON instead of a table
+	filter inventory.Filter // which hosts to show
+}
+
+// Run is the whole inventory command. args excludes the program name. It
+// returns the exit code: 0 success, 1 bad inventory, 2 bad command line.
+func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	opts, err := parseFlags(args, stderr)
+	if errors.Is(err, flag.ErrHelp) {
+		return 0
+	}
+	if err != nil {
+		return 2 // parseFlags already told the user what was wrong
+	}
+
+	hosts, err := load(opts.file, stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "inventory: %v\n", err)
+		return 1
+	}
+	if err := inventory.Validate(hosts); err != nil {
+		fmt.Fprintf(stderr, "inventory: %s is invalid:\n%v\n", opts.file, err)
+		return 1
+	}
+
+	hosts = opts.filter.Apply(hosts)
+	slices.SortFunc(hosts, func(a, b inventory.Host) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	if opts.json {
+		err = report.WriteJSON(stdout, hosts)
+	} else {
+		err = report.WriteTable(stdout, hosts)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "inventory: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// parseFlags reads the command line into options. Like flag itself, it
+// reports any problem on stderr before returning the error.
+func parseFlags(args []string, stderr io.Writer) (options, error) {
+	var opts options
+	fs := flag.NewFlagSet("inventory", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&opts.file, "file", "inventory.json", "inventory `path`, or - to read stdin")
+	fs.BoolVar(&opts.json, "json", false, "print JSON instead of a table")
+	fs.StringVar(&opts.filter.Env, "env", "", "only hosts in this `env` (dev, staging or prod)")
+	fs.StringVar(&opts.filter.Region, "region", "", "only hosts in this `region`")
+	fs.Func("tag", "only hosts with this `tag` (repeat for several)", func(tag string) error {
+		opts.filter.Tags = append(opts.filter.Tags, tag)
+		return nil
+	})
+
+	if err := fs.Parse(args); err != nil {
+		return options{}, err
+	}
+
+	if fs.NArg() > 0 {
+		return options{}, usageError(fs, "unexpected argument %q", fs.Arg(0))
+	}
+	if env := opts.filter.Env; env != "" && !slices.Contains(inventory.Envs, env) {
+		return options{}, usageError(fs, "-env must be one of %s, got %q", strings.Join(inventory.Envs, ", "), env)
+	}
+
+	return opts, nil
+}
+
+// usageError reports a command-line mistake the way flag reports its own:
+// "inventory: <message>" on stderr, then the usage text. It returns the
+// error so the caller can pass it on.
+func usageError(fs *flag.FlagSet, format string, args ...any) error {
+	err := fmt.Errorf(format, args...)
+	fmt.Fprintf(fs.Output(), "inventory: %v\n", err)
+	fs.Usage()
+	return err
+}
+
+// load reads the inventory from path, or from stdin when path is "-".
+func load(path string, stdin io.Reader) ([]inventory.Host, error) {
+	if path == "-" {
+		return inventory.Parse(stdin)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return inventory.Parse(f)
+}

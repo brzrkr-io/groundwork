@@ -1,0 +1,255 @@
+package pager
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+var logKeys = []string{
+	"api/2026-10-10.log",
+	"api/2026-10-11.log",
+	"web/2026-10-09.log",
+	"web/2026-10-10.log",
+	"web/2026-10-11.log",
+	"worker/2026-10-11.log",
+}
+
+var errAccessDenied = errors.New("api error AccessDenied: Access Denied")
+
+func TestAllKeys(t *testing.T) {
+	tests := []struct {
+		name     string
+		pageSize int
+		prefix   string
+		failCall int
+		want     []string
+		wantErr  string
+	}{
+		{
+			name:     "everything fits on one page",
+			pageSize: 1000,
+			prefix:   "api/",
+			want:     []string{"api/2026-10-10.log", "api/2026-10-11.log"},
+		},
+		{
+			name:     "whole bucket over three pages",
+			pageSize: 2,
+			prefix:   "",
+			want:     logKeys,
+		},
+		{
+			name:     "one prefix over two pages",
+			pageSize: 2,
+			prefix:   "web/",
+			want:     []string{"web/2026-10-09.log", "web/2026-10-10.log", "web/2026-10-11.log"},
+		},
+		{
+			name:     "no matching keys",
+			pageSize: 2,
+			prefix:   "db/",
+			want:     nil,
+		},
+		{
+			name:     "second page fails",
+			pageSize: 2,
+			prefix:   "web/",
+			failCall: 2,
+			wantErr:  "list s3://app-logs/web/: api error AccessDenied: Access Denied",
+		},
+		{
+			name:     "first page fails",
+			pageSize: 2,
+			prefix:   "",
+			failCall: 1,
+			wantErr:  "list s3://app-logs/: api error AccessDenied: Access Denied",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeS3{
+				bucket:   "app-logs",
+				keys:     logKeys,
+				pageSize: tc.pageSize,
+				failCall: tc.failCall,
+				failErr:  errAccessDenied,
+			}
+			got, err := AllKeys(context.Background(), fake, "app-logs", tc.prefix)
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("AllKeys(ctx, fake, %q, %q) error = %v, want %q", "app-logs", tc.prefix, err, tc.wantErr)
+				}
+				if !errors.Is(err, errAccessDenied) {
+					t.Errorf("AllKeys error does not wrap the API error; use %%w")
+				}
+				if got != nil {
+					t.Errorf("AllKeys(ctx, fake, %q, %q) = %q with an error, want nil", "app-logs", tc.prefix, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("AllKeys(ctx, fake, %q, %q) returned error: %v", "app-logs", tc.prefix, err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("AllKeys(ctx, fake, %q, %q) = %q, want %q", "app-logs", tc.prefix, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFirstKeys(t *testing.T) {
+	releases := []string{
+		"releases/api-v1.0.0.tar.gz",
+		"releases/api-v1.1.0.tar.gz",
+		"releases/api-v1.2.0.tar.gz",
+		"releases/api-v1.3.0.tar.gz",
+		"releases/api-v2.0.0.tar.gz",
+	}
+	tests := []struct {
+		name      string
+		pageSize  int
+		limit     int
+		want      []string
+		wantCalls int // the most ListObjectsV2 calls FirstKeys may make
+	}{
+		{
+			name:      "limit in the middle of the second page",
+			pageSize:  2,
+			limit:     3,
+			want:      releases[:3],
+			wantCalls: 2,
+		},
+		{
+			name:      "limit at the end of the second page",
+			pageSize:  2,
+			limit:     4,
+			want:      releases[:4],
+			wantCalls: 2,
+		},
+		{
+			name:      "limit smaller than the page size",
+			pageSize:  1000,
+			limit:     2,
+			want:      releases[:2],
+			wantCalls: 1,
+		},
+		{
+			name:      "bucket holds fewer keys than the limit",
+			pageSize:  2,
+			limit:     10,
+			want:      releases,
+			wantCalls: 3,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeS3{bucket: "deploy-artifacts", keys: releases, pageSize: tc.pageSize}
+			got, err := FirstKeys(context.Background(), fake, "deploy-artifacts", tc.limit)
+			if err != nil {
+				t.Fatalf("FirstKeys(ctx, fake, %q, %d) returned error: %v", "deploy-artifacts", tc.limit, err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("FirstKeys(ctx, fake, %q, %d) = %q, want %q", "deploy-artifacts", tc.limit, got, tc.want)
+			}
+			if fake.calls > tc.wantCalls {
+				t.Errorf("FirstKeys(ctx, fake, %q, %d) made %d ListObjectsV2 calls, want at most %d",
+					"deploy-artifacts", tc.limit, fake.calls, tc.wantCalls)
+			}
+		})
+	}
+}
+
+func TestInstanceIDs(t *testing.T) {
+	errThrottled := errors.New("api error RequestLimitExceeded: Request limit exceeded")
+	threePages := [][]types.Reservation{
+		{reservation("i-0a1b2c3d4e5f00001", "i-0a1b2c3d4e5f00002"), reservation("i-0a1b2c3d4e5f00003")},
+		{reservation("i-0a1b2c3d4e5f00004")},
+		{reservation("i-0a1b2c3d4e5f00005", "i-0a1b2c3d4e5f00006")},
+	}
+	tests := []struct {
+		name        string
+		pages       [][]types.Reservation
+		failCall    int
+		cancelAfter int
+		want        []string
+		wantErr     string
+		wantErrIs   error
+		wantCalls   int // the most DescribeInstances calls InstanceIDs may make
+	}{
+		{
+			name:      "one page",
+			pages:     [][]types.Reservation{{reservation("i-0a1b2c3d4e5f00001", "i-0a1b2c3d4e5f00002")}},
+			want:      []string{"i-0a1b2c3d4e5f00001", "i-0a1b2c3d4e5f00002"},
+			wantCalls: 1,
+		},
+		{
+			name:  "three pages",
+			pages: threePages,
+			want: []string{
+				"i-0a1b2c3d4e5f00001", "i-0a1b2c3d4e5f00002", "i-0a1b2c3d4e5f00003",
+				"i-0a1b2c3d4e5f00004", "i-0a1b2c3d4e5f00005", "i-0a1b2c3d4e5f00006",
+			},
+			wantCalls: 3,
+		},
+		{
+			name:      "account with no instances",
+			pages:     nil,
+			want:      nil,
+			wantCalls: 1,
+		},
+		{
+			name:      "second page is throttled",
+			pages:     threePages,
+			failCall:  2,
+			wantErr:   "describe instances: api error RequestLimitExceeded: Request limit exceeded",
+			wantErrIs: errThrottled,
+			wantCalls: 2,
+		},
+		{
+			name:        "context cancelled after the first page",
+			pages:       threePages,
+			cancelAfter: 1,
+			wantErr:     "describe instances: context canceled",
+			wantErrIs:   context.Canceled,
+			wantCalls:   2,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			fake := &fakeEC2{
+				pages:       tc.pages,
+				failCall:    tc.failCall,
+				failErr:     errThrottled,
+				cancelAfter: tc.cancelAfter,
+				cancel:      cancel,
+			}
+			got, err := InstanceIDs(ctx, fake)
+			if fake.calls > tc.wantCalls {
+				t.Errorf("InstanceIDs(ctx, fake) made %d DescribeInstances calls, want at most %d", fake.calls, tc.wantCalls)
+			}
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("InstanceIDs(ctx, fake) error = %v, want %q", err, tc.wantErr)
+				}
+				if !errors.Is(err, tc.wantErrIs) {
+					t.Errorf("errors.Is(err, %v) = false, want true; wrap with %%w", tc.wantErrIs)
+				}
+				if got != nil {
+					t.Errorf("InstanceIDs(ctx, fake) = %q with an error, want nil", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("InstanceIDs(ctx, fake) returned error: %v", err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("InstanceIDs(ctx, fake) = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

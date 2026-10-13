@@ -1,0 +1,154 @@
+package target
+
+// This file is how Gopherlings grades the test you write. You don't need to
+// change it, but you are welcome to read it.
+//
+// TestParseTarget checks that your fixed ParseTarget works. TestGrader
+// re-runs your tests against the real code, where they must pass, and then
+// against each mutant below, where they must fail. A mutant is a copy of the
+// code with one deliberate bug.
+
+import (
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+// learnerTests selects the tests you write in exercise_test.go.
+const learnerTests = "^FuzzParseTarget$"
+
+// mutants are the bugs your tests must catch. Each one puts back one of the
+// crashes from the original ParseTarget.
+var mutants = []mutant{
+	{
+		name: "panics_on_empty",
+		bug:  `ParseTarget panicked on the empty target ""`,
+		install: func() {
+			parseTarget = func(s string) (string, int, error) {
+				_ = s[0] // the original crash: s[0] panics when s is ""
+				return realParseTarget(s)
+			}
+		},
+	},
+	{
+		name: "panics_on_missing_bracket",
+		bug:  `ParseTarget panicked on "[::1", which has no closing ]`,
+		install: func() {
+			parseTarget = func(s string) (string, int, error) {
+				if strings.HasPrefix(s, "[") {
+					end := strings.Index(s, "]")
+					_ = s[1:end] // the original crash: end is -1 without a ]
+				}
+				return realParseTarget(s)
+			}
+		},
+	},
+}
+
+func TestParseTarget(t *testing.T) {
+	valid := []struct {
+		target string
+		host   string
+		port   int
+	}{
+		{"web-1:8080", "web-1", 8080},
+		{"db.internal:5432", "db.internal", 5432},
+		{"[::1]:443", "::1", 443},
+		{"[fe80::2]:9100", "fe80::2", 9100},
+	}
+	for _, tc := range valid {
+		t.Run(tc.target, func(t *testing.T) {
+			host, port, err := parseNoPanic(t, tc.target)
+			if err != nil {
+				t.Fatalf("ParseTarget(%q) returned error: %v", tc.target, err)
+			}
+			if host != tc.host || port != tc.port {
+				t.Errorf("ParseTarget(%q) = %q, %d, want %q, %d", tc.target, host, port, tc.host, tc.port)
+			}
+		})
+	}
+
+	invalid := []string{
+		"",            // empty
+		"[::1",        // no closing ]
+		"web-1",       // no port
+		":8080",       // no host
+		"web-1:http",  // port is not a number
+		"web-1:70000", // port out of range
+		"[::1]",       // no port after the brackets
+	}
+	for _, target := range invalid {
+		t.Run(target, func(t *testing.T) {
+			if _, _, err := parseNoPanic(t, target); err == nil {
+				t.Errorf("ParseTarget(%q) returned no error, want an error", target)
+			}
+		})
+	}
+}
+
+// parseNoPanic calls ParseTarget and turns a panic into a test failure, so
+// one crash doesn't stop the other cases from running.
+func parseNoPanic(t *testing.T, s string) (string, int, error) {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("ParseTarget(%q) panicked: %v", s, r)
+		}
+	}()
+	return ParseTarget(s)
+}
+
+// Everything below is the same in every Testing exercise.
+
+// mutantEnv names the environment variable that tells a re-run which mutant
+// to install.
+const mutantEnv = "GOPHERLINGS_MUTANT"
+
+type mutant struct {
+	name    string // short name, used in GOPHERLINGS_MUTANT and test output
+	bug     string // completes "your tests didn't notice when ..."
+	install func() // swaps the bug into the package
+}
+
+// TestMain runs before any test. In a re-run started by TestGrader, it
+// installs the mutant named by GOPHERLINGS_MUTANT.
+func TestMain(m *testing.M) {
+	if name := os.Getenv(mutantEnv); name != "" {
+		for _, mu := range mutants {
+			if mu.name == name {
+				mu.install()
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func TestGrader(t *testing.T) {
+	if _, rerun := os.LookupEnv(mutantEnv); rerun {
+		t.Skip("TestGrader does not run inside its own re-runs")
+	}
+	out, err := runLearnerTests("")
+	if strings.Contains(out, "no tests to run") {
+		t.Fatalf("found no test matching %s in exercise_test.go", learnerTests)
+	}
+	if err != nil {
+		t.Fatalf("your tests must pass on the real code first, but they failed:\n%s", out)
+	}
+	for _, mu := range mutants {
+		t.Run(mu.name, func(t *testing.T) {
+			if _, err := runLearnerTests(mu.name); err == nil {
+				t.Errorf("your tests didn't notice when %s", mu.bug)
+			}
+		})
+	}
+}
+
+// runLearnerTests re-runs this test binary with only your tests selected and
+// the named mutant installed. An empty name means the real code.
+func runLearnerTests(mutant string) (string, error) {
+	cmd := exec.Command(os.Args[0], "-test.run="+learnerTests)
+	cmd.Env = append(os.Environ(), mutantEnv+"="+mutant)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

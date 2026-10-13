@@ -1,0 +1,76 @@
+package customtypes2
+
+import "testing"
+
+func TestPhaseValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase Phase
+		want  int
+	}{
+		{"Unknown", Unknown, 0},
+		{"Pending", Pending, 1},
+		{"Building", Building, 2},
+		{"Testing", Testing, 3},
+		{"Deploying", Deploying, 4},
+		{"Done", Done, 5},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := int(tc.phase); got != tc.want {
+				t.Errorf("int(%s) = %d, want %d", tc.name, got, tc.want)
+			}
+		})
+	}
+
+	t.Run("zero value", func(t *testing.T) {
+		var p Phase
+		if p != Unknown {
+			t.Errorf("var p Phase; p = %d, want Unknown (%d)", p, Unknown)
+		}
+	})
+}
+
+func TestIsActive(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase Phase
+		want  bool
+	}{
+		{"Unknown", Unknown, false},
+		{"Pending", Pending, false},
+		{"Building", Building, true},
+		{"Testing", Testing, true},
+		{"Deploying", Deploying, true},
+		{"Done", Done, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.phase.IsActive(); got != tc.want {
+				t.Errorf("%s.IsActive() = %t, want %t", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNext(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase Phase
+		want  Phase
+	}{
+		{"Pending", Pending, Building},
+		{"Building", Building, Testing},
+		{"Testing", Testing, Deploying},
+		{"Deploying", Deploying, Done},
+		{"Done", Done, Done},
+		{"Unknown", Unknown, Unknown},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.phase.Next(); got != tc.want {
+				t.Errorf("%s.Next() = %d, want %d", tc.name, got, tc.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,125 @@
+package render
+
+import "testing"
+
+func TestRender(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		data any
+		want string
+	}{
+		{"dot is a string", "Hello, {{.}}!", "ops", "Hello, ops!"},
+		{"no actions", "plain text", nil, "plain text"},
+		{"struct fields", "{{.Name}} listens on {{.Port}}", Upstream{Name: "api", Port: 8080}, "api listens on 8080"},
+		{"map keys", "{{.host}}:{{.port}}", map[string]string{"host": "db1", "port": "5432"}, "db1:5432"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Render("test", tt.text, tt.data)
+			if err != nil {
+				t.Fatalf("Render(%q, %q, %v) returned error %v, want nil", "test", tt.text, tt.data, err)
+			}
+			if got != tt.want {
+				t.Errorf("Render(%q, %q, %v) = %q, want %q", "test", tt.text, tt.data, got, tt.want)
+			}
+		})
+	}
+
+	// Broken templates and bad data must return "" and an error.
+	errorTests := []struct {
+		name string
+		text string
+		data any
+	}{
+		{"parse error: unclosed action", "{{.Name", Upstream{Name: "api"}},
+		{"parse error: missing end", "{{range .Servers}}x", Upstream{}},
+		{"execute error: unknown field", "{{.Missing}}", Upstream{Name: "api"}},
+	}
+	for _, tt := range errorTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Render("test", tt.text, tt.data)
+			if err == nil {
+				t.Fatalf("Render(%q, %q, %v) returned nil error, want an error", "test", tt.text, tt.data)
+			}
+			if got != "" {
+				t.Errorf("Render(%q, %q, %v) = %q, want %q when there is an error", "test", tt.text, tt.data, got, "")
+			}
+		})
+	}
+}
+
+func TestRenderUpstream(t *testing.T) {
+	tests := []struct {
+		name string
+		u    Upstream
+		want string
+	}{
+		{
+			"two servers",
+			Upstream{Name: "api", Port: 8080, Servers: []string{"10.0.0.1", "10.0.0.2"}},
+			"upstream api {\n    server 10.0.0.1:8080;\n    server 10.0.0.2:8080;\n}\n",
+		},
+		{
+			"one server",
+			Upstream{Name: "web", Port: 3000, Servers: []string{"web-1.internal"}},
+			"upstream web {\n    server web-1.internal:3000;\n}\n",
+		},
+		{
+			"no servers",
+			Upstream{Name: "empty", Port: 80},
+			"upstream empty {\n}\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := RenderUpstream(tt.u)
+			if err != nil {
+				t.Fatalf("RenderUpstream(%+v) returned error %v, want nil", tt.u, err)
+			}
+			if got != tt.want {
+				t.Errorf("RenderUpstream(%+v) = %q, want %q", tt.u, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSummary(t *testing.T) {
+	tests := []struct {
+		name string
+		u    Upstream
+		want string
+	}{
+		{
+			"two servers",
+			Upstream{Name: "api", Port: 8080, Servers: []string{"10.0.0.1", "10.0.0.2"}},
+			"API: 10.0.0.1, 10.0.0.2",
+		},
+		{
+			"one server",
+			Upstream{Name: "web", Port: 3000, Servers: []string{"web-1.internal"}},
+			"WEB: web-1.internal",
+		},
+		{
+			"nil servers",
+			Upstream{Name: "empty", Port: 80},
+			"EMPTY: no servers",
+		},
+		{
+			"empty slice",
+			Upstream{Name: "drained", Port: 80, Servers: []string{}},
+			"DRAINED: no servers",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Summary(tt.u)
+			if err != nil {
+				t.Fatalf("Summary(%+v) returned error %v, want nil", tt.u, err)
+			}
+			if got != tt.want {
+				t.Errorf("Summary(%+v) = %q, want %q", tt.u, got, tt.want)
+			}
+		})
+	}
+}

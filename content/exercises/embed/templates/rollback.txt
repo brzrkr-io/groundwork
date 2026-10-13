@@ -1,0 +1,2 @@
+[rollback] {{.Service}} in {{.Env}} was rolled back to {{.Version}}.
+Rolled back by {{.User}}.

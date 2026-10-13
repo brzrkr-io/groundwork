@@ -1,0 +1,17 @@
+// Package inventory knows how to name and address the hosts in the fleet.
+package inventory
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Address joins a host name and a port into "host:port".
+func Address(host string, port int) string {
+	return fmt.Sprintf("%s:%d", host, port)
+}
+
+// NormalizeHost trims spaces from both ends of a host name and lower-cases it.
+func NormalizeHost(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}

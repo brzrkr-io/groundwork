@@ -1,0 +1,74 @@
+package customtypes
+
+import "testing"
+
+func TestIsValid(t *testing.T) {
+	tests := []struct {
+		env  Environment
+		want bool
+	}{
+		{Dev, true},
+		{Staging, true},
+		{Production, true},
+		{"prod", false},
+		{"Staging", false},
+		{"", false},
+	}
+	for _, tc := range tests {
+		t.Run(string(tc.env), func(t *testing.T) {
+			if got := tc.env.IsValid(); got != tc.want {
+				t.Errorf("Environment(%q).IsValid() = %t, want %t", tc.env, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestShouldPage(t *testing.T) {
+	tests := []struct {
+		name     string
+		severity Severity
+		env      Environment
+		want     bool
+	}{
+		{"critical in dev", Critical, Dev, true},
+		{"critical in production", Critical, Production, true},
+		{"error in production", Error, Production, true},
+		{"error in staging", Error, Staging, false},
+		{"error in dev", Error, Dev, false},
+		{"warning in production", Warning, Production, false},
+		{"info in production", Info, Production, false},
+		{"debug in dev", Debug, Dev, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.severity.ShouldPage(tc.env); got != tc.want {
+				t.Errorf("Severity(%d).ShouldPage(%q) = %t, want %t", tc.severity, tc.env, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseSeverity(t *testing.T) {
+	tests := []struct {
+		input  string
+		want   Severity
+		wantOK bool
+	}{
+		{"debug", Debug, true},
+		{"info", Info, true},
+		{"WARNING", Warning, true},
+		{"Error", Error, true},
+		{"critical", Critical, true},
+		{"CRITICAL", Critical, true},
+		{"fatal", Debug, false},
+		{"", Debug, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			got, ok := ParseSeverity(tc.input)
+			if got != tc.want || ok != tc.wantOK {
+				t.Errorf("ParseSeverity(%q) = %d, %t, want %d, %t", tc.input, got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}

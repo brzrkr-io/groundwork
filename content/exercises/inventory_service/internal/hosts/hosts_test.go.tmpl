@@ -1,0 +1,167 @@
+package hosts
+
+import (
+	"errors"
+	"sync"
+	"testing"
+)
+
+// web1 is a valid host the tests start from.
+var web1 = Host{Name: "web-1", Env: "prod", Region: "eu-west-1", Port: 443}
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name string
+		host Host
+		want string // "" means valid
+	}{
+		{"valid", web1, ""},
+		{"valid without region", Host{Name: "db-1", Env: "dev", Port: 5432}, ""},
+		{"lowest port", Host{Name: "a", Env: "staging", Port: 1}, ""},
+		{"highest port", Host{Name: "a", Env: "staging", Port: 65535}, ""},
+		{"missing name", Host{Env: "prod", Port: 443}, "invalid host: name is required"},
+		{"unknown env", Host{Name: "web-1", Env: "qa", Port: 443}, "invalid host: env must be dev, staging or prod"},
+		{"empty env", Host{Name: "web-1", Port: 443}, "invalid host: env must be dev, staging or prod"},
+		{"port zero", Host{Name: "web-1", Env: "prod"}, "invalid host: port must be between 1 and 65535"},
+		{"port too big", Host{Name: "web-1", Env: "prod", Port: 70000}, "invalid host: port must be between 1 and 65535"},
+		{"first rule wins", Host{Env: "qa", Port: 0}, "invalid host: name is required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate(tt.host)
+			if tt.want == "" {
+				if err != nil {
+					t.Errorf("Validate(%+v) = %q, want nil", tt.host, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Validate(%+v) = nil, want %q", tt.host, tt.want)
+			}
+			if err.Error() != tt.want {
+				t.Errorf("Validate(%+v) = %q, want %q", tt.host, err, tt.want)
+			}
+			if !errors.Is(err, ErrInvalid) {
+				t.Errorf("errors.Is(Validate(%+v), ErrInvalid) = false, want true", tt.host)
+			}
+		})
+	}
+}
+
+func TestStore(t *testing.T) {
+	// newStore returns a store holding web1 as "h1" and db1 as "h2".
+	newStore := func(t *testing.T) *Store {
+		t.Helper()
+		s := NewStore()
+		if _, err := s.Create(web1); err != nil {
+			t.Fatalf("Create(web1) = %v", err)
+		}
+		if _, err := s.Create(Host{Name: "db-1", Env: "dev", Port: 5432}); err != nil {
+			t.Fatalf("Create(db1) = %v", err)
+		}
+		return s
+	}
+
+	t.Run("get", func(t *testing.T) {
+		s := newStore(t)
+		for _, id := range []string{"h1", "h2"} {
+			h, err := s.Get(id)
+			if err != nil {
+				t.Fatalf("Get(%q) error = %v, want nil", id, err)
+			}
+			if h.ID != id {
+				t.Errorf("Get(%q).ID = %q, want %q", id, h.ID, id)
+			}
+		}
+		h, _ := s.Get("h1")
+		if h.Name != "web-1" {
+			t.Errorf("Get(%q).Name = %q, want %q", "h1", h.Name, "web-1")
+		}
+	})
+
+	t.Run("get missing", func(t *testing.T) {
+		s := newStore(t)
+		if _, err := s.Get("h99"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Get(%q) error = %v, want ErrNotFound", "h99", err)
+		}
+	})
+
+	t.Run("update", func(t *testing.T) {
+		s := newStore(t)
+		changed := Host{ID: "ignored", Name: "web-1", Env: "prod", Region: "us-east-1", Port: 8443}
+		got, err := s.Update("h1", changed)
+		if err != nil {
+			t.Fatalf("Update(%q) error = %v, want nil", "h1", err)
+		}
+		want := Host{ID: "h1", Name: "web-1", Env: "prod", Region: "us-east-1", Port: 8443}
+		if got != want {
+			t.Errorf("Update(%q) = %+v, want %+v", "h1", got, want)
+		}
+		if stored, _ := s.Get("h1"); stored != want {
+			t.Errorf("Get(%q) after Update = %+v, want %+v", "h1", stored, want)
+		}
+	})
+
+	t.Run("update missing", func(t *testing.T) {
+		s := newStore(t)
+		if _, err := s.Update("h99", web1); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Update(%q) error = %v, want ErrNotFound", "h99", err)
+		}
+		if s.Len() != 2 {
+			t.Errorf("Len() after a failed Update = %d, want 2", s.Len())
+		}
+	})
+
+	t.Run("update invalid", func(t *testing.T) {
+		s := newStore(t)
+		if _, err := s.Update("h1", Host{Name: "web-1", Env: "prod", Port: 0}); !errors.Is(err, ErrInvalid) {
+			t.Errorf("Update(%q, port 0) error = %v, want ErrInvalid", "h1", err)
+		}
+		if stored, _ := s.Get("h1"); stored.Port != 443 {
+			t.Errorf("Get(%q).Port after a rejected Update = %d, want 443", "h1", stored.Port)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.Delete("h1"); err != nil {
+			t.Fatalf("Delete(%q) = %v, want nil", "h1", err)
+		}
+		if _, err := s.Get("h1"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Get(%q) after Delete error = %v, want ErrNotFound", "h1", err)
+		}
+		if s.Len() != 1 {
+			t.Errorf("Len() after Delete = %d, want 1", s.Len())
+		}
+	})
+
+	t.Run("delete missing", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.Delete("h99"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Delete(%q) = %v, want ErrNotFound", "h99", err)
+		}
+	})
+
+	// Run with -race: a method that forgets to lock shows up here.
+	t.Run("concurrent use", func(t *testing.T) {
+		s := newStore(t)
+		var wg sync.WaitGroup
+		for range 20 {
+			wg.Go(func() {
+				h, err := s.Create(web1)
+				if err != nil {
+					t.Errorf("Create = %v", err)
+					return
+				}
+				s.Get(h.ID)
+				s.Update(h.ID, web1)
+				s.Get("h1")
+				s.Delete(h.ID)
+			})
+		}
+		wg.Wait()
+		if s.Len() != 2 {
+			t.Errorf("Len() = %d, want 2", s.Len())
+		}
+	})
+}

@@ -1,0 +1,178 @@
+package health
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+func TestWriteReport(t *testing.T) {
+	tests := []struct {
+		name   string
+		code   int
+		report Report
+	}{
+		{"ready", http.StatusOK, Report{Status: "ok"}},
+		{"not ready", http.StatusServiceUnavailable, Report{Status: "fail"}},
+		{"draining", http.StatusServiceUnavailable, Report{Status: "draining"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			WriteReport(rec, tt.code, tt.report)
+
+			if rec.Code != tt.code {
+				t.Errorf("WriteReport(w, %d, %+v): status = %d, want %d", tt.code, tt.report, rec.Code, tt.code)
+			}
+			if got, want := rec.Header().Get("Content-Type"), "application/json"; got != want {
+				t.Errorf("WriteReport(w, %d, %+v): Content-Type = %q, want %q", tt.code, tt.report, got, want)
+			}
+			var got Report
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("WriteReport(w, %d, %+v): body %q is not valid JSON: %v", tt.code, tt.report, rec.Body.String(), err)
+			}
+			if got.Status != tt.report.Status {
+				t.Errorf("WriteReport(w, %d, %+v): body status = %q, want %q", tt.code, tt.report, got.Status, tt.report.Status)
+			}
+		})
+	}
+}
+
+// slow returns a check that takes d to finish and then returns err. It gives
+// up early with ctx.Err() if its context ends first.
+func slow(d time.Duration, err error) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		select {
+		case <-time.After(d):
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func TestRunChecksConcurrently(t *testing.T) {
+	tests := []struct {
+		name        string
+		checks      []Check
+		wantResults []Result
+		wantElapsed time.Duration
+	}{
+		{
+			name: "three slow checks",
+			checks: []Check{
+				{"postgres", slow(3*time.Second, nil)},
+				{"redis", slow(1*time.Second, nil)},
+				{"s3", slow(2*time.Second, errors.New("access denied"))},
+			},
+			wantResults: []Result{
+				{Name: "postgres", Status: "ok"},
+				{Name: "redis", Status: "ok"},
+				{Name: "s3", Status: "fail", Error: "access denied"},
+			},
+			wantElapsed: 3 * time.Second, // the slowest check, not 1+2+3
+		},
+		{
+			name: "one check times out",
+			checks: []Check{
+				{"vault", slow(time.Minute, nil)},
+				{"kafka", slow(4*time.Second, nil)},
+			},
+			wantResults: []Result{
+				{Name: "vault", Status: "fail", Error: "context deadline exceeded"},
+				{Name: "kafka", Status: "ok"},
+			},
+			wantElapsed: 5 * time.Second, // the 5s timeout, not 5+4
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Inside synctest.Test the clock is fake: sleeping and timers
+			// finish instantly, and time.Since measures fake time exactly.
+			synctest.Test(t, func(t *testing.T) {
+				start := time.Now()
+				got := RunChecks(context.Background(), tt.checks, 5*time.Second)
+				elapsed := time.Since(start)
+
+				if !slices.Equal(got, tt.wantResults) {
+					t.Errorf("RunChecks(%s) = %+v, want %+v", tt.name, got, tt.wantResults)
+				}
+				if elapsed != tt.wantElapsed {
+					t.Errorf("RunChecks(%s) took %v, want %v", tt.name, elapsed, tt.wantElapsed)
+				}
+			})
+		})
+	}
+}
+
+// healthy is a check that always passes.
+func healthy(ctx context.Context) error { return nil }
+
+func TestGate(t *testing.T) {
+	tests := []struct {
+		name  string
+		steps []string // "ready" calls MarkReady, "drain" calls MarkDraining
+		want  []string // State() after each step
+	}{
+		{
+			name:  "startup then shutdown",
+			steps: []string{"ready", "drain"},
+			want:  []string{"ready", "draining"},
+		},
+		{
+			name:  "draining before startup finished",
+			steps: []string{"drain", "ready"},
+			want:  []string{"draining", "draining"},
+		},
+	}
+	// The readiness body status and code for each State().
+	wantBody := map[string]string{"starting": "starting", "ready": "ok", "draining": "draining"}
+	wantCode := map[string]int{"starting": 503, "ready": 200, "draining": 503}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var g Gate
+			readyz := g.Readyz([]Check{{"postgres", healthy}}, time.Second)
+
+			// check compares State, /readyz and /livez against the expected state.
+			check := func(after, state string) {
+				t.Helper()
+				if got := g.State(); got != state {
+					t.Errorf("after %s: State() = %q, want %q", after, got, state)
+				}
+
+				rec := httptest.NewRecorder()
+				readyz.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+				var body Report
+				json.Unmarshal(rec.Body.Bytes(), &body)
+				if rec.Code != wantCode[state] || body.Status != wantBody[state] {
+					t.Errorf("after %s: GET /readyz = %d %q, want %d %q", after, rec.Code, body.Status, wantCode[state], wantBody[state])
+				}
+
+				rec = httptest.NewRecorder()
+				Livez(rec, httptest.NewRequest(http.MethodGet, "/livez", nil))
+				if rec.Code != http.StatusOK {
+					t.Errorf("after %s: GET /livez = %d, want %d", after, rec.Code, http.StatusOK)
+				}
+			}
+
+			check("new Gate", "starting")
+			for i, step := range tt.steps {
+				switch step {
+				case "ready":
+					g.MarkReady()
+					check("MarkReady()", tt.want[i])
+				case "drain":
+					g.MarkDraining()
+					check("MarkDraining()", tt.want[i])
+				}
+			}
+		})
+	}
+}

@@ -1,0 +1,60 @@
+// Package deploystats is the Gopherlings exercise "Mutexes: atomics and slow locks".
+package deploystats
+
+import (
+	"sync"
+	"sync/atomic"
+)
+
+// DeployStats counts deploys. It is safe to use from many goroutines at once.
+type DeployStats struct {
+	total  atomic.Int64
+	failed atomic.Int64
+}
+
+// Record counts one deploy, and one failure when ok is false.
+func (s *DeployStats) Record(ok bool) {
+	s.total.Add(1)
+	if !ok {
+		s.failed.Add(1)
+	}
+}
+
+// Total returns how many deploys were recorded.
+func (s *DeployStats) Total() int64 {
+	return s.total.Load()
+}
+
+// Failed returns how many recorded deploys failed.
+func (s *DeployStats) Failed() int64 {
+	return s.failed.Load()
+}
+
+// AMICache remembers the machine image ID for each region.
+type AMICache struct {
+	mu  sync.Mutex // protects ids
+	ids map[string]string
+}
+
+// NewAMICache returns an empty cache.
+func NewAMICache() *AMICache {
+	return &AMICache{ids: make(map[string]string)}
+}
+
+// Get returns the image ID for region, calling lookup to fill the cache on a
+// miss. The lock is never held while lookup runs.
+func (c *AMICache) Get(region string, lookup func(region string) string) string {
+	c.mu.Lock()
+	id, ok := c.ids[region]
+	c.mu.Unlock()
+	if ok {
+		return id
+	}
+
+	id = lookup(region) // slow, so no lock held
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ids[region] = id
+	return id
+}

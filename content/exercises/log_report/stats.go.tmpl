@@ -1,0 +1,32 @@
+package logreport
+
+import "time"
+
+// PathCount is how many requests one path received.
+type PathCount struct {
+	Path  string `json:"path"`
+	Count int    `json:"count"`
+}
+
+// CountByClass counts entries by status class: "2xx", "3xx", "4xx", "5xx".
+func CountByClass(entries []Entry) map[string]int {
+	// TODO(3): Count the entries per status class. You will need to import
+	// "fmt".
+	return nil
+}
+
+// TopPaths returns the n most requested paths, busiest first. Paths with
+// the same count are ordered alphabetically.
+func TopPaths(entries []Entry, n int) []PathCount {
+	// TODO(4): Count requests per path, sort, and keep at most n. You will
+	// need to import "cmp" and "slices".
+	return nil
+}
+
+// Percentile returns the p-th percentile (1-100) of durations using the
+// nearest-rank method. It returns 0 for an empty slice and never reorders
+// durations.
+func Percentile(durations []time.Duration, p int) time.Duration {
+	// TODO(5): Sort a copy and pick the value at the nearest rank.
+	return 0
+}

@@ -1,0 +1,160 @@
+package tags
+
+// This file is how Gopherlings grades this exercise. You don't need to
+// change it, but you are welcome to read it.
+//
+// TestGrader re-runs your benchmark once against the real code, where it must
+// pass and report allocations, and then against each mutant below, where it
+// must fail. A mutant is a copy of the code with one deliberate bug.
+// TestFormatTags and TestFormatTagsAllocs check your faster FormatTags.
+
+import (
+	"os"
+	"os/exec"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+// learnerBenchmark is the benchmark you write in exercise_test.go.
+const learnerBenchmark = "BenchmarkFormatTags"
+
+// mutants are the bugs your benchmark must catch.
+var mutants = []mutant{
+	{
+		name: "panics",
+		bug:  `FormatTags panicked`,
+		install: func() {
+			formatTags = func(tags []Tag) string {
+				panic("FormatTags was called")
+			}
+		},
+	},
+}
+
+func TestGrader(t *testing.T) {
+	out, err := runLearnerBenchmark("")
+	if err != nil {
+		t.Fatalf("your benchmark must pass on the real code first, but it failed:\n%s", out)
+	}
+	line := benchmarkLine(out, learnerBenchmark)
+	if line == "" {
+		t.Fatalf("found no benchmark named %s in exercise_test.go", learnerBenchmark)
+	}
+	if !strings.Contains(line, "allocs/op") {
+		t.Errorf("%s didn't call b.ReportAllocs, so it printed no allocs/op:\n%s", learnerBenchmark, line)
+	}
+	for _, mu := range mutants {
+		t.Run(mu.name, func(t *testing.T) {
+			if _, err := runLearnerBenchmark(mu.name); err == nil {
+				t.Errorf("your benchmark didn't notice when %s, so it never calls FormatTags inside its b.Loop loop", mu.bug)
+			}
+		})
+	}
+}
+
+// runLearnerBenchmark re-runs this test binary with no tests and only your
+// benchmark selected, and the named mutant installed. -test.benchtime=1x runs
+// the b.Loop body just once, which is enough to grade it. An empty name
+// means the real code.
+//
+// On a busy machine b.Loop occasionally reports 0 iterations without running
+// the body at all, so such a run proves nothing and is repeated (up to 10 times).
+func runLearnerBenchmark(mutant string) (string, error) {
+	var out []byte
+	var err error
+	for range 10 {
+		cmd := exec.Command(os.Args[0],
+			"-test.run=^$",
+			"-test.bench=^"+learnerBenchmark+"$",
+			"-test.benchtime=1x",
+		)
+		cmd.Env = append(os.Environ(), mutantEnv+"="+mutant)
+		out, err = cmd.CombinedOutput()
+		if err != nil || !zeroIterations.Match(out) {
+			break
+		}
+	}
+	return string(out), err
+}
+
+// zeroIterations matches a benchmark result line whose loop never ran.
+var zeroIterations = regexp.MustCompile(`(?m)^Benchmark\S*\s+0\s`)
+
+// benchmarkLine returns the result line that the benchmark called name
+// printed in out, or "" if there is none. A result line looks like this:
+//
+//	BenchmarkFormatTags-8   1   1234 ns/op   48 B/op   1 allocs/op
+func benchmarkLine(out, name string) string {
+	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(name) + `(-\d+)?\s.*$`)
+	return re.FindString(out)
+}
+
+func TestFormatTags(t *testing.T) {
+	tests := []struct {
+		name string
+		tags []Tag
+		want string
+	}{
+		{"no tags", nil, ""},
+		{"one tag", []Tag{{Key: "env", Value: "prod"}}, "env=prod"},
+		{
+			"three tags",
+			[]Tag{
+				{Key: "env", Value: "prod"},
+				{Key: "team", Value: "sre"},
+				{Key: "region", Value: "eu-west-1"},
+			},
+			"env=prod,team=sre,region=eu-west-1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FormatTags(tt.tags); got != tt.want {
+				t.Errorf("FormatTags(%v) = %q, want %q", tt.tags, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatTagsAllocs(t *testing.T) {
+	tags := []Tag{
+		{Key: "env", Value: "prod"},
+		{Key: "team", Value: "sre"},
+		{Key: "region", Value: "eu-west-1"},
+		{Key: "tier", Value: "backend"},
+	}
+	// AllocsPerRun calls the function 100 times and returns the average
+	// number of allocations per call.
+	allocs := testing.AllocsPerRun(100, func() {
+		FormatTags(tags)
+	})
+	if allocs > 1 {
+		t.Errorf("FormatTags(%v) made %v allocations, want at most 1", tags, allocs)
+	}
+}
+
+// Everything below is the same in every Testing exercise.
+
+// mutantEnv names the environment variable that tells a re-run which mutant
+// to install.
+const mutantEnv = "GOPHERLINGS_MUTANT"
+
+type mutant struct {
+	name    string // short name, used in GOPHERLINGS_MUTANT and test output
+	bug     string // completes "your tests didn't notice when ..."
+	install func() // swaps the bug into the package
+}
+
+// TestMain runs before any test. In a re-run started by TestGrader, it
+// installs the mutant named by GOPHERLINGS_MUTANT.
+func TestMain(m *testing.M) {
+	if name := os.Getenv(mutantEnv); name != "" {
+		for _, mu := range mutants {
+			if mu.name == name {
+				mu.install()
+			}
+		}
+	}
+	os.Exit(m.Run())
+}

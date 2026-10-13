@@ -1,0 +1,296 @@
+package endpoints
+
+import (
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+// statusServer starts a local server that always answers with status.
+func statusServer(t *testing.T, status int) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+		io.WriteString(w, http.StatusText(status))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// flakyServer starts a local server that answers 503 to the first request
+// and 200 to every request after that. atomic.Int32 is a counter that is
+// safe to share with the server (the Concurrency module explains why).
+func flakyServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// downURL returns the URL of a server that has already shut down, so
+// requests to it fail straight away.
+func downURL() string {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	srv.Close()
+	return srv.URL
+}
+
+// fakeClock returns a Now function that moves forward by step every time
+// it is called, starting from a fixed time.
+func fakeClock(step time.Duration) func() time.Time {
+	now := time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC)
+	return func() time.Time {
+		now = now.Add(step)
+		return now
+	}
+}
+
+// closeCounter is an http.RoundTripper that counts closed response bodies.
+type closeCounter struct {
+	closed int
+}
+
+func (cc *closeCounter) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &countingBody{ReadCloser: resp.Body, closed: &cc.closed}
+	return resp, nil
+}
+
+type countingBody struct {
+	io.ReadCloser
+	closed *int
+}
+
+func (b *countingBody) Close() error {
+	*b.closed++
+	return b.ReadCloser.Close()
+}
+
+func TestNewChecker(t *testing.T) {
+	for _, timeout := range []time.Duration{2 * time.Second, 750 * time.Millisecond} {
+		t.Run(timeout.String(), func(t *testing.T) {
+			c := NewChecker(timeout)
+			if c.Client == nil {
+				t.Fatalf("NewChecker(%v).Client = nil, want a client", timeout)
+			}
+			if c.Client.Timeout != timeout {
+				t.Errorf("NewChecker(%v).Client.Timeout = %v, want %v", timeout, c.Client.Timeout, timeout)
+			}
+			if c.Now == nil {
+				t.Fatalf("NewChecker(%v).Now = nil, want time.Now", timeout)
+			}
+			if diff := time.Since(c.Now()); diff < -time.Minute || diff > time.Minute {
+				t.Errorf("NewChecker(%v).Now() is %v away from the real time, want time.Now", timeout, diff)
+			}
+		})
+	}
+}
+
+func TestProbe(t *testing.T) {
+	for _, status := range []int{200, 404, 503} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := statusServer(t, status)
+			c := &Checker{Client: srv.Client()}
+			got, err := c.Probe(srv.URL)
+			if err != nil {
+				t.Fatalf("Probe(%q) returned error: %v", srv.URL, err)
+			}
+			if got != status {
+				t.Errorf("Probe(%q) = %d, want %d", srv.URL, got, status)
+			}
+		})
+	}
+
+	t.Run("closes the body", func(t *testing.T) {
+		srv := statusServer(t, 200)
+		counter := &closeCounter{}
+		c := &Checker{Client: &http.Client{Transport: counter}}
+		if _, err := c.Probe(srv.URL); err != nil {
+			t.Fatalf("Probe(%q) returned error: %v", srv.URL, err)
+		}
+		if counter.closed != 1 {
+			t.Errorf("Probe(%q) closed the response body %d times, want 1", srv.URL, counter.closed)
+		}
+	})
+
+	t.Run("server down", func(t *testing.T) {
+		url := downURL()
+		c := &Checker{Client: &http.Client{Timeout: time.Second}}
+		got, err := c.Probe(url)
+		if err == nil {
+			t.Errorf("Probe(%q) returned a nil error, want an error", url)
+		}
+		if got != 0 {
+			t.Errorf("Probe(%q) = %d, want 0", url, got)
+		}
+	})
+}
+
+func TestCheck(t *testing.T) {
+	tests := []struct {
+		name         string
+		url          string
+		expect       int
+		step         time.Duration // how far the fake clock moves per call
+		wantStatus   int
+		wantAttempts int
+		wantErr      bool
+		wantOK       bool
+	}{
+		{"healthy", statusServer(t, 200).URL, 200, 40 * time.Millisecond, 200, 1, false, true},
+		{"not found", statusServer(t, 404).URL, 200, 15 * time.Millisecond, 404, 1, false, false},
+		{"expected 404", statusServer(t, 404).URL, 404, 15 * time.Millisecond, 404, 1, false, true},
+		{"flaky, retry succeeds", flakyServer(t).URL, 200, 250 * time.Millisecond, 200, 2, false, true},
+		{"always 500", statusServer(t, 500).URL, 200, 90 * time.Millisecond, 500, 2, false, false},
+		{"server down", downURL(), 200, 5 * time.Millisecond, 0, 1, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Checker{Client: &http.Client{Timeout: time.Second}, Now: fakeClock(tt.step)}
+			ep := Endpoint{Name: "api", URL: tt.url, Expect: tt.expect}
+			got := c.Check(ep)
+			if got.Name != "api" || got.Expect != tt.expect {
+				t.Errorf("Check(%+v) Name, Expect = %q, %d, want %q, %d", ep, got.Name, got.Expect, "api", tt.expect)
+			}
+			if got.Status != tt.wantStatus {
+				t.Errorf("Check(%+v).Status = %d, want %d", ep, got.Status, tt.wantStatus)
+			}
+			if got.Attempts != tt.wantAttempts {
+				t.Errorf("Check(%+v).Attempts = %d, want %d", ep, got.Attempts, tt.wantAttempts)
+			}
+			if (got.Err != nil) != tt.wantErr {
+				t.Errorf("Check(%+v).Err = %v, want error: %t", ep, got.Err, tt.wantErr)
+			}
+			if got.OK != tt.wantOK {
+				t.Errorf("Check(%+v).OK = %t, want %t", ep, got.OK, tt.wantOK)
+			}
+			// The fake clock moves by step on each call; Now is called twice.
+			if got.Latency != tt.step {
+				t.Errorf("Check(%+v).Latency = %v, want %v (call c.Now exactly twice)", ep, got.Latency, tt.step)
+			}
+		})
+	}
+}
+
+func TestReport(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []Result
+		want    string
+	}{
+		{
+			name: "mixed results",
+			results: []Result{
+				{Name: "api", Expect: 200, Status: 200, Latency: 120 * time.Millisecond, Attempts: 1, OK: true},
+				{Name: "payments", Expect: 200, Status: 503, Latency: 80 * time.Millisecond, Attempts: 2},
+				{Name: "search", Expect: 200, Latency: 2 * time.Second, Attempts: 1, Err: errors.New("connection refused")},
+			},
+			want: "" +
+				"NAME       STATUS  LATENCY  RESULT\n" +
+				"api        200     120ms    ok\n" +
+				"payments   503     80ms     want 200\n" +
+				"search     -       2s       error: connection refused\n" +
+				"1 of 3 endpoints ok\n",
+		},
+		{
+			name: "all ok",
+			results: []Result{
+				{Name: "status", Expect: 404, Status: 404, Latency: 3 * time.Millisecond, Attempts: 1, OK: true},
+				{Name: "web", Expect: 200, Status: 200, Latency: 1500 * time.Millisecond, Attempts: 2, OK: true},
+			},
+			want: "" +
+				"NAME       STATUS  LATENCY  RESULT\n" +
+				"status     404     3ms      ok\n" +
+				"web        200     1.5s     ok\n" +
+				"2 of 2 endpoints ok\n",
+		},
+		{
+			name:    "no endpoints",
+			results: nil,
+			want: "" +
+				"NAME       STATUS  LATENCY  RESULT\n" +
+				"0 of 0 endpoints ok\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Report(tt.results); got != tt.want {
+				t.Errorf("Report(%s) =\n%s\nwant\n%s", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRun(t *testing.T) {
+	okURL := statusServer(t, 200).URL
+	missingURL := statusServer(t, 404).URL
+	tests := []struct {
+		name      string
+		endpoints []Endpoint
+		wantCode  int
+		wantOut   string
+	}{
+		{
+			name: "one failure",
+			endpoints: []Endpoint{
+				{Name: "api", URL: okURL, Expect: 200},
+				{Name: "docs", URL: missingURL, Expect: 200},
+			},
+			wantCode: 1,
+			wantOut: "" +
+				"NAME       STATUS  LATENCY  RESULT\n" +
+				"api        200     10ms     ok\n" +
+				"docs       404     10ms     want 200\n" +
+				"1 of 2 endpoints ok\n",
+		},
+		{
+			name: "all ok",
+			endpoints: []Endpoint{
+				{Name: "api", URL: okURL, Expect: 200},
+				{Name: "gone", URL: missingURL, Expect: 404},
+			},
+			wantCode: 0,
+			wantOut: "" +
+				"NAME       STATUS  LATENCY  RESULT\n" +
+				"api        200     10ms     ok\n" +
+				"gone       404     10ms     ok\n" +
+				"2 of 2 endpoints ok\n",
+		},
+		{
+			name:      "no endpoints",
+			endpoints: nil,
+			wantCode:  0,
+			wantOut: "" +
+				"NAME       STATUS  LATENCY  RESULT\n" +
+				"0 of 0 endpoints ok\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Checker{Client: &http.Client{Timeout: time.Second}, Now: fakeClock(10 * time.Millisecond)}
+			var out strings.Builder
+			code := Run(c, tt.endpoints, &out)
+			if code != tt.wantCode {
+				t.Errorf("Run(%s) = %d, want %d", tt.name, code, tt.wantCode)
+			}
+			if out.String() != tt.wantOut {
+				t.Errorf("Run(%s) wrote\n%s\nwant\n%s", tt.name, out.String(), tt.wantOut)
+			}
+		})
+	}
+}

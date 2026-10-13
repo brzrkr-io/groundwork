@@ -1,0 +1,144 @@
+package metrics
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestObserve(t *testing.T) {
+	tests := []struct {
+		name       string
+		buckets    []float64
+		values     []float64
+		wantCounts []uint64
+	}{
+		{"bound is inclusive", []float64{0.1, 0.5, 1}, []float64{0.1, 0.25, 5}, []uint64{1, 1, 0, 1}},
+		{"one per bucket", []float64{0.1, 0.5}, []float64{0.0625, 0.25, 1}, []uint64{1, 1, 1}},
+		{"several per bucket", []float64{0.25, 1, 2.5}, []float64{0.25, 0.25, 0.5, 0.75, 3, 10}, []uint64{2, 2, 0, 2}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHistogram("http_request_duration_seconds", "Request latency.", tt.buckets)
+			for _, v := range tt.values {
+				h.Observe(v)
+			}
+			if !slices.Equal(h.counts, tt.wantCounts) {
+				t.Errorf("buckets %v, after Observe of %v: counts = %v, want %v", tt.buckets, tt.values, h.counts, tt.wantCounts)
+			}
+		})
+	}
+}
+
+func TestWrite(t *testing.T) {
+	tests := []struct {
+		name    string
+		buckets []float64
+		values  []float64
+		want    string
+	}{
+		{
+			name:    "one per bucket",
+			buckets: []float64{0.1, 0.5},
+			values:  []float64{0.0625, 0.25, 1},
+			want: `# HELP http_request_duration_seconds Request latency.
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le="0.1"} 1
+http_request_duration_seconds_bucket{le="0.5"} 2
+http_request_duration_seconds_bucket{le="+Inf"} 3
+http_request_duration_seconds_sum 1.3125
+http_request_duration_seconds_count 3
+`,
+		},
+		{
+			name:    "empty bucket in the middle",
+			buckets: []float64{0.25, 1, 2.5},
+			values:  []float64{0.25, 0.25, 0.5, 0.75},
+			want: `# HELP http_request_duration_seconds Request latency.
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le="0.25"} 2
+http_request_duration_seconds_bucket{le="1"} 4
+http_request_duration_seconds_bucket{le="2.5"} 4
+http_request_duration_seconds_bucket{le="+Inf"} 4
+http_request_duration_seconds_sum 1.75
+http_request_duration_seconds_count 4
+`,
+		},
+		{
+			name:    "no observations",
+			buckets: []float64{1, 5},
+			values:  nil,
+			want: `# HELP http_request_duration_seconds Request latency.
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le="1"} 0
+http_request_duration_seconds_bucket{le="5"} 0
+http_request_duration_seconds_bucket{le="+Inf"} 0
+http_request_duration_seconds_sum 0
+http_request_duration_seconds_count 0
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHistogram("http_request_duration_seconds", "Request latency.", tt.buckets)
+			for _, v := range tt.values {
+				h.Observe(v)
+			}
+			var b strings.Builder
+			h.Write(&b)
+			if got := b.String(); got != tt.want {
+				t.Errorf("buckets %v, after Observe of %v, Write() wrote:\n%s\nwant:\n%s", tt.buckets, tt.values, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInstrument(t *testing.T) {
+	tests := []struct {
+		name       string
+		durations  []time.Duration // how long each request takes
+		wantSum    float64
+		wantCounts []uint64
+	}{
+		{"one fast request", []time.Duration{250 * time.Millisecond}, 0.25, []uint64{0, 1, 0, 0}},
+		{"fast and slow", []time.Duration{250 * time.Millisecond, 2 * time.Second, 125 * time.Millisecond}, 2.375, []uint64{0, 2, 0, 1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A fake clock: it only moves when the handler below moves it.
+			clock := time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC)
+			now := func() time.Time { return clock }
+
+			var took time.Duration
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				clock = clock.Add(took) // the request "takes" this long
+				w.WriteHeader(http.StatusAccepted)
+				w.Write([]byte("deploy queued"))
+			})
+
+			h := NewHistogram("http_request_duration_seconds", "Request latency.", []float64{0.1, 0.5, 1})
+			handler := Instrument(h, now, next)
+			for _, d := range tt.durations {
+				took = d
+				resp := httptest.NewRecorder()
+				handler.ServeHTTP(resp, httptest.NewRequest("POST", "/deploys", nil))
+				if resp.Code != http.StatusAccepted || resp.Body.String() != "deploy queued" {
+					t.Errorf("client got %d %q, want 202 %q", resp.Code, resp.Body.String(), "deploy queued")
+				}
+			}
+
+			if h.count != uint64(len(tt.durations)) {
+				t.Errorf("requests taking %v: count = %d, want %d", tt.durations, h.count, len(tt.durations))
+			}
+			if h.sum != tt.wantSum {
+				t.Errorf("requests taking %v: sum = %v, want %v", tt.durations, h.sum, tt.wantSum)
+			}
+			if !slices.Equal(h.counts, tt.wantCounts) {
+				t.Errorf("requests taking %v: counts = %v, want %v", tt.durations, h.counts, tt.wantCounts)
+			}
+		})
+	}
+}

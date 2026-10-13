@@ -1,0 +1,25 @@
+// Package timing holds time helpers for an on-call dashboard.
+package timing
+
+import "time"
+
+// DaysUntilExpiry returns the whole days from now until the RFC3339 time
+// notAfter. The result is negative once that time has passed.
+func DaysUntilExpiry(now time.Time, notAfter string) (int, error) {
+	// TODO(1): Parse notAfter as RFC3339 and return the whole days left.
+	return 0, nil
+}
+
+// UptimeLine describes how long a host has been up, for example
+// "up 3d4h since 2026-10-08 05:30 UTC".
+func UptimeLine(booted, now time.Time) string {
+	// TODO(2): Build the uptime line. Add "fmt" to the imports for Sprintf.
+	return ""
+}
+
+// InWindow reports whether now is inside the maintenance window that opens
+// at start (RFC3339) and lasts for length (a ParseDuration string).
+func InWindow(now time.Time, start, length string) (bool, error) {
+	// TODO(3): Parse both strings and check start <= now < start+length.
+	return false, nil
+}

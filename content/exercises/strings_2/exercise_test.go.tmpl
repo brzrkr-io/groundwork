@@ -1,0 +1,64 @@
+package text
+
+import "testing"
+
+func TestIsProdHost(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+		want bool
+	}{
+		{name: "prod web host", host: "web-01.prod.example.com", want: true},
+		{name: "prod db host", host: "db-02.prod.example.com", want: true},
+		{name: "staging host", host: "web-01.staging.example.com", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsProdHost(tt.host)
+			if got != tt.want {
+				t.Errorf("IsProdHost(%q) = %t, want %t", tt.host, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMetricName(t *testing.T) {
+	tests := []struct {
+		name    string
+		service string
+		want    string
+	}{
+		{name: "one dash", service: "checkout-api", want: "checkout_api_requests_total"},
+		{name: "two dashes", service: "payment-gateway-v2", want: "payment_gateway_v2_requests_total"},
+		{name: "no dashes", service: "auth", want: "auth_requests_total"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MetricName(tt.service)
+			if got != tt.want {
+				t.Errorf("MetricName(%q) = %q, want %q", tt.service, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMentionsTimeout(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{name: "lowercase", line: "upstream timeout after 30s", want: true},
+		{name: "capitalised", line: "ERROR: Timeout waiting for db", want: true},
+		{name: "all capitals", line: "CONNECTION TIMEOUT", want: true},
+		{name: "no timeout", line: "request ok in 20ms", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MentionsTimeout(tt.line)
+			if got != tt.want {
+				t.Errorf("MentionsTimeout(%q) = %t, want %t", tt.line, got, tt.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,67 @@
+// Package retention is the Gopherlings exercise "S3 objects: fix the log cleanup".
+package retention
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+)
+
+// CleanupAPI is the part of the S3 client that Cleanup uses.
+type CleanupAPI interface {
+	ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+}
+
+// The real S3 client satisfies CleanupAPI.
+var _ CleanupAPI = (*s3.Client)(nil)
+
+// ErrEmptyPrefix is returned when Cleanup is asked to clean a whole bucket.
+var ErrEmptyPrefix = errors.New("refusing to clean up without a prefix")
+
+// ExpiredKeys returns the keys of the objects that are older than maxAge at
+// time now, in their original order.
+func ExpiredKeys(objects []types.Object, now time.Time, maxAge time.Duration) []string {
+	var keys []string
+	for _, obj := range objects {
+		// TODO(1): Only keep objects with a LastModified that is more than
+		// maxAge before now.
+		keys = append(keys, aws.ToString(obj.Key))
+	}
+	return keys
+}
+
+// Cleanup deletes the expired objects under prefix in bucket and returns
+// their keys. With dryRun set it deletes nothing, but still returns the keys
+// it would delete.
+func Cleanup(ctx context.Context, api CleanupAPI, bucket, prefix string, now time.Time, maxAge time.Duration, dryRun bool) ([]string, error) {
+	// TODO(2): Refuse an empty prefix, and only list keys under prefix.
+	p := s3.NewListObjectsV2Paginator(api, &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+	})
+
+	var removed []string
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return removed, fmt.Errorf("list s3://%s/%s: %w", bucket, prefix, err)
+		}
+		for _, key := range ExpiredKeys(page.Contents, now, maxAge) {
+			// TODO(3): In a dry run, skip the DeleteObject call.
+			_, err := api.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(bucket),
+				Key:    aws.String(key),
+			})
+			if err != nil {
+				return removed, fmt.Errorf("delete s3://%s/%s: %w", bucket, key, err)
+			}
+			removed = append(removed, key)
+		}
+	}
+	return removed, nil
+}

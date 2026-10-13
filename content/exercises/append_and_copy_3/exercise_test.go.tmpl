@@ -1,0 +1,91 @@
+package rollout
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestPlan(t *testing.T) {
+	tests := []struct {
+		name     string
+		canaries []string
+		hosts    []string
+		want     []string
+	}{
+		{"canary then hosts", []string{"web-0"}, []string{"web-1", "web-2"}, []string{"web-0", "web-1", "web-2"}},
+		{"skips blank host", []string{"web-0"}, []string{"web-1", "", "web-2"}, []string{"web-0", "web-1", "web-2"}},
+		{"skips blank canary", []string{"", "api-0"}, []string{"api-1"}, []string{"api-0", "api-1"}},
+		{"no canaries", nil, []string{"db-1", "db-2"}, []string{"db-1", "db-2"}},
+		{"only blanks", []string{"", ""}, nil, nil},
+		{"nothing at all", nil, nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Plan(tt.canaries, tt.hosts)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Plan(%q, %q) = %q, want %q", tt.canaries, tt.hosts, got, tt.want)
+			}
+		})
+	}
+}
+
+// equalBatches reports whether a and b hold the same batches in the same order.
+func equalBatches(a, b [][]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range len(a) {
+		if !slices.Equal(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func TestBatches(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+		size  int
+		want  [][]string
+	}{
+		{
+			"five hosts by two",
+			[]string{"web-1", "web-2", "web-3", "web-4", "web-5"}, 2,
+			[][]string{{"web-1", "web-2"}, {"web-3", "web-4"}, {"web-5"}},
+		},
+		{
+			"six hosts by three",
+			[]string{"db-1", "db-2", "db-3", "db-4", "db-5", "db-6"}, 3,
+			[][]string{{"db-1", "db-2", "db-3"}, {"db-4", "db-5", "db-6"}},
+		},
+		{
+			"batch bigger than list",
+			[]string{"web-1", "web-2"}, 5,
+			[][]string{{"web-1", "web-2"}},
+		},
+		{
+			"one at a time",
+			[]string{"api-1", "api-2"}, 1,
+			[][]string{{"api-1"}, {"api-2"}},
+		},
+		{"no hosts", nil, 2, nil},
+		{"size zero", []string{"web-1"}, 0, nil},
+		{"negative size", []string{"web-1"}, -1, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hosts := slices.Clone(tt.hosts)
+			got := Batches(hosts, tt.size)
+			if !equalBatches(got, tt.want) {
+				t.Fatalf("Batches(%q, %d) = %q, want %q", tt.hosts, tt.size, got, tt.want)
+			}
+			if len(hosts) > 0 {
+				hosts[0] = "changed"
+				if !equalBatches(got, tt.want) {
+					t.Errorf("after hosts[0] = %q, the batches became %q, want them to stay %q", "changed", got, tt.want)
+				}
+			}
+		})
+	}
+}

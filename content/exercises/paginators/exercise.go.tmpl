@@ -1,0 +1,64 @@
+// Package pager is the Gopherlings exercise "Paginators: walk every page".
+package pager
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+// AllKeys returns the key of every object in bucket that starts with prefix,
+// across all pages, in the order S3 returns them.
+func AllKeys(ctx context.Context, api s3.ListObjectsV2APIClient, bucket, prefix string) ([]string, error) {
+	p := s3.NewListObjectsV2Paginator(api, &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+		Prefix: aws.String(prefix),
+	})
+
+	var keys []string
+	// TODO(1): This reads only the first page. Repeat the steps below for as
+	// long as p.HasMorePages() is true.
+	page, err := p.NextPage(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list s3://%s/%s: %w", bucket, prefix, err)
+	}
+	for _, obj := range page.Contents {
+		keys = append(keys, aws.ToString(obj.Key))
+	}
+	return keys, nil
+}
+
+// FirstKeys returns the first limit keys in bucket (or every key, if the
+// bucket holds fewer), without asking S3 for more pages than it needs.
+func FirstKeys(ctx context.Context, api s3.ListObjectsV2APIClient, bucket string, limit int) ([]string, error) {
+	// MaxKeys sets the page size: S3 sends at most this many keys per page.
+	// It does not stop the paginator from fetching the next page.
+	p := s3.NewListObjectsV2Paginator(api, &s3.ListObjectsV2Input{
+		Bucket:  aws.String(bucket),
+		MaxKeys: aws.Int32(int32(limit)),
+	})
+
+	var keys []string
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list s3://%s: %w", bucket, err)
+		}
+		for _, obj := range page.Contents {
+			keys = append(keys, aws.ToString(obj.Key))
+			// TODO(2): Return keys as soon as you have limit of them.
+		}
+	}
+	return keys, nil
+}
+
+// InstanceIDs returns the ID of every EC2 instance, across all pages of
+// DescribeInstances.
+func InstanceIDs(ctx context.Context, api ec2.DescribeInstancesAPIClient) ([]string, error) {
+	// TODO(3): Walk every page with ec2.NewDescribeInstancesPaginator and
+	// collect each instance's ID. Wrap errors as "describe instances: <err>".
+	return nil, nil
+}

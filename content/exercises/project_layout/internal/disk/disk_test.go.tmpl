@@ -1,0 +1,68 @@
+package disk
+
+import "testing"
+
+func TestStatus(t *testing.T) {
+	tests := []struct {
+		percent int
+		want    string
+	}{
+		{0, "ok"},
+		{72, "ok"},
+		{79, "ok"},
+		{80, "warn"},
+		{89, "warn"},
+		{90, "full"},
+		{100, "full"},
+	}
+	for _, tt := range tests {
+		if got := Status(tt.percent); got != tt.want {
+			t.Errorf("Status(%d) = %q, want %q", tt.percent, got, tt.want)
+		}
+	}
+}
+
+func TestParse(t *testing.T) {
+	good := []struct {
+		arg  string
+		want Reading
+	}{
+		{"web-1=72", Reading{Host: "web-1", Percent: 72}},
+		{"db-1.internal=0", Reading{Host: "db-1.internal", Percent: 0}},
+		{"cache-1=100", Reading{Host: "cache-1", Percent: 100}},
+	}
+	for _, tt := range good {
+		t.Run(tt.arg, func(t *testing.T) {
+			got, err := Parse(tt.arg)
+			if err != nil {
+				t.Fatalf("Parse(%q) error = %v, want nil", tt.arg, err)
+			}
+			if got != tt.want {
+				t.Errorf("Parse(%q) = %+v, want %+v", tt.arg, got, tt.want)
+			}
+		})
+	}
+
+	bad := []struct {
+		arg     string
+		wantErr string
+	}{
+		{"web-1", `bad reading "web-1": want HOST=PERCENT`},
+		{"=72", `bad reading "=72": want HOST=PERCENT`},
+		{"web-1=lots", `bad percent in "web-1=lots": want 0-100`},
+		{"web-1=", `bad percent in "web-1=": want 0-100`},
+		{"web-1=120", `bad percent in "web-1=120": want 0-100`},
+		{"web-1=-5", `bad percent in "web-1=-5": want 0-100`},
+	}
+	for _, tt := range bad {
+		t.Run(tt.arg, func(t *testing.T) {
+			_, err := Parse(tt.arg)
+			if err == nil {
+				t.Fatalf("Parse(%q) error = nil, want %q", tt.arg, tt.wantErr)
+			}
+			if err.Error() != tt.wantErr {
+				t.Errorf("Parse(%q) error = %q, want %q", tt.arg, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}

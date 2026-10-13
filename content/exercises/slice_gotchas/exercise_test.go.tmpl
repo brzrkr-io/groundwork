@@ -1,0 +1,102 @@
+package rollout
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestCanaries(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+		n     int
+		want  []string
+	}{
+		{"two of four", []string{"web-1", "web-2", "web-3", "web-4"}, 2, []string{"web-1", "web-2"}},
+		{"one of three", []string{"api-1", "api-2", "api-3"}, 1, []string{"api-1"}},
+		{"all of two", []string{"db-1", "db-2"}, 2, []string{"db-1", "db-2"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := slices.Clone(tt.hosts)
+			got := Canaries(tt.hosts, tt.n)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("Canaries(%q, %d) = %q, want %q", before, tt.n, got, tt.want)
+			}
+			got[0] = "changed"
+			if !slices.Equal(tt.hosts, before) {
+				t.Errorf("after setting the result's [0] to %q, hosts became %q, want it to stay %q", "changed", tt.hosts, before)
+			}
+		})
+	}
+}
+
+func TestWithExtra(t *testing.T) {
+	tests := []struct {
+		name   string
+		base   []string // built with spare capacity
+		first  string
+		second string
+	}{
+		{"two items, cap 10", append(make([]string, 0, 10), "api", "worker"), "cron", "metrics"},
+		{"one item, cap 4", append(make([]string, 0, 4), "ingress"), "tls", "waf"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := slices.Clone(tt.base)
+			wantA := append(slices.Clone(before), tt.first)
+			wantB := append(slices.Clone(before), tt.second)
+
+			a := WithExtra(tt.base, tt.first)
+			b := WithExtra(tt.base, tt.second)
+			if !slices.Equal(a, wantA) {
+				t.Errorf("first call WithExtra(%q, %q) = %q after a second call, want %q", before, tt.first, a, wantA)
+			}
+			if !slices.Equal(b, wantB) {
+				t.Errorf("WithExtra(%q, %q) = %q, want %q", before, tt.second, b, wantB)
+			}
+			// Look one box past the end of base, inside its spare capacity.
+			grown := tt.base[:len(tt.base)+1]
+			if next := grown[len(tt.base)]; next != "" {
+				t.Errorf("WithExtra wrote %q into base's spare capacity, want it left empty", next)
+			}
+		})
+	}
+}
+
+// newLog returns six log lines in a slice with lots of spare capacity, like a
+// big log that was read line by line.
+func newLog() []string {
+	lines := make([]string, 0, 100)
+	return append(lines, "boot", "pull image", "start", "ready", "serving", "healthy")
+}
+
+func TestTail(t *testing.T) {
+	tests := []struct {
+		name string
+		n    int
+		want []string
+	}{
+		{"last two", 2, []string{"serving", "healthy"}},
+		{"last four", 4, []string{"start", "ready", "serving", "healthy"}},
+		{"exactly all", 6, []string{"boot", "pull image", "start", "ready", "serving", "healthy"}},
+		{"more than all", 10, []string{"boot", "pull image", "start", "ready", "serving", "healthy"}},
+		{"none", 0, []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lines := newLog()
+			got := Tail(lines, tt.n)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("Tail(lines, %d) = %q, want %q", tt.n, got, tt.want)
+			}
+			if len(got) != len(tt.want) || cap(got) != len(tt.want) {
+				t.Errorf("Tail(lines, %d) has len %d and cap %d, want both %d", tt.n, len(got), cap(got), len(tt.want))
+			}
+			lines[len(lines)-1] = "changed"
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("after changing the last log line, Tail's result became %q, want it to stay %q", got, tt.want)
+			}
+		})
+	}
+}

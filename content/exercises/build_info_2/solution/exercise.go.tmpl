@@ -1,0 +1,64 @@
+// Command depcheck reports which versions of key libraries are compiled into
+// this binary, so you can answer "are we affected by that CVE?".
+package main
+
+import (
+	"fmt"
+	"runtime/debug"
+	"time"
+)
+
+func main() {
+	info, _ := debug.ReadBuildInfo()
+	fmt.Println("built:", BuildTime(info))
+	for _, line := range Report(info, []string{"k8s.io/client-go", "golang.org/x/net"}) {
+		fmt.Println(line)
+	}
+}
+
+// DepVersion returns the version of the dependency with the given module
+// path. If the dependency was replaced, it returns the replacement's
+// version. It returns "not found" when info is nil or has no such
+// dependency.
+func DepVersion(info *debug.BuildInfo, path string) string {
+	if info == nil {
+		return "not found"
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == path {
+			if dep.Replace != nil {
+				return dep.Replace.Version
+			}
+			return dep.Version
+		}
+	}
+	return "not found"
+}
+
+// BuildTime returns the vcs.time setting formatted as "2006-01-02 15:04 UTC",
+// or "unknown".
+func BuildTime(info *debug.BuildInfo) string {
+	if info == nil {
+		return "unknown"
+	}
+	for _, s := range info.Settings {
+		if s.Key != "vcs.time" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, s.Value)
+		if err != nil {
+			return "unknown"
+		}
+		return t.UTC().Format("2006-01-02 15:04") + " UTC"
+	}
+	return "unknown"
+}
+
+// Report returns one "<path> <version>" line per path, in order.
+func Report(info *debug.BuildInfo, paths []string) []string {
+	var lines []string
+	for _, path := range paths {
+		lines = append(lines, path+" "+DepVersion(info, path))
+	}
+	return lines
+}

@@ -1,0 +1,60 @@
+package waves
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestSplit(t *testing.T) {
+	tests := []struct {
+		name       string
+		hosts      []string
+		n          int
+		wantCanary []string
+		wantRest   []string
+	}{
+		{"one canary", []string{"web-1", "web-2", "web-3", "web-4"}, 1, []string{"web-1"}, []string{"web-2", "web-3", "web-4"}},
+		{"two canaries", []string{"api-1", "api-2", "api-3"}, 2, []string{"api-1", "api-2"}, []string{"api-3"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := slices.Clone(tt.hosts)
+			canary, rest := Split(tt.hosts, tt.n)
+			if !slices.Equal(canary, tt.wantCanary) || !slices.Equal(rest, tt.wantRest) {
+				t.Fatalf("Split(%q, %d) = %q, %q, want %q, %q", before, tt.n, canary, rest, tt.wantCanary, tt.wantRest)
+			}
+
+			canary = append(canary, "web-9")
+			if !slices.Equal(rest, tt.wantRest) {
+				t.Errorf("after appending %q to canary, rest = %q, want %q", "web-9", rest, tt.wantRest)
+			}
+			if !slices.Equal(tt.hosts, before) {
+				t.Errorf("after appending %q to canary, hosts = %q, want %q", "web-9", tt.hosts, before)
+			}
+			wantCanary := append(slices.Clone(tt.wantCanary), "web-9")
+			if !slices.Equal(canary, wantCanary) {
+				t.Errorf("after appending %q, canary = %q, want %q", "web-9", canary, wantCanary)
+			}
+		})
+	}
+}
+
+func TestRestartCommands(t *testing.T) {
+	tests := []struct {
+		namespace  string
+		deployment string
+		wantCanary string
+		wantMain   string
+	}{
+		{"prod", "api", "kubectl rollout restart -n prod deployment/api-canary", "kubectl rollout restart -n prod deployment/api"},
+		{"staging", "checkout", "kubectl rollout restart -n staging deployment/checkout-canary", "kubectl rollout restart -n staging deployment/checkout"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.namespace+"/"+tt.deployment, func(t *testing.T) {
+			canary, main := RestartCommands(tt.namespace, tt.deployment)
+			if canary != tt.wantCanary || main != tt.wantMain {
+				t.Errorf("RestartCommands(%q, %q) = %q, %q, want %q, %q", tt.namespace, tt.deployment, canary, main, tt.wantCanary, tt.wantMain)
+			}
+		})
+	}
+}

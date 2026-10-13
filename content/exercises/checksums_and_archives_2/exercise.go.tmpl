@@ -1,0 +1,74 @@
+// Package release is the Gopherlings exercise "Checksums and archives: publish a release".
+package release
+
+import (
+	"archive/tar"
+	"compress/gzip"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+)
+
+// ChecksumsFile is the name of the checksums file published with a release.
+const ChecksumsFile = "SHA256SUMS"
+
+// Pack writes every regular file under dir to w as a .tar.gz archive, with
+// forward-slash names relative to dir.
+func Pack(dir string, w io.Writer) error {
+	gz := gzip.NewWriter(w)
+	tw := tar.NewWriter(gz)
+	// TODO(1): Fix the closing so the archive is complete, and return any
+	// error from closing.
+	defer tw.Close()
+	defer gz.Close()
+
+	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return nil // directories are implied by the file names
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		hdr, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		hdr.Name = filepath.ToSlash(rel)
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = io.Copy(tw, f)
+		return err
+	})
+}
+
+// WriteChecksums writes a sha256sum-format line to w for every regular file
+// directly inside dir, sorted by name. It skips ChecksumsFile itself.
+func WriteChecksums(dir string, w io.Writer) error {
+	// TODO(2): List dir, hash each regular file and write its line. Write a
+	// hashFile(path) helper for the hashing. Add "crypto/sha256",
+	// "encoding/hex" and "fmt" to the imports.
+	return nil
+}
+
+// Bundle packs srcDir into dist/<name>.tar.gz, then rewrites
+// dist/SHA256SUMS to list every artifact in dist.
+func Bundle(srcDir, dist, name string) error {
+	// TODO(3): Create dist, write the archive file with Pack, then write
+	// the checksums file with WriteChecksums.
+	return nil
+}

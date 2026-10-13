@@ -1,0 +1,55 @@
+// Package joining2 is the Gopherlings exercise "Reporting many errors: fix the firewall validator".
+package joining2
+
+import (
+	"errors"
+	"fmt"
+)
+
+// Sentinel errors for firewall rule problems.
+var (
+	ErrBadPort     = errors.New("bad port")
+	ErrBadProtocol = errors.New("bad protocol")
+	ErrOpenToWorld = errors.New("open to the world")
+)
+
+// Rule is one inbound firewall rule.
+type Rule struct {
+	Name     string
+	Port     int
+	Protocol string
+	Source   string
+}
+
+// ValidateRule checks r and reports every problem with it, not just the
+// first. It returns nil when the rule is fine.
+func ValidateRule(r Rule) error {
+	var errs []error
+	if r.Port < 1 || r.Port > 65535 {
+		// TODO(1): Keep going after a problem so every problem is reported.
+		return fmt.Errorf("rule %q: %w: %d", r.Name, ErrBadPort, r.Port)
+	}
+	if r.Protocol != "tcp" && r.Protocol != "udp" {
+		return fmt.Errorf("rule %q: %w: %q", r.Name, ErrBadProtocol, r.Protocol)
+	}
+	if r.Source == "0.0.0.0/0" && r.Port != 80 && r.Port != 443 {
+		return fmt.Errorf("rule %q: %w: port %d", r.Name, ErrOpenToWorld, r.Port)
+	}
+	return errors.Join(errs...)
+}
+
+// ValidateAll validates every rule. It returns nil when all rules are fine.
+func ValidateAll(rules []Rule) error {
+	var errs []error
+	for _, r := range rules {
+		errs = append(errs, ValidateRule(r))
+	}
+	// TODO(2): Return nil when no rule has a problem.
+	return fmt.Errorf("check firewall: %w", errors.Join(errs...))
+}
+
+// NeedsReview reports whether err contains ErrOpenToWorld anywhere.
+func NeedsReview(err error) bool {
+	// TODO(3): Look inside joined and wrapped errors.
+	return err == ErrOpenToWorld
+}

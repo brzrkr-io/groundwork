@@ -1,0 +1,55 @@
+// Package report is the Gopherlings exercise "Paginators: fix the stuck size report".
+package report
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+// PrefixSizes adds up the size in bytes of every object in bucket, grouped
+// by top-level prefix: the part of the key before the first "/".
+func PrefixSizes(ctx context.Context, api s3.ListObjectsV2APIClient, bucket string) (map[string]int64, error) {
+	input := &s3.ListObjectsV2Input{Bucket: aws.String(bucket)}
+	sizes := map[string]int64{}
+
+	// Create the paginator once: it remembers the token between pages.
+	p := s3.NewListObjectsV2Paginator(api, input)
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("size report s3://%s: %w", bucket, err)
+		}
+		for _, obj := range page.Contents {
+			prefix, _, _ := strings.Cut(aws.ToString(obj.Key), "/")
+			sizes[prefix] += aws.ToInt64(obj.Size)
+		}
+	}
+	return sizes, nil
+}
+
+// RunningByType counts the running EC2 instances of each instance type,
+// such as "t3.micro" or "m5.large", across every page of DescribeInstances.
+func RunningByType(ctx context.Context, api ec2.DescribeInstancesAPIClient) (map[string]int, error) {
+	counts := map[string]int{}
+	p := ec2.NewDescribeInstancesPaginator(api, &ec2.DescribeInstancesInput{})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("running by type: %w", err)
+		}
+		for _, r := range page.Reservations {
+			for _, inst := range r.Instances {
+				if inst.State != nil && inst.State.Name == types.InstanceStateNameRunning {
+					counts[string(inst.InstanceType)]++
+				}
+			}
+		}
+	}
+	return counts, nil
+}

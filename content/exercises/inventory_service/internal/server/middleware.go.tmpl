@@ -1,0 +1,55 @@
+package server
+
+import (
+	"context"
+	"net/http"
+)
+
+// requestIDKey is the context key for the request ID. An unexported type
+// means no other package can read or overwrite the value by accident.
+type requestIDKey struct{}
+
+// RequestID returns the request ID stored in ctx by the requestID
+// middleware, or "" if there is none.
+func RequestID(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDKey{}).(string)
+	return id
+}
+
+// requestID gives every request an ID. It uses the X-Request-ID request
+// header when the client (or a load balancer) sent one, and otherwise asks
+// s.newRequestID for a fresh one. The ID is echoed in the X-Request-ID
+// response header and stored in the request's context for RequestID.
+func (s *Server) requestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// TODO(4): Pick the ID, set the response header, store the ID with
+		// context.WithValue, and call next with r.WithContext(ctx).
+		next.ServeHTTP(w, r)
+	})
+}
+
+// statusRecorder wraps a ResponseWriter and remembers the status code the
+// handler sent. A handler that never calls WriteHeader sends 200.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+// WriteHeader records code and passes it on.
+func (rec *statusRecorder) WriteHeader(code int) {
+	rec.status = code
+	rec.ResponseWriter.WriteHeader(code)
+}
+
+// observe writes one access-log line per request and counts the request
+// for /metrics.
+func (s *Server) observe(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// TODO(4): Serve the request through a statusRecorder, then log
+		// "request" with request_id, method, path and status, at Error level
+		// for 5xx statuses and Info level otherwise.
+
+		// TODO(5): Count the request with s.metrics.Inc.
+		next.ServeHTTP(w, r)
+	})
+}

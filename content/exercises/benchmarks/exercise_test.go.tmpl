@@ -1,0 +1,17 @@
+package tags
+
+import "testing"
+
+// sampleTags is a typical set of tags on one of our cloud resources.
+var sampleTags = []Tag{
+	{Key: "env", Value: "prod"},
+	{Key: "team", Value: "sre"},
+	{Key: "region", Value: "eu-west-1"},
+	{Key: "tier", Value: "backend"},
+}
+
+func BenchmarkFormatTags(b *testing.B) {
+	// TODO(1): Call b.ReportAllocs. Then move this call inside a
+	// for b.Loop() loop.
+	FormatTags(sampleTags)
+}

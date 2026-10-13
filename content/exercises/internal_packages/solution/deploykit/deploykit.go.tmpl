@@ -1,0 +1,11 @@
+// Package deploykit is the shared library other teams import to name their
+// releases.
+package deploykit
+
+import "gopherlings.local/internal_packages/internal/slug"
+
+// ReleaseName returns the Kubernetes-safe name for a release of service at
+// version, such as "payments-api-v1-4-2".
+func ReleaseName(service, version string) string {
+	return slug.Make(service + "-" + version)
+}

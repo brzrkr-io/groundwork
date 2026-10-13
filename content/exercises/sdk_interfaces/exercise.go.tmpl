@@ -1,0 +1,58 @@
+// Package awsclients is the Gopherlings exercise "SDK clients: small interfaces and fakes".
+package awsclients
+
+import (
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+// BucketLister is the one S3 method the inventory tool needs.
+type BucketLister interface {
+	ListBuckets(ctx context.Context, params *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error)
+}
+
+// The real S3 client must satisfy BucketLister.
+var _ BucketLister = (*s3.Client)(nil)
+
+// BucketNames returns the names of all buckets in the account, sorted.
+func BucketNames(ctx context.Context, api BucketLister) ([]string, error) {
+	// TODO(1): Call api.ListBuckets, collect the names and sort them.
+	// Wrap errors as "list buckets: %w".
+	// Add the imports "fmt", "slices" and "github.com/aws/aws-sdk-go-v2/aws".
+	return nil, nil
+}
+
+// FakeBucketLister is a fake S3 client for tests. It returns Err if set,
+// otherwise one bucket for each name in Names.
+type FakeBucketLister struct {
+	Names []string
+	Err   error
+}
+
+// ListBuckets returns the fake's buckets, or its error.
+func (f *FakeBucketLister) ListBuckets(ctx context.Context, params *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error) {
+	// TODO(2): Return nil and f.Err if f.Err is set.
+	// Otherwise add one s3types.Bucket to out.Buckets for each name in f.Names.
+	// Add the import s3types "github.com/aws/aws-sdk-go-v2/service/s3/types".
+	out := &s3.ListBucketsOutput{}
+	return out, nil
+}
+
+// InstanceDescriber is the one EC2 method the inventory tool needs.
+type InstanceDescriber interface {
+	// TODO(3): Add the DescribeInstances method, copied from *ec2.Client.
+}
+
+// The real EC2 client must satisfy InstanceDescriber.
+var _ InstanceDescriber = (*ec2.Client)(nil)
+
+// RunningInstanceIDs returns the IDs of all running instances, sorted.
+func RunningInstanceIDs(ctx context.Context, api InstanceDescriber) ([]string, error) {
+	// TODO(3): Call api.DescribeInstances and collect the IDs of running
+	// instances. Skip instances whose State is nil.
+	// Wrap errors as "describe instances: %w".
+	// Add the import ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types".
+	return nil, nil
+}

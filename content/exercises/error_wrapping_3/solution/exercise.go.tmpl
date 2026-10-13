@@ -1,0 +1,54 @@
+// Package wrapping3 is the Gopherlings exercise "Wrapping errors: triage a failed deploy".
+package wrapping3
+
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrUnhealthy means the new version is running but fails its health checks.
+var ErrUnhealthy = errors.New("health check failed")
+
+// DeployError records which service and which stage a deploy failed in,
+// and the error that stage returned.
+type DeployError struct {
+	Service string
+	Stage   string
+	Err     error
+}
+
+func (e *DeployError) Error() string {
+	return fmt.Sprintf("deploy %s: stage %s: %v", e.Service, e.Stage, e.Err)
+}
+
+// Unwrap returns the stage's error, so errors.Is and errors.AsType can see it.
+func (e *DeployError) Unwrap() error {
+	return e.Err
+}
+
+// Stage is one step of a deploy pipeline, such as "build" or "rollout".
+type Stage struct {
+	Name string
+	Run  func() error
+}
+
+// Deploy runs the stages for service in order and stops at the first
+// failure, reporting it as a *DeployError.
+func Deploy(service string, stages []Stage) error {
+	for _, stage := range stages {
+		if err := stage.Run(); err != nil {
+			return &DeployError{Service: service, Stage: stage.Name, Err: err}
+		}
+	}
+	return nil
+}
+
+// ShouldRollback reports whether a failed deploy left a broken version
+// running, so the previous version must be restored.
+func ShouldRollback(err error) bool {
+	if errors.Is(err, ErrUnhealthy) {
+		return true
+	}
+	derr, ok := errors.AsType[*DeployError](err)
+	return ok && derr.Stage == "rollout"
+}

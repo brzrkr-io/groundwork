@@ -1,0 +1,22 @@
+// Package cmdline is the Gopherlings exercise "Variadic functions: a command builder".
+package cmdline
+
+// Command returns bin followed by args, separated by spaces. Arguments that
+// are empty or contain a space are wrapped in double quotes.
+func Command(bin string, args ...string) string {
+	// TODO(1): Build the command line. You'll need to import "strings".
+	return ""
+}
+
+// Kubectl returns a kubectl command line, with "-n namespace" first when
+// namespace is not empty.
+func Kubectl(namespace string, args ...string) string {
+	// TODO(2): Build the arguments and pass them to Command.
+	return ""
+}
+
+// Chain joins the non-empty commands with " && ".
+func Chain(commands ...string) string {
+	// TODO(3): Join the non-empty commands.
+	return ""
+}

@@ -1,0 +1,24 @@
+// Package text is the Gopherlings exercise "Strings: clean up config and logs".
+package text
+
+// TODO(1): Import the strings package here. Every task needs it.
+
+// Redact returns line with every copy of secret replaced by stars.
+func Redact(line, secret string) string {
+	// TODO(1): Replace each copy of secret with one star per character.
+	return line
+}
+
+// HostFromURL returns the lowercase host name from a URL like
+// "https://api.example.com/".
+func HostFromURL(url string) string {
+	// TODO(2): Remove "https://" and a trailing "/", then lower-case.
+	return url
+}
+
+// EnvVarName returns the environment variable name for a service setting,
+// such as "CHECKOUT_API_DB_URL".
+func EnvVarName(service, setting string) string {
+	// TODO(3): Build the environment variable name.
+	return ""
+}

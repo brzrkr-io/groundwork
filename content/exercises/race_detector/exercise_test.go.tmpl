@@ -1,0 +1,90 @@
+package races
+
+import (
+	"maps"
+	"slices"
+	"testing"
+	"time"
+)
+
+// These tests run with the race detector. Until a race is fixed, its test
+// fails with "race detected during execution of test", and the output above
+// it shows a WARNING: DATA RACE report for you to read.
+
+func TestTotalBytes(t *testing.T) {
+	sizes := map[string]int{
+		"app.log":     1200,
+		"error.log":   300,
+		"access.log":  4500,
+		"audit.log":   80,
+		"metrics.log": 20,
+	}
+	size := func(file string) int { return sizes[file] }
+
+	tests := []struct {
+		name  string
+		files []string
+		want  int
+	}{
+		{"two files", []string{"app.log", "error.log"}, 1500},
+		{"five files", []string{"app.log", "error.log", "access.log", "audit.log", "metrics.log"}, 6100},
+		{"no files", nil, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := TotalBytes(tt.files, size); got != tt.want {
+				t.Errorf("TotalBytes(%q) = %d, want %d", tt.files, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckAll(t *testing.T) {
+	healthy := map[string]bool{"web-1": true, "web-2": false, "db-1": true, "db-2": false}
+	// Each check takes a few milliseconds, like a real health check.
+	delay := map[string]time.Duration{"web-1": 0, "web-2": 3 * time.Millisecond, "db-1": 6 * time.Millisecond, "db-2": 9 * time.Millisecond}
+	check := func(host string) bool {
+		time.Sleep(delay[host])
+		return healthy[host]
+	}
+
+	tests := []struct {
+		name  string
+		hosts []string
+		want  map[string]bool
+	}{
+		{"two hosts", []string{"web-1", "web-2"}, map[string]bool{"web-1": true, "web-2": false}},
+		{"four hosts", []string{"web-1", "web-2", "db-1", "db-2"}, map[string]bool{"web-1": true, "web-2": false, "db-1": true, "db-2": false}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CheckAll(tt.hosts, check); !maps.Equal(got, tt.want) {
+				t.Errorf("CheckAll(%q) = %v, want %v", tt.hosts, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFailedHosts(t *testing.T) {
+	healthy := map[string]bool{"web-1": true, "web-2": false, "db-1": true, "db-2": false, "cache-1": false}
+	check := func(host string) bool { return healthy[host] }
+
+	tests := []struct {
+		name  string
+		hosts []string
+		want  []string // sorted
+	}{
+		{"one failure", []string{"web-1", "web-2", "db-1"}, []string{"web-2"}},
+		{"three failures", []string{"web-1", "web-2", "db-1", "db-2", "cache-1"}, []string{"cache-1", "db-2", "web-2"}},
+		{"no failures", []string{"web-1", "db-1"}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FailedHosts(tt.hosts, check)
+			slices.Sort(got) // any order is fine
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("FailedHosts(%q) = %q (sorted), want %q", tt.hosts, got, tt.want)
+			}
+		})
+	}
+}

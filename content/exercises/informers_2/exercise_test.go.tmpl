@@ -1,0 +1,197 @@
+package informers
+
+import (
+	"context"
+	"slices"
+	"testing"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes/fake"
+	appslisters "k8s.io/client-go/listers/apps/v1"
+)
+
+// deployment builds a Deployment. replicas 0 leaves Spec.Replicas nil.
+func deployment(ns, name, team string, replicas int32) *appsv1.Deployment {
+	d := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Namespace: ns,
+		Name:      name,
+		Labels:    map[string]string{"team": team},
+	}}
+	if replicas > 0 {
+		d.Spec.Replicas = new(replicas)
+	}
+	return d
+}
+
+// newFactory returns a factory for cs. When the test ends it cancels ctx and
+// calls Shutdown.
+func newFactory(t *testing.T, cs *fake.Clientset) (informers.SharedInformerFactory, context.Context) {
+	t.Helper()
+	factory := informers.NewSharedInformerFactory(cs, 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		factory.Shutdown()
+	})
+	return factory, ctx
+}
+
+// startCache returns a synced Deployment lister for cs, without using your
+// StartLister.
+func startCache(t *testing.T, cs *fake.Clientset) (appslisters.DeploymentLister, context.Context) {
+	t.Helper()
+	factory, ctx := newFactory(t, cs)
+	lister := factory.Apps().V1().Deployments().Lister()
+	factory.StartWithContext(ctx)
+	if err := factory.WaitForCacheSyncWithContext(ctx).AsError(); err != nil {
+		t.Fatalf("caches did not sync: %v", err)
+	}
+	return lister, ctx
+}
+
+// poll checks cond every 10ms until it returns true, for up to 5 seconds.
+func poll(ctx context.Context, cond func() bool) error {
+	return wait.PollUntilContextTimeout(ctx, 10*time.Millisecond, 5*time.Second, true, func(context.Context) (bool, error) {
+		return cond(), nil
+	})
+}
+
+func TestStartLister(t *testing.T) {
+	tests := []struct {
+		name  string
+		seeds []runtime.Object
+		want  []string
+	}{
+		{"two in shop", []runtime.Object{deployment("shop", "web", "storefront", 3), deployment("shop", "api", "storefront", 2)}, []string{"api", "web"}},
+		{"one in monitoring", []runtime.Object{deployment("monitoring", "prometheus", "observability", 1)}, []string{"prometheus"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cs := fake.NewClientset(tt.seeds...)
+			factory, ctx := newFactory(t, cs)
+
+			lister, err := StartLister(ctx, factory)
+			if err != nil {
+				t.Fatalf("StartLister() error = %v, want nil", err)
+			}
+			cached, err := lister.List(labels.Everything())
+			if err != nil {
+				t.Fatalf("List() error = %v", err)
+			}
+			got := []string{}
+			for _, d := range cached {
+				got = append(got, d.Name)
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("lister.List() names = %q, want %q", got, tt.want)
+			}
+
+			// A Deployment created later shows up in the cache a moment later.
+			_, err = cs.AppsV1().Deployments("staging").Create(ctx, deployment("staging", "worker", "fulfilment", 1), metav1.CreateOptions{})
+			if err != nil {
+				t.Fatalf("fake Create failed: %v", err)
+			}
+			err = poll(ctx, func() bool {
+				_, err := lister.Deployments("staging").Get("worker")
+				return err == nil
+			})
+			if err != nil {
+				t.Errorf("lister never saw staging/worker, created after StartLister returned")
+			}
+		})
+	}
+}
+
+func TestTeamReplicas(t *testing.T) {
+	cs := fake.NewClientset(
+		deployment("shop", "web", "storefront", 3),
+		deployment("shop", "api", "storefront", 0), // Spec.Replicas is nil
+		deployment("shop", "worker", "fulfilment", 2),
+		deployment("payments", "checkout", "storefront", 5),
+	)
+	lister, _ := startCache(t, cs)
+
+	tests := []struct {
+		namespace, team string
+		want            int32
+	}{
+		{"shop", "storefront", 4},
+		{"shop", "fulfilment", 2},
+		{"payments", "storefront", 5},
+		{"shop", "nobody", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.namespace+"/"+tt.team, func(t *testing.T) {
+			got, err := TeamReplicas(lister, tt.namespace, tt.team)
+			if err != nil {
+				t.Fatalf("TeamReplicas(lister, %q, %q) error = %v, want nil", tt.namespace, tt.team, err)
+			}
+			if got != tt.want {
+				t.Errorf("TeamReplicas(lister, %q, %q) = %d, want %d", tt.namespace, tt.team, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPause(t *testing.T) {
+	cs := fake.NewClientset(
+		deployment("shop", "web", "storefront", 3),
+		deployment("payments", "checkout", "storefront", 2),
+	)
+	lister, ctx := startCache(t, cs)
+
+	for _, tt := range []struct{ namespace, name string }{
+		{"shop", "web"},
+		{"payments", "checkout"},
+	} {
+		t.Run(tt.namespace+"/"+tt.name, func(t *testing.T) {
+			cached, err := lister.Deployments(tt.namespace).Get(tt.name)
+			if err != nil {
+				t.Fatalf("lister Get(%q) error = %v", tt.name, err)
+			}
+
+			if err := Pause(ctx, cs, lister, tt.namespace, tt.name); err != nil {
+				t.Fatalf("Pause(ctx, cs, lister, %q, %q) error = %v, want nil", tt.namespace, tt.name, err)
+			}
+
+			if cached.Spec.Paused {
+				t.Errorf("Pause changed the object inside the cache (Spec.Paused = true), want it untouched: edit a DeepCopy")
+			}
+			stored, err := cs.AppsV1().Deployments(tt.namespace).Get(ctx, tt.name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("fake Get failed: %v", err)
+			}
+			if !stored.Spec.Paused {
+				t.Errorf("API server copy: Spec.Paused = false, want true")
+			}
+			// The cache catches up with the API server a moment later.
+			err = poll(ctx, func() bool {
+				d, err := lister.Deployments(tt.namespace).Get(tt.name)
+				return err == nil && d.Spec.Paused
+			})
+			if err != nil {
+				t.Errorf("cache never saw Spec.Paused = true for %s/%s", tt.namespace, tt.name)
+			}
+		})
+	}
+
+	for _, tt := range []struct{ namespace, name string }{
+		{"shop", "ghost"},
+		{"monitoring", "web"},
+	} {
+		t.Run("missing "+tt.namespace+"/"+tt.name, func(t *testing.T) {
+			err := Pause(ctx, cs, lister, tt.namespace, tt.name)
+			if !apierrors.IsNotFound(err) {
+				t.Errorf("Pause(ctx, cs, lister, %q, %q) error = %v, want a NotFound error", tt.namespace, tt.name, err)
+			}
+		})
+	}
+}

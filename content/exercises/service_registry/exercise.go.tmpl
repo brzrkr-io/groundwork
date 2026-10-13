@@ -1,0 +1,77 @@
+// Package registry is the Gopherlings exercise "Practice: service registry".
+package registry
+
+// Status is the health of a registered service.
+type Status int
+
+// The possible health states. A service starts as StatusUnknown until
+// it has been checked.
+const (
+	StatusUnknown Status = iota
+	StatusHealthy
+	StatusUnhealthy
+)
+
+// String returns the status as a lower-case word.
+func (s Status) String() string {
+	// TODO(1): Return "unknown", "healthy" or "unhealthy".
+	// Any other value returns "Status(N)", for example "Status(7)".
+	return ""
+}
+
+// Service is one running service that other services can find by name.
+type Service struct {
+	Name    string   // unique name, for example "billing-api"
+	Address string   // host and port, for example "10.0.0.5:8080"
+	Tags    []string // free-form labels, for example "prod" or "eu-west-1"
+	Status  Status
+}
+
+// HealthChecker reports whether the service at an address is healthy.
+type HealthChecker interface {
+	Check(address string) bool
+}
+
+// Registry keeps track of services by name.
+type Registry struct {
+	services map[string]Service
+}
+
+// NewRegistry returns an empty registry that is ready to use.
+func NewRegistry() *Registry {
+	return &Registry{services: map[string]Service{}}
+}
+
+// Register adds s to the registry with its Status set to StatusUnknown.
+// It returns an error if the name is empty or already registered.
+func (r *Registry) Register(s Service) error {
+	// TODO(2): Validate s, reset its Status and store it under its name.
+	return nil
+}
+
+// Lookup returns the service with the given name and true, or the zero
+// Service and false if there is no such service.
+func (r *Registry) Lookup(name string) (Service, bool) {
+	// TODO(2): Look the service up in r.services.
+	return Service{}, false
+}
+
+// Deregister removes the named service. It reports whether the service
+// was registered.
+func (r *Registry) Deregister(name string) bool {
+	// TODO(3): Remove the service and report whether it was there.
+	return false
+}
+
+// ByTag returns every service that has the given tag, sorted by name.
+func (r *Registry) ByTag(tag string) []Service {
+	// TODO(4): Collect the matching services and sort them by Name.
+	return nil
+}
+
+// CheckAll asks hc about every service, stores the new Status of each
+// one, and returns how many services are healthy.
+func (r *Registry) CheckAll(hc HealthChecker) int {
+	// TODO(5): Check each service's Address and update its Status.
+	return 0
+}

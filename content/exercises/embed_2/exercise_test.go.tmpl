@@ -1,0 +1,58 @@
+package migrate
+
+import (
+	"slices"
+	"testing"
+)
+
+const (
+	hostsSQL    = "CREATE TABLE hosts (name TEXT PRIMARY KEY, region TEXT NOT NULL);\n"
+	servicesSQL = "CREATE TABLE services (name TEXT PRIMARY KEY, port INTEGER NOT NULL);\n"
+	ownerSQL    = "ALTER TABLE services ADD COLUMN owner TEXT;\n"
+)
+
+func TestSchemaVersion(t *testing.T) {
+	// Move to an empty folder, so only embedded files can be found.
+	t.Chdir(t.TempDir())
+
+	if got, want := SchemaVersion(), "2.3.0"; got != want {
+		t.Errorf("SchemaVersion() = %q, want %q", got, want)
+	}
+}
+
+func TestNames(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	got, err := Names()
+	if err != nil {
+		t.Fatalf("Names() error = %v, want nil", err)
+	}
+	want := []string{"001_create_hosts.sql", "002_create_services.sql", "003_add_owner.sql"}
+	if !slices.Equal(got, want) {
+		t.Errorf("Names() = %q, want %q", got, want)
+	}
+}
+
+func TestPending(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	tests := []struct {
+		applied int
+		want    []string
+	}{
+		{0, []string{hostsSQL, servicesSQL, ownerSQL}},
+		{1, []string{servicesSQL, ownerSQL}},
+		{2, []string{ownerSQL}},
+		{3, nil},
+		{5, nil},
+	}
+	for _, tt := range tests {
+		got, err := Pending(tt.applied)
+		if err != nil {
+			t.Fatalf("Pending(%d) error = %v, want nil", tt.applied, err)
+		}
+		if !slices.Equal(got, tt.want) {
+			t.Errorf("Pending(%d) = %q, want %q", tt.applied, got, tt.want)
+		}
+	}
+}

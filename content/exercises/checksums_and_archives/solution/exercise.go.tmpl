@@ -1,0 +1,201 @@
+// Package archives is the Gopherlings exercise "Checksums and archives: verify and extract safely".
+package archives
+
+import (
+	"archive/tar"
+	"bufio"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// ErrNoChecksum means the checksums file has no line for the file.
+var ErrNoChecksum = errors.New("no checksum found")
+
+// ErrChecksumMismatch means the file's hash differs from the published one.
+var ErrChecksumMismatch = errors.New("checksum mismatch")
+
+// ErrUnsafePath means an archive entry would land outside the target directory.
+var ErrUnsafePath = errors.New("unsafe path in archive")
+
+// SHA256File returns the SHA-256 hash of the file at path as lowercase hex.
+func SHA256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// Verify checks filePath against its line in the sha256sum-format file at
+// sumsPath. It returns an error wrapping ErrNoChecksum or
+// ErrChecksumMismatch when the file cannot be trusted.
+func Verify(sumsPath, filePath string) error {
+	sums, err := os.Open(sumsPath)
+	if err != nil {
+		return err
+	}
+	defer sums.Close()
+
+	name := filepath.Base(filePath)
+	want := ""
+	scanner := bufio.NewScanner(sums)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) == 2 && fields[1] == name {
+			want = fields[0]
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if want == "" {
+		return fmt.Errorf("%w for %s", ErrNoChecksum, name)
+	}
+
+	got, err := SHA256File(filePath)
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return fmt.Errorf("%w for %s: got %s, want %s", ErrChecksumMismatch, name, got, want)
+	}
+	return nil
+}
+
+// Extract unpacks the .tar.gz stream r into the directory dst.
+func Extract(r io.Reader, dst string) error {
+	gz, err := gzip.NewReader(r)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return nil // no more entries: the archive is done
+		}
+		if err != nil {
+			return err
+		}
+		if err := extractEntry(tr, hdr, dst); err != nil {
+			return err
+		}
+	}
+}
+
+// extractEntry writes one archive entry under dst. For a regular file, tr
+// is positioned at the file's contents, so reading from tr reads the file.
+func extractEntry(tr *tar.Reader, hdr *tar.Header, dst string) error {
+	if !filepath.IsLocal(hdr.Name) {
+		return fmt.Errorf("%w: %q", ErrUnsafePath, hdr.Name)
+	}
+	target := filepath.Join(dst, hdr.Name)
+
+	switch hdr.Typeflag {
+	case tar.TypeDir:
+		return os.MkdirAll(target, 0o755)
+	case tar.TypeReg:
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		return writeFile(target, tr, hdr.FileInfo().Mode().Perm())
+	default:
+		return nil // symlinks, devices and so on are skipped
+	}
+}
+
+// writeFile creates the file at path with permission bits perm and copies
+// everything from r into it.
+func writeFile(path string, r io.Reader, perm fs.FileMode) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, r); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// Create writes the directory tree rooted at dir to w as a .tar.gz archive.
+// Entry names are relative to dir and use forward slashes, as tar requires.
+// Read it as a worked example: it is the mirror image of Extract.
+func Create(dir string, w io.Writer) error {
+	// Layer the writers: tar entries -> gzip compression -> w.
+	gz := gzip.NewWriter(w)
+	tw := tar.NewWriter(gz)
+
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil // the root itself gets no entry
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && !info.Mode().IsRegular() {
+			return nil // skip symlinks, sockets and other special files
+		}
+
+		// FileInfoHeader fills in the type, size, mode and modification time.
+		hdr, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		// It only knows the base name, so set the full relative name.
+		hdr.Name = filepath.ToSlash(rel)
+		if info.IsDir() {
+			hdr.Name += "/" // tar marks directories with a trailing slash
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil // directories have a header but no contents
+		}
+
+		// After WriteHeader, writes to tw become the file's contents.
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = io.Copy(tw, f)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	// Close the inner writer first: tar writes its end-of-archive marker
+	// into gzip, then gzip flushes and writes its own trailer to w.
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	return gz.Close()
+}

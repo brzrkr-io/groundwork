@@ -1,0 +1,73 @@
+// Package apierrors is the Gopherlings exercise "AWS API errors: codes, faults and NoSuchKey".
+package apierrors
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
+)
+
+// DefaultSettings is the deploy config used when no settings file exists in
+// S3 yet.
+const DefaultSettings = `{"replicas": 2, "log_level": "info"}`
+
+// ObjectGetter is the one S3 method LoadSettings needs.
+type ObjectGetter interface {
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+}
+
+// The real S3 client satisfies ObjectGetter.
+var _ ObjectGetter = (*s3.Client)(nil)
+
+// ErrorCode returns the AWS error code inside err, such as "NoSuchKey" or
+// "SlowDown". It returns "" when err is nil or holds no AWS API error.
+func ErrorCode(err error) string {
+	if apiErr, ok := errors.AsType[smithy.APIError](err); ok {
+		return apiErr.ErrorCode()
+	}
+	return ""
+}
+
+// ShouldRetry reports whether a failed AWS call is worth trying again later:
+// AWS asked us to slow down, or AWS itself had a problem.
+func ShouldRetry(err error) bool {
+	apiErr, ok := errors.AsType[smithy.APIError](err)
+	if !ok {
+		return false
+	}
+	return isThrottling(apiErr.ErrorCode()) || apiErr.ErrorFault() == smithy.FaultServer
+}
+
+// isThrottling reports whether code is one of the error codes AWS services
+// use for "you are sending requests too fast".
+func isThrottling(code string) bool {
+	switch code {
+	case "Throttling", "ThrottlingException", "RequestLimitExceeded",
+		"TooManyRequestsException", "SlowDown":
+		return true
+	}
+	return false
+}
+
+// LoadSettings downloads a deploy's settings file from s3://bucket/key.
+// A missing file is not an error: the deploy then uses DefaultSettings.
+func LoadSettings(ctx context.Context, api ObjectGetter, bucket, key string) ([]byte, error) {
+	out, err := api.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		if _, ok := errors.AsType[*types.NoSuchKey](err); ok {
+			return []byte(DefaultSettings), nil
+		}
+		return nil, fmt.Errorf("load settings s3://%s/%s: %w", bucket, key, err)
+	}
+	defer out.Body.Close()
+	return io.ReadAll(out.Body)
+}

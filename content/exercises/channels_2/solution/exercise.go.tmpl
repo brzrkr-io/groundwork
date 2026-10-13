@@ -1,0 +1,48 @@
+// Package logship is the Gopherlings exercise "Channels: deadlocks and directions".
+package logship
+
+import "sync"
+
+// CheckHosts runs check(host) for every host at the same time and returns
+// every answer, in any order.
+func CheckHosts(hosts []string, check func(host string) string) []string {
+	// One slot per host, so no send ever waits for a receiver.
+	answers := make(chan string, len(hosts))
+
+	var wg sync.WaitGroup
+	for _, host := range hosts {
+		wg.Go(func() {
+			answers <- check(host)
+		})
+	}
+	wg.Wait()
+	close(answers)
+
+	var all []string
+	for answer := range answers {
+		all = append(all, answer)
+	}
+	return all
+}
+
+// PrefixLines receives lines from in until it is closed, sends each one to
+// out as "host: line", and then closes out.
+func PrefixLines(host string, in <-chan string, out chan<- string) {
+	for line := range in {
+		out <- host + ": " + line
+	}
+	close(out) // we are the only sender on out, so we close it
+}
+
+// Take receives up to n jobs. If jobs is closed before n jobs arrive, it
+// returns the jobs it got and closed == true.
+func Take(jobs <-chan string, n int) (taken []string, closed bool) {
+	for range n {
+		job, ok := <-jobs
+		if !ok {
+			return taken, true
+		}
+		taken = append(taken, job)
+	}
+	return taken, false
+}

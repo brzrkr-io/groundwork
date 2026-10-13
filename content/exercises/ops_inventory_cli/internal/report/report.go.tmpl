@@ -1,0 +1,24 @@
+// Package report prints hosts for people (a table) and for programs (JSON).
+package report
+
+import (
+	"io"
+
+	"gopherlings.local/ops_inventory_cli/internal/inventory"
+)
+
+// WriteTable writes hosts as an aligned table with a header row.
+func WriteTable(w io.Writer, hosts []inventory.Host) error {
+	// TODO(4): Use text/tabwriter to print the NAME ENV REGION ADDRESS TAGS
+	// table described in the README, then return the Flush error.
+	// You will need to import "fmt", "strings" and "text/tabwriter".
+	return nil
+}
+
+// WriteJSON writes hosts as an indented JSON array.
+func WriteJSON(w io.Writer, hosts []inventory.Host) error {
+	// TODO(5): Encode hosts with two-space indentation. An empty list must
+	// come out as [], not null.
+	// You will need to import "encoding/json".
+	return nil
+}

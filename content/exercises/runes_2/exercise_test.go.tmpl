@@ -1,0 +1,49 @@
+package oncall
+
+import "testing"
+
+func TestInitial(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"ascii lower", "alice", "A"},
+		{"ascii upper", "Bob", "B"},
+		{"accented", "élodie", "É"},
+		{"nordic", "Øystein", "Ø"},
+		{"polish", "żaneta", "Ż"},
+		{"empty", "", "?"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Initial(tt.input); got != tt.want {
+				t.Errorf("Initial(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMaskSecret(t *testing.T) {
+	tests := []struct {
+		name   string
+		secret string
+		want   string
+	}{
+		{"ascii token", "s3cr3t-t0ken", "********0ken"},
+		{"ascii short", "abc", "***"},
+		{"ascii exactly 4", "abcd", "****"},
+		{"accents before the end", "grüße2026", "*****2026"},
+		{"euro signs at the end", "geheim€€€€", "******€€€€"},
+		{"emoji at the end", "deploy-key-🔑🔑", "*********y-🔑🔑"},
+		{"short with accents", "äöü", "***"},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MaskSecret(tt.secret); got != tt.want {
+				t.Errorf("MaskSecret(%q) = %q, want %q", tt.secret, got, tt.want)
+			}
+		})
+	}
+}

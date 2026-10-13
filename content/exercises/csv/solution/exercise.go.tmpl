@@ -1,0 +1,76 @@
+// Package inventory is the Gopherlings exercise "CSV files: a host inventory".
+package inventory
+
+import (
+	"encoding/csv"
+	"errors"
+	"fmt"
+	"io"
+)
+
+// Host is one machine from the inventory.
+type Host struct {
+	Name   string
+	Region string
+	Owner  string
+}
+
+// ReadHosts reads a CSV inventory with a header row and returns its hosts.
+func ReadHosts(r io.Reader) ([]Host, error) {
+	records, err := csv.NewReader(r).ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		return nil, errors.New("empty inventory")
+	}
+
+	col := make(map[string]int)
+	for i, name := range records[0] {
+		col[name] = i
+	}
+	for _, name := range []string{"hostname", "region", "owner"} {
+		if _, ok := col[name]; !ok {
+			return nil, fmt.Errorf("missing column %q", name)
+		}
+	}
+
+	var hosts []Host
+	for _, row := range records[1:] {
+		hosts = append(hosts, Host{
+			Name:   row[col["hostname"]],
+			Region: row[col["region"]],
+			Owner:  row[col["owner"]],
+		})
+	}
+	return hosts, nil
+}
+
+// WriteHosts writes hosts as CSV with the header hostname,region,owner.
+func WriteHosts(w io.Writer, hosts []Host) error {
+	cw := csv.NewWriter(w)
+	cw.Write([]string{"hostname", "region", "owner"})
+	for _, h := range hosts {
+		cw.Write([]string{h.Name, h.Region, h.Owner})
+	}
+
+	// Write only buffers; Error reports any failure from Write or Flush.
+	cw.Flush()
+	return cw.Error()
+}
+
+// FilterCSV copies the hosts in region from the inventory in r to w as CSV.
+func FilterCSV(r io.Reader, w io.Writer, region string) error {
+	hosts, err := ReadHosts(r)
+	if err != nil {
+		return err
+	}
+
+	var keep []Host
+	for _, h := range hosts {
+		if h.Region == region {
+			keep = append(keep, h)
+		}
+	}
+	return WriteHosts(w, keep)
+}

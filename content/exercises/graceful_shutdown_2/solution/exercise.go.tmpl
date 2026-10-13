@@ -1,0 +1,61 @@
+// Package shutdown is the Gopherlings exercise "Graceful shutdown: HTTP server and worker".
+package shutdown
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"sync"
+	"time"
+)
+
+// Serve runs srv on ln until the server is stopped. It returns nil after a
+// normal Shutdown or Close, and a "serve: ..." error if serving failed.
+func Serve(srv *http.Server, ln net.Listener) error {
+	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serve: %w", err)
+	}
+	return nil
+}
+
+// StopHTTP shuts srv down, waiting at most grace for in-flight requests. If
+// they take longer, it closes srv and returns a "stop http: ..." error.
+func StopHTTP(srv *http.Server, grace time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		srv.Close()
+		return fmt.Errorf("stop http: %w", err)
+	}
+	return nil
+}
+
+// Service is an HTTP server plus a background worker, such as a flusher that
+// uploads buffered metrics in batches.
+type Service struct {
+	stopHTTP   func() error       // stops the HTTP server
+	stopWorker context.CancelFunc // tells the worker to flush and return
+	worker     sync.WaitGroup     // done once the worker has returned
+}
+
+// Start runs work in a background goroutine and returns a Service that can
+// shut everything down. work must flush and return soon after its context is
+// cancelled.
+func Start(stopHTTP func() error, work func(ctx context.Context)) *Service {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &Service{stopHTTP: stopHTTP, stopWorker: cancel}
+	s.worker.Go(func() { work(ctx) })
+	return s
+}
+
+// Shutdown stops the HTTP server first, so no new events arrive, then stops
+// the worker and waits for it to flush its last batch. It returns the error
+// from stopping HTTP.
+func (s *Service) Shutdown() error {
+	err := s.stopHTTP()
+	s.stopWorker()
+	s.worker.Wait()
+	return err
+}

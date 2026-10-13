@@ -1,0 +1,41 @@
+// Package receivers is the Gopherlings exercise "Pointer receivers".
+package receivers
+
+// Counter counts requests that hit the load balancer.
+type Counter struct {
+	Count int
+}
+
+// Inc adds one to the counter.
+// TODO(1): Give Inc a pointer receiver so the change sticks.
+func (c Counter) Inc() {
+	c.Count++
+}
+
+// Reset sets the counter back to zero.
+// TODO(1): Give Reset a pointer receiver so the change sticks.
+func (c Counter) Reset() {
+	c.Count = 0
+}
+
+// Server is one backend server behind the load balancer.
+type Server struct {
+	Name        string
+	Draining    bool
+	Connections int
+}
+
+// Accept takes a new connection unless the server is draining.
+// It reports whether the connection was accepted.
+func (s Server) Accept() bool {
+	// TODO(2): Use a pointer receiver. Refuse when draining; otherwise count
+	// the connection and return true.
+	return false
+}
+
+// Drain marks the server as draining, closes all its connections and
+// returns how many it closed.
+func (s *Server) Drain() int {
+	// TODO(3): Set Draining, close all connections and return how many there were.
+	return 0
+}

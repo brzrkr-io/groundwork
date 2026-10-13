@@ -1,0 +1,96 @@
+package pointers
+
+import "testing"
+
+func TestResetCounter(t *testing.T) {
+	// Each value is a starting count. After ResetCounter it must be 0.
+	for _, start := range []int{7, 42, -3} {
+		t.Run("", func(t *testing.T) {
+			count := start
+			ResetCounter(&count)
+			if count != 0 {
+				t.Errorf("ResetCounter(&count) with count = %d: count = %d, want 0", start, count)
+			}
+		})
+	}
+}
+
+func TestScale(t *testing.T) {
+	// Each line is one case: the starting replicas, the replicas argument,
+	// then the Replicas value we want afterwards.
+	tests := []struct {
+		name     string
+		start    int
+		replicas int
+		want     int
+	}{
+		{"scale up", 2, 5, 5},
+		{"scale down", 4, 1, 1},
+		{"scale to zero", 3, 0, 0},
+		{"negative becomes zero", 3, -1, 0},
+		{"very negative becomes zero", 6, -10, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := Deployment{Name: "api", Replicas: tt.start}
+			Scale(&d, tt.replicas)
+			if d.Replicas != tt.want {
+				t.Errorf("Scale(&{api %d}, %d): Replicas = %d, want %d", tt.start, tt.replicas, d.Replicas, tt.want)
+			}
+		})
+	}
+
+	t.Run("nil deployment", func(t *testing.T) {
+		// recover catches a crash (a panic) so we can report it nicely.
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("Scale(nil, 3) crashed: %v; check for nil first", r)
+			}
+		}()
+		Scale(nil, 3)
+	})
+}
+
+func TestFindDeployment(t *testing.T) {
+	// Each line is one case: the name to look for, then the index of the
+	// element we want a pointer to (-1 means we want nil).
+	tests := []struct {
+		name      string
+		wantIndex int
+	}{
+		{"api", 0},
+		{"web", 1},
+		{"worker", 2},
+		{"db", -1},
+		{"", -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ds := []Deployment{{"api", 2}, {"web", 3}, {"worker", 1}}
+			got := FindDeployment(ds, tt.name)
+
+			if tt.wantIndex == -1 {
+				if got != nil {
+					t.Errorf("FindDeployment(ds, %q) = %v, want nil", tt.name, *got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("FindDeployment(ds, %q) = nil, want a pointer to ds[%d]", tt.name, tt.wantIndex)
+			}
+			if got.Name != tt.name {
+				t.Fatalf("FindDeployment(ds, %q) points at %q, want %q", tt.name, got.Name, tt.name)
+			}
+			got.Replicas = 10
+			if ds[tt.wantIndex].Replicas != 10 {
+				t.Errorf("FindDeployment(ds, %q) points at a copy: setting Replicas = 10 through it left ds[%d].Replicas = %d, want 10", tt.name, tt.wantIndex, ds[tt.wantIndex].Replicas)
+			}
+		})
+	}
+
+	t.Run("empty slice", func(t *testing.T) {
+		if got := FindDeployment(nil, "api"); got != nil {
+			t.Errorf("FindDeployment(nil, %q) = %v, want nil", "api", *got)
+		}
+	})
+}

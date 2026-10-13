@@ -1,0 +1,53 @@
+// Package httpclient is the Gopherlings exercise "HTTP clients: fetch a service status".
+package httpclient
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
+
+// ServiceStatus is the JSON body returned by GET /status/{service}.
+type ServiceStatus struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Healthy bool   `json:"healthy"`
+}
+
+// NewClient returns the HTTP client used for every status call.
+func NewClient() *http.Client {
+	return &http.Client{Timeout: 5 * time.Second}
+}
+
+// NewStatusRequest builds GET {baseURL}/status/{service}, authenticated with token.
+func NewStatusRequest(ctx context.Context, baseURL, service, token string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/status/"+service, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
+// FetchStatus sends req with client and decodes the ServiceStatus in the response.
+func FetchStatus(client *http.Client, req *http.Request) (ServiceStatus, error) {
+	resp, err := client.Do(req)
+	if err != nil {
+		return ServiceStatus{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return ServiceStatus{}, fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+
+	var status ServiceStatus
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&status); err != nil {
+		return ServiceStatus{}, err
+	}
+	return status, nil
+}

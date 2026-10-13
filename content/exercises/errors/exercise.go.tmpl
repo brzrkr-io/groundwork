@@ -1,0 +1,20 @@
+// Package errvalues is the Gopherlings exercise "Errors are values".
+package errvalues
+
+// RequireName returns an error if the service name is empty.
+func RequireName(name string) error {
+	// TODO(1): Return an error made with errors.New when name is "".
+	return nil
+}
+
+// ParsePort converts text like "8080" into a port number between 1 and 65535.
+func ParsePort(s string) (int, error) {
+	// TODO(2): Convert s with strconv.Atoi and return the errors from the README.
+	return 0, nil
+}
+
+// ParseEndpoint splits an endpoint like "db:5432" into its host and port.
+func ParseEndpoint(s string) (host string, port int, err error) {
+	// TODO(3): Split s with strings.Cut and return the errors from the README.
+	return "", 0, nil
+}

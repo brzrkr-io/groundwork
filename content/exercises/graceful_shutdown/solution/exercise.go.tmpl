@@ -1,0 +1,54 @@
+// Package shutdown is the Gopherlings exercise "Graceful shutdown: drain in-flight requests".
+package shutdown
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/http"
+	"time"
+)
+
+// NewServer returns an HTTP server for h with production timeouts.
+func NewServer(h http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+}
+
+// Run serves srv on ln until ctx is cancelled, then shuts srv down with Stop,
+// giving in-flight requests up to grace to finish. It returns nil after a
+// clean shutdown, Stop's error if the shutdown was forced, or Serve's error
+// if serving failed before ctx was cancelled.
+func Run(ctx context.Context, srv *http.Server, ln net.Listener, grace time.Duration) error {
+	// Buffered, so the goroutine can always send and exit, even if Run has
+	// already returned.
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- srv.Serve(ln)
+	}()
+
+	select {
+	case err := <-serveErr:
+		return err
+	case <-ctx.Done():
+		return Stop(srv, grace)
+	}
+}
+
+// Stop shuts srv down gracefully: it stops accepting new connections and
+// waits up to grace for in-flight requests. If they don't finish in time, it
+// closes srv forcefully and returns an error.
+func Stop(srv *http.Server, grace time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		srv.Close()
+		return fmt.Errorf("forced shutdown: %w", err)
+	}
+	return nil
+}

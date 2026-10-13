@@ -1,0 +1,5 @@
+{
+  "channel": "#deploys",
+  "username": "deploy-bot",
+  "retries": 3
+}

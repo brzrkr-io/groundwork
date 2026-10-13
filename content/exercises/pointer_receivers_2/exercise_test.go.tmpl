@@ -1,0 +1,106 @@
+package ratelimit
+
+import "testing"
+
+func TestTake(t *testing.T) {
+	tests := []struct {
+		name       string
+		limiter    RateLimiter
+		want       bool
+		wantTokens int
+	}{
+		{"full bucket", RateLimiter{Tokens: 5, Max: 5}, true, 4},
+		{"last token", RateLimiter{Tokens: 1, Max: 5}, true, 0},
+		{"empty bucket", RateLimiter{Tokens: 0, Max: 5}, false, 0},
+		{"empty small bucket", RateLimiter{Tokens: 0, Max: 1}, false, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			l := tc.limiter
+			if got := l.Take(); got != tc.want {
+				t.Errorf("%+v.Take() = %t, want %t", tc.limiter, got, tc.want)
+			}
+			if l.Tokens != tc.wantTokens {
+				t.Errorf("after %+v.Take(), Tokens = %d, want %d", tc.limiter, l.Tokens, tc.wantTokens)
+			}
+		})
+	}
+
+	t.Run("take until empty", func(t *testing.T) {
+		l := &RateLimiter{Tokens: 2, Max: 5}
+		want := []bool{true, true, false}
+		for i, w := range want {
+			if got := l.Take(); got != w {
+				t.Errorf("call %d: Take() = %t, want %t", i+1, got, w)
+			}
+		}
+		if l.Tokens != 0 {
+			t.Errorf("after 3 calls to Take(), Tokens = %d, want 0", l.Tokens)
+		}
+	})
+}
+
+func TestTakeN(t *testing.T) {
+	tests := []struct {
+		name       string
+		limiter    RateLimiter
+		n          int
+		want       int
+		wantTokens int
+	}{
+		{"enough tokens", RateLimiter{Tokens: 5, Max: 5}, 3, 3, 2},
+		{"exactly enough", RateLimiter{Tokens: 4, Max: 10}, 4, 4, 0},
+		{"runs out early", RateLimiter{Tokens: 2, Max: 5}, 3, 2, 0},
+		{"empty bucket", RateLimiter{Tokens: 0, Max: 5}, 3, 0, 0},
+		{"take zero", RateLimiter{Tokens: 5, Max: 5}, 0, 0, 5},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			l := tc.limiter
+			if got := l.TakeN(tc.n); got != tc.want {
+				t.Errorf("%+v.TakeN(%d) = %d, want %d", tc.limiter, tc.n, got, tc.want)
+			}
+			if l.Tokens != tc.wantTokens {
+				t.Errorf("after %+v.TakeN(%d), Tokens = %d, want %d", tc.limiter, tc.n, l.Tokens, tc.wantTokens)
+			}
+		})
+	}
+}
+
+func TestRefillAll(t *testing.T) {
+	tests := []struct {
+		name       string
+		limiters   []RateLimiter
+		n          int
+		wantTokens []int
+	}{
+		{
+			name:       "refill two buckets",
+			limiters:   []RateLimiter{{Tokens: 0, Max: 10}, {Tokens: 8, Max: 10}},
+			n:          4,
+			wantTokens: []int{4, 10},
+		},
+		{
+			name:       "refill three buckets",
+			limiters:   []RateLimiter{{Tokens: 1, Max: 3}, {Tokens: 0, Max: 5}, {Tokens: 3, Max: 3}},
+			n:          2,
+			wantTokens: []int{3, 2, 3},
+		},
+		{
+			name:       "no buckets",
+			limiters:   []RateLimiter{},
+			n:          5,
+			wantTokens: []int{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			RefillAll(tc.limiters, tc.n)
+			for i, want := range tc.wantTokens {
+				if got := tc.limiters[i].Tokens; got != want {
+					t.Errorf("after RefillAll(..., %d), limiters[%d].Tokens = %d, want %d", tc.n, i, got, want)
+				}
+			}
+		})
+	}
+}

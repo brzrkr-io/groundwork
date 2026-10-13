@@ -1,0 +1,107 @@
+// Package breaker is the Gopherlings exercise "Circuit breakers: fail fast".
+package breaker
+
+import (
+	"errors"
+	"sync"
+	"time"
+)
+
+// ErrOpen is returned by Call when the breaker is rejecting calls.
+var ErrOpen = errors.New("circuit breaker is open")
+
+// State is the position of a circuit breaker.
+type State int
+
+// The three breaker states.
+const (
+	Closed State = iota
+	Open
+	HalfOpen
+)
+
+// String returns the state's name: "closed", "open", "half-open", or
+// "unknown" for any other value.
+func (s State) String() string {
+	switch s {
+	case Closed:
+		return "closed"
+	case Open:
+		return "open"
+	case HalfOpen:
+		return "half-open"
+	}
+	return "unknown"
+}
+
+// Breaker stops calling a failing dependency for a while, so callers fail
+// fast instead of waiting on something that is down. It is safe for
+// concurrent use.
+type Breaker struct {
+	mu        sync.Mutex
+	threshold int              // consecutive failures that open the breaker
+	cooldown  time.Duration    // how long to stay open before a trial call
+	now       func() time.Time // the clock; tests pass a fake one
+	state     State
+	failures  int       // consecutive failures so far
+	openedAt  time.Time // when the breaker last opened
+}
+
+// New returns a closed Breaker that opens after threshold consecutive
+// failures and allows a trial call once cooldown has passed.
+func New(threshold int, cooldown time.Duration, now func() time.Time) *Breaker {
+	return &Breaker{threshold: threshold, cooldown: cooldown, now: now}
+}
+
+// State returns the breaker's current state.
+func (b *Breaker) State() State {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.state
+}
+
+// Call runs fn unless the breaker is open, records whether fn failed, and
+// returns fn's error. While the breaker is open it returns ErrOpen without
+// running fn.
+func (b *Breaker) Call(fn func() error) error {
+	if err := b.allow(); err != nil {
+		return err
+	}
+	err := fn()
+	b.record(err)
+	return err
+}
+
+// allow decides whether a call may go ahead. It returns ErrOpen if not.
+func (b *Breaker) allow() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	switch b.state {
+	case Open:
+		if b.now().Sub(b.openedAt) < b.cooldown {
+			return ErrOpen
+		}
+		b.state = HalfOpen
+	case HalfOpen:
+		// A trial call is already running; wait for its result.
+		return ErrOpen
+	}
+	return nil
+}
+
+// record updates the breaker with the result of a call that went ahead.
+// A nil err is a success.
+func (b *Breaker) record(err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err == nil {
+		b.state = Closed
+		b.failures = 0
+		return
+	}
+	b.failures++
+	if b.state == HalfOpen || b.failures >= b.threshold {
+		b.state = Open
+		b.openedAt = b.now()
+	}
+}

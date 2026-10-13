@@ -1,0 +1,31 @@
+// Package triage is the Gopherlings exercise "Practice: HTTP status triage".
+package triage
+
+import "fmt"
+
+// StatusClass returns the class of an HTTP status code: "informational",
+// "success", "redirect", "client error", "server error" or "unknown".
+func StatusClass(code int) string {
+	// TODO(1): Return the class for code's range, or "unknown".
+	return ""
+}
+
+// ShouldRetry reports whether a request that got code is worth retrying.
+func ShouldRetry(code int) bool {
+	// TODO(2): Return true for 429, 502, 503 and 504 only.
+	return false
+}
+
+// ParseStatus converts text such as "503" into a status code between 100 and
+// 599. It returns an error when the text is not a valid status code.
+func ParseStatus(text string) (int, error) {
+	// TODO(3): Trim spaces, convert with strconv.Atoi, and check the range.
+	// Add "strconv" and "strings" to the imports.
+	return 0, fmt.Errorf("not implemented")
+}
+
+// Triage returns a one-line summary of the response a service gave.
+func Triage(service, statusText string) string {
+	// TODO(4): Combine ParseStatus, StatusClass and ShouldRetry.
+	return fmt.Sprintf("%s: %s", service, statusText)
+}

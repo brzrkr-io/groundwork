@@ -1,0 +1,51 @@
+// Package races is the Gopherlings exercise "The race detector".
+package races
+
+import "sync"
+
+// TotalBytes measures every file at the same time and returns the sum of
+// their sizes.
+func TotalBytes(files []string, size func(file string) int) int {
+	total := 0
+	var wg sync.WaitGroup
+	for _, file := range files {
+		wg.Go(func() {
+			// TODO(1): Data race: many goroutines update total at once.
+			total += size(file)
+		})
+	}
+	wg.Wait()
+	return total
+}
+
+// CheckAll checks every host at the same time and returns each host's
+// result.
+func CheckAll(hosts []string, check func(host string) bool) map[string]bool {
+	results := make(map[string]bool)
+	var wg sync.WaitGroup
+	for _, host := range hosts {
+		wg.Go(func() {
+			// TODO(2): Data race: many goroutines write to results at once.
+			results[host] = check(host)
+		})
+	}
+	wg.Wait()
+	return results
+}
+
+// FailedHosts checks every host at the same time and returns the hosts whose
+// check failed, in any order.
+func FailedHosts(hosts []string, check func(host string) bool) []string {
+	var failed []string
+	var wg sync.WaitGroup
+	for _, host := range hosts {
+		wg.Go(func() {
+			if !check(host) {
+				// TODO(3): Data race: many goroutines append to failed at once.
+				failed = append(failed, host)
+			}
+		})
+	}
+	wg.Wait()
+	return failed
+}

@@ -1,0 +1,49 @@
+package alerts
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestTotalDowntime(t *testing.T) {
+	tests := []struct {
+		name    string
+		outages []int
+		want    int
+	}{
+		{"three outages", []int{30, 5, 12}, 47},
+		{"one outage", []int{90}, 90},
+		{"two outages", []int{1, 1}, 2},
+		{"no outages", nil, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := TotalDowntime(tt.outages); got != tt.want {
+				t.Errorf("TotalDowntime(%v) = %d, want %d", tt.outages, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCapLatencies(t *testing.T) {
+	tests := []struct {
+		name  string
+		ms    []int
+		limit int
+		want  []int
+	}{
+		{"two spikes", []int{120, 5000, 80, 1500}, 1000, []int{120, 1000, 80, 1000}},
+		{"just under and at the limit", []int{999, 1000, 1001}, 1000, []int{999, 1000, 1000}},
+		{"all spikes", []int{700, 800}, 250, []int{250, 250}},
+		{"nothing to cap", []int{10, 20}, 100, []int{10, 20}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ms := slices.Clone(tt.ms)
+			CapLatencies(ms, tt.limit)
+			if !slices.Equal(ms, tt.want) {
+				t.Errorf("CapLatencies(%v, %d) left ms = %v, want %v", tt.ms, tt.limit, ms, tt.want)
+			}
+		})
+	}
+}

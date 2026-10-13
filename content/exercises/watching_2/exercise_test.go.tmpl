@@ -1,0 +1,211 @@
+package watching
+
+import (
+	"context"
+	"errors"
+	"maps"
+	"net/http"
+	"testing"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
+)
+
+// pod builds a payments Pod with a name and a phase.
+func pod(name string, phase corev1.PodPhase) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "payments", Name: name},
+		Status:     corev1.PodStatus{Phase: phase},
+	}
+}
+
+// failure builds the *metav1.Status that an ERROR event carries.
+func failure(code int32, reason metav1.StatusReason, message string) *metav1.Status {
+	return &metav1.Status{
+		Status:  metav1.StatusFailure,
+		Code:    code,
+		Reason:  reason,
+		Message: message,
+	}
+}
+
+// phaseMap is a shorter name for the map that Apply and Follow work with.
+type phaseMap map[string]corev1.PodPhase
+
+func TestApply(t *testing.T) {
+	tests := []struct {
+		name   string
+		before phaseMap
+		ev     watch.Event
+		want   phaseMap
+	}{
+		{
+			name:   "added",
+			before: phaseMap{},
+			ev:     watch.Event{Type: watch.Added, Object: pod("checkout-1", corev1.PodPending)},
+			want:   phaseMap{"checkout-1": corev1.PodPending},
+		},
+		{
+			name:   "modified to running",
+			before: phaseMap{"checkout-1": corev1.PodPending},
+			ev:     watch.Event{Type: watch.Modified, Object: pod("checkout-1", corev1.PodRunning)},
+			want:   phaseMap{"checkout-1": corev1.PodRunning},
+		},
+		{
+			name:   "modified to failed",
+			before: phaseMap{"checkout-1": corev1.PodRunning, "checkout-2": corev1.PodRunning},
+			ev:     watch.Event{Type: watch.Modified, Object: pod("checkout-2", corev1.PodFailed)},
+			want:   phaseMap{"checkout-1": corev1.PodRunning, "checkout-2": corev1.PodFailed},
+		},
+		{
+			name:   "deleted",
+			before: phaseMap{"checkout-1": corev1.PodRunning, "checkout-2": corev1.PodRunning},
+			ev:     watch.Event{Type: watch.Deleted, Object: pod("checkout-1", corev1.PodRunning)},
+			want:   phaseMap{"checkout-2": corev1.PodRunning},
+		},
+		{
+			name:   "deleted the last pod",
+			before: phaseMap{"worker-1": corev1.PodSucceeded},
+			ev:     watch.Event{Type: watch.Deleted, Object: pod("worker-1", corev1.PodSucceeded)},
+			want:   phaseMap{},
+		},
+		{
+			name:   "bookmark",
+			before: phaseMap{"checkout-1": corev1.PodRunning},
+			ev: watch.Event{Type: watch.Bookmark, Object: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{ResourceVersion: "4521"},
+			}},
+			want: phaseMap{"checkout-1": corev1.PodRunning},
+		},
+		{
+			name:   "error",
+			before: phaseMap{"checkout-1": corev1.PodRunning},
+			ev:     watch.Event{Type: watch.Error, Object: failure(http.StatusGone, metav1.StatusReasonExpired, "too old resource version: 5 (12)")},
+			want:   phaseMap{"checkout-1": corev1.PodRunning},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			phases := maps.Clone(tt.before)
+			Apply(phases, tt.ev)
+			if !maps.Equal(phases, tt.want) {
+				t.Errorf("Apply(%v, %s event) left %v, want %v", tt.before, tt.ev.Type, phases, tt.want)
+			}
+		})
+	}
+}
+
+func TestFollowClosedWatch(t *testing.T) {
+	tests := []struct {
+		name   string
+		events []watch.Event
+		want   phaseMap
+	}{
+		{
+			name: "closed after three events",
+			events: []watch.Event{
+				{Type: watch.Added, Object: pod("checkout-1", corev1.PodPending)},
+				{Type: watch.Added, Object: pod("checkout-2", corev1.PodPending)},
+				{Type: watch.Modified, Object: pod("checkout-1", corev1.PodRunning)},
+			},
+			want: phaseMap{"checkout-1": corev1.PodRunning, "checkout-2": corev1.PodPending},
+		},
+		{
+			name:   "closed straight away",
+			events: nil,
+			want:   phaseMap{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			phases, err := follow(t, tt.events)
+			if !errors.Is(err, ErrWatchClosed) {
+				t.Errorf("Follow(ctx, w) error = %v, want ErrWatchClosed", err)
+			}
+			if !maps.Equal(phases, tt.want) {
+				t.Errorf("Follow(ctx, w) phases = %v, want %v", phases, tt.want)
+			}
+		})
+	}
+}
+
+func TestFollowErrorEvent(t *testing.T) {
+	tests := []struct {
+		name       string
+		events     []watch.Event
+		want       phaseMap
+		wantErr    string
+		wantReason metav1.StatusReason
+	}{
+		{
+			name: "resource version too old",
+			events: []watch.Event{
+				{Type: watch.Added, Object: pod("checkout-1", corev1.PodRunning)},
+				{Type: watch.Error, Object: failure(http.StatusGone, metav1.StatusReasonExpired, "too old resource version: 5 (12)")},
+			},
+			want:       phaseMap{"checkout-1": corev1.PodRunning},
+			wantErr:    "watch error: too old resource version: 5 (12)",
+			wantReason: metav1.StatusReasonExpired,
+		},
+		{
+			name: "internal error",
+			events: []watch.Event{
+				{Type: watch.Added, Object: pod("api-1", corev1.PodPending)},
+				{Type: watch.Added, Object: pod("api-2", corev1.PodRunning)},
+				{Type: watch.Error, Object: failure(http.StatusInternalServerError, metav1.StatusReasonInternalError, "etcd leader changed")},
+			},
+			want:       phaseMap{"api-1": corev1.PodPending, "api-2": corev1.PodRunning},
+			wantErr:    "watch error: etcd leader changed",
+			wantReason: metav1.StatusReasonInternalError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			phases, err := follow(t, tt.events)
+			if err == nil || err.Error() != tt.wantErr {
+				t.Errorf("Follow(ctx, w) error = %v, want %q", err, tt.wantErr)
+			}
+			if reason := apierrors.ReasonForError(err); reason != tt.wantReason {
+				t.Errorf("apierrors.ReasonForError(err) = %q, want %q (wrap with %%w)", reason, tt.wantReason)
+			}
+			if !maps.Equal(phases, tt.want) {
+				t.Errorf("Follow(ctx, w) phases = %v, want %v", phases, tt.want)
+			}
+		})
+	}
+}
+
+// follow queues events on a fake watch, closes it the way the API server
+// ends a watch, and runs Follow on it. It fails the test if Follow does not
+// return within 2s.
+func follow(t *testing.T, events []watch.Event) (phaseMap, error) {
+	t.Helper()
+	fw := watch.NewFakeWithChanSize(len(events), false)
+	for _, ev := range events {
+		fw.Action(ev.Type, ev.Object)
+	}
+	fw.Stop()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	type result struct {
+		phases phaseMap
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		phases, err := Follow(ctx, fw)
+		done <- result{phases, err}
+	}()
+	select {
+	case r := <-done:
+		return r.phases, r.err
+	case <-time.After(2 * time.Second):
+		t.Fatal("Follow(ctx, w) did not return within 2s of the server closing the watch")
+		return nil, nil
+	}
+}

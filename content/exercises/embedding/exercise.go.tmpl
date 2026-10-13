@@ -1,0 +1,43 @@
+// Package embedding is the Gopherlings exercise "Struct embedding".
+package embedding
+
+// Metadata is the part every Kubernetes object shares.
+type Metadata struct {
+	Name      string
+	Namespace string
+	Labels    map[string]string
+}
+
+// Pod runs one container image. It embeds Metadata.
+type Pod struct {
+	Metadata
+	Image string
+}
+
+// Service exposes pods on a port. It embeds Metadata.
+type Service struct {
+	Metadata
+	Port int
+}
+
+// NewPod returns a Pod with the given name, namespace and image, labelled
+// app=<name>.
+func NewPod(name, namespace, image string) Pod {
+	// TODO(1): Fill in Metadata too: Name, Namespace and Labels {"app": name}.
+	return Pod{
+		Image: image,
+	}
+}
+
+// Describe returns "namespace/name", for example "default/api".
+func (m Metadata) Describe() string {
+	// TODO(2): Return the namespace, a slash and the name.
+	return ""
+}
+
+// Describe returns "pod namespace/name (image)", for example
+// "pod default/api (nginx:1.27)".
+func (p Pod) Describe() string {
+	// TODO(3): Build the result around Metadata's Describe.
+	return ""
+}

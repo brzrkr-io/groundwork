@@ -1,0 +1,133 @@
+package timeouts
+
+import (
+	"errors"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+// replyAfter returns a channel that receives msg after d.
+func replyAfter(d time.Duration, msg string) <-chan string {
+	ch := make(chan string, 1) // buffered, so the sender never gets stuck
+	go func() {
+		time.Sleep(d)
+		ch <- msg
+	}()
+	return ch
+}
+
+func TestFirstReply(t *testing.T) {
+	tests := []struct {
+		name         string
+		primaryDelay time.Duration
+		replicaDelay time.Duration
+		want         string
+		wantElapsed  time.Duration
+	}{
+		{"replica faster", 2 * time.Second, 1 * time.Second, "replica: 42 rows", 1 * time.Second},
+		{"primary faster", 1 * time.Second, 3 * time.Second, "primary: 42 rows", 1 * time.Second},
+		{"replica much faster", 10 * time.Second, 2 * time.Second, "replica: 42 rows", 2 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// synctest.Test gives the test a fake clock: sleeps and timeouts
+			// finish instantly, but time.Now moves forward by the right amount.
+			synctest.Test(t, func(t *testing.T) {
+				primary := replyAfter(tt.primaryDelay, "primary: 42 rows")
+				replica := replyAfter(tt.replicaDelay, "replica: 42 rows")
+
+				start := time.Now()
+				got := FirstReply(primary, replica)
+				elapsed := time.Since(start)
+
+				if got != tt.want {
+					t.Errorf("FirstReply (primary after %v, replica after %v) = %q, want %q",
+						tt.primaryDelay, tt.replicaDelay, got, tt.want)
+				}
+				if elapsed != tt.wantElapsed {
+					t.Errorf("FirstReply returned after %v, want %v", elapsed, tt.wantElapsed)
+				}
+
+				// Let the slower reply arrive too, so no goroutine is left
+				// running when the test ends.
+				time.Sleep(time.Minute)
+			})
+		})
+	}
+}
+
+func TestWaitReady(t *testing.T) {
+	const never = -1 // readyAfter value for "ready is never closed"
+	tests := []struct {
+		name        string
+		readyAfter  time.Duration
+		timeout     time.Duration
+		wantErr     error
+		wantElapsed time.Duration
+	}{
+		{"ready in time", 3 * time.Second, 5 * time.Second, nil, 3 * time.Second},
+		{"already ready", 0, 5 * time.Second, nil, 0},
+		{"never ready", never, 5 * time.Second, ErrNotReady, 5 * time.Second},
+		{"ready too late", 10 * time.Second, 2 * time.Second, ErrNotReady, 2 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ready := make(chan struct{})
+				if tt.readyAfter != never {
+					go func() {
+						time.Sleep(tt.readyAfter)
+						close(ready)
+					}()
+				}
+
+				start := time.Now()
+				err := WaitReady(ready, tt.timeout)
+				elapsed := time.Since(start)
+
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("WaitReady(%v) = %v, want %v", tt.timeout, err, tt.wantErr)
+				}
+				if elapsed != tt.wantElapsed {
+					t.Errorf("WaitReady(%v) returned after %v, want %v", tt.timeout, elapsed, tt.wantElapsed)
+				}
+
+				time.Sleep(time.Minute) // let a late close finish before the test ends
+			})
+		})
+	}
+}
+
+func TestTryNotify(t *testing.T) {
+	t.Run("buffer with room for two", func(t *testing.T) {
+		alerts := make(chan string, 2)
+		sends := []struct {
+			msg  string
+			want bool
+		}{
+			{"disk 91%", true},
+			{"cpu 99%", true},
+			{"memory 95%", false}, // buffer is full now
+			{"api down", false},
+		}
+		for _, s := range sends {
+			if got := TryNotify(alerts, s.msg); got != s.want {
+				t.Errorf("TryNotify(alerts, %q) = %t, want %t", s.msg, got, s.want)
+			}
+		}
+		if len(alerts) != 2 {
+			t.Fatalf("alerts holds %d messages, want 2", len(alerts))
+		}
+		if first, second := <-alerts, <-alerts; first != "disk 91%" || second != "cpu 99%" {
+			t.Errorf("alerts held %q, %q, want %q, %q", first, second, "disk 91%", "cpu 99%")
+		}
+	})
+
+	t.Run("unbuffered with nobody receiving", func(t *testing.T) {
+		alerts := make(chan string)
+		if got := TryNotify(alerts, "disk 91%"); got {
+			t.Errorf("TryNotify on an unbuffered channel with no receiver = %t, want false", got)
+		}
+	})
+}

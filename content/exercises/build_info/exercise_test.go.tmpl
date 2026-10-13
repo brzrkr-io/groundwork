@@ -1,0 +1,94 @@
+package main
+
+import (
+	"runtime/debug"
+	"testing"
+)
+
+// buildInfo returns build info with the given module version and settings,
+// given as key, value, key, value, ...
+func buildInfo(moduleVersion string, settings ...string) *debug.BuildInfo {
+	info := &debug.BuildInfo{
+		GoVersion: "go1.26.1",
+		Main:      debug.Module{Path: "example.com/deployctl", Version: moduleVersion},
+	}
+	for i := 0; i+1 < len(settings); i += 2 {
+		info.Settings = append(info.Settings, debug.BuildSetting{Key: settings[i], Value: settings[i+1]})
+	}
+	return info
+}
+
+func TestVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		stamped string
+		info    *debug.BuildInfo
+		want    string
+	}{
+		{"stamped wins", "1.4.2", buildInfo("v9.9.9"), "1.4.2"},
+		{"stamped, no info", "2.0.0-rc1", nil, "2.0.0-rc1"},
+		{"module version", "", buildInfo("v2.0.0"), "v2.0.0"},
+		{"devel", "", buildInfo("(devel)"), "dev"},
+		{"empty module version", "", buildInfo(""), "dev"},
+		{"nothing at all", "", nil, "dev"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Version(tt.stamped, tt.info); got != tt.want {
+				t.Errorf("Version(%q, info) = %q, want %q", tt.stamped, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRevision(t *testing.T) {
+	const sha = "3f2a9c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a39"
+	tests := []struct {
+		name string
+		info *debug.BuildInfo
+		want string
+	}{
+		{"clean", buildInfo("(devel)", "vcs.revision", sha, "vcs.modified", "false"), "3f2a9c1"},
+		{"dirty", buildInfo("(devel)", "vcs.modified", "true", "vcs.revision", sha), "3f2a9c1-dirty"},
+		{"no modified setting", buildInfo("(devel)", "vcs.revision", "a1b2c3d4e5"), "a1b2c3d"},
+		{"short revision", buildInfo("(devel)", "vcs.revision", "abc"), "abc"},
+		{"no revision", buildInfo("v1.0.0", "vcs.modified", "true"), "unknown"},
+		{"no settings", buildInfo("v1.0.0"), "unknown"},
+		{"nil info", nil, "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Revision(tt.info); got != tt.want {
+				t.Errorf("Revision(info) = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVersionLine(t *testing.T) {
+	tests := []struct {
+		name          string
+		tool, stamped string
+		info          *debug.BuildInfo
+		want          string
+	}{
+		{
+			"release build", "deployctl", "1.4.2",
+			buildInfo("(devel)", "vcs.revision", "3f2a9c1e8b7d"),
+			"deployctl 1.4.2 (commit 3f2a9c1)",
+		},
+		{
+			"go install", "hostctl", "",
+			buildInfo("v0.9.0", "vcs.revision", "77e0d11aa", "vcs.modified", "true"),
+			"hostctl v0.9.0 (commit 77e0d11-dirty)",
+		},
+		{"no info", "deployctl", "", nil, "deployctl dev (commit unknown)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := VersionLine(tt.tool, tt.stamped, tt.info); got != tt.want {
+				t.Errorf("VersionLine(%q, %q, info) = %q, want %q", tt.tool, tt.stamped, got, tt.want)
+			}
+		})
+	}
+}

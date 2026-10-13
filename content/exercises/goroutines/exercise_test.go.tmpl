@@ -1,0 +1,90 @@
+package goroutines
+
+import (
+	"slices"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+// recorder remembers which names were handled. Many goroutines call add at
+// once, so it uses a mutex (you'll learn about those in Mutexes).
+type recorder struct {
+	mu    sync.Mutex
+	names []string
+}
+
+func (r *recorder) add(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.names = append(r.names, name)
+}
+
+// sorted returns the names handled so far, in alphabetical order.
+func (r *recorder) sorted() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	sorted := slices.Clone(r.names)
+	slices.Sort(sorted)
+	return sorted
+}
+
+func TestWarmCaches(t *testing.T) {
+	// synctest.Test gives the test a fake clock: sleeps finish instantly in
+	// real time, but time.Now still moves forward by the right amount.
+	synctest.Test(t, func(t *testing.T) {
+		hosts := []string{"cache-1", "cache-2", "cache-3"}
+		var warmed recorder
+		warm := func(host string) {
+			time.Sleep(time.Second) // each warm-up takes 1 second
+			warmed.add(host)
+		}
+
+		WarmCaches(hosts, warm)
+
+		if got := warmed.sorted(); len(got) != 0 {
+			t.Fatalf("WarmCaches waited for %q to finish; start each warm-up with go and return straight away", got)
+		}
+
+		time.Sleep(2 * time.Second) // give the background warm-ups time to finish
+		if got := warmed.sorted(); !slices.Equal(got, hosts) {
+			t.Errorf("after 2s, warmed hosts = %q, want %q", got, hosts)
+		}
+	})
+}
+
+func TestRestartAll(t *testing.T) {
+	tests := []struct {
+		name     string
+		services []string
+	}{
+		{"three services", []string{"api", "web", "worker"}},
+		{"five services", []string{"api", "auth", "billing", "search", "web"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var restarted recorder
+				restart := func(service string) {
+					time.Sleep(time.Second) // each restart takes 1 second
+					restarted.add(service)
+				}
+
+				start := time.Now()
+				RestartAll(tt.services, restart)
+				elapsed := time.Since(start)
+
+				if got := restarted.sorted(); !slices.Equal(got, tt.services) {
+					t.Errorf("when RestartAll returned, restarted = %q, want %q (did you wait for every goroutine?)", got, tt.services)
+				}
+				if elapsed != time.Second {
+					t.Errorf("RestartAll took %v, want 1s: the restarts should run at the same time, not one after another", elapsed)
+				}
+
+				// Let any goroutine that is still running finish before the test ends.
+				time.Sleep(time.Minute)
+			})
+		})
+	}
+}

@@ -1,0 +1,72 @@
+package ranking
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestSortedHosts(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+		want  []string
+	}{
+		{"mixed", []string{"web-2", "db-1", "web-1"}, []string{"db-1", "web-1", "web-2"}},
+		{"reversed", []string{"proxy", "cache", "api"}, []string{"api", "cache", "proxy"}},
+		{"already sorted", []string{"a-1", "b-1"}, []string{"a-1", "b-1"}},
+		{"empty", []string{}, []string{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			before := slices.Clone(tc.hosts)
+			got := SortedHosts(tc.hosts)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("SortedHosts(%q) = %q, want %q", before, got, tc.want)
+			}
+			if !slices.Equal(tc.hosts, before) {
+				t.Errorf("SortedHosts changed the caller's slice to %q, want it left as %q", tc.hosts, before)
+			}
+		})
+	}
+}
+
+func TestServiceNames(t *testing.T) {
+	tests := []struct {
+		name string
+		errs map[string]int
+		want []string
+	}{
+		{"three services", map[string]int{"web": 3, "api": 9, "db": 0}, []string{"api", "db", "web"}},
+		{"two services", map[string]int{"worker": 1, "auth": 1}, []string{"auth", "worker"}},
+		{"empty", map[string]int{}, []string{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ServiceNames(tc.errs)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("ServiceNames(%v) = %q, want %q", tc.errs, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRankByErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		errs map[string]int
+		want []string
+	}{
+		{"most errors first", map[string]int{"web": 3, "api": 9, "cache": 0}, []string{"api", "web", "cache"}},
+		{"ties are alphabetical", map[string]int{"web": 3, "api": 9, "db": 3, "cache": 0}, []string{"api", "db", "web", "cache"}},
+		{"all tied", map[string]int{"queue": 2, "auth": 2, "mail": 2}, []string{"auth", "mail", "queue"}},
+		{"empty", map[string]int{}, []string{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := RankByErrors(tc.errs)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("RankByErrors(%v) = %q, want %q", tc.errs, got, tc.want)
+			}
+		})
+	}
+}

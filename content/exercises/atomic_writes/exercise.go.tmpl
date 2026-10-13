@@ -1,0 +1,18 @@
+// Package atomicwrite is the Gopherlings exercise "Atomic writes: temp file and rename".
+package atomicwrite
+
+import "io/fs"
+
+// WriteFileAtomic writes data to path so that readers see either the old file
+// or the complete new one, never a partial write. A new file gets perm; an
+// existing file keeps its permissions.
+func WriteFileAtomic(path string, data []byte, perm fs.FileMode) error {
+	// TODO(1): Create a temp file next to path, write data, Sync, Close, and
+	// rename it over path.
+
+	// TODO(2): If any step fails, remove the temp file before returning.
+
+	// TODO(3): Before the rename, Chmod the temp file to the existing file's
+	// permissions, or to perm for a new file.
+	return nil
+}

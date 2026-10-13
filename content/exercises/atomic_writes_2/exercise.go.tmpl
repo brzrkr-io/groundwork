@@ -1,0 +1,65 @@
+// Package envconf is the Gopherlings exercise "Atomic writes: safely change one setting".
+package envconf
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// SetKey sets key to value in the env file at path, keeping every other line,
+// and saves the file atomically. A missing file is created.
+func SetKey(path, key, value string) error {
+	// TODO(2): Bug: SetKey never reads the file, so it wipes every other
+	// setting. Read data from path instead (a missing file counts as empty).
+	var data []byte
+	lines := setLine(splitLines(string(data)), key, value)
+	return writeFileAtomic(path, []byte(strings.Join(lines, "\n")+"\n"))
+}
+
+// setLine returns lines with the KEY=value line for key set to value,
+// appending one if key has no line yet.
+func setLine(lines []string, key, value string) []string {
+	// TODO(1): Bug: this always appends. Replace the line that starts with
+	// key+"=" instead, and append only when there is none.
+	return append(lines, key+"="+value)
+}
+
+// splitLines splits s into lines without their trailing "\n".
+func splitLines(s string) []string {
+	var lines []string
+	for line := range strings.Lines(s) {
+		lines = append(lines, strings.TrimSuffix(line, "\n"))
+	}
+	return lines
+}
+
+// writeFileAtomic replaces path with data via a temp file and a rename,
+// keeping the existing file's permissions (0o644 for a new file).
+func writeFileAtomic(path string, data []byte) error {
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	// TODO(3): Bug: when a step below fails, the temp file is left behind.
+	// Remove it on every failure.
+
+	if _, err := tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}

@@ -1,0 +1,179 @@
+package tlscheck
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
+	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"testing"
+	"time"
+)
+
+// newTLSServer starts a local HTTPS server that answers "ok". Its
+// certificate is srv.Certificate().
+func newTLSServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "ok")
+	}))
+	// Rejected handshakes are expected in these tests; keep the log quiet.
+	srv.Config.ErrorLog = log.New(io.Discard, "", 0)
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// serverPEM returns the test server's certificate in PEM format, like a
+// ca.crt file.
+func serverPEM(srv *httptest.Server) []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+}
+
+// otherPEM returns a CA certificate that did NOT sign the test server's
+// certificate.
+func otherPEM(t *testing.T) []byte {
+	t.Helper()
+	data, err := os.ReadFile("testdata/other_ca.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestNewClient(t *testing.T) {
+	srv := newTLSServer(t)
+
+	t.Run("trusts the CA in the PEM", func(t *testing.T) {
+		client, err := NewClient(serverPEM(srv))
+		if err != nil {
+			t.Fatalf("NewClient(server PEM) returned error: %v", err)
+		}
+		resp, err := client.Get(srv.URL)
+		if err != nil {
+			t.Fatalf("Get(%q) failed: %v", srv.URL, err)
+		}
+		resp.Body.Close()
+	})
+
+	t.Run("rejects a server signed by another CA", func(t *testing.T) {
+		client, err := NewClient(otherPEM(t))
+		if err != nil {
+			t.Fatalf("NewClient(other CA PEM) returned error: %v", err)
+		}
+		resp, err := client.Get(srv.URL)
+		if err == nil {
+			resp.Body.Close()
+			t.Fatalf("Get(%q) with NewClient(other CA PEM) succeeded, want a certificate error", srv.URL)
+		}
+	})
+
+	t.Run("PEM without certificates", func(t *testing.T) {
+		for _, data := range []string{"", "not a certificate"} {
+			_, err := NewClient([]byte(data))
+			if err == nil {
+				t.Errorf("NewClient(%q) returned a nil error, want an error", data)
+			}
+		}
+	})
+
+	t.Run("keeps the settings", func(t *testing.T) {
+		client, err := NewClient(serverPEM(srv))
+		if err != nil {
+			t.Fatalf("NewClient(server PEM) returned error: %v", err)
+		}
+		if client.Timeout != 5*time.Second {
+			t.Errorf("NewClient(pem).Timeout = %v, want 5s", client.Timeout)
+		}
+		transport, ok := client.Transport.(*http.Transport)
+		if !ok || transport.TLSClientConfig == nil {
+			t.Fatal("NewClient(pem).Transport is not an *http.Transport with a TLSClientConfig")
+		}
+		if got := transport.TLSClientConfig.MinVersion; got != tls.VersionTLS12 {
+			t.Errorf("NewClient(pem) MinVersion = %#x, want tls.VersionTLS12 (%#x)", got, tls.VersionTLS12)
+		}
+		if transport.TLSClientConfig.InsecureSkipVerify {
+			t.Error("NewClient(pem) sets InsecureSkipVerify, want certificates verified")
+		}
+	})
+}
+
+func TestExpiryStatus(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+	tests := []struct {
+		name     string
+		notAfter time.Time
+		warnDays int
+		want     string
+	}{
+		{"plenty of time", time.Date(2026, 12, 25, 12, 0, 0, 0, time.UTC), 14, "OK: expires in 75 days"},
+		{"exactly warnDays left", now.Add(14 * day), 14, "OK: expires in 14 days"},
+		{"inside the warning window", time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC), 14, "WARN: expires in 9 days"},
+		{"bigger warning window", now.Add(20 * day), 30, "WARN: expires in 20 days"},
+		{"expires later today", now.Add(3 * time.Hour), 14, "WARN: expires in 0 days"},
+		{"expired months ago", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), 14, "EXPIRED on 2026-03-01"},
+		{"expired an hour ago", now.Add(-time.Hour), 14, "EXPIRED on 2026-10-11"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cert := &x509.Certificate{NotAfter: tt.notAfter}
+			if got := ExpiryStatus(cert, now, tt.warnDays); got != tt.want {
+				t.Errorf("ExpiryStatus(NotAfter %v, now %v, %d) = %q, want %q", tt.notAfter, now, tt.warnDays, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDiagnose(t *testing.T) {
+	srv := newTLSServer(t)
+
+	// get requests srv.URL with a client using cfg and returns the error.
+	get := func(cfg *tls.Config) error {
+		client := &http.Client{Transport: &http.Transport{TLSClientConfig: cfg}}
+		resp, err := client.Get(srv.URL)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		return nil
+	}
+	poolOf := func(pemData []byte) *x509.CertPool {
+		pool := x509.NewCertPool()
+		pool.AppendCertsFromPEM(pemData)
+		return pool
+	}
+
+	down := httptest.NewServer(http.NotFoundHandler())
+	downURL := down.URL
+	down.Close()
+	_, refused := http.Get(downURL)
+
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"no error", nil, "ok"},
+		{"untrusted CA", get(&tls.Config{RootCAs: poolOf(otherPEM(t))}), "unknown authority"},
+		{"wrong host name", get(&tls.Config{RootCAs: poolOf(serverPEM(srv)), ServerName: "db.internal"}), "hostname mismatch"},
+		// tls.Config.Time sets the clock used to check expiry dates.
+		{"expired certificate", get(&tls.Config{
+			RootCAs: poolOf(serverPEM(srv)),
+			Time:    func() time.Time { return time.Date(2090, 1, 1, 0, 0, 0, 0, time.UTC) },
+		}), "expired"},
+		{"connection refused", refused, "other"},
+		{"plain error", errors.New("disk full"), "other"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Diagnose(tt.err); got != tt.want {
+				t.Errorf("Diagnose(%v) = %q, want %q", tt.err, got, tt.want)
+			}
+		})
+	}
+}

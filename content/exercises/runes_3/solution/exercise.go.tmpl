@@ -1,0 +1,42 @@
+// Package dnsname is the Gopherlings exercise "Bytes, runes and UTF-8: DNS-safe service names".
+package dnsname
+
+import "strings"
+
+// Slug turns a display name into lower-case ASCII letters and digits, with a
+// single "-" wherever other characters were.
+func Slug(name string) string {
+	var b strings.Builder
+	gap := false // seen a separator since the last kept character
+	for _, r := range name {
+		if 'A' <= r && r <= 'Z' {
+			r += 'a' - 'A'
+		}
+		if ('a' <= r && r <= 'z') || ('0' <= r && r <= '9') {
+			// Only write the "-" once there is something before it, so
+			// leading and trailing separators produce nothing.
+			if gap && b.Len() > 0 {
+				b.WriteRune('-')
+			}
+			b.WriteRune(r)
+			gap = false
+		} else {
+			gap = true
+		}
+	}
+	return b.String()
+}
+
+// DNSLabel returns Slug(name) shortened to a valid DNS label of at most 63
+// characters, or "unnamed" if nothing is left.
+func DNSLabel(name string) string {
+	label := Slug(name)
+	if len(label) > 63 {
+		label = label[:63] // safe: a slug is pure ASCII
+	}
+	label = strings.TrimSuffix(label, "-")
+	if label == "" {
+		return "unnamed"
+	}
+	return label
+}

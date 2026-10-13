@@ -1,0 +1,20 @@
+// Package text is the Gopherlings exercise "Strings".
+package text
+
+import "strings"
+
+// NormalizeHost returns host with surrounding whitespace removed, in
+// lowercase.
+func NormalizeHost(host string) string {
+	return strings.ToLower(strings.TrimSpace(host))
+}
+
+// IsInternalImage reports whether image comes from registry.internal.
+func IsInternalImage(image string) bool {
+	return strings.HasPrefix(image, "registry.internal/")
+}
+
+// Heading returns title in capitals, underlined with = signs.
+func Heading(title string) string {
+	return strings.ToUpper(title) + "\n" + strings.Repeat("=", len(title))
+}

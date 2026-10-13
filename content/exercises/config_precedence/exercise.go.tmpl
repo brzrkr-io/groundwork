@@ -1,0 +1,103 @@
+// Package config is the Gopherlings exercise "Config precedence: defaults, file, env and flags".
+package config
+
+import (
+	"encoding/json"
+	"flag"
+	"io"
+	"os"
+)
+
+// Settings is the final configuration of the ingest service.
+type Settings struct {
+	Port     int
+	LogLevel string
+	Region   string
+	// Source maps each setting key ("port", "log_level", "region") to where
+	// its value came from: "default", "file", "env" or "flag".
+	Source map[string]string
+}
+
+// Defaults returns the built-in settings.
+func Defaults() Settings {
+	return Settings{
+		Port:     8080,
+		LogLevel: "info",
+		Region:   "us-east-1",
+		Source: map[string]string{
+			"port":      "default",
+			"log_level": "default",
+			"region":    "default",
+		},
+	}
+}
+
+// fileSettings mirrors the JSON config file. A field is nil when its key is
+// missing from the file.
+type fileSettings struct {
+	Port     *int    `json:"port"`
+	LogLevel *string `json:"log_level"`
+	Region   *string `json:"region"`
+}
+
+// ApplyFile overrides s with the settings present in the JSON config data.
+func (s *Settings) ApplyFile(data []byte) error {
+	var f fileSettings
+	if err := json.Unmarshal(data, &f); err != nil {
+		return err
+	}
+	if f.Port != nil {
+		s.Port = *f.Port
+		s.Source["port"] = "file"
+	}
+	// TODO(1): Apply f.LogLevel and f.Region the same way.
+	return nil
+}
+
+// ApplyEnv overrides s with the APP_PORT, APP_LOG_LEVEL and APP_REGION
+// environment variables that lookup reports as set.
+func (s *Settings) ApplyEnv(lookup func(string) (string, bool)) error {
+	// TODO(2): Apply APP_PORT (strconv.Atoi), APP_LOG_LEVEL and APP_REGION.
+	// An invalid APP_PORT is an error that mentions APP_PORT.
+	return nil
+}
+
+// cliFlags holds the command-line flag values after parsing.
+type cliFlags struct {
+	config   string
+	port     int
+	logLevel string
+	region   string
+}
+
+// Load builds the settings from defaults, the -config file, the environment
+// and flags, in that order.
+func Load(args []string, lookup func(string) (string, bool)) (Settings, error) {
+	var cli cliFlags
+	fs := flag.NewFlagSet("ingest", flag.ContinueOnError)
+	fs.SetOutput(io.Discard) // the caller prints errors
+	fs.StringVar(&cli.config, "config", "", "path to a JSON config file")
+	fs.IntVar(&cli.port, "port", 0, "port to listen on")
+	fs.StringVar(&cli.logLevel, "log-level", "", "log level")
+	fs.StringVar(&cli.region, "region", "", "cloud region")
+	if err := fs.Parse(args); err != nil {
+		return Settings{}, err
+	}
+
+	s := Defaults()
+	if cli.config != "" {
+		data, err := os.ReadFile(cli.config)
+		if err != nil {
+			return Settings{}, err
+		}
+		if err := s.ApplyFile(data); err != nil {
+			return Settings{}, err
+		}
+	}
+	if err := s.ApplyEnv(lookup); err != nil {
+		return Settings{}, err
+	}
+	// TODO(3): Use fs.Visit to apply each flag that was set ("port",
+	// "log-level", "region") with source "flag".
+	return s, nil
+}

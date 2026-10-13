@@ -1,0 +1,178 @@
+package inventory
+
+import (
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestParse(t *testing.T) {
+	t.Run("valid inventory", func(t *testing.T) {
+		input := `[
+  {"name": "web-1", "env": "prod", "region": "eu-west-1", "address": "10.1.1.11", "tags": ["web", "nginx"]},
+  {"name": "build-1", "env": "dev", "region": "us-east-1", "address": "10.9.0.5"}
+]`
+		got, err := Parse(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("Parse() error = %v, want nil", err)
+		}
+		want := []Host{
+			{Name: "web-1", Env: "prod", Region: "eu-west-1", Address: "10.1.1.11", Tags: []string{"web", "nginx"}},
+			{Name: "build-1", Env: "dev", Region: "us-east-1", Address: "10.9.0.5"},
+		}
+		if len(got) != len(want) {
+			t.Fatalf("Parse() returned %d hosts, want %d", len(got), len(want))
+		}
+		for i := range want {
+			if !equalHost(got[i], want[i]) {
+				t.Errorf("Parse() host %d = %+v, want %+v", i+1, got[i], want[i])
+			}
+		}
+	})
+
+	bad := []struct {
+		name  string
+		input string
+	}{
+		{"unknown field", `[{"name": "web-1", "regoin": "eu-west-1"}]`},
+		{"not an array", `{"name": "web-1"}`},
+		{"broken JSON", `[{"name": "web-1",`},
+		{"empty input", ``},
+	}
+	for _, tt := range bad {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse(strings.NewReader(tt.input))
+			if err == nil {
+				t.Fatalf("Parse(%q) error = nil, want an error", tt.input)
+			}
+			if !strings.HasPrefix(err.Error(), "parse inventory: ") {
+				t.Errorf("Parse(%q) error = %q, want it to start with %q", tt.input, err, "parse inventory: ")
+			}
+		})
+	}
+}
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []Host
+		want  string // the full error text; "" means no error
+	}{
+		{
+			name: "valid hosts",
+			hosts: []Host{
+				{Name: "web-1", Env: "prod", Region: "eu-west-1", Address: "10.1.1.11"},
+				{Name: "db-1", Env: "staging", Region: "us-east-1", Address: "fd00::10"},
+			},
+			want: "",
+		},
+		{
+			name:  "no hosts",
+			hosts: nil,
+			want:  "",
+		},
+		{
+			name: "missing name",
+			hosts: []Host{
+				{Name: "web-1", Env: "prod", Region: "eu-west-1", Address: "10.1.1.11"},
+				{Env: "prod", Region: "eu-west-1", Address: "10.1.1.12"},
+			},
+			want: "host 2: name is required",
+		},
+		{
+			name: "bad env",
+			hosts: []Host{
+				{Name: "web-1", Env: "qa", Region: "eu-west-1", Address: "10.1.1.11"},
+			},
+			want: `host 1 (web-1): env "qa" must be one of dev, staging, prod`,
+		},
+		{
+			name: "missing region and bad address on one host",
+			hosts: []Host{
+				{Name: "cache-1", Env: "dev", Address: "10.0.0.300"},
+			},
+			want: "host 1 (cache-1): region is required\n" +
+				`host 1 (cache-1): address "10.0.0.300" is not a valid IP address`,
+		},
+		{
+			name: "duplicate name",
+			hosts: []Host{
+				{Name: "web-1", Env: "prod", Region: "eu-west-1", Address: "10.1.1.11"},
+				{Name: "web-2", Env: "prod", Region: "eu-west-1", Address: "10.1.1.12"},
+				{Name: "web-1", Env: "prod", Region: "us-east-1", Address: "10.0.1.11"},
+			},
+			want: "host 3 (web-1): duplicate name, first seen at host 1",
+		},
+		{
+			name: "problems on several hosts",
+			hosts: []Host{
+				{Name: "web-1", Env: "prod", Region: "eu-west-1", Address: "10.1.1.11"},
+				{Name: "web-2", Env: "", Region: "eu-west-1", Address: ""},
+				{Name: "", Env: "dev", Region: "", Address: "10.9.0.5"},
+			},
+			want: `host 2 (web-2): env "" must be one of dev, staging, prod` + "\n" +
+				`host 2 (web-2): address "" is not a valid IP address` + "\n" +
+				"host 3: name is required\n" +
+				"host 3: region is required",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate(tt.hosts)
+			got := ""
+			if err != nil {
+				got = err.Error()
+			}
+			if got != tt.want {
+				t.Errorf("Validate() error =\n%s\nwant\n%s", orNil(got), orNil(tt.want))
+			}
+		})
+	}
+}
+
+func TestFilter(t *testing.T) {
+	hosts := []Host{
+		{Name: "web-1", Env: "prod", Region: "eu-west-1", Tags: []string{"web", "nginx"}},
+		{Name: "web-2", Env: "prod", Region: "us-east-1", Tags: []string{"web", "nginx"}},
+		{Name: "db-1", Env: "prod", Region: "us-east-1", Tags: []string{"db", "postgres"}},
+		{Name: "cache-1", Env: "staging", Region: "eu-west-1", Tags: []string{"cache", "redis"}},
+		{Name: "build-1", Env: "dev", Region: "us-east-1"},
+	}
+	tests := []struct {
+		name   string
+		filter Filter
+		want   []string // names of the hosts that should be kept
+	}{
+		{"empty filter keeps everything", Filter{}, []string{"web-1", "web-2", "db-1", "cache-1", "build-1"}},
+		{"env", Filter{Env: "prod"}, []string{"web-1", "web-2", "db-1"}},
+		{"region", Filter{Region: "eu-west-1"}, []string{"web-1", "cache-1"}},
+		{"env and region", Filter{Env: "prod", Region: "us-east-1"}, []string{"web-2", "db-1"}},
+		{"one tag", Filter{Tags: []string{"web"}}, []string{"web-1", "web-2"}},
+		{"every tag must match", Filter{Tags: []string{"web", "redis"}}, nil},
+		{"tag and region", Filter{Region: "us-east-1", Tags: []string{"nginx"}}, []string{"web-2"}},
+		{"nothing matches", Filter{Env: "qa"}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, h := range tt.filter.Apply(hosts) {
+				got = append(got, h.Name)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("%+v.Apply(hosts) kept %q, want %q", tt.filter, got, tt.want)
+			}
+		})
+	}
+}
+
+func equalHost(a, b Host) bool {
+	return a.Name == b.Name && a.Env == b.Env && a.Region == b.Region &&
+		a.Address == b.Address && slices.Equal(a.Tags, b.Tags)
+}
+
+func orNil(s string) string {
+	if s == "" {
+		return "<nil>"
+	}
+	return s
+}

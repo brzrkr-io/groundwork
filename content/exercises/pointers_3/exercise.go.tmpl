@@ -1,0 +1,46 @@
+// Package pointers3 is the Gopherlings exercise "Pointers: optional config fields".
+package pointers3
+
+// DefaultReplicas is the replica count used when a spec does not set one.
+const DefaultReplicas = 1
+
+// DeploymentSpec describes a deployment. A nil Replicas means "not set".
+type DeploymentSpec struct {
+	Name     string
+	Replicas *int
+}
+
+// Config is the final, fully resolved config for a service.
+type Config struct {
+	Image    string
+	Replicas int
+	Debug    bool
+}
+
+// Overrides holds optional changes to a Config. A nil field means "keep the
+// current value".
+type Overrides struct {
+	Image    *string
+	Replicas *int
+	Debug    *bool
+}
+
+// WithReplicas returns a copy of spec with Replicas set to n.
+func WithReplicas(spec DeploymentSpec, n int) DeploymentSpec {
+	// TODO(1): Point spec.Replicas at a new int holding n.
+	return spec
+}
+
+// EffectiveReplicas returns the replica count spec asks for, or
+// DefaultReplicas when spec.Replicas is nil.
+func EffectiveReplicas(spec DeploymentSpec) int {
+	// TODO(2): Use DefaultReplicas when Replicas is nil, otherwise its value.
+	return 0
+}
+
+// Merge applies each layer of overrides to base, in order, and returns the
+// result. Nil fields in a layer keep the current value.
+func Merge(base Config, layers ...Overrides) Config {
+	// TODO(3): Start from base and apply every non-nil field of every layer.
+	return Config{}
+}

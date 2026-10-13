@@ -1,0 +1,193 @@
+package upstream
+
+// This file is how Gopherlings grades the test you write. You don't need to
+// change it, but you are welcome to read it.
+//
+// TestGrader re-runs your tests against the real code, where they must pass,
+// and then against each mutant below, where they must fail. A mutant is a
+// copy of the code with one deliberate bug. TestUpdateFlag checks your
+// -update flag.
+
+import (
+	"errors"
+	"flag"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// learnerTests selects the tests you write in exercise_test.go.
+const learnerTests = "^TestWriteUpstreamConfig$"
+
+// rewriteConfig runs the real code, then passes the file it wrote through
+// change. Mutants use it to break one detail of the output.
+func rewriteConfig(dir, name string, backends []string, change func(string) string) error {
+	if err := realWriteUpstreamConfig(dir, name, backends); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, name+".conf")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(change(string(data))), 0o644)
+}
+
+// mutants are the bugs your tests must catch.
+var mutants = []mutant{
+	{
+		name: "reports_error",
+		bug:  `WriteUpstreamConfig wrote the file but returned an error anyway`,
+		install: func() {
+			writeUpstreamConfig = func(dir, name string, backends []string) error {
+				if err := realWriteUpstreamConfig(dir, name, backends); err != nil {
+					return err
+				}
+				return errors.New("disk full")
+			}
+		},
+	},
+	{
+		name: "wrong_filename",
+		bug:  `WriteUpstreamConfig wrote api.config instead of api.conf`,
+		install: func() {
+			writeUpstreamConfig = func(dir, name string, backends []string) error {
+				if err := realWriteUpstreamConfig(dir, name, backends); err != nil {
+					return err
+				}
+				return os.Rename(filepath.Join(dir, name+".conf"), filepath.Join(dir, name+".config"))
+			}
+		},
+	},
+	{
+		name: "tab_indent",
+		bug:  `WriteUpstreamConfig indented the server lines with a tab instead of four spaces`,
+		install: func() {
+			writeUpstreamConfig = func(dir, name string, backends []string) error {
+				return rewriteConfig(dir, name, backends, func(conf string) string {
+					return strings.ReplaceAll(conf, "    ", "\t")
+				})
+			}
+		},
+	},
+	{
+		name: "no_closing_brace",
+		bug:  `WriteUpstreamConfig left out the closing "}" line`,
+		install: func() {
+			writeUpstreamConfig = func(dir, name string, backends []string) error {
+				return rewriteConfig(dir, name, backends, func(conf string) string {
+					return strings.TrimSuffix(conf, "}\n")
+				})
+			}
+		},
+	},
+	{
+		name: "reversed_backends",
+		bug:  `WriteUpstreamConfig wrote the backends in reverse order`,
+		install: func() {
+			writeUpstreamConfig = func(dir, name string, backends []string) error {
+				reversed := slices.Clone(backends)
+				slices.Reverse(reversed)
+				return realWriteUpstreamConfig(dir, name, reversed)
+			}
+		},
+	},
+}
+
+// TestUpdateFlag runs your test with -update inside a scratch folder whose
+// testdata holds an outdated golden file. Your test must pass and rewrite it.
+// The real testdata folder is never touched.
+func TestUpdateFlag(t *testing.T) {
+	if flag.Lookup("update") == nil {
+		t.Fatal(`exercise_test.go has no -update flag yet: declare one with flag.Bool("update", false, "rewrite golden files")`)
+	}
+	want, err := os.ReadFile(filepath.Join("testdata", "api.conf.golden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := os.ReadFile(filepath.Join("testdata", "backends.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scratch := t.TempDir()
+	if err := os.Mkdir(filepath.Join(scratch, "testdata"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scratch, "testdata", "backends.txt"), fixture, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	golden := filepath.Join(scratch, "testdata", "api.conf.golden")
+	if err := os.WriteFile(golden, []byte("outdated\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run="+learnerTests, "-update")
+	cmd.Dir = scratch
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go test -update failed, want it to rewrite the golden file and pass:\n%s", out)
+	}
+	got, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("after go test -update, testdata/api.conf.golden =\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// Everything below is the same in every Testing exercise.
+
+// mutantEnv names the environment variable that tells a re-run which mutant
+// to install.
+const mutantEnv = "GOPHERLINGS_MUTANT"
+
+type mutant struct {
+	name    string // short name, used in GOPHERLINGS_MUTANT and test output
+	bug     string // completes "your tests didn't notice when ..."
+	install func() // swaps the bug into the package
+}
+
+// TestMain runs before any test. In a re-run started by TestGrader, it
+// installs the mutant named by GOPHERLINGS_MUTANT.
+func TestMain(m *testing.M) {
+	if name := os.Getenv(mutantEnv); name != "" {
+		for _, mu := range mutants {
+			if mu.name == name {
+				mu.install()
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func TestGrader(t *testing.T) {
+	if _, rerun := os.LookupEnv(mutantEnv); rerun {
+		t.Skip("TestGrader does not run inside its own re-runs")
+	}
+	out, err := runLearnerTests("")
+	if strings.Contains(out, "no tests to run") {
+		t.Fatalf("found no test matching %s in exercise_test.go", learnerTests)
+	}
+	if err != nil {
+		t.Fatalf("your tests must pass on the real code first, but they failed:\n%s", out)
+	}
+	for _, mu := range mutants {
+		t.Run(mu.name, func(t *testing.T) {
+			if _, err := runLearnerTests(mu.name); err == nil {
+				t.Errorf("your tests didn't notice when %s", mu.bug)
+			}
+		})
+	}
+}
+
+// runLearnerTests re-runs this test binary with only your tests selected and
+// the named mutant installed. An empty name means the real code.
+func runLearnerTests(mutant string) (string, error) {
+	cmd := exec.Command(os.Args[0], "-test.run="+learnerTests)
+	cmd.Env = append(os.Environ(), mutantEnv+"="+mutant)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

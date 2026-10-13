@@ -1,0 +1,35 @@
+// Package walkdirs is the Gopherlings exercise "Walking directories: find big log files".
+package walkdirs
+
+import (
+	"io/fs"
+)
+
+// ListFiles returns the sorted paths of every file in fsys, skipping
+// directories named ".git".
+func ListFiles(fsys fs.FS) ([]string, error) {
+	var files []string
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		// TODO(2): If d is a directory named ".git", return fs.SkipDir.
+
+		// TODO(1): If d is not a directory, append p to files.
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	// TODO(1): Sort files with slices.Sort (add "slices" to the imports).
+	return files, nil
+}
+
+// LargeLogs returns the sorted paths of the *.log files in fsys that are at
+// least minSize bytes, skipping directories named ".git".
+func LargeLogs(fsys fs.FS, minSize int64) ([]string, error) {
+	// TODO(3): Walk fsys like ListFiles does. Keep files whose name matches
+	// "*.log" (path.Match) and whose size (d.Info) is at least minSize.
+	return nil, nil
+}

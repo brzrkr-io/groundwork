@@ -1,0 +1,183 @@
+package shutdown
+
+import (
+	"context"
+	"errors"
+	"net"
+	"net/http"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+// listen opens a listener on a free loopback port.
+func listen(t *testing.T) net.Listener {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ln
+}
+
+// waitFor waits up to 2 seconds for a value from ch, and fails the test if
+// none arrives.
+func waitFor[T any](t *testing.T, ch <-chan T, what string) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out after 2s waiting for %s", what)
+		var zero T
+		return zero
+	}
+}
+
+func TestServe(t *testing.T) {
+	tests := []struct {
+		name string
+		stop func(srv *http.Server) // how the server is stopped
+	}{
+		{"after Shutdown", func(srv *http.Server) { srv.Shutdown(context.Background()) }},
+		{"after Close", func(srv *http.Server) { srv.Close() }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := &http.Server{Handler: http.NotFoundHandler()}
+			ln := listen(t)
+			done := make(chan error, 1)
+			go func() { done <- Serve(srv, ln) }()
+
+			tt.stop(srv)
+			if err := waitFor(t, done, "Serve to return"); err != nil {
+				t.Errorf("Serve() %s = %v, want nil", tt.name, err)
+			}
+		})
+	}
+
+	t.Run("on a closed listener", func(t *testing.T) {
+		srv := &http.Server{Handler: http.NotFoundHandler()}
+		ln := listen(t)
+		ln.Close()
+
+		err := Serve(srv, ln)
+		if err == nil || !strings.HasPrefix(err.Error(), "serve: ") {
+			t.Errorf("Serve() on a closed listener = %v, want an error starting with %q", err, "serve: ")
+		}
+	})
+}
+
+func TestStopHTTP(t *testing.T) {
+	t.Run("stuck request", func(t *testing.T) {
+		started := make(chan struct{}, 1)
+		release := make(chan struct{})
+		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			started <- struct{}{}
+			<-release // stuck until the test ends
+		})}
+		ln := listen(t)
+		t.Cleanup(func() {
+			close(release)
+			srv.Close()
+		})
+		go srv.Serve(ln)
+
+		// Start a request that never finishes.
+		go func() {
+			client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
+			if resp, err := client.Get("http://" + ln.Addr().String() + "/ingest"); err == nil {
+				resp.Body.Close()
+			}
+		}()
+		waitFor(t, started, "the request to reach the handler")
+
+		done := make(chan error, 1)
+		go func() { done <- StopHTTP(srv, 20*time.Millisecond) }()
+		err := waitFor(t, done, "StopHTTP(srv, 20ms) to give up")
+
+		want := "stop http: context deadline exceeded"
+		if err == nil || err.Error() != want {
+			t.Errorf("StopHTTP(srv, 20ms) = %v, want %q", err, want)
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("errors.Is(StopHTTP(srv, 20ms), context.DeadlineExceeded) = false, want true")
+		}
+	})
+
+	t.Run("no requests", func(t *testing.T) {
+		srv := &http.Server{Handler: http.NotFoundHandler()}
+		ln := listen(t)
+		t.Cleanup(func() { srv.Close() })
+		go srv.Serve(ln)
+
+		if err := StopHTTP(srv, time.Second); err != nil {
+			t.Errorf("StopHTTP(srv, 1s) with no requests = %v, want nil", err)
+		}
+	})
+}
+
+// recorder keeps a list of events. It is safe to use from many goroutines.
+type recorder struct {
+	mu     sync.Mutex
+	events []string
+}
+
+func (r *recorder) add(event string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, event)
+}
+
+func (r *recorder) list() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.events)
+}
+
+func TestShutdownOrder(t *testing.T) {
+	tests := []struct {
+		name    string
+		httpErr error // what stopping HTTP returns
+	}{
+		{"clean HTTP stop", nil},
+		{"HTTP stop timed out", errors.New("stop http: context deadline exceeded")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Inside synctest.Test the clock is fake: a goroutine only moves
+			// past time.Sleep once every other goroutine is blocked too.
+			synctest.Test(t, func(t *testing.T) {
+				var rec recorder
+				stopHTTP := func() error {
+					time.Sleep(time.Second) // draining in-flight requests
+					rec.add("http stopped")
+					return tt.httpErr
+				}
+				finished := make(chan struct{})
+				work := func(ctx context.Context) {
+					defer close(finished)
+					<-ctx.Done()
+					rec.add("worker stopping")
+					time.Sleep(2 * time.Second) // uploading the last batch
+					rec.add("worker flushed")
+				}
+
+				svc := Start(stopHTTP, work)
+				err := svc.Shutdown()
+
+				want := []string{"http stopped", "worker stopping", "worker flushed"}
+				if got := rec.list(); !slices.Equal(got, want) {
+					t.Errorf("events when Shutdown() returned = %q, want %q", got, want)
+				}
+				if err != tt.httpErr {
+					t.Errorf("Shutdown() = %v, want %v", err, tt.httpErr)
+				}
+				<-finished // let the worker end before the test does
+			})
+		})
+	}
+}

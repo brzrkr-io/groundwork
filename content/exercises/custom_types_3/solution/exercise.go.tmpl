@@ -1,0 +1,69 @@
+// Package customtypes3 is the Gopherlings exercise "Custom types: Kubernetes memory quantities".
+package customtypes3
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// Bytes is an amount of memory, in bytes.
+type Bytes int64
+
+// Memory units, in the powers of 1024 that Kubernetes uses.
+const (
+	KiB Bytes = 1024
+	MiB       = 1024 * KiB
+	GiB       = 1024 * MiB
+)
+
+// Human formats b with the largest fitting unit, such as "1.5 GiB" or
+// "900 B".
+func (b Bytes) Human() string {
+	switch {
+	case b >= GiB:
+		return fmt.Sprintf("%.1f GiB", float64(b)/float64(GiB))
+	case b >= MiB:
+		return fmt.Sprintf("%.1f MiB", float64(b)/float64(MiB))
+	case b >= KiB:
+		return fmt.Sprintf("%.1f KiB", float64(b)/float64(KiB))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
+// ParseMemory converts a Kubernetes memory quantity such as "512Mi" into
+// Bytes. It returns an error if the quantity is not valid.
+func ParseMemory(s string) (Bytes, error) {
+	number, unit := s, Bytes(1)
+	if n, found := strings.CutSuffix(s, "Ki"); found {
+		number, unit = n, KiB
+	} else if n, found := strings.CutSuffix(s, "Mi"); found {
+		number, unit = n, MiB
+	} else if n, found := strings.CutSuffix(s, "Gi"); found {
+		number, unit = n, GiB
+	}
+
+	n, err := strconv.Atoi(number)
+	if err != nil {
+		return 0, fmt.Errorf("invalid memory quantity %q", s)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("negative memory quantity %q", s)
+	}
+	return Bytes(n) * unit, nil
+}
+
+// FitsOnNode reports whether the memory requests, added together, fit in
+// free. It returns an error if any request is not a valid quantity.
+func FitsOnNode(requests []string, free Bytes) (bool, error) {
+	var total Bytes
+	for _, r := range requests {
+		size, err := ParseMemory(r)
+		if err != nil {
+			return false, err
+		}
+		total += size
+	}
+	return total <= free, nil
+}

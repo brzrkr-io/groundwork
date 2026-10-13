@@ -1,0 +1,149 @@
+package retry
+
+// This file is how Gopherlings grades the tests you write. You don't need to
+// change it, but you are welcome to read it.
+//
+// TestGrader re-runs your tests against the real code, where they must pass,
+// and then against each mutant below, where they must fail. A mutant is a
+// copy of the code with one deliberate bug.
+
+import (
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+	"time"
+)
+
+// learnerTests selects the tests you write in exercise_test.go.
+const learnerTests = "^TestRetry(SucceedsOnThirdTry|GivesUp)$"
+
+// mutants are the bugs your tests must catch.
+var mutants = []mutant{
+	{
+		name: "no_doubling",
+		bug:  `Retry always slept 1s instead of 1s, 2s, 4s, ...`,
+		install: func() {
+			retry = func(s Sleeper, attempts int, fn func() error) error {
+				var err error
+				for i := 1; i <= attempts; i++ {
+					if err = fn(); err == nil {
+						return nil
+					}
+					if i < attempts {
+						s.Sleep(time.Second)
+					}
+				}
+				return err
+			}
+		},
+	},
+	{
+		name: "keeps_retrying_after_success",
+		bug:  `Retry kept calling fn after it succeeded`,
+		install: func() {
+			retry = func(s Sleeper, attempts int, fn func() error) error {
+				calls := 0
+				err := realRetry(s, attempts, func() error {
+					calls++
+					return fn()
+				})
+				for ; calls < attempts; calls++ {
+					fn()
+				}
+				return err
+			}
+		},
+	},
+	{
+		name: "sleeps_after_last_attempt",
+		bug:  `Retry slept again after the last attempt failed`,
+		install: func() {
+			retry = func(s Sleeper, attempts int, fn func() error) error {
+				delay := time.Second
+				var err error
+				for range attempts {
+					if err = fn(); err == nil {
+						return nil
+					}
+					s.Sleep(delay)
+					delay *= 2
+				}
+				return err
+			}
+		},
+	},
+	{
+		name: "one_attempt_too_few",
+		bug:  `Retry made only 2 attempts when asked for 3`,
+		install: func() {
+			retry = func(s Sleeper, attempts int, fn func() error) error {
+				return realRetry(s, attempts-1, fn)
+			}
+		},
+	},
+	{
+		name: "nil_after_giving_up",
+		bug:  `Retry returned nil after every attempt failed`,
+		install: func() {
+			retry = func(s Sleeper, attempts int, fn func() error) error {
+				realRetry(s, attempts, fn)
+				return nil
+			}
+		},
+	},
+}
+
+// Everything below is the same in every Testing exercise.
+
+// mutantEnv names the environment variable that tells a re-run which mutant
+// to install.
+const mutantEnv = "GOPHERLINGS_MUTANT"
+
+type mutant struct {
+	name    string // short name, used in GOPHERLINGS_MUTANT and test output
+	bug     string // completes "your tests didn't notice when ..."
+	install func() // swaps the bug into the package
+}
+
+// TestMain runs before any test. In a re-run started by TestGrader, it
+// installs the mutant named by GOPHERLINGS_MUTANT.
+func TestMain(m *testing.M) {
+	if name := os.Getenv(mutantEnv); name != "" {
+		for _, mu := range mutants {
+			if mu.name == name {
+				mu.install()
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func TestGrader(t *testing.T) {
+	if _, rerun := os.LookupEnv(mutantEnv); rerun {
+		t.Skip("TestGrader does not run inside its own re-runs")
+	}
+	out, err := runLearnerTests("")
+	if strings.Contains(out, "no tests to run") {
+		t.Fatalf("found no test matching %s in exercise_test.go", learnerTests)
+	}
+	if err != nil {
+		t.Fatalf("your tests must pass on the real code first, but they failed:\n%s", out)
+	}
+	for _, mu := range mutants {
+		t.Run(mu.name, func(t *testing.T) {
+			if _, err := runLearnerTests(mu.name); err == nil {
+				t.Errorf("your tests didn't notice when %s", mu.bug)
+			}
+		})
+	}
+}
+
+// runLearnerTests re-runs this test binary with only your tests selected and
+// the named mutant installed. An empty name means the real code.
+func runLearnerTests(mutant string) (string, error) {
+	cmd := exec.Command(os.Args[0], "-test.run="+learnerTests)
+	cmd.Env = append(os.Environ(), mutantEnv+"="+mutant)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

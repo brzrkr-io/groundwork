@@ -1,0 +1,46 @@
+package loops
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestRolloutPlan(t *testing.T) {
+	// Each line is one case: the inputs, then the answer we want.
+	cases := []struct {
+		hosts, batch int
+		want         string
+	}{
+		{7, 3, "1-3,4-6,7-7"},
+		{4, 2, "1-2,3-4"},
+		{2, 5, "1-2"},
+		{10, 4, "1-4,5-8,9-10"},
+		{0, 3, ""},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_hosts_by_%d", c.hosts, c.batch), func(t *testing.T) {
+			if got := RolloutPlan(c.hosts, c.batch); got != c.want {
+				t.Errorf("RolloutPlan(%d, %d) = %q, want %q", c.hosts, c.batch, got, c.want)
+			}
+		})
+	}
+}
+
+func TestRetrySchedule(t *testing.T) {
+	cases := []struct {
+		attempts, base, max int
+		want                string
+	}{
+		{5, 1, 8, "1s 2s 4s 8s 8s"},
+		{4, 5, 12, "5s 10s 12s 12s"},
+		{2, 3, 100, "3s 6s"},
+		{0, 1, 8, ""},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_attempts_base_%d_max_%d", c.attempts, c.base, c.max), func(t *testing.T) {
+			if got := RetrySchedule(c.attempts, c.base, c.max); got != c.want {
+				t.Errorf("RetrySchedule(%d, %d, %d) = %q, want %q", c.attempts, c.base, c.max, got, c.want)
+			}
+		})
+	}
+}

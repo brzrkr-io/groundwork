@@ -1,0 +1,29 @@
+package disk
+
+import "testing"
+
+func TestDiskAlert(t *testing.T) {
+	tests := []struct {
+		name string
+		used int
+		want string
+	}{
+		{"half full", 50, "ok"},
+
+		// TODO(1): Add a row for the "warning" level (85) and one for the
+		// "critical" level (95).
+
+		// TODO(2): Add rows for both sides of the warning boundary (79, 80)
+		// and the critical boundary (89, 90).
+
+		// TODO(3): Add rows for the valid edges 0 and 100 and for the
+		// invalid values -1 and 101.
+	}
+
+	for _, tc := range tests {
+		got := DiskAlert(tc.used)
+		if got != tc.want {
+			t.Errorf("%s: DiskAlert(%d) = %q, want %q", tc.name, tc.used, got, tc.want)
+		}
+	}
+}

@@ -1,0 +1,51 @@
+package controller
+
+import (
+	"maps"
+	"slices"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+// DesiredService returns the Service that should exist for the exposed
+// Deployment d. It only builds the object; it does not talk to the API.
+func DesiredService(d *appsv1.Deployment) *corev1.Service {
+	var ports []corev1.ServicePort
+	for _, container := range d.Spec.Template.Spec.Containers {
+		for _, p := range container.Ports {
+			ports = append(ports, corev1.ServicePort{
+				Name:       p.Name,
+				Port:       p.ContainerPort,
+				TargetPort: intstr.FromInt32(p.ContainerPort),
+				Protocol:   corev1.ProtocolTCP,
+			})
+		}
+	}
+
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      d.Name,
+			Namespace: d.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(d, appsv1.SchemeGroupVersion.WithKind("Deployment")),
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			// d comes from the informer cache. Copy the map so the Service
+			// never shares memory with a cached object.
+			Selector: maps.Clone(d.Spec.Selector.MatchLabels),
+			Ports:    ports,
+		},
+	}
+}
+
+// ServiceInSync reports whether the live Service got already has the
+// selector and ports of the desired Service want.
+func ServiceInSync(got, want *corev1.Service) bool {
+	return maps.Equal(got.Spec.Selector, want.Spec.Selector) &&
+		slices.Equal(got.Spec.Ports, want.Spec.Ports)
+}

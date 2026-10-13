@@ -1,0 +1,11 @@
+package target
+
+import "testing"
+
+func FuzzParseTarget(f *testing.F) {
+	// TODO(1): Add the seeds "web-1:8080" and "[::1]:443" with f.Add.
+
+	f.Fuzz(func(t *testing.T, s string) {
+		// TODO(1): Pass s to ParseTarget. Ignore what it returns.
+	})
+}

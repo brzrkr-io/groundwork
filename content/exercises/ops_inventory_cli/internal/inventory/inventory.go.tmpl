@@ -1,0 +1,55 @@
+// Package inventory loads, checks and filters the host inventory.
+package inventory
+
+import (
+	"errors"
+	"fmt"
+	"io"
+)
+
+// Envs lists the environments a host may belong to, in the order they are
+// shown in error messages.
+var Envs = []string{"dev", "staging", "prod"}
+
+// Host is one machine in the inventory file.
+type Host struct {
+	Name    string   `json:"name"`
+	Env     string   `json:"env"`
+	Region  string   `json:"region"`
+	Address string   `json:"address"`
+	Tags    []string `json:"tags,omitempty"`
+}
+
+// Parse decodes an inventory: a JSON array of hosts.
+func Parse(r io.Reader) ([]Host, error) {
+	// TODO(1): Decode the JSON array from r into a []Host. Reject unknown
+	// fields, and wrap any error as "parse inventory: <err>".
+	// You will need to import "encoding/json".
+	return nil, nil
+}
+
+// Validate checks every host and reports all problems at once, joined with
+// errors.Join. It returns nil when the inventory is valid.
+func Validate(hosts []Host) error {
+	var errs []error
+	for i, h := range hosts {
+		where := label(i+1, h)
+		// TODO(2): Check the name and env rules here, before the region.
+		if h.Region == "" {
+			errs = append(errs, fmt.Errorf("%s: region is required", where))
+		}
+		// TODO(2): Check the address and duplicate-name rules here.
+		// You will need to import "net/netip", "slices" and "strings".
+	}
+	return errors.Join(errs...)
+}
+
+// label names a host in error messages by its position in the file (counting
+// from 1) and its name: "host 3 (web-2)", or just "host 3" when the name is
+// empty.
+func label(n int, h Host) string {
+	if h.Name == "" {
+		return fmt.Sprintf("host %d", n)
+	}
+	return fmt.Sprintf("host %d (%s)", n, h.Name)
+}

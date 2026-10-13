@@ -1,0 +1,36 @@
+// Package methods is the Gopherlings exercise "Methods".
+package methods
+
+// Host is a server that runs one service on one port.
+type Host struct {
+	Name string
+	IP   string
+	Port int
+}
+
+// Address returns the host's IP and port joined by a colon, like
+// "10.0.0.5:8080".
+func (h Host) Address() string {
+	// TODO(1): Return the IP and the port joined by a colon.
+	return ""
+}
+
+// URL returns an http URL for path on the host, like
+// "http://10.0.0.5:8080/healthz". path always starts with "/".
+func (h Host) URL(path string) string {
+	// TODO(2): Return "http://", then the address, then path. Use h.Address().
+	return ""
+}
+
+// Deployment is a service that runs from a container image.
+type Deployment struct {
+	Name  string
+	Image string
+}
+
+// ImageTag returns the tag of the deployment's image: the part after the
+// colon in "name:tag". Images without a colon have the tag "latest".
+func (d Deployment) ImageTag() string {
+	// TODO(3): Return the part after the colon, or "latest" if there is none.
+	return ""
+}

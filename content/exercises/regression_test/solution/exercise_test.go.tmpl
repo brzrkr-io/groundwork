@@ -1,0 +1,39 @@
+package deploy
+
+import "testing"
+
+func TestNormalizeEnvironment(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "lower case", input: "production", want: "production"},
+		// Bug report #1: capital letters were rejected.
+		{name: "capital P", input: "Production", want: "production"},
+		{name: "all caps", input: "STAGING", want: "staging"},
+		// Bug report #2: pasted names with spaces were rejected.
+		{name: "trailing space", input: "staging ", want: "staging"},
+		{name: "spaces and caps", input: "  Development ", want: "development"},
+		{name: "unknown name", input: "prod", wantErr: true},
+		{name: "empty", input: "", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NormalizeEnvironment(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("NormalizeEnvironment(%q) = %q, want an error", tc.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("NormalizeEnvironment(%q) returned error: %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Errorf("NormalizeEnvironment(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}

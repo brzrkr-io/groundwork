@@ -1,0 +1,42 @@
+// Package cancellation is the Gopherlings exercise "Context and cancellation".
+package cancellation
+
+import (
+	"context"
+	"time"
+)
+
+// Sleep waits for d and returns nil. If ctx is cancelled first, it returns
+// ctx.Err() straight away.
+func Sleep(ctx context.Context, d time.Duration) error {
+	select {
+	case <-time.After(d):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// RunWorker calls handle for every job on jobs. It returns nil when jobs is
+// closed, and ctx.Err() as soon as ctx is cancelled.
+func RunWorker(ctx context.Context, jobs <-chan string, handle func(job string)) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case job, ok := <-jobs:
+			if !ok {
+				return nil
+			}
+			handle(job)
+		}
+	}
+}
+
+// CheckWithTimeout calls check with a context that times out after timeout,
+// and returns check's result.
+func CheckWithTimeout(timeout time.Duration, check func(ctx context.Context) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return check(ctx)
+}

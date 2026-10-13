@@ -1,0 +1,193 @@
+package cleanup3
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"testing"
+)
+
+// checkErr compares err with want. An empty want means "no error".
+func checkErr(t *testing.T, call string, err error, want string) {
+	t.Helper()
+	if want == "" {
+		if err != nil {
+			t.Errorf("%s error = %q, want nil", call, err)
+		}
+		return
+	}
+	if err == nil {
+		t.Errorf("%s error = nil, want %q", call, want)
+	} else if err.Error() != want {
+		t.Errorf("%s error = %q, want %q", call, err, want)
+	}
+}
+
+// checkEvents compares the recorded events with want.
+func checkEvents(t *testing.T, call string, got, want []string) {
+	t.Helper()
+	if !slices.Equal(got, want) {
+		t.Errorf("%s events = %q, want %q", call, got, want)
+	}
+}
+
+func TestRollback(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(tx *Tx)
+		want []string
+	}{
+		{
+			name: "rollback an open transaction",
+			run: func(tx *Tx) {
+				tx.Exec("001_create_users")
+				tx.Rollback()
+			},
+			want: []string{"begin", "exec 001_create_users", "rollback"},
+		},
+		{
+			name: "rollback after commit does nothing",
+			run: func(tx *Tx) {
+				tx.Exec("001_create_users")
+				tx.Commit()
+				tx.Rollback()
+			},
+			want: []string{"begin", "exec 001_create_users", "commit"},
+		},
+		{
+			name: "second rollback does nothing",
+			run: func(tx *Tx) {
+				tx.Rollback()
+				tx.Rollback()
+			},
+			want: []string{"begin", "rollback"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := &DB{}
+			tt.run(db.Begin())
+			checkEvents(t, tt.name+":", db.Events, tt.want)
+		})
+	}
+}
+
+func TestApplyChanges(t *testing.T) {
+	tests := []struct {
+		name    string
+		db      *DB
+		changes []string
+		wantErr string
+		want    []string
+	}{
+		{
+			name:    "all changes work",
+			db:      &DB{},
+			changes: []string{"001_create_users", "002_add_email"},
+			want:    []string{"begin", "exec 001_create_users", "exec 002_add_email", "commit"},
+		},
+		{
+			name:    "no changes",
+			db:      &DB{},
+			changes: nil,
+			want:    []string{"begin", "commit"},
+		},
+		{
+			name:    "second change rejected",
+			db:      &DB{Reject: "002_add_email"},
+			changes: []string{"001_create_users", "002_add_email", "003_add_index"},
+			wantErr: "change 2: exec 002_add_email: rejected",
+			want:    []string{"begin", "exec 001_create_users", "exec 002_add_email", "rollback"},
+		},
+		{
+			name:    "first change rejected",
+			db:      &DB{Reject: "007_drop_users"},
+			changes: []string{"007_drop_users"},
+			wantErr: "change 1: exec 007_drop_users: rejected",
+			want:    []string{"begin", "exec 007_drop_users", "rollback"},
+		},
+		{
+			name:    "commit fails",
+			db:      &DB{Conflict: true},
+			changes: []string{"001_create_users"},
+			wantErr: "commit: write conflict",
+			want:    []string{"begin", "exec 001_create_users", "commit"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			call := fmt.Sprintf("ApplyChanges(db, %q)", tt.changes)
+			err := ApplyChanges(tt.db, tt.changes)
+			checkErr(t, call, err, tt.wantErr)
+			checkEvents(t, call, tt.db.Events, tt.want)
+		})
+	}
+
+	t.Run("errors.Is sees the cause", func(t *testing.T) {
+		err := ApplyChanges(&DB{Reject: "002_add_email"}, []string{"002_add_email"})
+		if !errors.Is(err, ErrRejected) {
+			t.Errorf("errors.Is(err, ErrRejected) = false, want true (wrap with %%w)")
+		}
+		err = ApplyChanges(&DB{Conflict: true}, []string{"001_create_users"})
+		if !errors.Is(err, ErrConflict) {
+			t.Errorf("errors.Is(err, ErrConflict) = false, want true (return Commit's error)")
+		}
+	})
+}
+
+func TestApplyBatches(t *testing.T) {
+	tests := []struct {
+		name    string
+		db      *DB
+		batches [][]string
+		wantErr string
+		want    []string
+	}{
+		{
+			name:    "all batches work",
+			db:      &DB{},
+			batches: [][]string{{"001_create_users"}, {"002_add_email", "003_add_index"}},
+			want: []string{
+				"begin", "exec 001_create_users", "commit",
+				"begin", "exec 002_add_email", "exec 003_add_index", "commit",
+			},
+		},
+		{
+			name:    "failed batch does not stop the next one",
+			db:      &DB{Reject: "002_add_email"},
+			batches: [][]string{{"001_create_users"}, {"002_add_email", "003_add_index"}, {"004_add_role"}},
+			wantErr: "batch 2: change 1: exec 002_add_email: rejected",
+			want: []string{
+				"begin", "exec 001_create_users", "commit",
+				"begin", "exec 002_add_email", "rollback",
+				"begin", "exec 004_add_role", "commit",
+			},
+		},
+		{
+			name:    "every batch fails",
+			db:      &DB{Conflict: true},
+			batches: [][]string{{"001_create_users"}, {"002_add_email"}},
+			wantErr: "batch 1: commit: write conflict\nbatch 2: commit: write conflict",
+			want: []string{
+				"begin", "exec 001_create_users", "commit",
+				"begin", "exec 002_add_email", "commit",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			call := fmt.Sprintf("ApplyBatches(db, %q)", tt.batches)
+			err := ApplyBatches(tt.db, tt.batches)
+			checkErr(t, call, err, tt.wantErr)
+			checkEvents(t, call, tt.db.Events, tt.want)
+		})
+	}
+
+	t.Run("errors.Is sees inside the joined error", func(t *testing.T) {
+		db := &DB{Reject: "002_add_email"}
+		err := ApplyBatches(db, [][]string{{"001_create_users"}, {"002_add_email"}})
+		if !errors.Is(err, ErrRejected) {
+			t.Errorf("errors.Is(err, ErrRejected) = false, want true (wrap with %%w)")
+		}
+	})
+}

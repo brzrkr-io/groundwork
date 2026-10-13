@@ -1,0 +1,150 @@
+package health
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"testing"
+	"time"
+)
+
+// healthy is a check that always passes.
+func healthy(ctx context.Context) error { return nil }
+
+// refused is a check whose dependency is down.
+func refused(ctx context.Context) error { return errors.New("connection refused") }
+
+// hangs is a check that never answers by itself. It waits for its context to
+// expire. If nobody set a timeout, it gives up after one second so the test
+// does not hang forever.
+func hangs(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(time.Second):
+		return errors.New("check was never cancelled: no timeout was set")
+	}
+}
+
+func TestLivez(t *testing.T) {
+	tests := []struct{ name, target string }{
+		{"plain", "/livez"},
+		{"with query string", "/livez?verbose=1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := tt.target
+			rec := httptest.NewRecorder()
+			Livez(rec, httptest.NewRequest(http.MethodGet, target, nil))
+
+			if rec.Code != http.StatusOK {
+				t.Errorf("GET %s: status = %d, want %d", target, rec.Code, http.StatusOK)
+			}
+			if got, want := rec.Body.String(), "ok\n"; got != want {
+				t.Errorf("GET %s: body = %q, want %q", target, got, want)
+			}
+		})
+	}
+}
+
+func TestRunChecks(t *testing.T) {
+	tests := []struct {
+		name   string
+		checks []Check
+		want   []Result
+	}{
+		{
+			name:   "all healthy",
+			checks: []Check{{"postgres", healthy}, {"redis", healthy}},
+			want: []Result{
+				{Name: "postgres", Status: "ok"},
+				{Name: "redis", Status: "ok"},
+			},
+		},
+		{
+			name:   "one returns an error",
+			checks: []Check{{"postgres", refused}, {"redis", healthy}},
+			want: []Result{
+				{Name: "postgres", Status: "fail", Error: "connection refused"},
+				{Name: "redis", Status: "ok"},
+			},
+		},
+		{
+			name:   "one times out",
+			checks: []Check{{"s3", healthy}, {"vault", hangs}, {"kafka", refused}},
+			want: []Result{
+				{Name: "s3", Status: "ok"},
+				{Name: "vault", Status: "fail", Error: "context deadline exceeded"},
+				{Name: "kafka", Status: "fail", Error: "connection refused"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := RunChecks(context.Background(), tt.checks, 5*time.Millisecond)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("RunChecks(%s) = %+v, want %+v", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadyz(t *testing.T) {
+	tests := []struct {
+		name       string
+		checks     []Check
+		wantCode   int
+		wantReport Report
+	}{
+		{
+			name:     "all healthy",
+			checks:   []Check{{"postgres", healthy}, {"redis", healthy}},
+			wantCode: http.StatusOK,
+			wantReport: Report{Status: "ok", Checks: []Result{
+				{Name: "postgres", Status: "ok"},
+				{Name: "redis", Status: "ok"},
+			}},
+		},
+		{
+			name:     "redis down",
+			checks:   []Check{{"postgres", healthy}, {"redis", refused}},
+			wantCode: http.StatusServiceUnavailable,
+			wantReport: Report{Status: "fail", Checks: []Result{
+				{Name: "postgres", Status: "ok"},
+				{Name: "redis", Status: "fail", Error: "connection refused"},
+			}},
+		},
+		{
+			name:     "vault hangs",
+			checks:   []Check{{"vault", hangs}},
+			wantCode: http.StatusServiceUnavailable,
+			wantReport: Report{Status: "fail", Checks: []Result{
+				{Name: "vault", Status: "fail", Error: "context deadline exceeded"},
+			}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler := Readyz(tt.checks, 5*time.Millisecond)
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+			if rec.Code != tt.wantCode {
+				t.Errorf("GET /readyz (%s): status = %d, want %d", tt.name, rec.Code, tt.wantCode)
+			}
+			if got, want := rec.Header().Get("Content-Type"), "application/json"; got != want {
+				t.Errorf("GET /readyz (%s): Content-Type = %q, want %q", tt.name, got, want)
+			}
+			var got Report
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("GET /readyz (%s): body %q is not valid JSON: %v", tt.name, rec.Body.String(), err)
+			}
+			if got.Status != tt.wantReport.Status || !slices.Equal(got.Checks, tt.wantReport.Checks) {
+				t.Errorf("GET /readyz (%s): body = %+v, want %+v", tt.name, got, tt.wantReport)
+			}
+		})
+	}
+}

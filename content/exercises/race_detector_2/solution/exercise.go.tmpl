@@ -1,0 +1,62 @@
+// Package release is the Gopherlings exercise "The race detector: hidden races".
+package release
+
+import "sync"
+
+// DiskUsage measures every directory at the same time. It returns the sizes
+// in the same order as dirs, and their total.
+func DiskUsage(dirs []string, size func(dir string) int) (sizes []int, total int) {
+	sizes = make([]int, len(dirs))
+	var wg sync.WaitGroup
+	for i, dir := range dirs {
+		wg.Go(func() {
+			sizes[i] = size(dir)
+		})
+	}
+	wg.Wait()
+	for _, s := range sizes {
+		total += s
+	}
+	return sizes, total
+}
+
+// PushAll pushes every image at the same time. It returns nil if every push
+// succeeded, or else the error of the first image (in images order) whose
+// push failed.
+func PushAll(images []string, push func(image string) error) error {
+	errs := make([]error, len(images))
+	var wg sync.WaitGroup
+	for i, image := range images {
+		wg.Go(func() {
+			errs[i] = push(image)
+		})
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// TokenCache fetches a registry token the first time it is needed.
+type TokenCache struct {
+	fetch func() string
+	once  sync.Once
+	token string
+}
+
+// NewTokenCache returns a TokenCache that gets its token from fetch.
+func NewTokenCache(fetch func() string) *TokenCache {
+	return &TokenCache{fetch: fetch}
+}
+
+// Token returns the token, calling fetch exactly once, however many
+// goroutines call Token at the same time.
+func (c *TokenCache) Token() string {
+	c.once.Do(func() {
+		c.token = c.fetch()
+	})
+	return c.token
+}

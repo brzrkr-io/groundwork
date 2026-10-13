@@ -1,0 +1,114 @@
+package streams
+
+import (
+	"errors"
+	"io"
+	"strings"
+	"testing"
+	"testing/iotest"
+)
+
+// testCase is one hostfilter run: the arguments, what arrives on stdin, and
+// exactly what we expect back.
+type testCase struct {
+	name       string
+	args       []string
+	stdin      io.Reader
+	wantCode   int
+	wantStdout string
+	wantStderr string
+}
+
+// check calls Run the way main would, but with fake streams.
+func check(t *testing.T, tc testCase) {
+	t.Helper()
+	var stdout, stderr strings.Builder
+	code := Run(tc.args, tc.stdin, &stdout, &stderr)
+	if code != tc.wantCode {
+		t.Errorf("Run(%q) = %d, want %d", tc.args, code, tc.wantCode)
+	}
+	if got := stdout.String(); got != tc.wantStdout {
+		t.Errorf("Run(%q) stdout = %q, want %q", tc.args, got, tc.wantStdout)
+	}
+	if got := stderr.String(); got != tc.wantStderr {
+		t.Errorf("Run(%q) stderr = %q, want %q", tc.args, got, tc.wantStderr)
+	}
+}
+
+// input turns text into a fake stdin.
+func input(text string) io.Reader {
+	return strings.NewReader(text)
+}
+
+func TestUsage(t *testing.T) {
+	const usage = "usage: hostfilter PREFIX\n"
+	tests := []testCase{
+		{"no arguments", []string{}, input("web-01\n"), 2, "", usage},
+		{"two arguments", []string{"web-", "db-"}, input("web-01\n"), 2, "", usage},
+		{"three arguments", []string{"web-", "db-", "cache-"}, input(""), 2, "", usage},
+		{"one argument is fine", []string{"web-"}, input(""), 0, "", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			check(t, tc)
+		})
+	}
+}
+
+func TestFilter(t *testing.T) {
+	tests := []testCase{
+		{"web hosts", []string{"web-"},
+			input("web-01\nweb-02\ndb-01\n"), 0, "web-01\nweb-02\n", ""},
+		{"db hosts, no final newline", []string{"db-"},
+			input("db-01\nweb-01\ndb-02"), 0, "db-01\ndb-02\n", ""},
+		{"trims spaces and tabs", []string{"web-"},
+			input("  web-01  \n\tweb-02\n"), 0, "web-01\nweb-02\n", ""},
+		{"skips blank lines and comments", []string{"web-"},
+			input("# web tier\n\nweb-01\n   \n  # web-99 retired\n"), 0, "web-01\n", ""},
+		{"no matches", []string{"cache-"},
+			input("web-01\ndb-01\n"), 0, "", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			check(t, tc)
+		})
+	}
+}
+
+// errDisk stands in for a failure while reading stdin.
+var errDisk = errors.New("disk read failed")
+
+// brokenInput returns a reader that yields text and then fails with errDisk.
+func brokenInput(text string) io.Reader {
+	return io.MultiReader(strings.NewReader(text), iotest.ErrReader(errDisk))
+}
+
+func TestDiagnostics(t *testing.T) {
+	tests := []testCase{
+		{"space inside a host", []string{"web-"},
+			input("web-01\nweb 02\nweb-03\n"), 1,
+			"web-01\nweb-03\n",
+			"hostfilter: line 2: invalid host \"web 02\"\n"},
+		{"tab inside a host, line numbers count every line", []string{"db-"},
+			input("# hosts\n\nweb-01\tweb-02\ndb-01  \n"), 1,
+			"db-01\n",
+			"hostfilter: line 3: invalid host \"web-01\\tweb-02\"\n"},
+		{"two bad lines", []string{"web-"},
+			input("db 01\nweb-01\nweb 02\n"), 1,
+			"web-01\n",
+			"hostfilter: line 1: invalid host \"db 01\"\nhostfilter: line 3: invalid host \"web 02\"\n"},
+		{"read error", []string{"web-"},
+			brokenInput("web-01\n"), 1,
+			"web-01\n",
+			"hostfilter: reading stdin: disk read failed\n"},
+		{"read error after a non-match", []string{"web-"},
+			brokenInput("db-01\n"), 1,
+			"",
+			"hostfilter: reading stdin: disk read failed\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			check(t, tc)
+		})
+	}
+}

@@ -1,0 +1,41 @@
+package diskwatch
+
+import "testing"
+
+// fakeNotifier stands in for a real Notifier in tests. Instead of paging
+// anyone, it remembers every message it is given.
+type fakeNotifier struct {
+	messages []string
+}
+
+func (f *fakeNotifier) Notify(message string) {
+	f.messages = append(f.messages, message)
+}
+
+func TestCheckDisk(t *testing.T) {
+	f := &fakeNotifier{}
+	CheckDisk(f, "web-1", 93)
+	if len(f.messages) != 1 {
+		t.Fatalf("CheckDisk(web-1, 93) sent %d messages, want 1: %q", len(f.messages), f.messages)
+	}
+	if want := "disk on web-1 is 93% full"; f.messages[0] != want {
+		t.Errorf("CheckDisk(web-1, 93) sent %q, want %q", f.messages[0], want)
+	}
+
+	f = &fakeNotifier{}
+	CheckDisk(f, "db-2", 90)
+	if len(f.messages) != 1 {
+		t.Fatalf("CheckDisk(db-2, 90) sent %d messages, want 1: %q", len(f.messages), f.messages)
+	}
+	if want := "disk on db-2 is 90% full"; f.messages[0] != want {
+		t.Errorf("CheckDisk(db-2, 90) sent %q, want %q", f.messages[0], want)
+	}
+
+	for _, used := range []int{50, 89} {
+		f = &fakeNotifier{}
+		CheckDisk(f, "web-1", used)
+		if len(f.messages) != 0 {
+			t.Errorf("CheckDisk(web-1, %d) sent %q, want no messages", used, f.messages)
+		}
+	}
+}

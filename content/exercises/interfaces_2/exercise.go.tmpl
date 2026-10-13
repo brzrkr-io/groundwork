@@ -1,0 +1,80 @@
+// Package interfaces2 is the Gopherlings exercise "Interfaces: fix the health checks".
+package interfaces2
+
+import "fmt"
+
+// HealthChecker is one check on the status page. Name says what is checked,
+// and Check reports whether it is healthy.
+type HealthChecker interface {
+	Name() string
+	Check() bool
+}
+
+// DiskCheck watches free space on one disk.
+type DiskCheck struct {
+	Path        string
+	FreePercent int
+}
+
+// Name returns "disk <Path>", like "disk /var".
+func (d DiskCheck) Name() string {
+	return "disk " + d.Path
+}
+
+// Check reports whether at least 10% of the disk is free.
+func (d DiskCheck) Check() bool {
+	return d.FreePercent >= 10
+}
+
+// HTTPCheck holds the status code of the last request to an HTTP endpoint.
+type HTTPCheck struct {
+	URL        string
+	StatusCode int
+}
+
+// Name returns "http <URL>", like "http https://api.example.com/healthz".
+func (h HTTPCheck) Name() string {
+	return "http " + h.URL
+}
+
+// Checked reports whether the last request returned 200.
+func (h HTTPCheck) Checked() bool {
+	// TODO(1): HTTPCheck does not satisfy HealthChecker. Compare this method
+	// with the interface and fix it.
+	return h.StatusCode == 200
+}
+
+// TCPCheck records whether a TCP port accepted a connection.
+type TCPCheck struct {
+	Host string
+	Port int
+	Open bool
+}
+
+// Name returns "tcp <Host>:<Port>", like "tcp db-1:5432".
+func (c TCPCheck) Name() string {
+	return fmt.Sprintf("tcp %s:%d", c.Host, c.Port)
+}
+
+// Check reports whether the port is open.
+func (c TCPCheck) Check() string {
+	// TODO(2): TCPCheck does not satisfy HealthChecker either. Compare this
+	// method with the interface and fix it.
+	if c.Open {
+		return "up"
+	}
+	return "down"
+}
+
+// FailingChecks returns the names of the checks that are not healthy, in
+// order.
+func FailingChecks(checks []HealthChecker) []string {
+	var failing []string
+	for _, c := range checks {
+		// TODO(3): This collects the wrong checks. Fix it.
+		if c.Check() {
+			failing = append(failing, c.Name())
+		}
+	}
+	return failing
+}

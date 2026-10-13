@@ -1,0 +1,40 @@
+// Package status is the Gopherlings exercise "Encoding JSON: a deployment status report".
+package status
+
+import "time"
+
+// Deployment is the state of one service rollout.
+//
+// TODO(1): Add json struct tags so a Deployment encodes with lowercase keys,
+// leaves out an empty Error, and never includes AuthToken.
+type Deployment struct {
+	Service   string
+	Version   string
+	Replicas  int
+	Healthy   bool
+	Started   time.Time
+	Error     string
+	AuthToken string
+}
+
+// Report is the status report sent to the deploy dashboard.
+type Report struct {
+	Environment string         `json:"environment"`
+	GeneratedAt time.Time      `json:"generated_at"`
+	Counts      map[string]int `json:"counts"`
+	Deployments []Deployment   `json:"deployments"`
+}
+
+// HealthCounts counts healthy and unhealthy deployments.
+// Both keys are always present, even when a count is zero.
+func HealthCounts(deps []Deployment) map[string]int {
+	// TODO(2): Return a map with the keys "healthy" and "unhealthy".
+	return nil
+}
+
+// ReportJSON builds a Report and encodes it as indented JSON.
+func ReportJSON(env string, generatedAt time.Time, deps []Deployment) (string, error) {
+	// TODO(3): Build a Report and encode it with json.MarshalIndent.
+	// Add "encoding/json" to the imports at the top of the file.
+	return "", nil
+}

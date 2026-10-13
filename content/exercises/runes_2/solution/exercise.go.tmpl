@@ -1,0 +1,25 @@
+// Package oncall is the Gopherlings exercise "Bytes, runes and UTF-8: fix the byte bugs".
+package oncall
+
+import "strings"
+
+// Initial returns the upper-case first character of name, or "?" if name is
+// empty.
+func Initial(name string) string {
+	if name == "" {
+		return "?"
+	}
+	first := []rune(name)[0]
+	return strings.ToUpper(string(first))
+}
+
+// MaskSecret replaces every character of secret except the last 4 with "*".
+// Secrets of 4 characters or fewer are masked completely.
+func MaskSecret(secret string) string {
+	runes := []rune(secret)
+	if len(runes) <= 4 {
+		return strings.Repeat("*", len(runes))
+	}
+	hidden := len(runes) - 4
+	return strings.Repeat("*", hidden) + string(runes[hidden:])
+}

@@ -1,0 +1,180 @@
+package cleanup2
+
+import (
+	"fmt"
+	"slices"
+	"testing"
+)
+
+// checkErr compares err with want. An empty want means "no error".
+func checkErr(t *testing.T, call string, err error, want string) {
+	t.Helper()
+	if want == "" {
+		if err != nil {
+			t.Errorf("%s error = %q, want nil", call, err)
+		}
+		return
+	}
+	if err == nil {
+		t.Errorf("%s error = nil, want %q", call, want)
+	} else if err.Error() != want {
+		t.Errorf("%s error = %q, want %q", call, err, want)
+	}
+}
+
+// checkEvents compares the recorded events with want.
+func checkEvents(t *testing.T, call string, got, want []string) {
+	t.Helper()
+	if !slices.Equal(got, want) {
+		t.Errorf("%s events = %q, want %q", call, got, want)
+	}
+}
+
+func TestMaintenance(t *testing.T) {
+	tests := []struct {
+		name    string
+		r       *Recorder
+		host    string
+		wantErr string
+		want    []string
+	}{
+		{
+			name: "web-1 works",
+			r:    &Recorder{},
+			host: "web-1",
+			want: []string{"connect web-1", "rotate web-1", "close web-1", "maintenance web-1: ok"},
+		},
+		{
+			name: "web-4 works",
+			r:    &Recorder{},
+			host: "web-4",
+			want: []string{"connect web-4", "rotate web-4", "close web-4", "maintenance web-4: ok"},
+		},
+		{
+			name:    "disk full",
+			r:       &Recorder{DiskFull: "web-2"},
+			host:    "web-2",
+			wantErr: "rotate web-2: disk full",
+			want:    []string{"connect web-2", "rotate web-2", "close web-2", "maintenance web-2: failed"},
+		},
+		{
+			name:    "unreachable",
+			r:       &Recorder{Unreachable: "web-3"},
+			host:    "web-3",
+			wantErr: "connect web-3: connection refused",
+			want:    []string{"connect web-3", "maintenance web-3: failed"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			call := fmt.Sprintf("Maintenance(r, %q)", tt.host)
+			err := Maintenance(tt.r, tt.host)
+			checkErr(t, call, err, tt.wantErr)
+			checkEvents(t, call, tt.r.Events, tt.want)
+		})
+	}
+}
+
+func TestRotateHost(t *testing.T) {
+	tests := []struct {
+		name    string
+		r       *Recorder
+		host    string
+		wantErr string
+		want    []string
+	}{
+		{
+			name: "works",
+			r:    &Recorder{},
+			host: "web-1",
+			want: []string{"connect web-1", "rotate web-1", "close web-1"},
+		},
+		{
+			name:    "disk full",
+			r:       &Recorder{DiskFull: "web-2"},
+			host:    "web-2",
+			wantErr: "rotate web-2: disk full",
+			want:    []string{"connect web-2", "rotate web-2", "close web-2"},
+		},
+		{
+			name:    "unreachable web-3",
+			r:       &Recorder{Unreachable: "web-3"},
+			host:    "web-3",
+			wantErr: "connect web-3: connection refused",
+			want:    []string{"connect web-3"},
+		},
+		{
+			name:    "unreachable db-1",
+			r:       &Recorder{Unreachable: "db-1"},
+			host:    "db-1",
+			wantErr: "connect db-1: connection refused",
+			want:    []string{"connect db-1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			call := fmt.Sprintf("RotateHost(r, %q)", tt.host)
+			err := RotateHost(tt.r, tt.host)
+			checkErr(t, call, err, tt.wantErr)
+			checkEvents(t, call, tt.r.Events, tt.want)
+		})
+	}
+}
+
+func TestRotateAll(t *testing.T) {
+	tests := []struct {
+		name    string
+		r       *Recorder
+		hosts   []string
+		wantErr string
+		want    []string
+	}{
+		{
+			name:  "two hosts work",
+			r:     &Recorder{},
+			hosts: []string{"web-1", "web-2"},
+			want: []string{
+				"connect web-1", "rotate web-1", "close web-1",
+				"connect web-2", "rotate web-2", "close web-2",
+			},
+		},
+		{
+			name:  "three hosts work",
+			r:     &Recorder{},
+			hosts: []string{"db-1", "db-2", "db-3"},
+			want: []string{
+				"connect db-1", "rotate db-1", "close db-1",
+				"connect db-2", "rotate db-2", "close db-2",
+				"connect db-3", "rotate db-3", "close db-3",
+			},
+		},
+		{
+			name:    "disk full stops the job",
+			r:       &Recorder{DiskFull: "web-2"},
+			hosts:   []string{"web-1", "web-2", "web-3"},
+			wantErr: "rotate web-2: disk full",
+			want: []string{
+				"connect web-1", "rotate web-1", "close web-1",
+				"connect web-2", "rotate web-2", "close web-2",
+			},
+		},
+		{
+			name:    "unreachable host stops the job",
+			r:       &Recorder{Unreachable: "web-2"},
+			hosts:   []string{"web-1", "web-2", "web-3"},
+			wantErr: "connect web-2: connection refused",
+			want: []string{
+				"connect web-1", "rotate web-1", "close web-1",
+				"connect web-2",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			call := fmt.Sprintf("RotateAll(r, %q)", tt.hosts)
+			err := RotateAll(tt.r, tt.hosts)
+			checkErr(t, call, err, tt.wantErr)
+			checkEvents(t, call, tt.r.Events, tt.want)
+		})
+	}
+}

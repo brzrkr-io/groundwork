@@ -1,0 +1,47 @@
+// Package customerr3 is the Gopherlings exercise "Custom error types: retry failed health checks".
+package customerr3
+
+import "fmt"
+
+// HTTPError reports a health check that got a bad HTTP status code.
+type HTTPError struct {
+	URL        string
+	StatusCode int
+}
+
+// Error returns a message like "GET http://api:8080/healthz: status 503".
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("GET %s: status %d", e.URL, e.StatusCode)
+}
+
+// TimeoutError reports a host that did not answer in time.
+type TimeoutError struct {
+	Host    string
+	Seconds int
+}
+
+// Error returns a message like "db-1 did not respond within 5s".
+func (e *TimeoutError) Error() string {
+	return fmt.Sprintf("%s did not respond within %ds", e.Host, e.Seconds)
+}
+
+// CheckResponse turns the status code of a health check on url into an
+// error. Codes 200 to 299 mean healthy.
+func CheckResponse(url string, status int) error {
+	if status >= 200 && status <= 299 {
+		return nil
+	}
+	return &HTTPError{URL: url, StatusCode: status}
+}
+
+// Retryable reports whether a failed health check is worth trying again.
+func Retryable(err error) bool {
+	switch e := err.(type) {
+	case *TimeoutError:
+		return true
+	case *HTTPError:
+		return e.StatusCode >= 500 || e.StatusCode == 429
+	default:
+		return false
+	}
+}

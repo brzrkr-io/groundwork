@@ -1,0 +1,38 @@
+// Package methods2 is the Gopherlings exercise "Methods: certificate checks".
+package methods2
+
+import "fmt"
+
+// RenewWithinDays is how close to expiry a certificate must be before it
+// needs renewal.
+const RenewWithinDays = 30
+
+// Certificate is a TLS certificate and the number of whole days until it
+// expires.
+type Certificate struct {
+	Domain   string
+	DaysLeft int
+}
+
+// Expired reports whether the certificate has 0 or fewer days left.
+func (c Certificate) Expired() bool {
+	return c.DaysLeft <= 0
+}
+
+// NeedsRenewal reports whether the certificate has RenewWithinDays or fewer
+// days left. Expired certificates need renewal too.
+func (c Certificate) NeedsRenewal() bool {
+	return c.DaysLeft <= RenewWithinDays
+}
+
+// Summary returns a one-line status for the alert dashboard, like
+// "api.example.com: renew soon (12d left)".
+func (c Certificate) Summary() string {
+	if c.Expired() {
+		return c.Domain + ": EXPIRED"
+	}
+	if c.NeedsRenewal() {
+		return fmt.Sprintf("%s: renew soon (%dd left)", c.Domain, c.DaysLeft)
+	}
+	return fmt.Sprintf("%s: ok (%dd left)", c.Domain, c.DaysLeft)
+}

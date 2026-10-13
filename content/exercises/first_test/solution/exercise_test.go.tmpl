@@ -1,0 +1,28 @@
+package ports
+
+import "testing"
+
+func TestParsePort(t *testing.T) {
+	port, err := ParsePort("8080")
+	if err != nil {
+		t.Fatalf("ParsePort(%q) returned error: %v", "8080", err)
+	}
+	if port != 8080 {
+		t.Errorf("ParsePort(%q) = %d, want %d", "8080", port, 8080)
+	}
+
+	port, err = ParsePort("443")
+	if err != nil {
+		t.Fatalf("ParsePort(%q) returned error: %v", "443", err)
+	}
+	if port != 443 {
+		t.Errorf("ParsePort(%q) = %d, want %d", "443", port, 443)
+	}
+
+	if _, err := ParsePort("0"); err == nil {
+		t.Errorf("ParsePort(%q) returned no error, want an error", "0")
+	}
+	if _, err := ParsePort("65536"); err == nil {
+		t.Errorf("ParsePort(%q) returned no error, want an error", "65536")
+	}
+}

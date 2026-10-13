@@ -1,0 +1,20 @@
+// Package disk understands disk usage readings such as "web-1=72".
+package disk
+
+// Reading is the disk usage of one host, in percent.
+type Reading struct {
+	Host    string
+	Percent int
+}
+
+// Status returns "ok" below 80 percent, "warn" from 80 and "full" from 90.
+func Status(percent int) string {
+	// TODO(1): Move the thresholds here from main.
+	return ""
+}
+
+// Parse turns "web-1=72" into Reading{Host: "web-1", Percent: 72}.
+func Parse(arg string) (Reading, error) {
+	// TODO(2): Move the parsing here from main, returning errors instead of exiting.
+	return Reading{}, nil
+}

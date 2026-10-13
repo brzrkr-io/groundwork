@@ -1,0 +1,31 @@
+package httptesting
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// postDeploy sends body to POST /deploys and returns the recorded response.
+func postDeploy(body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("POST", "/deploys", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	NewHandler().ServeHTTP(rec, req)
+	return rec
+}
+
+func TestDeployAccepted(t *testing.T) {
+	rec := postDeploy(`{"service": "api", "version": "v1.2.0"}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /deploys: status = %d, want %d", rec.Code, http.StatusAccepted)
+	}
+
+	// TODO(1): Check the Content-Type header. Then decode the body into a
+	// DeployResponse and compare it with the deploy you expect. Add the
+	// "encoding/json" import.
+}
+
+func TestDeployRejectsEmptyService(t *testing.T) {
+	// TODO(2): Write a regression test for the bug report in README.md.
+}

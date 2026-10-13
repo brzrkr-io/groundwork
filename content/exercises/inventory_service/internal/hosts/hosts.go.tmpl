@@ -1,0 +1,111 @@
+// Package hosts holds the inventory's data: the Host type, its validation
+// rules and an in-memory Store that is safe for concurrent use.
+package hosts
+
+import (
+	"cmp"
+	"errors"
+	"fmt"
+	"slices"
+	"sync"
+)
+
+// Host is one machine in the inventory.
+type Host struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Env    string `json:"env"`
+	Region string `json:"region"`
+	Port   int    `json:"port"`
+}
+
+// ErrNotFound means no host has the requested ID.
+var ErrNotFound = errors.New("host not found")
+
+// ErrInvalid means a host breaks a validation rule. Validate wraps it with
+// the reason, for example "invalid host: name is required".
+var ErrInvalid = errors.New("invalid host")
+
+// Validate checks h against the inventory's rules, in this order:
+//
+//	Name   must not be empty          "name is required"
+//	Env    must be dev, staging, prod  "env must be dev, staging or prod"
+//	Port   must be 1 to 65535          "port must be between 1 and 65535"
+//
+// It returns nil for a valid host. Otherwise it returns ErrInvalid wrapped
+// with the message of the first rule that fails.
+func Validate(h Host) error {
+	// TODO(1): Check the three rules in order and return
+	// fmt.Errorf("%w: <message>", ErrInvalid) for the first one that fails.
+	return nil
+}
+
+// Store keeps hosts in memory. Every method locks mu, so HTTP handlers can
+// use one Store from many goroutines at once.
+type Store struct {
+	mu     sync.Mutex
+	hosts  map[string]Host
+	nextID int
+}
+
+// NewStore returns an empty store.
+func NewStore() *Store {
+	return &Store{hosts: map[string]Host{}}
+}
+
+// Create validates h, gives it the next ID ("h1", "h2", ...) and stores it.
+// Any ID already set on h is ignored.
+func (s *Store) Create(h Host) (Host, error) {
+	if err := Validate(h); err != nil {
+		return Host{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextID++
+	h.ID = fmt.Sprintf("h%d", s.nextID)
+	s.hosts[h.ID] = h
+	return h, nil
+}
+
+// List returns every host, sorted by name and then by ID.
+func (s *Store) List() []Host {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	list := make([]Host, 0, len(s.hosts))
+	for _, h := range s.hosts {
+		list = append(list, h)
+	}
+	slices.SortFunc(list, func(a, b Host) int {
+		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.ID, b.ID))
+	})
+	return list
+}
+
+// Len returns how many hosts are stored.
+func (s *Store) Len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.hosts)
+}
+
+// Get returns the host with the given ID, or ErrNotFound.
+func (s *Store) Get(id string) (Host, error) {
+	// TODO(2): Lock the store, look the host up, and return ErrNotFound if
+	// it is missing.
+	return Host{}, ErrNotFound
+}
+
+// Update replaces the host with the given ID. It returns ErrNotFound if the
+// ID is unknown, then the Validate error if h is invalid. The stored host
+// keeps the ID from the URL, whatever h.ID says.
+func (s *Store) Update(id string, h Host) (Host, error) {
+	// TODO(2): Check the ID exists, validate h, set h.ID = id, store it and
+	// return it.
+	return h, nil
+}
+
+// Delete removes the host with the given ID, or returns ErrNotFound.
+func (s *Store) Delete(id string) error {
+	// TODO(2): Remove the host, or return ErrNotFound if it is missing.
+	return nil
+}

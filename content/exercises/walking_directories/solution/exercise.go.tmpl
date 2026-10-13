@@ -1,0 +1,64 @@
+// Package walkdirs is the Gopherlings exercise "Walking directories: find big log files".
+package walkdirs
+
+import (
+	"io/fs"
+	"path"
+	"slices"
+)
+
+// ListFiles returns the sorted paths of every file in fsys, skipping
+// directories named ".git".
+func ListFiles(fsys fs.FS) ([]string, error) {
+	var files []string
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == ".git" {
+			return fs.SkipDir
+		}
+		if !d.IsDir() {
+			files = append(files, p)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.Sort(files)
+	return files, nil
+}
+
+// LargeLogs returns the sorted paths of the *.log files in fsys that are at
+// least minSize bytes, skipping directories named ".git".
+func LargeLogs(fsys fs.FS, minSize int64) ([]string, error) {
+	var logs []string
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if ok, _ := path.Match("*.log", d.Name()); !ok {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if info.Size() >= minSize {
+			logs = append(logs, p)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.Sort(logs)
+	return logs, nil
+}

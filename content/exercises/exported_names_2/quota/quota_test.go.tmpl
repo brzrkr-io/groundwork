@@ -1,0 +1,59 @@
+package quota_test
+
+import (
+	"errors"
+	"reflect"
+	"testing"
+
+	"gopherlings.local/exported_names_2/quota"
+)
+
+func TestNew(t *testing.T) {
+	for _, limit := range []int{0, 3, 10} {
+		q := quota.New(limit)
+		if got := q.Limit(); got != limit {
+			t.Errorf("New(%d).Limit() = %d, want %d", limit, got, limit)
+		}
+		if got := q.Used(); got != 0 {
+			t.Errorf("New(%d).Used() = %d, want 0", limit, got)
+		}
+	}
+}
+
+func TestFieldsArePrivate(t *testing.T) {
+	// reflect lets a program look at a type's fields while it runs.
+	typ := reflect.TypeFor[quota.Quota]()
+	for field := range typ.Fields() {
+		if field.IsExported() {
+			t.Errorf("Quota has exported field %s; all fields should be private", field.Name)
+		}
+	}
+}
+
+func TestTake(t *testing.T) {
+	tests := []struct {
+		name  string
+		limit int
+		takes int // how many Takes should succeed
+	}{
+		{"limit 0", 0, 0},
+		{"limit 1", 1, 1},
+		{"limit 3", 3, 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := quota.New(tt.limit)
+			for i := range tt.takes {
+				if err := q.Take(); err != nil {
+					t.Fatalf("Take() number %d = %v, want nil", i+1, err)
+				}
+			}
+			if err := q.Take(); !errors.Is(err, quota.ErrExhausted) {
+				t.Errorf("Take() past the limit = %v, want ErrExhausted", err)
+			}
+			if got := q.Used(); got != tt.limit {
+				t.Errorf("Used() after the refused Take = %d, want %d", got, tt.limit)
+			}
+		})
+	}
+}

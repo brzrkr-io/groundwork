@@ -1,0 +1,21 @@
+// Package rollout is the Gopherlings exercise "Slices: rolling-deploy batches".
+package rollout
+
+// BatchCount returns how many batches of size hosts it takes to cover hosts.
+func BatchCount(hosts []string, size int) int {
+	// TODO(1): Divide, rounding up.
+	return 0
+}
+
+// Batch returns batch number n (counting from 0) when hosts is split into
+// batches of size hosts. The last batch may be shorter.
+func Batch(hosts []string, size, n int) []string {
+	// TODO(2): Slice out batch n without running past the end of hosts.
+	return nil
+}
+
+// Plan splits hosts into batches of size hosts, in order.
+func Plan(hosts []string, size int) [][]string {
+	// TODO(3): Make a slice with one element per batch and fill it.
+	return nil
+}

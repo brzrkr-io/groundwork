@@ -1,0 +1,118 @@
+package embedding3
+
+import (
+	"slices"
+	"testing"
+)
+
+// Both check types satisfy Check. CheckName and Interval are promoted from
+// BaseCheck; Target is each type's own method.
+var (
+	_ Check = HTTPCheck{}
+	_ Check = TCPCheck{}
+)
+
+func TestBaseCheck(t *testing.T) {
+	tests := []struct {
+		name         string
+		check        Check
+		wantName     string
+		wantInterval int
+	}{
+		{
+			"http check with interval",
+			HTTPCheck{BaseCheck: BaseCheck{Name: "api-health", IntervalSeconds: 30}, URL: "https://api.internal/healthz"},
+			"api-health", 30,
+		},
+		{
+			"tcp check with interval",
+			TCPCheck{BaseCheck: BaseCheck{Name: "redis", IntervalSeconds: 5}, Host: "cache.internal", Port: 6379},
+			"redis", 5,
+		},
+		{
+			"tcp check with default interval",
+			TCPCheck{BaseCheck: BaseCheck{Name: "postgres"}, Host: "db.internal", Port: 5432},
+			"postgres", 60,
+		},
+		{
+			"http check with default interval",
+			HTTPCheck{BaseCheck: BaseCheck{Name: "status-page"}, URL: "https://status.example.com"},
+			"status-page", 60,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.check.CheckName(); got != tt.wantName {
+				t.Errorf("%+v.CheckName() = %q, want %q", tt.check, got, tt.wantName)
+			}
+			if got := tt.check.Interval(); got != tt.wantInterval {
+				t.Errorf("%+v.Interval() = %d, want %d", tt.check, got, tt.wantInterval)
+			}
+		})
+	}
+}
+
+func TestTarget(t *testing.T) {
+	tests := []struct {
+		name  string
+		check Check
+		want  string
+	}{
+		{"http healthz", HTTPCheck{URL: "https://api.internal/healthz"}, "https://api.internal/healthz"},
+		{"http status page", HTTPCheck{URL: "https://status.example.com"}, "https://status.example.com"},
+		{"tcp postgres", TCPCheck{Host: "db.internal", Port: 5432}, "db.internal:5432"},
+		{"tcp redis", TCPCheck{Host: "10.0.3.7", Port: 6379}, "10.0.3.7:6379"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.check.Target(); got != tt.want {
+				t.Errorf("%+v.Target() = %q, want %q", tt.check, got, tt.want)
+			}
+		})
+	}
+}
+
+// fakeCheck is a test-only Check with fixed answers, so TestDueNow does not
+// depend on tasks 1 and 2. Any type with the three methods is a Check.
+type fakeCheck struct {
+	name     string
+	interval int
+	target   string
+}
+
+func (f fakeCheck) CheckName() string { return f.name }
+func (f fakeCheck) Interval() int     { return f.interval }
+func (f fakeCheck) Target() string    { return f.target }
+
+func TestDueNow(t *testing.T) {
+	checks := []Check{
+		fakeCheck{"api-health", 30, "https://api.internal/healthz"},
+		fakeCheck{"postgres", 10, "db.internal:5432"},
+		fakeCheck{"status-page", 60, "https://status.example.com"},
+	}
+	api := "api-health -> https://api.internal/healthz"
+	postgres := "postgres -> db.internal:5432"
+	status := "status-page -> https://status.example.com"
+
+	tests := []struct {
+		name    string
+		elapsed int
+		want    []string
+	}{
+		{"at start everything is due", 0, []string{api, postgres, status}},
+		{"10s only postgres", 10, []string{postgres}},
+		{"30s api and postgres", 30, []string{api, postgres}},
+		{"60s everything is due", 60, []string{api, postgres, status}},
+		{"45s nothing is due", 45, []string{}},
+		{"7s nothing is due", 7, []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DueNow(checks, tt.elapsed)
+			// slices.Equal treats a nil slice and an empty slice as equal.
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("DueNow(checks, %d) = %q, want %q", tt.elapsed, got, tt.want)
+			}
+		})
+	}
+}

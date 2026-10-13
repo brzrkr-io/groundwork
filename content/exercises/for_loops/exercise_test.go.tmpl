@@ -1,0 +1,63 @@
+package loops
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestTotalBackoff(t *testing.T) {
+	// Each line is one case: the inputs, then the answer we want.
+	cases := []struct {
+		attempts, base, want int
+	}{
+		{4, 1, 15},
+		{3, 5, 35},
+		{1, 2, 2},
+		{0, 5, 0},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_attempts_base_%d", c.attempts, c.base), func(t *testing.T) {
+			if got := TotalBackoff(c.attempts, c.base); got != c.want {
+				t.Errorf("TotalBackoff(%d, %d) = %d, want %d", c.attempts, c.base, got, c.want)
+			}
+		})
+	}
+}
+
+func TestProgressBar(t *testing.T) {
+	cases := []struct {
+		done, total int
+		want        string
+	}{
+		{2, 5, "[##---]"},
+		{0, 3, "[---]"},
+		{4, 4, "[####]"},
+		{0, 0, "[]"},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_of_%d", c.done, c.total), func(t *testing.T) {
+			if got := ProgressBar(c.done, c.total); got != c.want {
+				t.Errorf("ProgressBar(%d, %d) = %q, want %q", c.done, c.total, got, c.want)
+			}
+		})
+	}
+}
+
+func TestRetriesWithin(t *testing.T) {
+	cases := []struct {
+		budget, base, want int
+	}{
+		{10, 1, 3},
+		{7, 1, 3},
+		{100, 10, 3},
+		{4, 5, 0},
+		{5, 5, 1},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("budget_%d_base_%d", c.budget, c.base), func(t *testing.T) {
+			if got := RetriesWithin(c.budget, c.base); got != c.want {
+				t.Errorf("RetriesWithin(%d, %d) = %d, want %d", c.budget, c.base, got, c.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,38 @@
+// Package rollout is the Gopherlings exercise "Pointer receivers: a rolling deploy".
+package rollout
+
+// Rollout tracks a rolling update of a service to a new version.
+type Rollout struct {
+	Service  string
+	Version  string
+	Replicas int  // how many replicas the service runs
+	Updated  int  // how many replicas already run Version
+	Paused   bool // an operator paused the rollout
+}
+
+// Pause stops the rollout where it is.
+func (r *Rollout) Pause() {
+	r.Paused = true
+}
+
+// Status describes the rollout, for example "rolling out 2/5".
+func (r Rollout) Status() string {
+	// TODO(1): Use a pointer receiver. Return "paused at U/R", "done" or
+	// "rolling out U/R".
+	return ""
+}
+
+// Advance updates up to batch more replicas and returns how many it updated.
+func (r Rollout) Advance(batch int) int {
+	// TODO(2): Use a pointer receiver. Update the next batch of replicas,
+	// unless paused.
+	return 0
+}
+
+// Run advances the rollout batch by batch until nothing more can be updated,
+// and returns the status after each step.
+func (r Rollout) Run(batch int) []string {
+	// TODO(3): Use a pointer receiver. Keep advancing and collect the status
+	// after each step.
+	return nil
+}

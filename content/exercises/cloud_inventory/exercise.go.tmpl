@@ -1,0 +1,64 @@
+// Package inventory is the Gopherlings exercise "Practice: cloud inventory report".
+package inventory
+
+import (
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+// Item is one row of the inventory: an S3 bucket or an EC2 instance.
+type Item struct {
+	Kind   string `json:"kind"`            // "bucket" or "instance"
+	Region string `json:"region"`          // e.g. "eu-west-1"
+	ID     string `json:"id"`              // bucket name or instance ID
+	Name   string `json:"name,omitempty"`  // the instance's Name tag; empty for buckets
+	State  string `json:"state,omitempty"` // the instance state; empty for buckets
+}
+
+// Report is the JSON document written by JSON.
+type Report struct {
+	Buckets   int    `json:"buckets"`
+	Instances int    `json:"instances"`
+	Items     []Item `json:"items"`
+}
+
+// EC2Factory returns the EC2 client for one region.
+type EC2Factory func(region string) ec2.DescribeInstancesAPIClient
+
+// Buckets lists the buckets that live in region.
+func Buckets(ctx context.Context, api s3.ListBucketsAPIClient, region string) ([]Item, error) {
+	// TODO(1): Page through ListBuckets, filtered to region, and return one
+	// "bucket" Item per bucket.
+	return nil, nil
+}
+
+// Instances lists the EC2 instances that api can see. region is copied into
+// every Item.
+func Instances(ctx context.Context, api ec2.DescribeInstancesAPIClient, region string) ([]Item, error) {
+	// TODO(2): Page through DescribeInstances and return one "instance" Item
+	// per instance.
+	return nil, nil
+}
+
+// Table renders items as an aligned text table with a header row.
+func Table(items []Item) string {
+	// TODO(3): Render the table with text/tabwriter.
+	return ""
+}
+
+// JSON renders items as an indented Report.
+func JSON(items []Item) ([]byte, error) {
+	// TODO(4): Count buckets and instances, then marshal a Report.
+	return nil, nil
+}
+
+// Gather collects the buckets and instances of every region, working on at
+// most maxParallel regions at a time. The result is sorted by Kind, then
+// Region, then ID.
+func Gather(ctx context.Context, regions []string, s3api s3.ListBucketsAPIClient, ec2For EC2Factory, maxParallel int) ([]Item, error) {
+	// TODO(5): Collect Buckets and Instances for every region concurrently,
+	// at most maxParallel regions at once. Stop early on the first error.
+	return nil, nil
+}

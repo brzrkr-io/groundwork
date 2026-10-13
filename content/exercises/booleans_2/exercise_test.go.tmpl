@@ -1,0 +1,72 @@
+package booleans
+
+import "testing"
+
+func TestShouldPage(t *testing.T) {
+	// Each line is one case: a name, the inputs, then the answer we want.
+	tests := []struct {
+		name         string
+		severity     string
+		acknowledged bool
+		want         bool
+	}{
+		{"new critical alert", "critical", false, true},
+		{"acknowledged critical alert", "critical", true, false},
+		{"new warning", "warning", false, false},
+		{"acknowledged warning", "warning", true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ShouldPage(tt.severity, tt.acknowledged); got != tt.want {
+				t.Errorf("ShouldPage(%q, %t) = %t, want %t", tt.severity, tt.acknowledged, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsHealthy(t *testing.T) {
+	// Each line is one case: a name, the inputs, then the answer we want.
+	tests := []struct {
+		name      string
+		errorRate float64
+		latencyMs int
+		want      bool
+	}{
+		{"all good", 0.005, 120, true},
+		{"latency exactly 500", 0.001, 500, true},
+		{"error rate exactly 0.01", 0.01, 120, false},
+		{"too many errors", 0.2, 120, false},
+		{"too slow", 0.005, 501, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsHealthy(tt.errorRate, tt.latencyMs); got != tt.want {
+				t.Errorf("IsHealthy(%v, %d) = %t, want %t", tt.errorRate, tt.latencyMs, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInMaintenanceWindow(t *testing.T) {
+	// Each line is one case: a name, the input, then the answer we want.
+	tests := []struct {
+		name string
+		hour int
+		want bool
+	}{
+		{"window opens", 22, true},
+		{"late evening", 23, true},
+		{"midnight", 0, true},
+		{"last hour", 1, true},
+		{"window closed", 2, false},
+		{"midday", 12, false},
+		{"just before", 21, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := InMaintenanceWindow(tt.hour); got != tt.want {
+				t.Errorf("InMaintenanceWindow(%d) = %t, want %t", tt.hour, got, tt.want)
+			}
+		})
+	}
+}

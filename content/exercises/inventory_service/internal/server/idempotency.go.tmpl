@@ -1,0 +1,15 @@
+package server
+
+import "net/http"
+
+// idempotent makes POST requests safe to retry. See the README for the
+// exact rules.
+func (s *Server) idempotent(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// TODO(6): Handle the Idempotency-Key header with s.idem and the
+		// idempotency package: pass through without one, replay KeyDone,
+		// reject KeyBusy with 409, and for KeyNew run next into a Capture,
+		// save or forget the key, and send the result.
+		next.ServeHTTP(w, r)
+	})
+}

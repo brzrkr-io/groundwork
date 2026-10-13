@@ -1,0 +1,62 @@
+// Package pods is the Gopherlings exercise "Decoding JSON: fix the kubectl pod reader".
+package pods
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+)
+
+// Metadata holds a pod's identity.
+type Metadata struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+// Status holds a pod's current state.
+type Status struct {
+	Phase string `json:"phase"`
+}
+
+// Pod is one pod from `kubectl get pods -o json`.
+type Pod struct {
+	Metadata Metadata `json:"metadata"`
+	Status   Status   `json:"status"`
+}
+
+// Ref returns the pod as "namespace/name", the way kubectl prints it.
+func (p Pod) Ref() string {
+	return p.Metadata.Namespace + "/" + p.Metadata.Name
+}
+
+// PodList is the top-level object kubectl prints for a list of pods.
+type PodList struct {
+	Items []Pod `json:"items"`
+}
+
+// DecodePods decodes a PodList and returns its items.
+func DecodePods(data []byte) ([]Pod, error) {
+	var list PodList
+	if err := json.Unmarshal(data, &list); err != nil {
+		return nil, fmt.Errorf("decode pods: %w", err)
+	}
+	return list.Items, nil
+}
+
+// CountPhases reads a stream of pod objects from r and counts them by phase.
+func CountPhases(r io.Reader) (map[string]int, error) {
+	counts := map[string]int{}
+	dec := json.NewDecoder(r)
+	for n := 1; ; n++ {
+		var pod Pod
+		err := dec.Decode(&pod)
+		if errors.Is(err, io.EOF) {
+			return counts, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("pod %d: %w", n, err)
+		}
+		counts[pod.Status.Phase]++
+	}
+}

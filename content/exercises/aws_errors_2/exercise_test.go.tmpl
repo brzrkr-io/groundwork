@@ -1,0 +1,121 @@
+package cleanup
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
+)
+
+// ec2Error builds an error shaped like the ones a real EC2 call returns:
+// an OperationError wrapping an HTTP response error wrapping the API error.
+// EC2 errors carry only a code and a message.
+func ec2Error(status int, code, message string) error {
+	return &smithy.OperationError{
+		ServiceID:     "EC2",
+		OperationName: "TerminateInstances",
+		Err: &awshttp.ResponseError{
+			ResponseError: &smithyhttp.ResponseError{
+				Response: &smithyhttp.Response{Response: &http.Response{StatusCode: status}},
+				Err:      &smithy.GenericAPIError{Code: code, Message: message},
+			},
+			RequestID: "9b2d7e61-EXAMPLE",
+		},
+	}
+}
+
+func TestIsNotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil error", nil, false},
+		{"bare API error", &smithy.GenericAPIError{Code: "InvalidInstanceID.NotFound"}, true},
+		{"from the SDK", ec2Error(400, "InvalidInstanceID.NotFound", "The instance ID 'i-0a1b2c3d4e5f60718' does not exist"), true},
+		{"from the SDK, wrapped again", fmt.Errorf("stop ci-runner-7: %w",
+			ec2Error(400, "InvalidInstanceID.NotFound", "The instance ID 'i-0c9d8e7f6a5b40312' does not exist")), true},
+		{"malformed ID", ec2Error(400, "InvalidInstanceID.Malformed", "Invalid id: \"web-1\""), false},
+		{"not an AWS error, same text", errors.New("InvalidInstanceID.NotFound"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsNotFound(tt.err); got != tt.want {
+				t.Errorf("IsNotFound(%v) = %t, want %t", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+// fakeEC2 records the TerminateInstances request and answers with err.
+type fakeEC2 struct {
+	err error
+	got *ec2.TerminateInstancesInput
+}
+
+func (f *fakeEC2) TerminateInstances(ctx context.Context, in *ec2.TerminateInstancesInput, _ ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error) {
+	f.got = in
+	return nil, f.err
+}
+
+func TestCanTerminate(t *testing.T) {
+	ctx := context.Background()
+
+	answers := []struct {
+		name string
+		id   string
+		err  error
+		want bool
+	}{
+		{"allowed", "i-0a1b2c3d4e5f60718", ec2Error(412, "DryRunOperation", "Request would have succeeded, but DryRun flag is set."), true},
+		{"allowed, other instance", "i-0c9d8e7f6a5b40312", ec2Error(412, "DryRunOperation", "Request would have succeeded, but DryRun flag is set."), true},
+		{"not allowed", "i-0a1b2c3d4e5f60718", ec2Error(403, "UnauthorizedOperation", "You are not authorized to perform this operation."), false},
+		{"not allowed, other instance", "i-0c9d8e7f6a5b40312", ec2Error(403, "UnauthorizedOperation", "You are not authorized to perform this operation."), false},
+	}
+	for _, tt := range answers {
+		t.Run(tt.name, func(t *testing.T) {
+			api := &fakeEC2{err: tt.err}
+			got, err := CanTerminate(ctx, api, tt.id)
+			if got != tt.want || err != nil {
+				t.Errorf("CanTerminate(%q) = %t, %v, want %t, nil", tt.id, got, err, tt.want)
+			}
+			if api.got == nil || !aws.ToBool(api.got.DryRun) || !slices.Equal(api.got.InstanceIds, []string{tt.id}) {
+				t.Errorf("CanTerminate(%q) sent %+v, want a dry run for just that instance", tt.id, api.got)
+			}
+		})
+	}
+
+	failures := []struct {
+		name string
+		id   string
+		err  error
+	}{
+		{"instance gone", "i-0a1b2c3d4e5f60718", ec2Error(400, "InvalidInstanceID.NotFound", "The instance ID 'i-0a1b2c3d4e5f60718' does not exist")},
+		{"throttled", "i-0c9d8e7f6a5b40312", ec2Error(503, "RequestLimitExceeded", "Request limit exceeded.")},
+		{"network down", "i-0e1f2a3b4c5d60798", errors.New("dial tcp: i/o timeout")},
+	}
+	for _, tt := range failures {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := CanTerminate(ctx, &fakeEC2{err: tt.err}, tt.id)
+			if got || err == nil {
+				t.Fatalf("CanTerminate(%q) = %t, %v, want false and an error", tt.id, got, err)
+			}
+			wantPrefix := "dry-run terminate " + tt.id + ": "
+			if !strings.HasPrefix(err.Error(), wantPrefix) {
+				t.Errorf("error = %q, want it to start with %q", err, wantPrefix)
+			}
+			if !errors.Is(err, tt.err) {
+				t.Errorf("errors.Is(err, original) = false, want true; wrap the error with %%w")
+			}
+		})
+	}
+}

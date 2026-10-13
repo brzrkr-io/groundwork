@@ -1,0 +1,19 @@
+package controller
+
+import appsv1 "k8s.io/api/apps/v1"
+
+// ExposeLabel is the label that asks this controller for a Service.
+// Only the exact value "true" counts.
+const ExposeLabel = "gopherlings.dev/expose"
+
+// Key returns the work-queue key for d: "namespace/name".
+func Key(d *appsv1.Deployment) string {
+	// TODO(1): Return the namespace and the name joined by "/".
+	return ""
+}
+
+// Exposed reports whether d carries ExposeLabel with the value "true".
+func Exposed(d *appsv1.Deployment) bool {
+	// TODO(1): Look up ExposeLabel in d's labels.
+	return false
+}

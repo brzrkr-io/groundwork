@@ -1,0 +1,70 @@
+// Package metrics is the Gopherlings exercise "Prometheus-style metrics: histograms".
+package metrics
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"sync"
+	"time"
+)
+
+// formatValue prints v the way Prometheus expects: 3 as "3", 0.25 as "0.25".
+func formatValue(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+// Histogram counts observations, such as request durations, in buckets.
+// It is safe for concurrent use.
+type Histogram struct {
+	name    string
+	help    string
+	buckets []float64 // upper bounds, smallest first, without +Inf
+
+	mu     sync.Mutex
+	counts []uint64 // counts[i]: observations in bucket i; the last slot is the overflow
+	sum    float64
+	count  uint64
+}
+
+// NewHistogram returns an empty histogram with the given bucket upper bounds,
+// which must be sorted from smallest to largest.
+func NewHistogram(name, help string, buckets []float64) *Histogram {
+	return &Histogram{
+		name:    name,
+		help:    help,
+		buckets: buckets,
+		counts:  make([]uint64, len(buckets)+1),
+	}
+}
+
+// Observe records one value, such as a request duration in seconds.
+func (h *Histogram) Observe(v float64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.sum += v
+	h.count++
+	// TODO(1): Add 1 to the counts slot of the first bucket with bound >= v,
+	// or to the last slot if v is bigger than every bound.
+}
+
+// Write writes the histogram to w in the Prometheus text format.
+func (h *Histogram) Write(w io.Writer) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	fmt.Fprintf(w, "# HELP %s %s\n", h.name, h.help)
+	fmt.Fprintf(w, "# TYPE %s histogram\n", h.name)
+	// TODO(2): Write the cumulative _bucket lines, ending with le="+Inf".
+	fmt.Fprintf(w, "%s_sum %s\n", h.name, formatValue(h.sum))
+	fmt.Fprintf(w, "%s_count %d\n", h.name, h.count)
+}
+
+// Instrument is middleware that observes how long next takes to serve each
+// request, in seconds, using now to read the clock.
+func Instrument(h *Histogram, now func() time.Time, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// TODO(3): Read the clock before and after, and observe the difference in seconds.
+		next.ServeHTTP(w, r)
+	})
+}

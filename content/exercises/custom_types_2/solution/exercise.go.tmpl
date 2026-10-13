@@ -1,0 +1,30 @@
+// Package customtypes2 is the Gopherlings exercise "Custom types: fix the deploy phase enum".
+package customtypes2
+
+// Phase is one step of a deployment pipeline.
+type Phase int
+
+// The deployment phases. Unknown is the zero value; the rest follow
+// pipeline order.
+const (
+	Unknown Phase = iota
+	Pending
+	Building
+	Testing
+	Deploying
+	Done
+)
+
+// IsActive reports whether work is in progress: Building, Testing or
+// Deploying.
+func (p Phase) IsActive() bool {
+	return p > Pending && p < Done
+}
+
+// Next returns the phase after p. Done and Unknown return themselves.
+func (p Phase) Next() Phase {
+	if p == Unknown || p == Done {
+		return p
+	}
+	return p + 1
+}

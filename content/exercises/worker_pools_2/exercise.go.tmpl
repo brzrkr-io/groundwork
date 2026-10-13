@@ -1,0 +1,55 @@
+// Package imagepull is the Gopherlings exercise "Worker pools: fix the image puller".
+package imagepull
+
+import "sync"
+
+// Result is the outcome of pulling one image. Err is nil when the pull
+// succeeded.
+type Result struct {
+	Image string
+	Err   error
+}
+
+// job is one image to pull, and its position in the input.
+type job struct {
+	index int
+	image string
+}
+
+// pulled is a Result plus the position of its image in the input.
+type pulled struct {
+	index  int
+	result Result
+}
+
+// PullAll pulls every image using a pool of workers goroutines and returns
+// one Result per image, in the same order as images.
+func PullAll(images []string, workers int, pull func(image string) error) []Result {
+	jobs := make(chan job)
+	go func() {
+		for i, image := range images {
+			jobs <- job{index: i, image: image}
+		}
+		close(jobs)
+	}()
+
+	results := make(chan pulled)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			for j := range jobs {
+				results <- pulled{index: j.index, result: Result{Image: j.image, Err: pull(j.image)}}
+			}
+		})
+	}
+	// TODO(1): Nothing ever closes results, so the loop below never ends.
+	// Close it once every worker has finished.
+
+	var out []Result
+	for p := range results {
+		// TODO(2): Results arrive in the order the pulls finish. Store each
+		// one at its index so the output matches the order of images.
+		out = append(out, p.result)
+	}
+	return out
+}

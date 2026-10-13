@@ -1,0 +1,53 @@
+package alerts
+
+import (
+	"maps"
+	"slices"
+	"testing"
+)
+
+func TestCountAlerts(t *testing.T) {
+	tests := []struct {
+		name   string
+		firing []string
+		want   map[string]int
+	}{
+		{"several services", []string{"api", "db", "api", "api", "queue"}, map[string]int{"api": 3, "db": 1, "queue": 1}},
+		{"one service", []string{"cache", "cache"}, map[string]int{"cache": 2}},
+		{"empty", []string{}, map[string]int{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CountAlerts(tc.firing)
+			if !maps.Equal(got, tc.want) {
+				t.Errorf("CountAlerts(%q) = %v, want %v", tc.firing, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTopAlerts(t *testing.T) {
+	counts := map[string]int{"api": 12, "db": 3, "queue": 7, "cache": 3}
+	tests := []struct {
+		name   string
+		counts map[string]int
+		n      int
+		want   []string
+	}{
+		{"top 3 with a tie", counts, 3, []string{"api: 12", "queue: 7", "cache: 3"}},
+		{"top 1", counts, 1, []string{"api: 12"}},
+		{"more than available", counts, 10, []string{"api: 12", "queue: 7", "cache: 3", "db: 3"}},
+		{"ties are alphabetical", map[string]int{"web": 5, "auth": 5, "mail": 9}, 3, []string{"mail: 9", "auth: 5", "web: 5"}},
+		{"n is zero", counts, 0, []string{}},
+		{"n is negative", counts, -1, []string{}},
+		{"no alerts", map[string]int{}, 5, []string{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := TopAlerts(tc.counts, tc.n)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("TopAlerts(%v, %d) = %q, want %q", tc.counts, tc.n, got, tc.want)
+			}
+		})
+	}
+}

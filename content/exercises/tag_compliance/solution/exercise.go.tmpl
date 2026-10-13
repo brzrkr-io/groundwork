@@ -1,0 +1,94 @@
+// Package tagaudit is the Gopherlings exercise "Tag compliance: audit and fix instance tags".
+package tagaudit
+
+import (
+	"context"
+	"fmt"
+	"slices"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+// RequiredTags lists the tag keys every instance must carry, in report order.
+var RequiredTags = []string{"CostCenter", "Env", "Owner"}
+
+// Finding records one instance that is missing required tags.
+type Finding struct {
+	InstanceID string
+	Missing    []string
+}
+
+// MissingTags returns the keys from RequiredTags that tags does not have, or
+// has with an empty value, in RequiredTags order.
+func MissingTags(tags []types.Tag) []string {
+	have := make(map[string]string, len(tags))
+	for _, t := range tags {
+		have[aws.ToString(t.Key)] = aws.ToString(t.Value)
+	}
+
+	// A missing key reads as "", so one check covers absent and empty tags.
+	var missing []string
+	for _, key := range RequiredTags {
+		if have[key] == "" {
+			missing = append(missing, key)
+		}
+	}
+	return missing
+}
+
+// Audit reads every instance through the DescribeInstances paginator and
+// returns one Finding per instance with missing tags, sorted by InstanceID.
+func Audit(ctx context.Context, api ec2.DescribeInstancesAPIClient) ([]Finding, error) {
+	var findings []Finding
+	p := ec2.NewDescribeInstancesPaginator(api, &ec2.DescribeInstancesInput{})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("describe instances: %w", err)
+		}
+		for _, r := range page.Reservations {
+			for _, inst := range r.Instances {
+				missing := MissingTags(inst.Tags)
+				if len(missing) == 0 {
+					continue
+				}
+				findings = append(findings, Finding{
+					InstanceID: aws.ToString(inst.InstanceId),
+					Missing:    missing,
+				})
+			}
+		}
+	}
+
+	slices.SortFunc(findings, func(a, b Finding) int {
+		return strings.Compare(a.InstanceID, b.InstanceID)
+	})
+	return findings, nil
+}
+
+// BuildFixes turns findings into CreateTags requests that add the missing
+// tags for which defaults has a value. Each request has DryRun set to dryRun.
+func BuildFixes(findings []Finding, defaults map[string]string, dryRun bool) []*ec2.CreateTagsInput {
+	var fixes []*ec2.CreateTagsInput
+	for _, f := range findings {
+		var tags []types.Tag
+		for _, key := range f.Missing {
+			if value, ok := defaults[key]; ok {
+				tags = append(tags, types.Tag{Key: aws.String(key), Value: aws.String(value)})
+			}
+		}
+		if len(tags) == 0 {
+			continue // nothing we can fix automatically; a human has to decide
+		}
+
+		fixes = append(fixes, &ec2.CreateTagsInput{
+			Resources: []string{f.InstanceID},
+			Tags:      tags,
+			DryRun:    aws.Bool(dryRun),
+		})
+	}
+	return fixes
+}

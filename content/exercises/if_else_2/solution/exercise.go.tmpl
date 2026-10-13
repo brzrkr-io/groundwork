@@ -1,0 +1,39 @@
+// Package ifelse is the Gopherlings exercise "if and else: fix the maintenance script".
+package ifelse
+
+import "fmt"
+
+// BackupAgeLabel labels a backup by its age: "fresh" under 24 hours,
+// otherwise the whole number of days, such as "2d old".
+func BackupAgeLabel(ageHours int) string {
+	days := ageHours / 24
+	if days < 1 {
+		return "fresh"
+	}
+	return fmt.Sprintf("%dd old", days)
+}
+
+// CertStatus labels a TLS certificate by the days left until it expires.
+func CertStatus(daysLeft int) string {
+	// Most urgent first: every later check only sees what is left over.
+	if daysLeft < 0 {
+		return "expired"
+	} else if daysLeft < 7 {
+		return "renew now"
+	} else if daysLeft < 30 {
+		return "renew soon"
+	}
+	return "valid"
+}
+
+// LogLevelFor picks a log level: "debug" when debug is on, "warn" in
+// production, and "info" everywhere else.
+func LogLevelFor(env string, debug bool) string {
+	if debug {
+		return "debug"
+	}
+	if env == "production" {
+		return "warn"
+	}
+	return "info"
+}

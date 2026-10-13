@@ -1,0 +1,99 @@
+// Package dotenv is the Gopherlings exercise "Practice: .env file parser".
+package dotenv
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"regexp"
+	"slices"
+	"strings"
+)
+
+// Errors returned by Unquote and ParseLine. Check for them with errors.Is.
+var (
+	ErrUnterminatedQuote = errors.New("unterminated quote")
+	ErrMissingEquals     = errors.New(`missing "="`)
+	ErrInvalidKey        = errors.New("invalid key")
+)
+
+// validKey matches a valid variable name: a letter or underscore, followed by
+// letters, digits or underscores.
+var validKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// Unquote removes one pair of matching single or double quotes around value.
+// A value that opens a quote without closing it is an error.
+func Unquote(value string) (string, error) {
+	if value == "" || (value[0] != '"' && value[0] != '\'') {
+		return value, nil
+	}
+	quote := value[0]
+	if len(value) < 2 || value[len(value)-1] != quote {
+		return "", ErrUnterminatedQuote
+	}
+	return value[1 : len(value)-1], nil
+}
+
+// ParseLine splits one KEY=VALUE line into its key and value. The line must
+// not be blank or a comment.
+func ParseLine(line string) (key, value string, err error) {
+	line, _ = strings.CutPrefix(strings.TrimSpace(line), "export ")
+	key, value, found := strings.Cut(line, "=")
+	if !found {
+		return "", "", ErrMissingEquals
+	}
+	key = strings.TrimSpace(key)
+	if !validKey.MatchString(key) {
+		return "", "", fmt.Errorf("%w %q", ErrInvalidKey, key)
+	}
+	value, err = Unquote(strings.TrimSpace(value))
+	if err != nil {
+		return "", "", err
+	}
+	return key, value, nil
+}
+
+// Parse reads a .env file and returns its variables. It reports every
+// invalid line, each prefixed with its line number.
+func Parse(r io.Reader) (map[string]string, error) {
+	vars := map[string]string{}
+	var errs []error
+	sc := bufio.NewScanner(r)
+	n := 0
+	for sc.Scan() {
+		n++
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, err := ParseLine(line)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("line %d: %w", n, err))
+			continue
+		}
+		vars[key] = value
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	return vars, nil
+}
+
+// Environ returns vars as "KEY=VALUE" strings, sorted by key.
+func Environ(vars map[string]string) []string {
+	keys := make([]string, 0, len(vars))
+	for key := range vars {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+
+	env := make([]string, 0, len(keys))
+	for _, key := range keys {
+		env = append(env, key+"="+vars[key])
+	}
+	return env
+}

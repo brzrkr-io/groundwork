@@ -1,0 +1,54 @@
+// Command inventoryd runs the inventory service.
+//
+//	go run ./cmd/inventoryd -addr 127.0.0.1:8080
+//
+// Stop it with Ctrl+C (SIGINT) or SIGTERM; it finishes in-flight requests
+// before exiting.
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"gopherlings.local/inventory_service/internal/hosts"
+	"gopherlings.local/inventory_service/internal/server"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "inventoryd:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	addr := flag.String("addr", "127.0.0.1:8080", "address to listen on")
+	grace := flag.Duration("grace", 10*time.Second, "how long to wait for in-flight requests on shutdown")
+	flag.Parse()
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	// ctx is cancelled on Ctrl+C or SIGTERM (what Kubernetes sends).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	ln, err := net.Listen("tcp", *addr)
+	if err != nil {
+		return err
+	}
+	logger.Info("listening", "addr", ln.Addr().String())
+
+	srv := server.New(hosts.NewStore(), logger)
+	if err := srv.Run(ctx, ln, *grace); err != nil {
+		return err
+	}
+	logger.Info("stopped")
+	return nil
+}

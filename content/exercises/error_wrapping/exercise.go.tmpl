@@ -1,0 +1,73 @@
+// Package wrapping is the Gopherlings exercise "Wrapping errors".
+package wrapping
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+// ErrNotFound means the store has no config with the requested name.
+var ErrNotFound = errors.New("not found")
+
+// ParseError reports a config line that is not in key=value form.
+type ParseError struct {
+	Line int    // line number, starting at 1
+	Text string // the offending line
+}
+
+func (e *ParseError) Error() string {
+	return fmt.Sprintf("line %d: expected key=value, got %q", e.Line, e.Text)
+}
+
+// Store holds raw config files, keyed by config name.
+type Store struct {
+	Files map[string]string
+}
+
+// Get returns the raw text of the named config.
+func (s *Store) Get(name string) (string, error) {
+	text, ok := s.Files[name]
+	if !ok {
+		// TODO(1): Return an error that wraps ErrNotFound and names the config.
+		return "", errors.New("config missing")
+	}
+	return text, nil
+}
+
+// parseLines turns "key=value" lines into a map. Blank lines and lines
+// starting with # are skipped. A line without "=" gives a *ParseError.
+func parseLines(text string) (map[string]string, error) {
+	values := map[string]string{}
+	for i, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			return nil, &ParseError{Line: i + 1, Text: line}
+		}
+		values[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	return values, nil
+}
+
+// LoadConfig fetches the named config from the store and parses it.
+func LoadConfig(s *Store, name string) (map[string]string, error) {
+	// TODO(2): Check the error from each step and wrap it with
+	// "load config: ".
+	text, _ := s.Get(name)
+	values, _ := parseLines(text)
+	return values, nil
+}
+
+// Respond turns an error from LoadConfig into an HTTP-style status line.
+func Respond(err error) string {
+	if err == nil {
+		return "200 OK"
+	}
+	// TODO(3): Return "404 not found" or "400 bad config on line N" when the
+	// error chain holds ErrNotFound or a *ParseError.
+	return "500 internal error"
+}

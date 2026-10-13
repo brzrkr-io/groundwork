@@ -1,0 +1,49 @@
+// Package rollout is the Gopherlings exercise "Pointer receivers: a rolling deploy".
+package rollout
+
+import "fmt"
+
+// Rollout tracks a rolling update of a service to a new version.
+type Rollout struct {
+	Service  string
+	Version  string
+	Replicas int  // how many replicas the service runs
+	Updated  int  // how many replicas already run Version
+	Paused   bool // an operator paused the rollout
+}
+
+// Pause stops the rollout where it is.
+func (r *Rollout) Pause() {
+	r.Paused = true
+}
+
+// Status describes the rollout, for example "rolling out 2/5".
+func (r *Rollout) Status() string {
+	if r.Paused {
+		return fmt.Sprintf("paused at %d/%d", r.Updated, r.Replicas)
+	}
+	if r.Updated == r.Replicas {
+		return "done"
+	}
+	return fmt.Sprintf("rolling out %d/%d", r.Updated, r.Replicas)
+}
+
+// Advance updates up to batch more replicas and returns how many it updated.
+func (r *Rollout) Advance(batch int) int {
+	if r.Paused || batch <= 0 {
+		return 0
+	}
+	n := min(batch, r.Replicas-r.Updated)
+	r.Updated += n
+	return n
+}
+
+// Run advances the rollout batch by batch until nothing more can be updated,
+// and returns the status after each step.
+func (r *Rollout) Run(batch int) []string {
+	var steps []string
+	for r.Advance(batch) > 0 {
+		steps = append(steps, r.Status())
+	}
+	return steps
+}

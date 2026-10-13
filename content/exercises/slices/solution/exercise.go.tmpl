@@ -1,0 +1,27 @@
+// Package hosts is the Gopherlings exercise "Slices".
+package hosts
+
+// FirstN returns the first n hosts, or all of them if there are fewer than n.
+func FirstN(hosts []string, n int) []string {
+	if n > len(hosts) {
+		n = len(hosts)
+	}
+	return hosts[:n]
+}
+
+// LastN returns the last n hosts, or all of them if there are fewer than n.
+func LastN(hosts []string, n int) []string {
+	if n > len(hosts) {
+		n = len(hosts)
+	}
+	return hosts[len(hosts)-n:]
+}
+
+// PortRange returns count consecutive ports, beginning at start.
+func PortRange(start, count int) []int {
+	ports := make([]int, count)
+	for i := range count {
+		ports[i] = start + i
+	}
+	return ports
+}

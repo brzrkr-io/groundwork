@@ -1,0 +1,21 @@
+// Package commits is the Gopherlings exercise "Your first test: fix a broken test".
+package commits
+
+// ShortSHA shortens a Git commit ID to its first 7 characters, the way deploy
+// notifications show it. IDs of 7 characters or fewer are returned unchanged.
+//
+// This code is correct. The test in exercise_test.go is not.
+func ShortSHA(sha string) string {
+	return shortSHA(sha)
+}
+
+// shortSHA points at the real implementation. Gopherlings' grader swaps in
+// broken versions to check that your test catches them.
+var shortSHA = realShortSHA
+
+func realShortSHA(sha string) string {
+	if len(sha) <= 7 {
+		return sha
+	}
+	return sha[:7]
+}

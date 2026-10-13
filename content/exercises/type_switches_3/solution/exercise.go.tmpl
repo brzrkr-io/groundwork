@@ -1,0 +1,53 @@
+// Package typeswitches3 is the Gopherlings exercise "Type switches: flatten a nested config".
+package typeswitches3
+
+import "fmt"
+
+// Scalar converts a single config value to text. It supports strings, ints,
+// float64s, bools and fmt.Stringers, and returns "", false for anything else.
+func Scalar(v any) (string, bool) {
+	// Reusing the name v is common Go style: in each case, v has that case's type.
+	switch v := v.(type) {
+	case string:
+		return v, true
+	case int, float64, bool:
+		return fmt.Sprintf("%v", v), true
+	case fmt.Stringer:
+		return v.String(), true
+	default:
+		return "", false
+	}
+}
+
+// Flatten turns a nested config into flat, dotted keys such as "db.port".
+func Flatten(cfg map[string]any) (map[string]string, error) {
+	out := map[string]string{}
+	if err := flattenInto(out, "", cfg); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// flattenInto stores every value in m into out, with prefix and a dot in
+// front of each key.
+func flattenInto(out map[string]string, prefix string, m map[string]any) error {
+	for key, value := range m {
+		fullKey := key
+		if prefix != "" {
+			fullKey = prefix + "." + key
+		}
+		switch v := value.(type) {
+		case map[string]any:
+			if err := flattenInto(out, fullKey, v); err != nil {
+				return err
+			}
+		default:
+			s, ok := Scalar(v)
+			if !ok {
+				return fmt.Errorf("unsupported value for %q: %T", fullKey, v)
+			}
+			out[fullKey] = s
+		}
+	}
+	return nil
+}

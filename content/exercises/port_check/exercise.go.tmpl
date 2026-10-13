@@ -1,0 +1,59 @@
+// Package portcheck is the Gopherlings exercise "Port checks: open, closed or filtered".
+package portcheck
+
+import (
+	"context"
+	"net"
+	"time"
+)
+
+// Status is the outcome of checking one port.
+type Status string
+
+// The possible outcomes of a port check.
+const (
+	Open    Status = "open"
+	Closed  Status = "closed"
+	Timeout Status = "timeout"
+	Failed  Status = "error"
+)
+
+// DialFunc opens a network connection. (&net.Dialer{}).DialContext has this
+// shape, and tests pass in fakes.
+type DialFunc func(ctx context.Context, network, address string) (net.Conn, error)
+
+// Result is the outcome of checking one address.
+type Result struct {
+	Addr   string
+	Status Status
+}
+
+// Classify turns the error from a dial into a Status.
+func Classify(err error) Status {
+	// TODO(1): Return Open, Closed, Timeout or Failed depending on err (add the errors and syscall imports).
+	return Failed
+}
+
+// Checker checks whether TCP ports accept connections.
+type Checker struct {
+	Dial DialFunc
+}
+
+// NewChecker returns a Checker that gives up on each dial after timeout.
+func NewChecker(timeout time.Duration) *Checker {
+	// TODO(2): Set Dial to the DialContext method of a net.Dialer that uses timeout.
+	return &Checker{}
+}
+
+// Check dials addr over TCP and reports what happened.
+func (c *Checker) Check(addr string) Result {
+	// TODO(2): Dial addr with c.Dial, close the connection if it opened, and classify the error.
+	return Result{Addr: addr, Status: Failed}
+}
+
+// Report formats results as a table followed by a summary line.
+func Report(results []Result) string {
+	// TODO(3): Build the table and the "N of M ports open" line in a
+	// strings.Builder (add the fmt and strings imports).
+	return ""
+}

@@ -1,0 +1,72 @@
+// Package jsonapi is the Gopherlings exercise "JSON APIs: build a service catalog".
+package jsonapi
+
+import (
+	"encoding/json"
+	"net/http"
+)
+
+// API serves the service catalog over HTTP.
+type API struct {
+	store *Store
+}
+
+// NewAPI returns an API backed by store.
+func NewAPI(store *Store) *API {
+	return &API{store: store}
+}
+
+// Routes returns a handler with every endpoint registered.
+func (a *API) Routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /services/{name}", a.handleGet)
+	mux.HandleFunc("POST /services", a.handleCreate)
+	return mux
+}
+
+// writeJSON sends v as a JSON body with the given status code.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	// The status line is already sent, so there is no way left to report
+	// an encoding error to the client.
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeError sends {"error": msg} with the given status code.
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// handleGet serves GET /services/{name}.
+func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	svc, err := a.store.Get(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "service not found: "+name)
+		return
+	}
+	writeJSON(w, http.StatusOK, svc)
+}
+
+// handleCreate serves POST /services.
+func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	var svc Service
+	if err := dec.Decode(&svc); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := svc.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := a.store.Create(svc); err != nil {
+		writeError(w, http.StatusConflict, "service already exists: "+svc.Name)
+		return
+	}
+	writeJSON(w, http.StatusCreated, svc)
+}

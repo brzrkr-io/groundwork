@@ -1,0 +1,27 @@
+// Package deploy plans which addresses a deploy will touch.
+package deploy
+
+import (
+	"strings"
+
+	// TODO(2): Use the full import path: the module path from go.mod plus the folder name.
+	"inventory"
+)
+
+// Targets returns the "host:port" address of every host, in the same order.
+// Host names are cleaned up with NormalizeHost first.
+func Targets(hosts []string, port int) []string {
+	targets := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		targets = append(targets, inventory.Address(NormalizeHost(host), port))
+	}
+	return targets
+}
+
+// TODO(3): Move NormalizeHost into inventory/inventory.go and call it as
+// inventory.NormalizeHost in Targets.
+
+// NormalizeHost trims spaces from both ends of a host name and lower-cases it.
+func NormalizeHost(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}

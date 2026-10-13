@@ -1,0 +1,37 @@
+// Package customerr2 is the Gopherlings exercise "Custom error types: fix the port allocator".
+package customerr2
+
+import "fmt"
+
+// PortInUseError reports that a port already belongs to another service.
+type PortInUseError struct {
+	Port  int
+	Owner string
+}
+
+// Error returns a message like `port 8080 is already used by "nginx"`.
+func (e *PortInUseError) Error() string {
+	return fmt.Sprintf("port %d is already used by %q", e.Port, e.Owner)
+}
+
+// Reserve gives port to service. used maps each taken port to the service
+// that owns it. A taken port returns a *PortInUseError; a free port is
+// added to used and returns nil.
+func Reserve(used map[int]string, port int, service string) error {
+	if owner, ok := used[port]; ok {
+		return &PortInUseError{Port: port, Owner: owner}
+	}
+	used[port] = service
+	return nil
+}
+
+// Advice turns an error from Reserve into a hint for the person deploying.
+func Advice(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	if perr, ok := err.(*PortInUseError); ok {
+		return fmt.Sprintf("stop %q or choose a port other than %d", perr.Owner, perr.Port)
+	}
+	return "unexpected error: " + err.Error()
+}

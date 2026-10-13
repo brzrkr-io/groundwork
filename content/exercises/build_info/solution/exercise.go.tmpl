@@ -1,0 +1,65 @@
+// Command deployctl prints its own version. Try it:
+//
+//	go run -ldflags "-X main.version=1.4.2" .
+package main
+
+import (
+	"fmt"
+	"runtime/debug"
+)
+
+// version is stamped in at build time with -ldflags "-X main.version=...".
+// It stays empty in a plain "go build".
+var version string
+
+func main() {
+	// ok is false when the binary has no build info. info is then nil.
+	info, _ := debug.ReadBuildInfo()
+	fmt.Println(VersionLine("deployctl", version, info))
+}
+
+// Version returns the stamped version, else the module version from info,
+// else "dev".
+func Version(stamped string, info *debug.BuildInfo) string {
+	if stamped != "" {
+		return stamped
+	}
+	if info != nil && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
+}
+
+// Revision returns the first 7 characters of the vcs.revision setting, with
+// "-dirty" added when vcs.modified is "true". It returns "unknown" when
+// there is no revision.
+func Revision(info *debug.BuildInfo) string {
+	if info == nil {
+		return "unknown"
+	}
+	var revision string
+	dirty := false
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	if revision == "" {
+		return "unknown"
+	}
+	if len(revision) > 7 {
+		revision = revision[:7]
+	}
+	if dirty {
+		revision += "-dirty"
+	}
+	return revision
+}
+
+// VersionLine returns a line such as "deployctl 1.4.2 (commit 3f2a9c1)".
+func VersionLine(name, stamped string, info *debug.BuildInfo) string {
+	return fmt.Sprintf("%s %s (commit %s)", name, Version(stamped, info), Revision(info))
+}

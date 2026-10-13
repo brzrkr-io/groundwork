@@ -1,0 +1,237 @@
+package cache
+
+import (
+	"errors"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+var errDNS = errors.New("dns: server misbehaving")
+
+// fakeClock is a clock the test moves by hand.
+type fakeClock struct {
+	t time.Time
+}
+
+func (c *fakeClock) now() time.Time          { return c.t }
+func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
+
+func newClock() *fakeClock {
+	return &fakeClock{t: time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)}
+}
+
+func TestGetExpiry(t *testing.T) {
+	tests := []struct {
+		name   string
+		after  time.Duration // time since Set
+		wantOK bool
+	}{
+		{"just set", 0, true},
+		{"1ns before expiry", 30*time.Second - time.Nanosecond, true},
+		{"exactly at expiry", 30 * time.Second, false},
+		{"long after expiry", time.Hour, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clock := newClock()
+			c := New[string, string](30*time.Second, clock.now)
+			c.Set("db.internal", "10.0.0.7")
+			clock.advance(tt.after)
+			want := ""
+			if tt.wantOK {
+				want = "10.0.0.7"
+			}
+			got, ok := c.Get("db.internal")
+			if got != want || ok != tt.wantOK {
+				t.Errorf("TTL 30s, %v after Set: Get(%q) = %q, %t, want %q, %t",
+					tt.after, "db.internal", got, ok, want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestGetOrLoad(t *testing.T) {
+	t.Run("loads on a miss and caches the result", func(t *testing.T) {
+		clock := newClock()
+		c := New[string, string](30*time.Second, clock.now)
+		calls := 0
+		resolve := func(host string) (string, error) {
+			calls++
+			if host == "db.internal" {
+				return "10.0.0.7", nil
+			}
+			return "10.0.0.9", nil
+		}
+
+		for _, host := range []string{"db.internal", "db.internal", "cache.internal"} {
+			got, err := c.GetOrLoad(host, resolve)
+			want := map[string]string{"db.internal": "10.0.0.7", "cache.internal": "10.0.0.9"}[host]
+			if got != want || err != nil {
+				t.Errorf("GetOrLoad(%q) = %q, %v, want %q, <nil>", host, got, err, want)
+			}
+		}
+		if calls != 2 {
+			t.Errorf("load called %d times for db, db, cache, want 2", calls)
+		}
+	})
+
+	t.Run("loads again after expiry", func(t *testing.T) {
+		clock := newClock()
+		c := New[string, string](30*time.Second, clock.now)
+		calls := 0
+		resolve := func(string) (string, error) {
+			calls++
+			return "10.0.0.7", nil
+		}
+		c.GetOrLoad("db.internal", resolve)
+		clock.advance(10 * time.Second)
+		c.GetOrLoad("db.internal", resolve)
+		if calls != 1 {
+			t.Errorf("load called %d times within the TTL, want 1", calls)
+		}
+		clock.advance(20 * time.Second)
+		c.GetOrLoad("db.internal", resolve)
+		if calls != 2 {
+			t.Errorf("load called %d times after the entry expired, want 2", calls)
+		}
+	})
+
+	t.Run("errors are returned but not cached", func(t *testing.T) {
+		c := New[string, string](30*time.Second, newClock().now)
+		calls := 0
+		flaky := func(string) (string, error) {
+			calls++
+			if calls == 1 {
+				return "", errDNS
+			}
+			return "10.0.0.7", nil
+		}
+
+		got, err := c.GetOrLoad("db.internal", flaky)
+		if got != "" || !errors.Is(err, errDNS) {
+			t.Errorf("GetOrLoad with a failing load = %q, %v, want %q, %v", got, err, "", errDNS)
+		}
+		if v, ok := c.Get("db.internal"); ok {
+			t.Errorf("Get after a failed load = %q, true, want nothing cached", v)
+		}
+		got, err = c.GetOrLoad("db.internal", flaky)
+		if got != "10.0.0.7" || err != nil {
+			t.Errorf("GetOrLoad after the error = %q, %v, want %q, <nil>", got, err, "10.0.0.7")
+		}
+		if calls != 2 {
+			t.Errorf("load called %d times, want 2 (the error must not be cached)", calls)
+		}
+	})
+}
+
+func TestGetOrLoadCollapses(t *testing.T) {
+	t.Run("one load for many callers", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			c := New[string, string](30*time.Second, newClock().now)
+			release := make(chan struct{})
+			var calls atomic.Int32
+			slowResolve := func(string) (string, error) {
+				calls.Add(1)
+				<-release // block until the test lets the lookup finish
+				return "10.0.0.7", nil
+			}
+
+			const callers = 10
+			results := make([]string, callers)
+			errs := make([]error, callers)
+			var wg sync.WaitGroup
+			for i := range callers {
+				wg.Go(func() {
+					results[i], errs[i] = c.GetOrLoad("db.internal", slowResolve)
+				})
+			}
+			synctest.Wait() // every caller is now loading or waiting
+			if got := calls.Load(); got != 1 {
+				t.Errorf("load called %d times by %d concurrent callers, want 1", got, callers)
+			}
+			close(release)
+			wg.Wait()
+
+			for i := range callers {
+				if results[i] != "10.0.0.7" || errs[i] != nil {
+					t.Errorf("caller %d: GetOrLoad = %q, %v, want %q, <nil>", i, results[i], errs[i], "10.0.0.7")
+				}
+			}
+			if v, ok := c.Get("db.internal"); v != "10.0.0.7" || !ok {
+				t.Errorf("Get after the shared load = %q, %t, want %q, true", v, ok, "10.0.0.7")
+			}
+		})
+	})
+
+	t.Run("waiters share the error", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			c := New[string, string](30*time.Second, newClock().now)
+			release := make(chan struct{})
+			var calls atomic.Int32
+			failingResolve := func(string) (string, error) {
+				calls.Add(1)
+				<-release
+				return "", errDNS
+			}
+
+			const callers = 5
+			errs := make([]error, callers)
+			var wg sync.WaitGroup
+			for i := range callers {
+				wg.Go(func() {
+					_, errs[i] = c.GetOrLoad("db.internal", failingResolve)
+				})
+			}
+			synctest.Wait()
+			if got := calls.Load(); got != 1 {
+				t.Errorf("load called %d times by %d concurrent callers, want 1", got, callers)
+			}
+			close(release)
+			wg.Wait()
+
+			for i, err := range errs {
+				if !errors.Is(err, errDNS) {
+					t.Errorf("caller %d: GetOrLoad error = %v, want %v", i, err, errDNS)
+				}
+			}
+			if _, ok := c.Get("db.internal"); ok {
+				t.Errorf("Get after a failed shared load found a value, want nothing cached")
+			}
+		})
+	})
+
+	t.Run("different keys load separately", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			c := New[string, string](30*time.Second, newClock().now)
+			release := make(chan struct{})
+			var mu sync.Mutex
+			calls := map[string]int{}
+			slowResolve := func(host string) (string, error) {
+				mu.Lock()
+				calls[host]++
+				mu.Unlock()
+				<-release
+				return "ip-of-" + host, nil
+			}
+
+			hosts := []string{"db.internal", "cache.internal", "db.internal", "cache.internal", "db.internal"}
+			var wg sync.WaitGroup
+			for _, host := range hosts {
+				wg.Go(func() { c.GetOrLoad(host, slowResolve) })
+			}
+			synctest.Wait()
+			mu.Lock()
+			for _, host := range []string{"db.internal", "cache.internal"} {
+				if calls[host] != 1 {
+					t.Errorf("load(%q) called %d times, want 1", host, calls[host])
+				}
+			}
+			mu.Unlock()
+			close(release)
+			wg.Wait()
+		})
+	})
+}

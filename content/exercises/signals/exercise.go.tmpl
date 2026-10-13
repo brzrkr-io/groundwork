@@ -1,0 +1,41 @@
+// Package signals is the Gopherlings exercise "Signals: graceful stop for a rolling drain".
+package signals
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+)
+
+// Drain drains each host in order, logging progress to log. It stops
+// between hosts once ctx is cancelled, and returns how many hosts it drained.
+func Drain(ctx context.Context, hosts []string, drain func(host string) error, log io.Writer) (int, error) {
+	drained := 0
+	for _, host := range hosts {
+		// TODO(1): If ctx has been cancelled, log how many hosts were not
+		// drained and return drained and ctx.Err().
+		if err := drain(host); err != nil {
+			return drained, fmt.Errorf("drain %s: %w", host, err)
+		}
+		fmt.Fprintf(log, "drained %s\n", host)
+		drained++
+	}
+	return drained, nil
+}
+
+// ExitCode turns the result of Drain into a process exit code.
+func ExitCode(err error) int {
+	// TODO(2): Return 130 when err is (or wraps) context.Canceled.
+	if err != nil {
+		return 1
+	}
+	return 0
+}
+
+// WatchSignals reacts to signals arriving on sigs. The first signal calls
+// cancel for a graceful stop; the second calls force.
+func WatchSignals(sigs <-chan os.Signal, cancel func(), force func(), log io.Writer) {
+	// TODO(3): Range over sigs. Log and cancel on the first signal; log,
+	// force and return on the second.
+}

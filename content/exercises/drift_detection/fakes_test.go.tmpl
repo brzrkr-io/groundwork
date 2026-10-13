@@ -1,0 +1,90 @@
+package drift
+
+import (
+	"context"
+	"strconv"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
+)
+
+// fakeBucket is one bucket in the fake S3 account.
+type fakeBucket struct {
+	name string
+	tags map[string]string // empty means "this bucket has no tags"
+}
+
+// fakeS3 implements BucketAPI without any network calls.
+type fakeS3 struct {
+	buckets []fakeBucket
+	listErr error // returned by ListBuckets when set
+	tagErr  error // returned by GetBucketTagging when set
+}
+
+func (f *fakeS3) ListBuckets(ctx context.Context, in *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	out := &s3.ListBucketsOutput{}
+	for _, b := range f.buckets {
+		out.Buckets = append(out.Buckets, s3types.Bucket{Name: aws.String(b.name)})
+	}
+	return out, nil
+}
+
+func (f *fakeS3) GetBucketTagging(ctx context.Context, in *s3.GetBucketTaggingInput, optFns ...func(*s3.Options)) (*s3.GetBucketTaggingOutput, error) {
+	if f.tagErr != nil {
+		return nil, f.tagErr
+	}
+	for _, b := range f.buckets {
+		if b.name != aws.ToString(in.Bucket) {
+			continue
+		}
+		if len(b.tags) == 0 {
+			// This is how real S3 answers for a bucket without tags.
+			return nil, &smithy.GenericAPIError{Code: "NoSuchTagSet", Message: "The TagSet does not exist"}
+		}
+		out := &s3.GetBucketTaggingOutput{}
+		for k, v := range b.tags {
+			out.TagSet = append(out.TagSet, s3types.Tag{Key: aws.String(k), Value: aws.String(v)})
+		}
+		return out, nil
+	}
+	return nil, &smithy.GenericAPIError{Code: "NoSuchBucket", Message: "The specified bucket does not exist"}
+}
+
+// fakeEC2 implements ec2.DescribeInstancesAPIClient. It serves one page per
+// entry in pages, linked by NextToken, like the real API.
+type fakeEC2 struct {
+	pages [][]ec2types.Instance
+}
+
+func (f *fakeEC2) DescribeInstances(ctx context.Context, in *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	// The token is just the index of the next page: "1", "2", ...
+	i, _ := strconv.Atoi(aws.ToString(in.NextToken))
+	out := &ec2.DescribeInstancesOutput{}
+	if i < len(f.pages) {
+		out.Reservations = []ec2types.Reservation{{Instances: f.pages[i]}}
+	}
+	if i+1 < len(f.pages) {
+		out.NextToken = aws.String(strconv.Itoa(i + 1))
+	}
+	return out, nil
+}
+
+// instance builds a fake EC2 instance. name becomes its "Name" tag.
+func instance(id, name, state string, tags map[string]string) ec2types.Instance {
+	inst := ec2types.Instance{
+		InstanceId: aws.String(id),
+		State:      &ec2types.InstanceState{Name: ec2types.InstanceStateName(state)},
+		Tags:       []ec2types.Tag{{Key: aws.String("Name"), Value: aws.String(name)}},
+	}
+	for k, v := range tags {
+		inst.Tags = append(inst.Tags, ec2types.Tag{Key: aws.String(k), Value: aws.String(v)})
+	}
+	return inst
+}

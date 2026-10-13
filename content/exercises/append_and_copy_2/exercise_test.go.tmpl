@@ -1,0 +1,51 @@
+package inventory
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestAddresses(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+		port  int
+		want  []string
+	}{
+		{"two hosts", []string{"web-1", "web-2"}, 8080, []string{"web-1:8080", "web-2:8080"}},
+		{"one host", []string{"db-1"}, 5432, []string{"db-1:5432"}},
+		{"three hosts", []string{"cache-1", "cache-2", "cache-3"}, 6379, []string{"cache-1:6379", "cache-2:6379", "cache-3:6379"}},
+		{"no hosts", nil, 8080, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Addresses(tt.hosts, tt.port)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Addresses(%q, %d) = %q, want %q", tt.hosts, tt.port, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBackup(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+	}{
+		{"three hosts", []string{"web-1", "web-2", "db-1"}},
+		{"one host", []string{"bastion"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := slices.Clone(tt.hosts)
+			got := Backup(tt.hosts)
+			if !slices.Equal(got, want) {
+				t.Fatalf("Backup(%q) = %q, want %q", want, got, want)
+			}
+			tt.hosts[0] = "changed"
+			if !slices.Equal(got, want) {
+				t.Errorf("after hosts[0] = %q, the backup became %q, want it to stay %q", "changed", got, want)
+			}
+		})
+	}
+}

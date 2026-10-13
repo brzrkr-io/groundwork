@@ -1,0 +1,188 @@
+package ratelimit
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
+)
+
+// fakeClock is a clock that only moves when the test says so.
+type fakeClock struct {
+	t time.Time
+}
+
+func newFakeClock() *fakeClock {
+	return &fakeClock{t: time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)}
+}
+
+func (c *fakeClock) Now() time.Time          { return c.t }
+func (c *fakeClock) Advance(d time.Duration) { c.t = c.t.Add(d) }
+
+// step is one moment in a test: move the clock, then make a request.
+type step struct {
+	advance time.Duration
+	want    bool
+}
+
+func TestAllow(t *testing.T) {
+	tests := []struct {
+		name  string
+		rate  float64
+		burst int
+		steps []step
+	}{
+		{
+			name: "starts full with 3 tokens", rate: 1, burst: 3,
+			steps: []step{{0, true}, {0, true}, {0, true}, {0, false}},
+		},
+		{
+			name: "starts full with 1 token", rate: 1, burst: 1,
+			steps: []step{{0, true}, {0, false}},
+		},
+		{
+			name: "refills one token per second", rate: 1, burst: 1,
+			steps: []step{{0, true}, {0, false}, {500 * time.Millisecond, false}, {500 * time.Millisecond, true}, {0, false}},
+		},
+		{
+			name: "refills two tokens per second", rate: 2, burst: 2,
+			steps: []step{{0, true}, {0, true}, {0, false}, {500 * time.Millisecond, true}, {0, false}},
+		},
+		{
+			name: "never holds more than burst", rate: 1, burst: 2,
+			steps: []step{{0, true}, {0, true}, {time.Hour, true}, {0, true}, {0, false}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clock := newFakeClock()
+			b := NewBucket(tt.rate, tt.burst, clock.Now)
+			for i, s := range tt.steps {
+				clock.Advance(s.advance)
+				if got := b.Allow(); got != s.want {
+					t.Fatalf("NewBucket(%v, %d), request %d after +%v: Allow() = %v, want %v",
+						tt.rate, tt.burst, i+1, s.advance, got, s.want)
+				}
+			}
+		})
+	}
+
+	t.Run("100 tokens shared by 200 goroutines", func(t *testing.T) {
+		clock := newFakeClock()
+		b := NewBucket(0, 100, clock.Now)
+		results := make(chan bool, 200)
+		var wg sync.WaitGroup
+		for range 200 {
+			wg.Go(func() { results <- b.Allow() })
+		}
+		wg.Wait()
+		close(results)
+		allowed := 0
+		for ok := range results {
+			if ok {
+				allowed++
+			}
+		}
+		if allowed != 100 {
+			t.Errorf("200 concurrent Allow() calls on a 100-token bucket allowed %d, want 100", allowed)
+		}
+	})
+}
+
+func TestMiddleware(t *testing.T) {
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "deployed")
+	})
+
+	tests := []struct {
+		name      string
+		burst     int
+		wantCodes []int
+	}{
+		{"burst 2", 2, []int{200, 200, 429, 429}},
+		{"burst 3", 3, []int{200, 200, 200, 429}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clock := newFakeClock()
+			h := Middleware(NewBucket(1, tt.burst, clock.Now), ok)
+			for i, wantCode := range tt.wantCodes {
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, httptest.NewRequest("POST", "/deploys", nil))
+
+				if rec.Code != wantCode {
+					t.Fatalf("request %d: status = %d, want %d", i+1, rec.Code, wantCode)
+				}
+				wantBody, wantRetry := "deployed", ""
+				if wantCode == http.StatusTooManyRequests {
+					wantBody, wantRetry = "rate limit exceeded\n", "1"
+				}
+				if got := rec.Body.String(); got != wantBody {
+					t.Errorf("request %d: body = %q, want %q", i+1, got, wantBody)
+				}
+				if got := rec.Header().Get("Retry-After"); got != wantRetry {
+					t.Errorf("request %d: Retry-After header = %q, want %q", i+1, got, wantRetry)
+				}
+			}
+		})
+	}
+}
+
+func TestPerClient(t *testing.T) {
+	t.Run("one bucket per client IP", func(t *testing.T) {
+		clock := newFakeClock()
+		p := NewPerClient(1, 2, clock.Now)
+		steps := []struct {
+			remoteAddr string
+			advance    time.Duration
+			want       bool
+		}{
+			{"192.0.2.1:1234", 0, true},
+			{"192.0.2.1:1234", 0, true},
+			{"192.0.2.1:1234", 0, false},          // 192.0.2.1 has used its 2 tokens
+			{"198.51.100.7:4000", 0, true},        // a different client has its own bucket
+			{"198.51.100.7:4000", 0, true},        // ...
+			{"192.0.2.1:5555", 0, false},          // same IP, new port: still the same client
+			{"198.51.100.7:4000", 0, false},       // 198.51.100.7 is out of tokens too
+			{"192.0.2.1:1234", time.Second, true}, // one second later, one new token
+			{"192.0.2.1:1234", 0, false},
+		}
+		for i, s := range steps {
+			clock.Advance(s.advance)
+			r := httptest.NewRequest("GET", "/status", nil)
+			r.RemoteAddr = s.remoteAddr
+			if got := p.Allow(r); got != s.want {
+				t.Fatalf("request %d from %s after +%v: Allow() = %v, want %v", i+1, s.remoteAddr, s.advance, got, s.want)
+			}
+		}
+	})
+
+	t.Run("10 clients at once", func(t *testing.T) {
+		clock := newFakeClock()
+		p := NewPerClient(0, 3, clock.Now)
+		results := make(chan bool, 50)
+		var wg sync.WaitGroup
+		for client := range 10 {
+			for range 5 {
+				wg.Go(func() {
+					r := httptest.NewRequest("GET", "/status", nil)
+					r.RemoteAddr = fmt.Sprintf("10.0.0.%d:8080", client)
+					results <- p.Allow(r)
+				})
+			}
+		}
+		wg.Wait()
+		close(results)
+		allowed := 0
+		for ok := range results {
+			if ok {
+				allowed++
+			}
+		}
+		if allowed != 30 {
+			t.Errorf("10 clients x 5 concurrent requests with burst 3 allowed %d, want 30", allowed)
+		}
+	})
+}

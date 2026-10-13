@@ -1,0 +1,148 @@
+package generics
+
+import (
+	"slices"
+	"strings"
+	"testing"
+)
+
+func isWebHost(h string) bool { return strings.HasPrefix(h, "web-") }
+
+func isHighPort(p int) bool { return p >= 443 }
+
+func TestFilter(t *testing.T) {
+	hostTests := []struct {
+		name  string
+		hosts []string
+		want  []string
+	}{
+		{"keeps web hosts", []string{"web-1", "db-1", "web-2"}, []string{"web-1", "web-2"}},
+		{"keeps all", []string{"web-a", "web-b"}, []string{"web-a", "web-b"}},
+		{"keeps none", []string{"db-1", "cache-1"}, []string{}},
+		{"empty input", []string{}, []string{}},
+	}
+	for _, tt := range hostTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Filter(tt.hosts, isWebHost)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Filter(%q, isWebHost) = %q, want %q", tt.hosts, got, tt.want)
+			}
+		})
+	}
+
+	portTests := []struct {
+		name  string
+		ports []int
+		want  []int
+	}{
+		{"keeps high ports", []int{22, 80, 443, 8080}, []int{443, 8080}},
+		{"keeps order", []int{9090, 22, 443}, []int{9090, 443}},
+	}
+	for _, tt := range portTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Filter(tt.ports, isHighPort)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Filter(%v, isHighPort) = %v, want %v", tt.ports, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMax(t *testing.T) {
+	latencyTests := []struct {
+		name      string
+		latencies []float64
+		want      float64
+		wantOK    bool
+	}{
+		{"largest in the middle", []float64{120.5, 340.2, 98.7}, 340.2, true},
+		{"largest last", []float64{1.5, 2.5, 3.5}, 3.5, true},
+		{"single item", []float64{42}, 42, true},
+	}
+	for _, tt := range latencyTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := Max(tt.latencies)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("Max(%v) = %v, %v, want %v, %v", tt.latencies, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+
+	offsetTests := []struct {
+		name    string
+		offsets []int
+		want    int
+		wantOK  bool
+	}{
+		{"negative numbers", []int{-5, -2, -9}, -2, true},
+		{"largest first", []int{30, 10, 20}, 30, true},
+		{"empty", []int{}, 0, false},
+	}
+	for _, tt := range offsetTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := Max(tt.offsets)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("Max(%v) = %v, %v, want %v, %v", tt.offsets, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+
+	hostTests := []struct {
+		name   string
+		hosts  []string
+		want   string
+		wantOK bool
+	}{
+		{"alphabetical", []string{"web-01", "web-03", "web-02"}, "web-03", true},
+		{"different prefixes", []string{"db-9", "api-1", "cache-2"}, "db-9", true},
+		{"empty", []string{}, "", false},
+	}
+	for _, tt := range hostTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := Max(tt.hosts)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("Max(%q) = %q, %v, want %q, %v", tt.hosts, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestSet(t *testing.T) {
+	regionTests := []struct {
+		name  string
+		start []string
+		add   []string
+		check string
+		want  bool
+	}{
+		{"added region", []string{"us-east-1"}, []string{"eu-west-1"}, "eu-west-1", true},
+		{"starting region", []string{"us-east-1"}, []string{"eu-west-1"}, "us-east-1", true},
+		{"added twice", nil, []string{"eu-west-1", "eu-west-1"}, "eu-west-1", true},
+		{"never added", []string{"us-east-1"}, []string{"eu-west-1"}, "ap-south-1", false},
+		{"empty set", nil, nil, "us-east-1", false},
+	}
+	for _, tt := range regionTests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewSet(tt.start...)
+			for _, region := range tt.add {
+				s.Add(region)
+			}
+			if got := s.Has(tt.check); got != tt.want {
+				t.Errorf("NewSet(%q) then Add(%q): Has(%q) = %v, want %v", tt.start, tt.add, tt.check, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("ports", func(t *testing.T) {
+		ports := NewSet(80, 443)
+		ports.Add(8080)
+		for _, port := range []int{80, 443, 8080} {
+			if !ports.Has(port) {
+				t.Errorf("NewSet(80, 443) then Add(8080): Has(%d) = false, want true", port)
+			}
+		}
+		if ports.Has(22) {
+			t.Errorf("NewSet(80, 443) then Add(8080): Has(22) = true, want false")
+		}
+	})
+}

@@ -1,0 +1,84 @@
+package closures
+
+import (
+	"strconv"
+	"testing"
+)
+
+func TestRetryWithBackoff(t *testing.T) {
+	// Each line is one case: the inputs, then the answers we want.
+	// succeedsOn is the attempt where op returns true (0 means never).
+	// wantSleeps lists every sleep call, separated by spaces.
+	tests := []struct {
+		name        string
+		attempts    int
+		baseSeconds int
+		succeedsOn  int
+		want        bool
+		wantSleeps  string
+	}{
+		{"first try", 5, 1, 1, true, ""},
+		{"fourth try", 5, 1, 4, true, "1 2 4"},
+		{"last try", 3, 2, 3, true, "2 4"},
+		{"never", 3, 2, 0, false, "2 4"},
+		{"one attempt", 1, 5, 0, false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			op := func(attempt int) bool {
+				calls++
+				if attempt != calls {
+					t.Errorf("call %d got attempt %d, want %d", calls, attempt, calls)
+				}
+				return attempt == tt.succeedsOn
+			}
+			sleeps := ""
+			sleep := func(seconds int) {
+				if sleeps != "" {
+					sleeps += " "
+				}
+				sleeps += strconv.Itoa(seconds)
+			}
+			got := RetryWithBackoff(tt.attempts, tt.baseSeconds, op, sleep)
+			if got != tt.want {
+				t.Errorf("RetryWithBackoff(%d, %d, succeeds on %d) = %t, want %t",
+					tt.attempts, tt.baseSeconds, tt.succeedsOn, got, tt.want)
+			}
+			if sleeps != tt.wantSleeps {
+				t.Errorf("RetryWithBackoff(%d, %d, succeeds on %d) slept %q, want %q",
+					tt.attempts, tt.baseSeconds, tt.succeedsOn, sleeps, tt.wantSleeps)
+			}
+		})
+	}
+}
+
+func TestNewCircuitBreaker(t *testing.T) {
+	// results lists calls to record: "F" is record(false), "S" is record(true).
+	tests := []struct {
+		name      string
+		threshold int
+		results   string
+		wantOpen  bool
+	}{
+		{"new breaker", 3, "", false},
+		{"two failures", 3, "FF", false},
+		{"three failures", 3, "FFF", true},
+		{"more failures", 3, "FFFFF", true},
+		{"success resets", 3, "FFFS", false},
+		{"not in a row", 3, "FFSFF", false},
+		{"threshold 1", 1, "SF", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			record, isOpen := NewCircuitBreaker(tt.threshold)
+			for _, r := range tt.results {
+				record(r == 'S')
+			}
+			if got := isOpen(); got != tt.wantOpen {
+				t.Errorf("NewCircuitBreaker(%d) after %q: isOpen() = %t, want %t",
+					tt.threshold, tt.results, got, tt.wantOpen)
+			}
+		})
+	}
+}

@@ -1,0 +1,244 @@
+package ratelimit
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
+)
+
+// fakeClock is a clock that only moves when the test says so.
+type fakeClock struct {
+	t time.Time
+}
+
+func newFakeClock() *fakeClock {
+	return &fakeClock{t: time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)}
+}
+
+func (c *fakeClock) Now() time.Time          { return c.t }
+func (c *fakeClock) Advance(d time.Duration) { c.t = c.t.Add(d) }
+
+// step is one moment in a test: move the clock, then make a request.
+type step struct {
+	advance time.Duration
+	want    bool
+}
+
+func TestAllow(t *testing.T) {
+	tests := []struct {
+		name  string
+		rate  float64
+		burst int
+		steps []step
+	}{
+		{
+			name: "refill stops at burst 3", rate: 1, burst: 3,
+			steps: []step{{0, true}, {0, true}, {0, true}, {10 * time.Second, true}, {0, true}, {0, true}, {0, false}},
+		},
+		{
+			name: "refill stops at burst 1", rate: 2, burst: 1,
+			steps: []step{{0, true}, {time.Hour, true}, {0, false}},
+		},
+		{
+			name: "one second is counted once", rate: 1, burst: 1,
+			steps: []step{{0, true}, {time.Second, true}, {0, false}, {0, false}},
+		},
+		{
+			name: "half tokens add up", rate: 1, burst: 2,
+			steps: []step{{0, true}, {0, true}, {500 * time.Millisecond, false}, {500 * time.Millisecond, true}, {0, false}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clock := newFakeClock()
+			b := NewBucket(tt.rate, tt.burst, clock.Now)
+			for i, s := range tt.steps {
+				clock.Advance(s.advance)
+				if got := b.Allow(); got != s.want {
+					t.Fatalf("NewBucket(%v, %d), request %d after +%v: Allow() = %v, want %v",
+						tt.rate, tt.burst, i+1, s.advance, got, s.want)
+				}
+			}
+		})
+	}
+}
+
+// received is the handler behind the limiter in these tests.
+var received = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "received")
+})
+
+// send makes one request to h from remoteAddr.
+func send(h http.Handler, remoteAddr string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest("POST", "/webhooks/github", nil)
+	r.RemoteAddr = remoteAddr
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	return rec
+}
+
+func TestRetryAfter(t *testing.T) {
+	tests := []struct {
+		name    string
+		rate    float64
+		burst   int
+		take    int           // tokens to take first
+		advance time.Duration // then move the clock this far
+		want    time.Duration
+	}{
+		{"full bucket", 1, 2, 0, 0, 0},
+		{"one token left", 1, 2, 1, 0, 0},
+		{"refilled just now", 1, 1, 1, time.Second, 0},
+		{"empty, rate 1", 1, 1, 1, 0, time.Second},
+		{"quarter token, rate 1", 1, 1, 1, 250 * time.Millisecond, 750 * time.Millisecond},
+		{"empty, rate 0.5", 0.5, 1, 1, 0, 2 * time.Second},
+		{"quarter token, rate 0.5", 0.5, 1, 1, 500 * time.Millisecond, 1500 * time.Millisecond},
+		{"empty, rate 2", 2, 3, 3, 0, 500 * time.Millisecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clock := newFakeClock()
+			b := NewBucket(tt.rate, tt.burst, clock.Now)
+			for range tt.take {
+				b.Allow()
+			}
+			clock.Advance(tt.advance)
+			if got := b.RetryAfter(); got != tt.want {
+				t.Errorf("NewBucket(%v, %d), take %d, wait %v: RetryAfter() = %v, want %v",
+					tt.rate, tt.burst, tt.take, tt.advance, got, tt.want)
+			}
+		})
+	}
+
+	// Each request moves the clock forward, then sends one request.
+	type request struct {
+		advance   time.Duration
+		wantCode  int
+		wantRetry string // "" means no Retry-After header
+	}
+	headerTests := []struct {
+		name     string
+		rate     float64
+		requests []request
+	}{
+		{
+			name: "rate 0.5, burst 1",
+			rate: 0.5,
+			requests: []request{
+				{0, 200, ""},
+				{0, 429, "2"},                      // 2s to go
+				{500 * time.Millisecond, 429, "2"}, // 1.5s to go, rounded up
+				{time.Second, 429, "1"},            // 0.5s to go, rounded up
+				{500 * time.Millisecond, 200, ""},
+			},
+		},
+		{
+			name: "rate 0.25, burst 1",
+			rate: 0.25,
+			requests: []request{
+				{0, 200, ""},
+				{0, 429, "4"},                       // 4s to go
+				{time.Second, 429, "3"},             // 3s to go
+				{2500 * time.Millisecond, 429, "1"}, // 0.5s to go, rounded up
+			},
+		},
+	}
+	for _, tt := range headerTests {
+		t.Run("Retry-After header, "+tt.name, func(t *testing.T) {
+			clock := newFakeClock()
+			h := NewLimiter(tt.rate, 1, clock.Now).Middleware(received)
+			for i, s := range tt.requests {
+				clock.Advance(s.advance)
+				rec := send(h, "203.0.113.9:4000")
+				if rec.Code != s.wantCode {
+					t.Fatalf("request %d after +%v: status = %d, want %d", i+1, s.advance, rec.Code, s.wantCode)
+				}
+				if got := rec.Header().Get("Retry-After"); got != s.wantRetry {
+					t.Errorf("request %d after +%v: Retry-After header = %q, want %q", i+1, s.advance, got, s.wantRetry)
+				}
+			}
+		})
+	}
+}
+
+func TestCleanup(t *testing.T) {
+	t.Run("removes clients idle for at least the limit", func(t *testing.T) {
+		clock := newFakeClock()
+		l := NewLimiter(1, 5, clock.Now)
+		h := l.Middleware(received)
+
+		send(h, "192.0.2.1:1234") // 9:00:00
+		send(h, "192.0.2.2:1234") // 9:00:00
+		clock.Advance(30 * time.Second)
+		send(h, "192.0.2.1:1234") // 9:00:30
+		send(h, "192.0.2.3:1234") // 9:00:30
+		clock.Advance(30 * time.Second)
+
+		// It is 9:01:00. Only 192.0.2.2 has been idle for a whole minute.
+		if got := l.Cleanup(time.Minute); got != 1 {
+			t.Errorf("at 9:01:00, Cleanup(1m) = %d, want 1", got)
+		}
+		if got := l.Len(); got != 2 {
+			t.Errorf("after the first Cleanup, Len() = %d, want 2", got)
+		}
+		if got := l.Cleanup(time.Minute); got != 0 {
+			t.Errorf("at 9:01:00 again, Cleanup(1m) = %d, want 0", got)
+		}
+
+		clock.Advance(30 * time.Second)
+		// It is 9:01:30. 192.0.2.1 and 192.0.2.3 were last seen at 9:00:30.
+		if got := l.Cleanup(time.Minute); got != 2 {
+			t.Errorf("at 9:01:30, Cleanup(1m) = %d, want 2", got)
+		}
+		if got := l.Len(); got != 0 {
+			t.Errorf("after the last Cleanup, Len() = %d, want 0", got)
+		}
+	})
+
+	t.Run("short idle limit", func(t *testing.T) {
+		clock := newFakeClock()
+		l := NewLimiter(1, 5, clock.Now)
+		h := l.Middleware(received)
+
+		send(h, "192.0.2.1:1234")
+		clock.Advance(5 * time.Second)
+		send(h, "192.0.2.2:1234")
+		clock.Advance(5 * time.Second)
+		send(h, "192.0.2.3:1234")
+
+		// Idle for: 192.0.2.1 10s, 192.0.2.2 5s, 192.0.2.3 0s.
+		if got := l.Cleanup(5 * time.Second); got != 2 {
+			t.Errorf("Cleanup(5s) = %d, want 2", got)
+		}
+		if got := l.Len(); got != 1 {
+			t.Errorf("after Cleanup(5s), Len() = %d, want 1", got)
+		}
+	})
+
+	t.Run("safe while requests are served", func(t *testing.T) {
+		clock := newFakeClock()
+		l := NewLimiter(1, 5, clock.Now)
+		h := l.Middleware(received)
+
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			for i := range 100 {
+				send(h, fmt.Sprintf("10.0.0.%d:8080", i))
+			}
+		})
+		wg.Go(func() {
+			for range 100 {
+				l.Cleanup(0)
+			}
+		})
+		wg.Wait()
+
+		l.Cleanup(0)
+		if got := l.Len(); got != 0 {
+			t.Errorf("after Cleanup(0), Len() = %d, want 0", got)
+		}
+	})
+}

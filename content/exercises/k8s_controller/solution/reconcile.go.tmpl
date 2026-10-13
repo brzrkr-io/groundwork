@@ -1,0 +1,94 @@
+package controller
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
+)
+
+// ErrNotOwned means a Service with the Deployment's name already exists, but
+// this controller did not create it, so it must not be changed.
+var ErrNotOwned = errors.New("service is not owned by the deployment")
+
+// Reconcile makes the cluster match what the Deployment behind key wants:
+// a Service if it is exposed, no Service (of ours) if it is not.
+func (c *Controller) Reconcile(ctx context.Context, key string) error {
+	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	if err != nil {
+		return err
+	}
+
+	d, err := c.deployments.Deployments(namespace).Get(name)
+	if apierrors.IsNotFound(err) {
+		// The Deployment was deleted after its key was queued. Nothing to
+		// do: its Service has an owner reference pointing at it, so the
+		// cluster's garbage collector deletes the Service for us.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if Exposed(d) {
+		return c.ensureService(ctx, d)
+	}
+	return c.removeService(ctx, d)
+}
+
+// ensureService creates or updates the Service for the exposed Deployment d.
+func (c *Controller) ensureService(ctx context.Context, d *appsv1.Deployment) error {
+	want := DesiredService(d)
+	services := c.clientset.CoreV1().Services(d.Namespace)
+
+	got, err := services.Get(ctx, d.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		_, err = services.Create(ctx, want, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+
+	if !metav1.IsControlledBy(got, d) {
+		return fmt.Errorf("service %s/%s: %w", got.Namespace, got.Name, ErrNotOwned)
+	}
+	if ServiceInSync(got, want) {
+		return nil
+	}
+
+	// got came from the API server, not the informer cache, so it is ours
+	// to change.
+	got.Spec.Selector = want.Spec.Selector
+	got.Spec.Ports = want.Spec.Ports
+	_, err = services.Update(ctx, got, metav1.UpdateOptions{})
+	return err
+}
+
+// removeService deletes the Service for the no-longer-exposed Deployment d,
+// but only if d owns it.
+func (c *Controller) removeService(ctx context.Context, d *appsv1.Deployment) error {
+	services := c.clientset.CoreV1().Services(d.Namespace)
+
+	got, err := services.Get(ctx, d.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	if !metav1.IsControlledBy(got, d) {
+		return nil
+	}
+	err = services.Delete(ctx, d.Name, metav1.DeleteOptions{})
+	if apierrors.IsNotFound(err) {
+		// Someone else deleted it first. That is the state we wanted.
+		return nil
+	}
+	return err
+}

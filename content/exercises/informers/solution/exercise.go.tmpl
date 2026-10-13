@@ -1,0 +1,66 @@
+// Package informers is the Gopherlings exercise "Informers: list, watch and cache".
+package informers
+
+import (
+	"context"
+	"slices"
+	"sync"
+
+	appsv1 "k8s.io/api/apps/v1"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
+)
+
+// Recorder collects informer events such as "added shop/web".
+// Event handlers call Record from informer goroutines while other code calls
+// Events, so both methods must hold mu.
+type Recorder struct {
+	mu     sync.Mutex
+	events []string
+}
+
+// Record appends one event.
+func (r *Recorder) Record(event string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, event)
+}
+
+// Events returns a copy of the events recorded so far.
+func (r *Recorder) Events() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.events)
+}
+
+// NewFactory returns a shared informer factory for cs that never resyncs.
+func NewFactory(cs kubernetes.Interface) informers.SharedInformerFactory {
+	return informers.NewSharedInformerFactory(cs, 0)
+}
+
+// WatchDeployments registers event handlers on the factory's Deployment
+// informer. They record "added <namespace>/<name>", "updated <namespace>/<name>"
+// and "deleted <namespace>/<name>" in rec.
+func WatchDeployments(factory informers.SharedInformerFactory, rec *Recorder) error {
+	informer := factory.Apps().V1().Deployments().TypedInformer()
+	_, err := informer.AddTypedEventHandler(cache.TypedResourceEventHandlerFuncs[*appsv1.Deployment]{
+		AddFunc: func(d *appsv1.Deployment) {
+			rec.Record("added " + d.Namespace + "/" + d.Name)
+		},
+		UpdateFunc: func(_, d *appsv1.Deployment) {
+			rec.Record("updated " + d.Namespace + "/" + d.Name)
+		},
+		DeleteFunc: func(deleted cache.DeletedObject[*appsv1.Deployment]) {
+			rec.Record("deleted " + deleted.GetKey())
+		},
+	})
+	return err
+}
+
+// StartAndSync starts the informers requested from factory and waits until
+// their caches are filled. It returns an error if ctx ends first.
+func StartAndSync(ctx context.Context, factory informers.SharedInformerFactory) error {
+	factory.StartWithContext(ctx)
+	return factory.WaitForCacheSyncWithContext(ctx).AsError()
+}

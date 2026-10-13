@@ -1,0 +1,54 @@
+// Package manifests is the Gopherlings exercise "YAML manifests: decoding kinds and linting images".
+package manifests
+
+import (
+	"fmt"
+	"strings"
+
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/yaml"
+)
+
+// DecodeObject decodes one YAML document into the Go type that matches its
+// kind: Deployment, Service or ConfigMap.
+func DecodeObject(doc []byte) (runtime.Object, error) {
+	var tm metav1.TypeMeta
+	if err := yaml.Unmarshal(doc, &tm); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+
+	var obj runtime.Object
+	switch tm.Kind {
+	case "Deployment":
+		obj = &appsv1.Deployment{}
+	// TODO(1): Add cases for "Service" and "ConfigMap" (add the import
+	// corev1 "k8s.io/api/core/v1"), and make this error name the kind:
+	// unsupported kind "<kind>".
+	default:
+		return nil, fmt.Errorf("unsupported kind")
+	}
+
+	if err := yaml.Unmarshal(doc, obj); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", tm.Kind, err)
+	}
+	return obj, nil
+}
+
+// ImageTag returns the tag of a container image, or "" if it has none.
+func ImageTag(image string) string {
+	// TODO(2): Fix the bug: a registry port like ":5000" is not a tag.
+	_, tag, found := strings.Cut(image, ":")
+	if !found {
+		return ""
+	}
+	return tag
+}
+
+// Lint returns one line per problem found in the Deployment's containers:
+// images without a tag or with the latest tag, and missing resource limits.
+func Lint(d *appsv1.Deployment) []string {
+	// TODO(3): Check every container, in order, as the README describes.
+	return nil
+}

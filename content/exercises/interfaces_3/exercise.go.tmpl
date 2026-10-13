@@ -1,0 +1,45 @@
+// Package interfaces3 is the Gopherlings exercise "Interfaces: swap in a fake for tests".
+package interfaces3
+
+import "os"
+
+// Store looks up configuration values by key. ok is false when the key is
+// missing.
+type Store interface {
+	Get(key string) (value string, ok bool)
+}
+
+// EnvStore reads configuration from environment variables. The real service
+// uses it; the tests use MemoryStore instead.
+type EnvStore struct{}
+
+// Get returns the environment variable named key.
+func (e EnvStore) Get(key string) (string, bool) {
+	return os.LookupEnv(key)
+}
+
+// MemoryStore keeps configuration in a map.
+type MemoryStore struct {
+	Values map[string]string
+}
+
+// Get returns the value stored under key in m.Values.
+func (m MemoryStore) Get(key string) (string, bool) {
+	// TODO(1): Look key up in m.Values and report whether it was there.
+	return "", false
+}
+
+// Resolve looks up every key in s and returns the values in a map. If a key
+// is missing, it returns nil and an error naming that key.
+func Resolve(s Store, keys []string) (map[string]string, error) {
+	// TODO(2): Implement Resolve. Add "fmt" to the imports for fmt.Errorf.
+	return nil, nil
+}
+
+// Layered looks a key up in each of its layers in turn and returns the first
+// value it finds. Overrides go first, defaults last.
+type Layered struct {
+	Layers []Store
+}
+
+// TODO(3): Write a Get method for Layered so that it satisfies Store.

@@ -1,0 +1,96 @@
+package pods
+
+import (
+	"slices"
+	"testing"
+)
+
+// Sample kubectl get pods output. The tests name them in failure messages,
+// for example NotReadyPods(mixed). mixed is the example from the README.
+const mixed = `NAME                     READY   STATUS             RESTARTS      AGE
+api-7d4b9c6f5-x2kqz      1/1     Running            0             5d
+web-5f6b8d7c9-k8s2m      0/1     CrashLoopBackOff   12 (3m ago)   2h
+migrate-db-4xk2p         0/1     Completed          0             1d
+cache-0                  1/2     Running            0             3h
+`
+
+const healthy = `NAME                   READY   STATUS      RESTARTS   AGE
+api-7d4b9c6f5-x2kqz    1/1     Running     0          5d
+worker-6c8f9b7d4-p9zq  2/2     Running     1          5d
+backup-28741530-q7x2c  0/1     Completed   0          9h
+`
+
+const failing = `NAME                    READY   STATUS              RESTARTS   AGE
+web-5f6b8d7c9-k8s2m     0/1     ImagePullBackOff    0          4m
+db-0                    1/2     Running             3          1d
+auth-6b9f7c5d8-zt4wn    0/1     Pending             0          4m
+`
+
+const header = `NAME   READY   STATUS   RESTARTS   AGE
+`
+
+const empty = ""
+
+func TestIsReady(t *testing.T) {
+	tests := []struct {
+		ready string
+		want  bool
+	}{
+		{"1/1", true},
+		{"3/3", true},
+		{"0/1", false},
+		{"1/2", false},
+		{"2/3", false},
+		{"1", false},
+		{"", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.ready, func(t *testing.T) {
+			if got := IsReady(tc.ready); got != tc.want {
+				t.Errorf("IsReady(%q) = %t, want %t", tc.ready, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNotReadyPods(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   []string
+	}{
+		{"mixed", mixed, []string{"cache-0", "web-5f6b8d7c9-k8s2m"}},
+		{"failing", failing, []string{"auth-6b9f7c5d8-zt4wn", "db-0", "web-5f6b8d7c9-k8s2m"}},
+		{"healthy", healthy, []string{}},
+		{"header", header, []string{}},
+		{"empty", empty, []string{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := NotReadyPods(tc.output)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("NotReadyPods(%s) = %q, want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestReport(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   string
+	}{
+		{"mixed", mixed, "not ready: cache-0, web-5f6b8d7c9-k8s2m"},
+		{"failing", failing, "not ready: auth-6b9f7c5d8-zt4wn, db-0, web-5f6b8d7c9-k8s2m"},
+		{"healthy", healthy, "all pods ready"},
+		{"empty", empty, "all pods ready"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Report(tc.output); got != tc.want {
+				t.Errorf("Report(%s) = %q, want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}

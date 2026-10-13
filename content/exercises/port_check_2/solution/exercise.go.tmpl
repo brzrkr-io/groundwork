@@ -1,0 +1,56 @@
+// Package portcheck is the Gopherlings exercise "Port checks: wait for the database".
+package portcheck
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"strconv"
+	"time"
+)
+
+// DialFunc opens a network connection. (&net.Dialer{}).DialContext has this
+// shape, and tests pass in fakes.
+type DialFunc func(ctx context.Context, network, address string) (net.Conn, error)
+
+// Address joins a host and a port into an address you can dial.
+func Address(host string, port int) string {
+	return net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+// ParseTarget splits "host:port" into its host and a port number from 1 to 65535.
+func ParseTarget(s string) (string, int, error) {
+	host, portText, err := net.SplitHostPort(s)
+	if err != nil {
+		return "", 0, err
+	}
+	if host == "" {
+		return "", 0, fmt.Errorf("target %q has no host", s)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return "", 0, fmt.Errorf("target %q: port is not a number", s)
+	}
+	if port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("target %q: port %d is outside 1-65535", s, port)
+	}
+	return host, port, nil
+}
+
+// WaitForPort dials addr until it accepts a connection, up to attempts times,
+// calling sleep(time.Second) between failed attempts.
+func WaitForPort(dial DialFunc, addr string, attempts int, sleep func(time.Duration)) error {
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		conn, err := dial(context.Background(), "tcp", addr)
+		if err == nil {
+			conn.Close()
+			return nil
+		}
+		lastErr = err
+		if attempt < attempts {
+			sleep(time.Second)
+		}
+	}
+	return fmt.Errorf("%s not ready after %d attempts: %w", addr, attempts, lastErr)
+}

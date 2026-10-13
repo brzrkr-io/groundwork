@@ -1,0 +1,70 @@
+// Package embedding3 is the Gopherlings exercise "Struct embedding: a shared health-check base".
+package embedding3
+
+import "fmt"
+
+// Check is a health check the monitoring agent can schedule.
+type Check interface {
+	CheckName() string
+	Interval() int
+	Target() string
+}
+
+// DefaultInterval is how often, in seconds, a check runs when it does not set
+// IntervalSeconds.
+const DefaultInterval = 60
+
+// BaseCheck holds the settings every health check shares.
+type BaseCheck struct {
+	Name            string
+	IntervalSeconds int
+}
+
+// CheckName returns the check's name.
+func (b BaseCheck) CheckName() string {
+	return b.Name
+}
+
+// Interval returns how often the check runs, in seconds. An IntervalSeconds of
+// 0 means DefaultInterval.
+func (b BaseCheck) Interval() int {
+	if b.IntervalSeconds == 0 {
+		return DefaultInterval
+	}
+	return b.IntervalSeconds
+}
+
+// HTTPCheck requests a URL and expects a healthy response.
+type HTTPCheck struct {
+	BaseCheck
+	URL string
+}
+
+// Target returns the URL being checked.
+func (h HTTPCheck) Target() string {
+	return h.URL
+}
+
+// TCPCheck opens a TCP connection to a host and port.
+type TCPCheck struct {
+	BaseCheck
+	Host string
+	Port int
+}
+
+// Target returns "host:port", for example "db.internal:5432".
+func (c TCPCheck) Target() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+
+// DueNow returns "<name> -> <target>" for every check that is due elapsed
+// seconds after the agent started, in the order of checks.
+func DueNow(checks []Check, elapsed int) []string {
+	due := []string{}
+	for _, c := range checks {
+		if elapsed%c.Interval() == 0 {
+			due = append(due, c.CheckName()+" -> "+c.Target())
+		}
+	}
+	return due
+}

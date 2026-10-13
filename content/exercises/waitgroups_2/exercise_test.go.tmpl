@@ -1,0 +1,149 @@
+package fleet
+
+import (
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+// within runs f and fails the test if f has not returned after 2 seconds,
+// so a hang shows up as a clear failure instead of a frozen test.
+func within(t *testing.T, call string, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s did not return within 2s: is wg.Done() called on every path?", call)
+	}
+}
+
+func TestPatchAll(t *testing.T) {
+	failures := map[string]error{
+		"web-2": errors.New("web-2: disk full"),
+		"db-1":  errors.New("db-1: package locked"),
+	}
+	patch := func(host string) error { return failures[host] }
+
+	tests := []struct {
+		name  string
+		hosts []string
+		want  []error
+	}{
+		{"all succeed", []string{"web-1", "web-3"}, []error{nil, nil}},
+		{"one fails", []string{"web-1", "web-2"}, []error{nil, failures["web-2"]}},
+		{"two fail", []string{"db-1", "web-1", "web-2"}, []error{failures["db-1"], nil, failures["web-2"]}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []error
+			within(t, fmt.Sprintf("PatchAll(%q)", tt.hosts), func() {
+				got = PatchAll(tt.hosts, patch)
+			})
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("PatchAll(%q) = %v, want %v", tt.hosts, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChecksumAll(t *testing.T) {
+	checksums := map[string]string{
+		"app.tar":     "9f86d0",
+		"config.yaml": "2c26b4",
+		"schema.sql":  "fcde2b",
+	}
+	tests := []struct {
+		name  string
+		files []string
+	}{
+		{"two files", []string{"app.tar", "config.yaml"}},
+		{"three files", []string{"schema.sql", "app.tar", "config.yaml"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// synctest.Test gives the test a fake clock: sleeps finish
+			// instantly, but time.Now moves forward by the right amount.
+			synctest.Test(t, func(t *testing.T) {
+				sum := func(file string) string {
+					time.Sleep(time.Second) // each checksum takes 1 second
+					return checksums[file]
+				}
+				want := make(map[string]string)
+				for _, file := range tt.files {
+					want[file] = checksums[file]
+				}
+
+				start := time.Now()
+				got := ChecksumAll(tt.files, sum)
+				elapsed := time.Since(start)
+
+				if !maps.Equal(got, want) {
+					t.Errorf("ChecksumAll(%q) = %v, want %v", tt.files, got, want)
+				}
+				if elapsed != time.Second {
+					t.Errorf("ChecksumAll(%q) took %v, want 1s: the checksums should run at the same time", tt.files, elapsed)
+				}
+
+				time.Sleep(time.Minute) // let any goroutine still running finish
+			})
+		})
+	}
+}
+
+func TestRollout(t *testing.T) {
+	tests := []struct {
+		name     string
+		canaries []string
+		rest     []string
+	}{
+		{"two canaries", []string{"canary-1", "canary-2"}, []string{"web-1", "web-2", "web-3"}},
+		{"one canary", []string{"canary-1"}, []string{"api-1", "api-2"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var mu sync.Mutex
+				finished := make(map[string]time.Duration) // host -> when its deploy finished
+
+				start := time.Now()
+				deploy := func(host string) {
+					time.Sleep(time.Second) // each deploy takes 1 second
+					mu.Lock()
+					defer mu.Unlock()
+					finished[host] = time.Since(start)
+				}
+
+				Rollout(tt.canaries, tt.rest, deploy)
+				elapsed := time.Since(start)
+
+				time.Sleep(time.Minute) // let any goroutine still running finish
+				mu.Lock()
+				defer mu.Unlock()
+
+				want := make(map[string]time.Duration)
+				for _, host := range tt.canaries {
+					want[host] = 1 * time.Second
+				}
+				for _, host := range tt.rest {
+					want[host] = 2 * time.Second
+				}
+				if !maps.Equal(finished, want) {
+					t.Errorf("Rollout(%q, %q): deploys finished at %v, want %v", tt.canaries, tt.rest, finished, want)
+				}
+				if elapsed != 2*time.Second {
+					t.Errorf("Rollout(%q, %q) took %v, want 2s", tt.canaries, tt.rest, elapsed)
+				}
+			})
+		})
+	}
+}

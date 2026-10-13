@@ -1,0 +1,111 @@
+package selectors
+
+import (
+	"maps"
+	"slices"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
+)
+
+func pod(namespace, name string, podLabels map[string]string) *corev1.Pod {
+	return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: podLabels}}
+}
+
+func service(namespace, name string, svcLabels, selector map[string]string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: svcLabels},
+		Spec:       corev1.ServiceSpec{Selector: selector},
+	}
+}
+
+// clusterObjects is what the fake cluster holds in every test.
+func clusterObjects() []runtime.Object {
+	return []runtime.Object{
+		// Services. Note that a Service's own labels are not its selector.
+		service("shop", "checkout", map[string]string{"app": "checkout", "team": "payments"}, map[string]string{"app": "checkout", "tier": "web"}),
+		service("shop", "cart", map[string]string{"team": "shop"}, map[string]string{"app": "cart"}),
+		service("shop", "legacy-db", nil, nil),
+		service("staging", "checkout", map[string]string{"app": "checkout"}, map[string]string{"app": "checkout", "tier": "web"}),
+
+		// Pods in shop.
+		pod("shop", "checkout-web-a", map[string]string{"app": "checkout", "tier": "web", "team": "payments", "env": "prod"}),
+		pod("shop", "checkout-web-b", map[string]string{"app": "checkout", "tier": "web", "team": "payments", "env": "prod"}),
+		pod("shop", "checkout-worker", map[string]string{"app": "checkout", "tier": "worker", "team": "payments", "env": "prod"}),
+		pod("shop", "cart-1", map[string]string{"app": "cart", "tier": "web", "team": "shop", "env": "prod"}),
+		pod("shop", "cart-2", map[string]string{"app": "cart", "tier": "web", "team": "shop", "env": "prod"}),
+		pod("shop", "storefront-1", map[string]string{"app": "storefront", "tier": "web", "team": "shop", "env": "prod"}),
+
+		// Pods in staging.
+		pod("staging", "checkout-web-x", map[string]string{"app": "checkout", "tier": "web", "team": "payments", "env": "staging"}),
+		pod("staging", "cart-s", map[string]string{"app": "cart", "tier": "web", "team": "shop", "env": "staging"}),
+
+		// Pods in payments and monitoring.
+		pod("payments", "ledger-1", map[string]string{"app": "ledger", "team": "payments", "env": "prod"}),
+		pod("payments", "ledger-batch", map[string]string{"app": "ledger", "team": "payments"}),
+		pod("monitoring", "prometheus-0", map[string]string{"app": "prometheus", "team": "platform", "env": "prod"}),
+	}
+}
+
+func TestPodsForService(t *testing.T) {
+	tests := []struct {
+		namespace, name string
+		want            []string
+	}{
+		{"shop", "checkout", []string{"checkout-web-a", "checkout-web-b"}},
+		{"shop", "cart", []string{"cart-1", "cart-2"}},
+		{"staging", "checkout", []string{"checkout-web-x"}},
+		{"shop", "legacy-db", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.namespace+"/"+tt.name, func(t *testing.T) {
+			cs := fake.NewClientset(clusterObjects()...)
+			got, err := PodsForService(t.Context(), cs, tt.namespace, tt.name)
+			if err != nil {
+				t.Fatalf("PodsForService(ctx, cs, %q, %q) returned error %v, want no error", tt.namespace, tt.name, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("PodsForService(ctx, cs, %q, %q) = %q, want %q", tt.namespace, tt.name, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("missing service", func(t *testing.T) {
+		cs := fake.NewClientset(clusterObjects()...)
+		got, err := PodsForService(t.Context(), cs, "shop", "payments-gateway")
+		if !apierrors.IsNotFound(err) {
+			t.Errorf("PodsForService(ctx, cs, %q, %q) error = %v, want a NotFound error", "shop", "payments-gateway", err)
+		}
+		if got != nil {
+			t.Errorf("PodsForService(ctx, cs, %q, %q) = %q, want nil", "shop", "payments-gateway", got)
+		}
+	})
+}
+
+func TestCountByEnv(t *testing.T) {
+	tests := []struct {
+		team string
+		want map[string]int
+	}{
+		{"payments", map[string]int{"prod": 4, "staging": 1}},
+		{"shop", map[string]int{"prod": 3, "staging": 1}},
+		{"platform", map[string]int{"prod": 1}},
+		{"nobody", map[string]int{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.team, func(t *testing.T) {
+			cs := fake.NewClientset(clusterObjects()...)
+			got, err := CountByEnv(t.Context(), cs, tt.team)
+			if err != nil {
+				t.Fatalf("CountByEnv(ctx, cs, %q) returned error %v, want no error", tt.team, err)
+			}
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("CountByEnv(ctx, cs, %q) = %v, want %v", tt.team, got, tt.want)
+			}
+		})
+	}
+}

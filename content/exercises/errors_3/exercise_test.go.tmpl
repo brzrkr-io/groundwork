@@ -1,0 +1,88 @@
+package errvalues3
+
+import (
+	"slices"
+	"testing"
+)
+
+// errText turns an error into text for comparing: "<nil>" means no error.
+func errText(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	return err.Error()
+}
+
+func TestParseCheck(t *testing.T) {
+	tests := []struct {
+		line    string
+		want    Check
+		wantErr string
+	}{
+		{"api 8080 /healthz", Check{"api", 8080, "/healthz"}, "<nil>"},
+		{"  web   80  /  ", Check{"web", 80, "/"}, "<nil>"},
+		{"api 8080", Check{}, `check "api 8080": want 3 fields, got 2`},
+		{"api 8080 /healthz extra", Check{}, `check "api 8080 /healthz extra": want 3 fields, got 4`},
+		{"api x /healthz", Check{}, `check "api x /healthz": port "x" is not a number`},
+		{"api 0 /healthz", Check{}, `check "api 0 /healthz": port 0 is out of range 1-65535`},
+		{"api 70000 /healthz", Check{}, `check "api 70000 /healthz": port 70000 is out of range 1-65535`},
+		{"api 8080 healthz", Check{}, `check "api 8080 healthz": path "healthz" must start with "/"`},
+		{"db 5432 ready", Check{}, `check "db 5432 ready": path "ready" must start with "/"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			got, err := ParseCheck(tt.line)
+			if got != tt.want || errText(err) != tt.wantErr {
+				t.Errorf("ParseCheck(%q) = %+v, %q, want %+v, %q", tt.line, got, errText(err), tt.want, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseAll(t *testing.T) {
+	tests := []struct {
+		name    string
+		lines   []string
+		want    []Check
+		wantErr string
+	}{
+		{
+			name:    "all good",
+			lines:   []string{"api 8080 /healthz", "", "web 80 /"},
+			want:    []Check{{"api", 8080, "/healthz"}, {"web", 80, "/"}},
+			wantErr: "<nil>",
+		},
+		{
+			name:    "blank lines only",
+			lines:   []string{"", "   "},
+			want:    nil,
+			wantErr: "<nil>",
+		},
+		{
+			name:    "bad port on line 2",
+			lines:   []string{"api 8080 /healthz", "web x /"},
+			want:    nil,
+			wantErr: `line 2: check "web x /": port "x" is not a number`,
+		},
+		{
+			name:    "blank lines still count",
+			lines:   []string{"", "api 8080 /healthz", "", "db 5432"},
+			want:    nil,
+			wantErr: `line 4: check "db 5432": want 3 fields, got 2`,
+		},
+		{
+			name:    "stops at first bad line",
+			lines:   []string{"api 8080 healthz", "web x /"},
+			want:    nil,
+			wantErr: `line 1: check "api 8080 healthz": path "healthz" must start with "/"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseAll(tt.lines)
+			if !slices.Equal(got, tt.want) || errText(err) != tt.wantErr {
+				t.Errorf("ParseAll(%q) = %+v, %q, want %+v, %q", tt.lines, got, errText(err), tt.want, tt.wantErr)
+			}
+		})
+	}
+}

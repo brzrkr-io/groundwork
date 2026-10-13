@@ -1,0 +1,51 @@
+// Package generics2 is the Gopherlings exercise "Generics: Sum, SortedKeys and GroupBy".
+package generics2
+
+import (
+	"cmp"
+	"slices"
+)
+
+// Number is any type whose underlying type is int, int64 or float64.
+type Number interface {
+	~int | ~int64 | ~float64
+}
+
+// Bytes is an amount of disk or memory, in bytes.
+type Bytes int64
+
+// Pod is a running pod and the node it is scheduled on.
+type Pod struct {
+	Name string
+	Node string
+}
+
+// Sum returns the total of all values.
+func Sum[T Number](values []T) T {
+	var total T
+	for _, v := range values {
+		total += v
+	}
+	return total
+}
+
+// SortedKeys returns the keys of m, sorted smallest first.
+func SortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
+	keys := make([]K, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// GroupBy groups items by the key that key returns for each of them. Items
+// keep their original order within a group.
+func GroupBy[T any, K comparable](items []T, key func(T) K) map[K][]T {
+	groups := make(map[K][]T)
+	for _, item := range items {
+		k := key(item)
+		groups[k] = append(groups[k], item)
+	}
+	return groups
+}

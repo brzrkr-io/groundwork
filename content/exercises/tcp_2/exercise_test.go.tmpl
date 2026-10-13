@@ -1,0 +1,156 @@
+package tcp
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"testing"
+	"time"
+)
+
+// listen starts listening on a free local port and stops when the test ends.
+func listen(t *testing.T) net.Listener {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	return ln
+}
+
+func TestHandleStats(t *testing.T) {
+	tests := []struct {
+		name  string
+		stats map[string]int
+		want  string
+	}{
+		{
+			"three counters",
+			map[string]int{"requests": 1200, "errors": 3, "restarts": 1},
+			"errors 3\nrequests 1200\nrestarts 1\n",
+		},
+		{"no counters", map[string]int{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ln := listen(t)
+			go func() {
+				conn, err := ln.Accept()
+				if err == nil {
+					HandleStats(conn, tt.stats)
+				}
+			}()
+
+			conn, err := net.Dial("tcp", ln.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			// Give up quickly instead of waiting forever for EOF.
+			conn.SetDeadline(time.Now().Add(300 * time.Millisecond))
+
+			got, err := io.ReadAll(conn)
+			if err != nil {
+				t.Fatalf("reading the stats failed: %v (is the connection closed when HandleStats returns?)", err)
+			}
+			if string(got) != tt.want {
+				t.Errorf("HandleStats(conn, %v) wrote %q, want %q", tt.stats, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsTimeout(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"deadline exceeded", os.ErrDeadlineExceeded, true},
+		{"wrapped deadline", fmt.Errorf("read banner: %w", os.ErrDeadlineExceeded), true},
+		{"net.OpError timeout", &net.OpError{Op: "read", Net: "tcp", Err: os.ErrDeadlineExceeded}, true},
+		{"plain error", errors.New("disk full"), false},
+		{"net.Error that is not a timeout", &net.DNSError{Err: "no such host", Name: "db.internal", IsNotFound: true}, false},
+		{"nil", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsTimeout(tt.err); got != tt.want {
+				t.Errorf("IsTimeout(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+// startBannerServer accepts connections, sends banner to each one and then
+// closes it. It returns its address.
+func startBannerServer(t *testing.T, banner string) string {
+	t.Helper()
+	ln := listen(t)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return // the listener was closed
+			}
+			fmt.Fprint(conn, banner)
+			conn.Close()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+// startSilentServer accepts connections but never sends anything. It holds
+// each connection open for up to 1s, until the client hangs up.
+func startSilentServer(t *testing.T) string {
+	t.Helper()
+	ln := listen(t)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return // the listener was closed
+			}
+			conn.SetReadDeadline(time.Now().Add(time.Second))
+			io.Copy(io.Discard, conn) // waits until the client closes
+			conn.Close()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+func TestReadBanner(t *testing.T) {
+	tests := []struct {
+		name   string
+		banner string
+		want   string
+	}{
+		{"ssh", "SSH-2.0-OpenSSH_9.6\r\n", "SSH-2.0-OpenSSH_9.6"},
+		{"smtp", "220 mail.example.com ESMTP Postfix\r\n", "220 mail.example.com ESMTP Postfix"},
+		{"plain newline", "+OK redis ready\n", "+OK redis ready"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr := startBannerServer(t, tt.banner)
+			got, err := ReadBanner(addr, time.Second)
+			if err != nil {
+				t.Fatalf("ReadBanner(addr, 1s) returned error %v, want nil", err)
+			}
+			if got != tt.want {
+				t.Errorf("ReadBanner(addr, 1s) = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	t.Run("silent server times out", func(t *testing.T) {
+		addr := startSilentServer(t)
+		got, err := ReadBanner(addr, 100*time.Millisecond)
+		var netErr net.Error
+		if !errors.As(err, &netErr) || !netErr.Timeout() {
+			t.Errorf("ReadBanner(addr, 100ms) = %q, %v; want a timeout error", got, err)
+		}
+	})
+}

@@ -1,0 +1,49 @@
+// Package httpserver is the Gopherlings exercise "HTTP servers: fix the log viewer".
+package httpserver
+
+import (
+	"fmt"
+	"net/http"
+)
+
+// LogStore maps each service name to its log lines, oldest first.
+type LogStore map[string][]string
+
+// Index answers GET / with a short usage message.
+func Index(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "log viewer: try /logs/{service}\n")
+}
+
+// ServeLogs writes the newest log lines of the service named in the path,
+// one per line, as in GET /logs/api?limit=5.
+func (s LogStore) ServeLogs(w http.ResponseWriter, r *http.Request) {
+	service := r.PathValue("service")
+	lines, ok := s[service]
+	if !ok {
+		http.Error(w, "unknown service: "+service, http.StatusNotFound)
+		return
+	}
+
+	limit := 10
+	// TODO(3): Use the "limit" query parameter when it is present. Reply 400
+	// with "limit must be a number from 1 to 100" if it is not a whole number
+	// from 1 to 100. Add the "strconv" import.
+
+	// TODO(2): Fix this: it keeps the oldest lines, not the newest.
+	if len(lines) > limit {
+		lines = lines[:limit]
+	}
+	for _, line := range lines {
+		fmt.Fprintln(w, line)
+	}
+}
+
+// NewMux returns the log viewer's router.
+func NewMux(s LogStore) *http.ServeMux {
+	mux := http.NewServeMux()
+	// TODO(1): Fix both patterns. The first one answers every path, and the
+	// second one accepts any method.
+	mux.HandleFunc("/", Index)
+	mux.HandleFunc("/logs/{service}", s.ServeLogs)
+	return mux
+}

@@ -1,0 +1,106 @@
+package release
+
+import (
+	"errors"
+	"slices"
+	"sync"
+	"sync/atomic"
+	"testing"
+)
+
+// These tests run with the race detector. Until a race is fixed, its test
+// fails with "race detected during execution of test", and the output above
+// it shows a WARNING: DATA RACE report for you to read.
+
+func TestDiskUsage(t *testing.T) {
+	sizes := map[string]int{"/var/log": 120, "/var/lib/docker": 4000, "/tmp": 35}
+	size := func(dir string) int { return sizes[dir] }
+
+	tests := []struct {
+		name      string
+		dirs      []string
+		wantSizes []int
+		wantTotal int
+	}{
+		{"two dirs", []string{"/var/log", "/var/lib/docker"}, []int{120, 4000}, 4120},
+		{"three dirs", []string{"/tmp", "/var/log", "/var/lib/docker"}, []int{35, 120, 4000}, 4155},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSizes, gotTotal := DiskUsage(tt.dirs, size)
+			if !slices.Equal(gotSizes, tt.wantSizes) || gotTotal != tt.wantTotal {
+				t.Errorf("DiskUsage(%q) = %v, %d, want %v, %d", tt.dirs, gotSizes, gotTotal, tt.wantSizes, tt.wantTotal)
+			}
+		})
+	}
+}
+
+func TestPushAll(t *testing.T) {
+	errAPI := errors.New("push api:1.4: unauthorized")
+	errWeb := errors.New("push web:2.0: manifest invalid")
+	errDB := errors.New("push db:9.1: timeout")
+	failures := map[string]error{"api:1.4": errAPI, "web:2.0": errWeb, "db:9.1": errDB}
+	push := func(image string) error { return failures[image] }
+
+	tests := []struct {
+		name   string
+		images []string
+		want   error
+	}{
+		{"two failures", []string{"ok:1.0", "api:1.4", "web:2.0"}, errAPI},
+		{"order decides", []string{"web:2.0", "api:1.4", "db:9.1"}, errWeb},
+		{"one failure", []string{"ok:1.0", "db:9.1", "ok:2.0"}, errDB},
+		{"no failures", []string{"ok:1.0", "ok:2.0"}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PushAll(tt.images, push); got != tt.want {
+				t.Errorf("PushAll(%q) = %v, want %v", tt.images, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTokenCache(t *testing.T) {
+	t.Run("one goroutine", func(t *testing.T) {
+		fetches := 0
+		c := NewTokenCache(func() string {
+			fetches++
+			return "tok-123"
+		})
+		for range 3 {
+			if got := c.Token(); got != "tok-123" {
+				t.Errorf("Token() = %q, want %q", got, "tok-123")
+			}
+		}
+		if fetches != 1 {
+			t.Errorf("after 3 calls to Token(), fetch was called %d times, want 1", fetches)
+		}
+	})
+
+	t.Run("many goroutines", func(t *testing.T) {
+		var fetches atomic.Int32
+		c := NewTokenCache(func() string {
+			fetches.Add(1)
+			return "tok-456"
+		})
+
+		tokens := make([]string, 10)
+		var wg sync.WaitGroup
+		for i := range tokens {
+			wg.Go(func() {
+				tokens[i] = c.Token()
+			})
+		}
+		wg.Wait()
+
+		for i, got := range tokens {
+			if got != "tok-456" {
+				t.Errorf("goroutine %d: Token() = %q, want %q", i, got, "tok-456")
+			}
+		}
+		if n := fetches.Load(); n != 1 {
+			t.Errorf("10 goroutines called Token(): fetch was called %d times, want 1", n)
+		}
+	})
+}

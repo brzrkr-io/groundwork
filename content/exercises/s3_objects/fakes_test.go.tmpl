@@ -1,0 +1,135 @@
+package configstore
+
+import (
+	"bytes"
+	"context"
+	"io"
+	"maps"
+	"slices"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+)
+
+// fakeS3 is an in-memory stand-in for one S3 bucket. It implements ObjectAPI,
+// so the tests never talk to real AWS.
+type fakeS3 struct {
+	bucket   string
+	objects  map[string]fakeObject
+	pageSize int // keys per ListObjectsV2 page, kept small to force several pages
+	opened   int // GetObject bodies handed out
+	closed   int // GetObject bodies closed
+}
+
+// fakeObject is one stored object.
+type fakeObject struct {
+	body        []byte
+	contentType string
+	metadata    map[string]string
+}
+
+func newFakeS3(bucket string) *fakeS3 {
+	return &fakeS3{bucket: bucket, objects: map[string]fakeObject{}, pageSize: 2}
+}
+
+// put stores an object directly, the way a test sets up a bucket's contents.
+func (f *fakeS3) put(key, body string, metadata map[string]string) {
+	f.objects[key] = fakeObject{body: []byte(body), contentType: "application/json", metadata: metadata}
+}
+
+// checkBucket fails like S3 does when you ask for a bucket that doesn't exist.
+func (f *fakeS3) checkBucket(bucket *string) error {
+	if aws.ToString(bucket) != f.bucket {
+		return &types.NoSuchBucket{Message: aws.String("The specified bucket does not exist")}
+	}
+	return nil
+}
+
+func (f *fakeS3) PutObject(ctx context.Context, in *s3.PutObjectInput, _ ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+	if err := f.checkBucket(in.Bucket); err != nil {
+		return nil, err
+	}
+	var body []byte
+	if in.Body != nil {
+		b, err := io.ReadAll(in.Body)
+		if err != nil {
+			return nil, err
+		}
+		body = b
+	}
+	f.objects[aws.ToString(in.Key)] = fakeObject{
+		body:        body,
+		contentType: aws.ToString(in.ContentType),
+		metadata:    maps.Clone(in.Metadata),
+	}
+	return &s3.PutObjectOutput{}, nil
+}
+
+func (f *fakeS3) GetObject(ctx context.Context, in *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	if err := f.checkBucket(in.Bucket); err != nil {
+		return nil, err
+	}
+	obj, ok := f.objects[aws.ToString(in.Key)]
+	if !ok {
+		return nil, &types.NoSuchKey{Message: aws.String("The specified key does not exist.")}
+	}
+	f.opened++
+	return &s3.GetObjectOutput{
+		Body:        &trackedBody{Reader: bytes.NewReader(obj.body), fake: f},
+		ContentType: aws.String(obj.contentType),
+		Metadata:    maps.Clone(obj.metadata),
+	}, nil
+}
+
+// trackedBody is a GetObject body that counts how often it gets closed.
+type trackedBody struct {
+	*bytes.Reader
+	fake   *fakeS3
+	closed bool
+}
+
+func (b *trackedBody) Close() error {
+	if !b.closed {
+		b.closed = true
+		b.fake.closed++
+	}
+	return nil
+}
+
+// ListObjectsV2 returns keys in sorted order, pageSize at a time. Like real
+// S3, it sets IsTruncated and NextContinuationToken when more keys follow.
+func (f *fakeS3) ListObjectsV2(ctx context.Context, in *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+	if err := f.checkBucket(in.Bucket); err != nil {
+		return nil, err
+	}
+	// Our continuation token is simply the last key of the previous page.
+	after := aws.ToString(in.ContinuationToken)
+	var keys []string
+	for key := range f.objects {
+		if strings.HasPrefix(key, aws.ToString(in.Prefix)) && key > after {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+
+	size := f.pageSize
+	if in.MaxKeys != nil && *in.MaxKeys > 0 {
+		size = int(*in.MaxKeys)
+	}
+	out := &s3.ListObjectsV2Output{Name: in.Bucket, Prefix: in.Prefix, IsTruncated: aws.Bool(false)}
+	if len(keys) > size {
+		keys = keys[:size]
+		out.IsTruncated = aws.Bool(true)
+		out.NextContinuationToken = aws.String(keys[size-1])
+	}
+	for _, key := range keys {
+		out.Contents = append(out.Contents, types.Object{
+			Key:  aws.String(key),
+			Size: aws.Int64(int64(len(f.objects[key].body))),
+		})
+	}
+	out.KeyCount = aws.Int32(int32(len(out.Contents)))
+	return out, nil
+}

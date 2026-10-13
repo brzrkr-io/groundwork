@@ -1,0 +1,131 @@
+package wrapping2
+
+import (
+	"errors"
+	"fmt"
+	"testing"
+)
+
+func TestFetchSecret(t *testing.T) {
+	vault := &Vault{Secrets: map[string]string{
+		"prod/db/password":    "hunter2",
+		"staging/db/password": "s3cret",
+	}}
+	down := &Vault{Down: true}
+
+	t.Run("found", func(t *testing.T) {
+		got, err := DatabasePassword(vault, "deployer", "staging")
+		if err != nil || got != "s3cret" {
+			t.Errorf("DatabasePassword(vault, %q, %q) = %q, %v, want %q, nil", "deployer", "staging", got, err, "s3cret")
+		}
+	})
+
+	sentinels := []struct {
+		name       string
+		vault      *Vault
+		path       string
+		wantErr    string
+		target     error
+		targetName string
+	}{
+		{"missing", vault, "dev/api/token", `fetch secret "dev/api/token": secret not found`, ErrSecretNotFound, "ErrSecretNotFound"},
+		{"vault down", down, "prod/api/token", `fetch secret "prod/api/token": vault timed out`, ErrTimeout, "ErrTimeout"},
+	}
+	for _, tc := range sentinels {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := FetchSecret(tc.vault, "deployer", tc.path)
+			if err == nil {
+				t.Fatalf("FetchSecret(vault, %q, %q) error = nil, want %q", "deployer", tc.path, tc.wantErr)
+			}
+			if err.Error() != tc.wantErr {
+				t.Errorf("FetchSecret(vault, %q, %q) error = %q, want %q", "deployer", tc.path, err.Error(), tc.wantErr)
+			}
+			if !errors.Is(err, tc.target) {
+				t.Errorf("errors.Is(FetchSecret(vault, %q, %q) error, %s) = false, want true", "deployer", tc.path, tc.targetName)
+			}
+		})
+	}
+
+	t.Run("missing through DatabasePassword", func(t *testing.T) {
+		want := `database password for dev: fetch secret "dev/db/password": secret not found`
+		_, err := DatabasePassword(vault, "deployer", "dev")
+		if err == nil {
+			t.Fatalf("DatabasePassword(vault, %q, %q) error = nil, want %q", "deployer", "dev", want)
+		}
+		if err.Error() != want {
+			t.Errorf("DatabasePassword(vault, %q, %q) error = %q, want %q", "deployer", "dev", err.Error(), want)
+		}
+		if !errors.Is(err, ErrSecretNotFound) {
+			t.Errorf("errors.Is(DatabasePassword(vault, %q, %q) error, ErrSecretNotFound) = false, want true", "deployer", "dev")
+		}
+	})
+
+	t.Run("access denied through DatabasePassword", func(t *testing.T) {
+		want := `database password for prod: fetch secret "prod/db/password": role "intern" may not read "prod/db/password"`
+		_, err := DatabasePassword(vault, "intern", "prod")
+		if err == nil {
+			t.Fatalf("DatabasePassword(vault, %q, %q) error = nil, want %q", "intern", "prod", want)
+		}
+		if err.Error() != want {
+			t.Errorf("DatabasePassword(vault, %q, %q) error = %q, want %q", "intern", "prod", err.Error(), want)
+		}
+		denied, ok := errors.AsType[*AccessDeniedError](err)
+		if !ok {
+			t.Fatalf("errors.AsType[*AccessDeniedError](DatabasePassword(vault, %q, %q) error) found nothing, want an *AccessDeniedError", "intern", "prod")
+		}
+		if denied.Role != "intern" {
+			t.Errorf("AccessDeniedError.Role = %q, want %q", denied.Role, "intern")
+		}
+	})
+}
+
+func TestShouldRetry(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"no error", nil, false},
+		{"bare timeout", ErrTimeout, true},
+		{"timeout wrapped once", fmt.Errorf("fetch secret %q: %w", "prod/api/token", ErrTimeout), true},
+		{"timeout wrapped twice", fmt.Errorf("database password for prod: %w", fmt.Errorf("fetch secret %q: %w", "prod/db/password", ErrTimeout)), true},
+		{"wrapped not found", fmt.Errorf("fetch secret %q: %w", "dev/api/token", ErrSecretNotFound), false},
+		{"same text, different error", errors.New("vault timed out"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ShouldRetry(tc.err); got != tc.want {
+				t.Errorf("ShouldRetry(%v) = %t, want %t", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExplain(t *testing.T) {
+	denied := &AccessDeniedError{Role: "intern", Path: "prod/db/password"}
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"no error", nil, "ok"},
+		{"bare access denied", denied, `ask an admin to let role "intern" read "prod/db/password"`},
+		{
+			"access denied wrapped twice",
+			fmt.Errorf("database password for prod: %w", fmt.Errorf("fetch secret %q: %w", "prod/api/token", &AccessDeniedError{Role: "ci", Path: "prod/api/token"})),
+			`ask an admin to let role "ci" read "prod/api/token"`,
+		},
+		{
+			"wrapped not found",
+			fmt.Errorf("fetch secret %q: %w", "dev/api/token", ErrSecretNotFound),
+			`failed: fetch secret "dev/api/token": secret not found`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Explain(tc.err); got != tc.want {
+				t.Errorf("Explain(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
+	}
+}

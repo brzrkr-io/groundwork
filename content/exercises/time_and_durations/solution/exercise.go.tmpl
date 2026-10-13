@@ -1,0 +1,44 @@
+// Package timing holds time helpers for an on-call dashboard.
+package timing
+
+import (
+	"fmt"
+	"time"
+)
+
+const day = 24 * time.Hour
+
+// DaysUntilExpiry returns the whole days from now until the RFC3339 time
+// notAfter. The result is negative once that time has passed.
+func DaysUntilExpiry(now time.Time, notAfter string) (int, error) {
+	expiry, err := time.Parse(time.RFC3339, notAfter)
+	if err != nil {
+		return 0, err
+	}
+	return int(expiry.Sub(now) / day), nil
+}
+
+// UptimeLine describes how long a host has been up, for example
+// "up 3d4h since 2026-10-08 05:30 UTC".
+func UptimeLine(booted, now time.Time) string {
+	up := now.Sub(booted)
+	days := int(up / day)
+	hours := int(up % day / time.Hour)
+	return fmt.Sprintf("up %dd%dh since %s", days, hours,
+		booted.UTC().Format("2006-01-02 15:04 MST"))
+}
+
+// InWindow reports whether now is inside the maintenance window that opens
+// at start (RFC3339) and lasts for length (a ParseDuration string).
+func InWindow(now time.Time, start, length string) (bool, error) {
+	begin, err := time.Parse(time.RFC3339, start)
+	if err != nil {
+		return false, err
+	}
+	d, err := time.ParseDuration(length)
+	if err != nil {
+		return false, err
+	}
+	// The start is inside the window; the end is not.
+	return !now.Before(begin) && now.Before(begin.Add(d)), nil
+}

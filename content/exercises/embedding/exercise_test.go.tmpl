@@ -1,0 +1,94 @@
+package embedding
+
+import "testing"
+
+func TestNewPod(t *testing.T) {
+	tests := []struct {
+		name, namespace, image string
+	}{
+		{"api", "default", "nginx:1.27"},
+		{"worker", "jobs", "busybox:1.37"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewPod(tt.name, tt.namespace, tt.image)
+			// p.Name, p.Namespace and p.Labels are promoted from p.Metadata.
+			if p.Name != tt.name {
+				t.Errorf("NewPod(%q, %q, %q).Name = %q, want %q", tt.name, tt.namespace, tt.image, p.Name, tt.name)
+			}
+			if p.Namespace != tt.namespace {
+				t.Errorf("NewPod(%q, %q, %q).Namespace = %q, want %q", tt.name, tt.namespace, tt.image, p.Namespace, tt.namespace)
+			}
+			if got := p.Labels["app"]; got != tt.name {
+				t.Errorf("NewPod(%q, %q, %q).Labels[\"app\"] = %q, want %q", tt.name, tt.namespace, tt.image, got, tt.name)
+			}
+			if len(p.Labels) != 1 {
+				t.Errorf("NewPod(%q, %q, %q).Labels has %d labels, want 1", tt.name, tt.namespace, tt.image, len(p.Labels))
+			}
+			if p.Image != tt.image {
+				t.Errorf("NewPod(%q, %q, %q).Image = %q, want %q", tt.name, tt.namespace, tt.image, p.Image, tt.image)
+			}
+		})
+	}
+}
+
+func TestMetadataDescribe(t *testing.T) {
+	tests := []struct {
+		name string
+		meta Metadata
+		want string
+	}{
+		{"default namespace", Metadata{Name: "api", Namespace: "default"}, "default/api"},
+		{"prod namespace", Metadata{Name: "billing", Namespace: "prod"}, "prod/billing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.meta.Describe(); got != tt.want {
+				t.Errorf("Metadata{Name: %q, Namespace: %q}.Describe() = %q, want %q", tt.meta.Name, tt.meta.Namespace, got, tt.want)
+			}
+		})
+	}
+
+	// Service has no Describe method of its own: it uses the promoted one.
+	services := []struct {
+		name string
+		svc  Service
+		want string
+	}{
+		{"web service", Service{Metadata: Metadata{Name: "web", Namespace: "prod"}, Port: 80}, "prod/web"},
+		{"metrics service", Service{Metadata: Metadata{Name: "metrics", Namespace: "monitoring"}, Port: 9090}, "monitoring/metrics"},
+	}
+	for _, tt := range services {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.svc.Describe(); got != tt.want {
+				t.Errorf("Service{Name: %q, Namespace: %q}.Describe() = %q, want %q", tt.svc.Name, tt.svc.Namespace, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPodDescribe(t *testing.T) {
+	tests := []struct {
+		name string
+		pod  Pod
+		want string
+	}{
+		{
+			"nginx pod",
+			Pod{Metadata: Metadata{Name: "api", Namespace: "default"}, Image: "nginx:1.27"},
+			"pod default/api (nginx:1.27)",
+		},
+		{
+			"redis pod",
+			Pod{Metadata: Metadata{Name: "cache", Namespace: "prod"}, Image: "redis:8.0"},
+			"pod prod/cache (redis:8.0)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.pod.Describe(); got != tt.want {
+				t.Errorf("Pod{Name: %q, Namespace: %q, Image: %q}.Describe() = %q, want %q", tt.pod.Name, tt.pod.Namespace, tt.pod.Image, got, tt.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,69 @@
+package traffic
+
+import "testing"
+
+// The histograms below use keyed array literals: [24]int{3: 40} means
+// "hour 3 has 40 requests, every other hour has 0".
+
+func TestTotalRequests(t *testing.T) {
+	cases := []struct {
+		name  string
+		hours [24]int
+		want  int
+	}{
+		{"midnight_and_13", [24]int{0: 5, 13: 20}, 25},
+		{"only_midnight", [24]int{0: 7}, 7},
+		{"only_last_hour", [24]int{23: 4}, 4},
+		{"busy_morning", [24]int{8: 120, 9: 300, 10: 80}, 500},
+		{"quiet_day", [24]int{}, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := TotalRequests(c.hours); got != c.want {
+				t.Errorf("TotalRequests(%v) = %d, want %d", c.hours, got, c.want)
+			}
+		})
+	}
+}
+
+func TestPeakHour(t *testing.T) {
+	cases := []struct {
+		name  string
+		hours [24]int
+		want  int
+	}{
+		{"peak_at_14", [24]int{3: 100, 14: 900, 20: 100}, 14},
+		{"peak_at_2", [24]int{1: 100, 2: 150, 22: 140}, 2},
+		{"tie_9_and_17", [24]int{9: 300, 12: 10, 17: 300}, 9},
+		{"peak_at_midnight", [24]int{0: 60, 5: 50, 6: 50}, 0},
+		{"peak_at_23", [24]int{4: 50, 22: 50, 23: 51}, 23},
+		{"quiet_day", [24]int{}, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := PeakHour(c.hours); got != c.want {
+				t.Errorf("PeakHour(%v) = %d, want %d", c.hours, got, c.want)
+			}
+		})
+	}
+}
+
+func TestClearHour(t *testing.T) {
+	cases := []struct {
+		name  string
+		hours [24]int
+		hour  int
+		want  [24]int
+	}{
+		{"glitch_at_3", [24]int{3: 99999, 4: 40}, 3, [24]int{4: 40}},
+		{"glitch_at_0", [24]int{0: 5000, 1: 10, 2: 10}, 0, [24]int{1: 10, 2: 10}},
+		{"glitch_at_23", [24]int{22: 10, 23: 777}, 23, [24]int{22: 10}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ClearHour(c.hours, c.hour); got != c.want {
+				t.Errorf("ClearHour(%v, %d) = %v, want %v", c.hours, c.hour, got, c.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,78 @@
+package retention
+
+import (
+	"context"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+)
+
+// fakeS3 is an in-memory stand-in for one S3 bucket. It implements
+// CleanupAPI, so the tests never talk to real AWS.
+type fakeS3 struct {
+	bucket    string
+	objects   map[string]time.Time // key -> LastModified
+	pageSize  int                  // keys per ListObjectsV2 page, kept small to force several pages
+	listCalls int                  // how often ListObjectsV2 was called
+	deleted   []string             // keys passed to DeleteObject, in call order
+}
+
+func newFakeS3(bucket string) *fakeS3 {
+	return &fakeS3{bucket: bucket, objects: map[string]time.Time{}, pageSize: 2}
+}
+
+// put stores an object directly, the way a test sets up a bucket's contents.
+func (f *fakeS3) put(key string, lastModified time.Time) {
+	f.objects[key] = lastModified
+}
+
+// ListObjectsV2 returns objects in sorted key order, pageSize at a time. Like
+// real S3, it sets IsTruncated and NextContinuationToken when more keys follow.
+func (f *fakeS3) ListObjectsV2(ctx context.Context, in *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+	f.listCalls++
+	if aws.ToString(in.Bucket) != f.bucket {
+		return nil, &types.NoSuchBucket{Message: aws.String("The specified bucket does not exist")}
+	}
+	// Our continuation token is simply the last key of the previous page.
+	after := aws.ToString(in.ContinuationToken)
+	var keys []string
+	for key := range f.objects {
+		if strings.HasPrefix(key, aws.ToString(in.Prefix)) && key > after {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+
+	size := f.pageSize
+	if in.MaxKeys != nil && *in.MaxKeys > 0 {
+		size = int(*in.MaxKeys)
+	}
+	out := &s3.ListObjectsV2Output{Name: in.Bucket, Prefix: in.Prefix, IsTruncated: aws.Bool(false)}
+	if len(keys) > size {
+		keys = keys[:size]
+		out.IsTruncated = aws.Bool(true)
+		out.NextContinuationToken = aws.String(keys[size-1])
+	}
+	for _, key := range keys {
+		out.Contents = append(out.Contents, types.Object{
+			Key:          aws.String(key),
+			LastModified: aws.Time(f.objects[key]),
+		})
+	}
+	out.KeyCount = aws.Int32(int32(len(out.Contents)))
+	return out, nil
+}
+
+func (f *fakeS3) DeleteObject(ctx context.Context, in *s3.DeleteObjectInput, _ ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+	if aws.ToString(in.Bucket) != f.bucket {
+		return nil, &types.NoSuchBucket{Message: aws.String("The specified bucket does not exist")}
+	}
+	key := aws.ToString(in.Key)
+	f.deleted = append(f.deleted, key)
+	delete(f.objects, key) // like S3, deleting a missing key is not an error
+	return &s3.DeleteObjectOutput{}, nil
+}

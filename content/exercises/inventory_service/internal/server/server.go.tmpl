@@ -1,0 +1,76 @@
+// Package server is the inventory's HTTP layer: routes, handlers,
+// middleware, metrics, health endpoints and the Run loop.
+package server
+
+import (
+	"fmt"
+	"log/slog"
+	"net/http"
+	"sync"
+	"sync/atomic"
+
+	"gopherlings.local/inventory_service/internal/hosts"
+	"gopherlings.local/inventory_service/internal/idempotency"
+)
+
+// Server serves the inventory API. Create one with New.
+type Server struct {
+	store   *hosts.Store
+	logger  *slog.Logger
+	metrics *Metrics
+	idem    *idempotency.Store
+
+	// ready is true while Run is serving and false before it starts and once
+	// shutdown begins. GET /readyz reports it.
+	ready atomic.Bool
+
+	// newRequestID makes an ID for requests that arrive without an
+	// X-Request-ID header.
+	newRequestID func() string
+}
+
+// New returns a Server that keeps hosts in store and writes logs to logger.
+func New(store *hosts.Store, logger *slog.Logger) *Server {
+	return &Server{
+		store:        store,
+		logger:       logger,
+		metrics:      NewMetrics(),
+		idem:         idempotency.NewStore(),
+		newRequestID: sequentialIDs("req"),
+	}
+}
+
+// Handler returns every route wrapped in the middleware chain. A request
+// passes through requestID first, then observe, then the mux:
+//
+//	requestID → observe → mux → handler
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /hosts", s.handleList)
+	mux.Handle("POST /hosts", s.idempotent(http.HandlerFunc(s.handleCreate)))
+	mux.HandleFunc("GET /hosts/{id}", s.handleGet)
+	mux.HandleFunc("PUT /hosts/{id}", s.handleUpdate)
+	mux.HandleFunc("DELETE /hosts/{id}", s.handleDelete)
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
+	mux.HandleFunc("GET /readyz", s.handleReadyz)
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
+	return s.requestID(s.observe(mux))
+}
+
+// Ready reports whether the server is currently accepting traffic.
+func (s *Server) Ready() bool {
+	return s.ready.Load()
+}
+
+// sequentialIDs returns a function that makes IDs "prefix-1", "prefix-2",
+// and so on. It is safe to call from many goroutines.
+func sequentialIDs(prefix string) func() string {
+	var mu sync.Mutex
+	n := 0
+	return func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		n++
+		return fmt.Sprintf("%s-%d", prefix, n)
+	}
+}

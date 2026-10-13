@@ -1,0 +1,33 @@
+// Package methods3 is the Gopherlings exercise "Methods: host inventory".
+package methods3
+
+// Host is one server in the fleet.
+type Host struct {
+	Name    string
+	Region  string
+	Healthy bool
+}
+
+// Inventory is the list of hosts in the fleet.
+type Inventory struct {
+	Hosts []Host
+}
+
+// HealthyCount returns how many hosts are healthy.
+func (inv Inventory) HealthyCount() int {
+	// TODO(1): Count the hosts whose Healthy field is true.
+	return 0
+}
+
+// InRegion returns the hosts in region, in inventory order.
+func (inv Inventory) InRegion(region string) []Host {
+	// TODO(2): Collect the hosts whose Region equals region.
+	return nil
+}
+
+// Find returns the first host whose name matches name, ignoring case, and
+// true. It returns Host{} and false if no host matches.
+func (inv Inventory) Find(name string) (Host, bool) {
+	// TODO(3): Look for a host with a matching name, ignoring case.
+	return Host{}, false
+}

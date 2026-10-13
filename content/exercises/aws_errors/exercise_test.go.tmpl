@@ -1,0 +1,167 @@
+package apierrors
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
+)
+
+// sdkError builds an error shaped exactly like the ones a real SDK call
+// returns: an OperationError wrapping an HTTP response error wrapping the
+// API error.
+func sdkError(service, operation string, status int, apiErr error) error {
+	return &smithy.OperationError{
+		ServiceID:     service,
+		OperationName: operation,
+		Err: &awshttp.ResponseError{
+			ResponseError: &smithyhttp.ResponseError{
+				Response: &smithyhttp.Response{Response: &http.Response{StatusCode: status}},
+				Err:      apiErr,
+			},
+			RequestID: "4e7f1c9a-EXAMPLE",
+		},
+	}
+}
+
+// apiError builds an API error for codes that have no Go type of their own.
+func apiError(code string, fault smithy.ErrorFault) error {
+	return &smithy.GenericAPIError{Code: code, Message: "example message", Fault: fault}
+}
+
+func noSuchKey() error {
+	return sdkError("S3", "GetObject", 404,
+		&types.NoSuchKey{Message: aws.String("The specified key does not exist.")})
+}
+
+func noSuchBucket() error {
+	return sdkError("S3", "GetObject", 404,
+		&types.NoSuchBucket{Message: aws.String("The specified bucket does not exist")})
+}
+
+func TestErrorCode(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"nil error", nil, ""},
+		{"not an AWS error", errors.New("dial tcp: i/o timeout"), ""},
+		{"bare API error", apiError("AccessDenied", smithy.FaultClient), "AccessDenied"},
+		{"S3 NoSuchKey from the SDK", noSuchKey(), "NoSuchKey"},
+		{"S3 SlowDown from the SDK", sdkError("S3", "PutObject", 503, apiError("SlowDown", smithy.FaultServer)), "SlowDown"},
+		{"EC2 error wrapped again by your code", fmt.Errorf("stop web-1: %w",
+			sdkError("EC2", "StopInstances", 400, apiError("InvalidInstanceID.NotFound", smithy.FaultUnknown))),
+			"InvalidInstanceID.NotFound"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ErrorCode(tt.err); got != tt.want {
+				t.Errorf("ErrorCode(%v) = %q, want %q", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShouldRetry(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil error", nil, false},
+		{"not an AWS error", errors.New("dial tcp: i/o timeout"), false},
+		{"Throttling", sdkError("CloudFormation", "DescribeStacks", 400, apiError("Throttling", smithy.FaultClient)), true},
+		{"ThrottlingException", sdkError("ECS", "UpdateService", 400, apiError("ThrottlingException", smithy.FaultClient)), true},
+		{"RequestLimitExceeded", sdkError("EC2", "DescribeInstances", 503, apiError("RequestLimitExceeded", smithy.FaultUnknown)), true},
+		{"TooManyRequestsException", sdkError("Lambda", "Invoke", 429, apiError("TooManyRequestsException", smithy.FaultClient)), true},
+		{"SlowDown", sdkError("S3", "PutObject", 503, apiError("SlowDown", smithy.FaultUnknown)), true},
+		{"server fault InternalError", sdkError("S3", "GetObject", 500, apiError("InternalError", smithy.FaultServer)), true},
+		{"server fault ServiceUnavailable", sdkError("ECS", "UpdateService", 503, apiError("ServiceUnavailable", smithy.FaultServer)), true},
+		{"client fault NoSuchKey", noSuchKey(), false},
+		{"client fault AccessDenied", sdkError("S3", "GetObject", 403, apiError("AccessDenied", smithy.FaultClient)), false},
+		{"unknown fault ValidationError", sdkError("ECS", "UpdateService", 400, apiError("ValidationError", smithy.FaultUnknown)), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ShouldRetry(tt.err); got != tt.want {
+				t.Errorf("ShouldRetry(%v) = %t, want %t", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+// fakeS3 answers GetObject with a fixed body or a fixed error.
+type fakeS3 struct {
+	body string
+	err  error
+}
+
+func (f *fakeS3) GetObject(ctx context.Context, in *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &s3.GetObjectOutput{Body: io.NopCloser(strings.NewReader(f.body))}, nil
+}
+
+func TestLoadSettings(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("file exists", func(t *testing.T) {
+		api := &fakeS3{body: `{"replicas": 5}`}
+		got, err := LoadSettings(ctx, api, "deploy-configs", "payments/settings.json")
+		if err != nil || string(got) != `{"replicas": 5}` {
+			t.Errorf(`LoadSettings("deploy-configs", "payments/settings.json") = %q, %v, want %q, nil`, got, err, `{"replicas": 5}`)
+		}
+	})
+
+	for _, key := range []string{"payments/settings.json", "checkout/settings.json"} {
+		t.Run("missing key "+key, func(t *testing.T) {
+			api := &fakeS3{err: noSuchKey()}
+			got, err := LoadSettings(ctx, api, "deploy-configs", key)
+			if err != nil || string(got) != DefaultSettings {
+				t.Errorf("LoadSettings(%q, %q) = %q, %v, want %q, nil", "deploy-configs", key, got, err, DefaultSettings)
+			}
+		})
+	}
+
+	t.Run("missing bucket", func(t *testing.T) {
+		api := &fakeS3{err: noSuchBucket()}
+		got, err := LoadSettings(ctx, api, "deploy-configz", "payments/settings.json")
+		if got != nil || err == nil {
+			t.Fatalf(`LoadSettings("deploy-configz", "payments/settings.json") = %q, %v, want nil and an error`, got, err)
+		}
+		wantPrefix := "load settings s3://deploy-configz/payments/settings.json: "
+		if !strings.HasPrefix(err.Error(), wantPrefix) {
+			t.Errorf("error = %q, want it to start with %q", err, wantPrefix)
+		}
+		if _, ok := errors.AsType[*types.NoSuchBucket](err); !ok {
+			t.Errorf("errors.AsType[*types.NoSuchBucket](err) found nothing; wrap the error with %%w")
+		}
+	})
+
+	t.Run("access denied", func(t *testing.T) {
+		api := &fakeS3{err: sdkError("S3", "GetObject", 403, apiError("AccessDenied", smithy.FaultClient))}
+		got, err := LoadSettings(ctx, api, "audit-logs", "web/settings.json")
+		if got != nil || err == nil {
+			t.Fatalf(`LoadSettings("audit-logs", "web/settings.json") = %q, %v, want nil and an error`, got, err)
+		}
+		wantPrefix := "load settings s3://audit-logs/web/settings.json: "
+		if !strings.HasPrefix(err.Error(), wantPrefix) {
+			t.Errorf("error = %q, want it to start with %q", err, wantPrefix)
+		}
+		if apiErr, ok := errors.AsType[smithy.APIError](err); !ok || apiErr.ErrorCode() != "AccessDenied" {
+			t.Errorf("errors.AsType[smithy.APIError](err) did not find AccessDenied; wrap the error with %%w")
+		}
+	})
+}

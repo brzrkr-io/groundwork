@@ -1,0 +1,129 @@
+package interfaces2
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestHTTPCheck(t *testing.T) {
+	tests := []struct {
+		name     string
+		check    HTTPCheck
+		wantName string
+		wantOK   bool
+	}{
+		{
+			name:     "200 is healthy",
+			check:    HTTPCheck{URL: "https://api.example.com/healthz", StatusCode: 200},
+			wantName: "http https://api.example.com/healthz",
+			wantOK:   true,
+		},
+		{
+			name:     "503 is unhealthy",
+			check:    HTTPCheck{URL: "https://shop.example.com/healthz", StatusCode: 503},
+			wantName: "http https://shop.example.com/healthz",
+			wantOK:   false,
+		},
+		{
+			name:     "404 is unhealthy",
+			check:    HTTPCheck{URL: "https://api.example.com/ready", StatusCode: 404},
+			wantName: "http https://api.example.com/ready",
+			wantOK:   false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Ask "does HTTPCheck satisfy HealthChecker?" without breaking
+			// the build while it doesn't.
+			hc, ok := any(tt.check).(HealthChecker)
+			if !ok {
+				t.Fatal("HTTPCheck does not satisfy HealthChecker: it needs the methods Name() string and Check() bool")
+			}
+			if got := hc.Name(); got != tt.wantName {
+				t.Errorf("%#v.Name() = %q, want %q", tt.check, got, tt.wantName)
+			}
+			if got := hc.Check(); got != tt.wantOK {
+				t.Errorf("%#v.Check() = %t, want %t", tt.check, got, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestTCPCheck(t *testing.T) {
+	tests := []struct {
+		name     string
+		check    TCPCheck
+		wantName string
+		wantOK   bool
+	}{
+		{
+			name:     "open port is healthy",
+			check:    TCPCheck{Host: "db-1", Port: 5432, Open: true},
+			wantName: "tcp db-1:5432",
+			wantOK:   true,
+		},
+		{
+			name:     "closed port is unhealthy",
+			check:    TCPCheck{Host: "cache-2", Port: 6379, Open: false},
+			wantName: "tcp cache-2:6379",
+			wantOK:   false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hc, ok := any(tt.check).(HealthChecker)
+			if !ok {
+				t.Fatal("TCPCheck does not satisfy HealthChecker: it needs the methods Name() string and Check() bool")
+			}
+			if got := hc.Name(); got != tt.wantName {
+				t.Errorf("%#v.Name() = %q, want %q", tt.check, got, tt.wantName)
+			}
+			if got := hc.Check(); got != tt.wantOK {
+				t.Errorf("%#v.Check() = %t, want %t", tt.check, got, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestFailingChecks(t *testing.T) {
+	tests := []struct {
+		name   string
+		checks []HealthChecker
+		want   []string
+	}{
+		{
+			name: "some failing",
+			checks: []HealthChecker{
+				DiskCheck{Path: "/", FreePercent: 42},
+				DiskCheck{Path: "/var", FreePercent: 3},
+				DiskCheck{Path: "/data", FreePercent: 55},
+				DiskCheck{Path: "/tmp", FreePercent: 9},
+			},
+			want: []string{"disk /var", "disk /tmp"},
+		},
+		{
+			name: "all healthy",
+			checks: []HealthChecker{
+				DiskCheck{Path: "/", FreePercent: 10},
+				DiskCheck{Path: "/var", FreePercent: 80},
+			},
+			want: []string{},
+		},
+		{
+			name: "all failing",
+			checks: []HealthChecker{
+				DiskCheck{Path: "/logs", FreePercent: 0},
+				DiskCheck{Path: "/", FreePercent: 1},
+			},
+			want: []string{"disk /logs", "disk /"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FailingChecks(tt.checks)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("FailingChecks(%#v) = %q, want %q", tt.checks, got, tt.want)
+			}
+		})
+	}
+}

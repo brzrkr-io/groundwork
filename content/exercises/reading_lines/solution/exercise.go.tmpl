@@ -1,0 +1,73 @@
+// Package lines is the Gopherlings exercise "Reading input line by line: a hosts list".
+package lines
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+)
+
+// Target is a host and port to probe.
+type Target struct {
+	Host string
+	Port int
+}
+
+// CountLines returns the number of lines in r, blank lines included.
+func CountLines(r io.Reader) (int, error) {
+	sc := bufio.NewScanner(r)
+	count := 0
+	for sc.Scan() {
+		count++
+	}
+	return count, sc.Err()
+}
+
+// ReadHosts returns the trimmed hostnames in r, skipping blank lines and
+// lines that start with "#".
+func ReadHosts(r io.Reader) ([]string, error) {
+	sc := bufio.NewScanner(r)
+	var hosts []string
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		hosts = append(hosts, line)
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return hosts, nil
+}
+
+// ParseTargets parses one "host:port" target per line, skipping blank lines
+// and comments. It stops at the first bad line with an error that names the
+// line number.
+func ParseTargets(r io.Reader) ([]Target, error) {
+	sc := bufio.NewScanner(r)
+	var targets []Target
+	lineNo := 0
+	for sc.Scan() {
+		lineNo++ // count every line, even the ones we skip
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		host, portText, found := strings.Cut(line, ":")
+		if !found {
+			return nil, fmt.Errorf("line %d: missing port in %q", lineNo, line)
+		}
+		port, err := strconv.Atoi(portText)
+		if err != nil || port < 1 || port > 65535 {
+			return nil, fmt.Errorf("line %d: invalid port %q", lineNo, portText)
+		}
+		targets = append(targets, Target{Host: host, Port: port})
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return targets, nil
+}

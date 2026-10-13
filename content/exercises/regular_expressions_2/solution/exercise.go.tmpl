@@ -1,0 +1,29 @@
+// Package redact is the Gopherlings exercise "Regular expressions: fix the patterns".
+package redact
+
+import "regexp"
+
+// alertWord matches the words ERROR and FATAL.
+var alertWord = regexp.MustCompile(`\b(ERROR|FATAL)\b`)
+
+// IsAlert reports whether line contains ERROR or FATAL as a whole word.
+func IsAlert(line string) bool {
+	return alertWord.MatchString(line)
+}
+
+// internalHost matches hostnames in the private ".internal" domain.
+var internalHost = regexp.MustCompile(`^([a-z0-9-]+\.)+internal$`)
+
+// IsInternalHost reports whether host is a hostname such as "db-1.internal".
+func IsInternalHost(host string) bool {
+	return internalHost.MatchString(host)
+}
+
+// secretPair matches secret settings such as "password=hunter2".
+var secretPair = regexp.MustCompile(`(password|token|secret)=\S+`)
+
+// Redact replaces the values of password, token and secret settings in line
+// with REDACTED.
+func Redact(line string) string {
+	return secretPair.ReplaceAllString(line, "${1}=REDACTED")
+}

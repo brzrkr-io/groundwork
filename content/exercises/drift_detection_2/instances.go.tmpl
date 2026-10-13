@@ -1,0 +1,70 @@
+package stackdrift
+
+// This file is complete. You do not need to change it.
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+// Resource is one piece of infrastructure, identified by kind and name.
+type Resource struct {
+	Kind string
+	Name string
+	Tags map[string]string
+}
+
+// ID returns "kind/name", for example "instance/pay-api-1".
+func (r Resource) ID() string {
+	return r.Kind + "/" + r.Name
+}
+
+// Change is one difference between the desired and the actual state.
+type Change struct {
+	Action string   // "create", "update" or "delete"
+	ID     string   // the resource ID, for example "instance/pay-api-1"
+	Keys   []string // only for "update": the tag keys that differ, sorted
+}
+
+// Actual returns every EC2 instance that is not terminated, named after its
+// "Name" tag, with its other tags.
+func Actual(ctx context.Context, api ec2.DescribeInstancesAPIClient) ([]Resource, error) {
+	var out []Resource
+	p := ec2.NewDescribeInstancesPaginator(api, &ec2.DescribeInstancesInput{})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("describe instances: %w", err)
+		}
+		for _, res := range page.Reservations {
+			for _, inst := range res.Instances {
+				if inst.State != nil && inst.State.Name == ec2types.InstanceStateNameTerminated {
+					continue
+				}
+				r := Resource{Kind: "instance", Name: aws.ToString(inst.InstanceId), Tags: map[string]string{}}
+				for _, t := range inst.Tags {
+					if aws.ToString(t.Key) == "Name" {
+						r.Name = aws.ToString(t.Value)
+						continue
+					}
+					r.Tags[aws.ToString(t.Key)] = aws.ToString(t.Value)
+				}
+				out = append(out, r)
+			}
+		}
+	}
+	return out, nil
+}
+
+// byID indexes resources by their ID.
+func byID(rs []Resource) map[string]Resource {
+	m := make(map[string]Resource, len(rs))
+	for _, r := range rs {
+		m[r.ID()] = r
+	}
+	return m
+}

@@ -1,0 +1,71 @@
+// Package unitfile is the Gopherlings exercise "Text templates: systemd unit files".
+package unitfile
+
+import (
+	"strings"
+	"text/template"
+)
+
+// render parses text as a template called name, executes it with data and
+// returns the output.
+func render(name, text string, data any) (string, error) {
+	tmpl, err := template.New(name).Parse(text)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	if err := tmpl.Execute(&b, data); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+// Unit holds the settings for the [Unit] section of a systemd unit file.
+type Unit struct {
+	Description string
+	After       []string
+}
+
+// unitTmpl renders the [Unit] section.
+const unitTmpl = `[Unit]
+Description={{.Description}}
+{{- range .After}}
+After={{.}}
+{{- end}}
+`
+
+// UnitSection renders the [Unit] section of a unit file.
+func UnitSection(u Unit) (string, error) {
+	return render("unit", unitTmpl, u)
+}
+
+// Service holds the settings for the [Service] section of a systemd unit
+// file.
+type Service struct {
+	ExecStart string
+	User      string
+	Restart   string
+}
+
+// serviceTmpl renders the [Service] section.
+const serviceTmpl = `[Service]
+ExecStart={{.ExecStart}}
+{{- with .User}}
+User={{.}}
+{{- end}}
+Restart={{with .Restart}}{{.}}{{else}}on-failure{{end}}
+`
+
+// ServiceSection renders the [Service] section of a unit file.
+func ServiceSection(s Service) (string, error) {
+	return render("service", serviceTmpl, s)
+}
+
+// envTmpl renders one Environment= line per variable.
+const envTmpl = `{{range $key, $value := .}}Environment="{{$key}}={{$value}}"
+{{end}}`
+
+// EnvironmentLines renders env as Environment= lines, sorted by key.
+func EnvironmentLines(env map[string]string) (string, error) {
+	return render("env", envTmpl, env)
+}

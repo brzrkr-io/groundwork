@@ -1,0 +1,23 @@
+package region
+
+import "testing"
+
+func TestPartition(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"us-east-1", "aws"},
+		{"eu-west-2", "aws"},
+		{"us-gov-west-1", "aws-us-gov"},
+		{"cn-north-1", "aws-cn"},
+		{"cn-northwest-1", "aws-cn"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Partition(tt.name); got != tt.want {
+				t.Errorf("Partition(%q) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}

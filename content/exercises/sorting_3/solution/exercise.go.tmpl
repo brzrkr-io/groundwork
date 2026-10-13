@@ -1,0 +1,42 @@
+// Package alerts is the Gopherlings exercise "Sorting: the noisiest alerts".
+package alerts
+
+import (
+	"cmp"
+	"fmt"
+	"maps"
+	"slices"
+)
+
+// CountAlerts returns how many times each service name appears in firing.
+func CountAlerts(firing []string) map[string]int {
+	counts := make(map[string]int)
+	for _, service := range firing {
+		counts[service]++
+	}
+	return counts
+}
+
+// TopAlerts returns up to n lines like "api: 12", the service with the most
+// alerts first. Services with the same count are in alphabetical order.
+func TopAlerts(counts map[string]int, n int) []string {
+	if n <= 0 {
+		return nil
+	}
+	names := slices.Sorted(maps.Keys(counts))
+	slices.SortFunc(names, func(a, b string) int {
+		if c := cmp.Compare(counts[b], counts[a]); c != 0 {
+			return c
+		}
+		return cmp.Compare(a, b)
+	})
+	if n < len(names) {
+		names = names[:n]
+	}
+
+	var lines []string
+	for _, name := range names {
+		lines = append(lines, fmt.Sprintf("%s: %d", name, counts[name]))
+	}
+	return lines
+}

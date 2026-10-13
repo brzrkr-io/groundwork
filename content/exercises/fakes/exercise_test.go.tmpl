@@ -1,0 +1,15 @@
+package diskwatch
+
+import "testing"
+
+// TODO(1): Declare a fakeNotifier struct with a messages []string field.
+// Give it a Notify method that appends the message to f.messages. Use a
+// pointer receiver so the append sticks.
+
+func TestCheckDisk(t *testing.T) {
+	// TODO(2): Check that a full disk sends exactly one message with the
+	// right text: web-1 at 93% and db-2 at 90%.
+
+	// TODO(3): Check that a healthy disk sends nothing: web-1 at 50% and
+	// at 89%.
+}

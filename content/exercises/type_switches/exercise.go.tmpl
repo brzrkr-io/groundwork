@@ -1,0 +1,52 @@
+// Package typeswitches is the Gopherlings exercise "Type assertions and switches".
+package typeswitches
+
+import "fmt"
+
+// DeployEvent says that a new version of a service was rolled out.
+type DeployEvent struct {
+	Service string
+	Version string
+}
+
+// ScaleEvent says that a service changed its number of replicas.
+type ScaleEvent struct {
+	Service string
+	From    int
+	To      int
+}
+
+// AlertEvent says that monitoring raised an alert for a service.
+type AlertEvent struct {
+	Service  string
+	Severity string
+	Message  string
+}
+
+// AsAlert returns the AlertEvent held in e and true, or the zero AlertEvent
+// and false when e holds anything else.
+func AsAlert(e any) (AlertEvent, bool) {
+	// TODO(1): Use a comma-ok type assertion to check whether e is an AlertEvent.
+	return AlertEvent{}, false
+}
+
+// Describe returns a one-line description of the event held in e.
+func Describe(e any) string {
+	// TODO(2): Use a type switch with cases for DeployEvent, ScaleEvent and
+	// AlertEvent. Keep this line as the default case.
+	return fmt.Sprintf("unknown event %T", e)
+}
+
+// Tally counts the events by kind: "deploy", "scale", "alert" or "unknown".
+func Tally(events []any) map[string]int {
+	counts := map[string]int{}
+	for _, e := range events {
+		switch e.(type) {
+		// TODO(3): Add cases that count DeployEvent as "deploy", ScaleEvent
+		// as "scale" and AlertEvent as "alert".
+		default:
+			counts["unknown"]++
+		}
+	}
+	return counts
+}

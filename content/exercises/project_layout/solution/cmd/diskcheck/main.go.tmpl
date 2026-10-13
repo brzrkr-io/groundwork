@@ -1,0 +1,48 @@
+// Command diskcheck reports disk usage per host and exits with 1 when a disk
+// is full:
+//
+//	diskcheck web-1=72 db-1=85 web-2=91
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+
+	"gopherlings.local/project_layout/internal/disk"
+)
+
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// run does the work of diskcheck. It reads the arguments (without the
+// program name), writes the report to stdout and problems to stderr, and
+// returns the exit code.
+func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "usage: diskcheck HOST=PERCENT...")
+		return 2
+	}
+
+	// Parse everything first, so bad input never produces half a report.
+	readings := make([]disk.Reading, 0, len(args))
+	for _, arg := range args {
+		r, err := disk.Parse(arg)
+		if err != nil {
+			fmt.Fprintf(stderr, "diskcheck: %v\n", err)
+			return 2
+		}
+		readings = append(readings, r)
+	}
+
+	code := 0
+	for _, r := range readings {
+		status := disk.Status(r.Percent)
+		if status == "full" {
+			code = 1
+		}
+		fmt.Fprintf(stdout, "%s %d%% %s\n", r.Host, r.Percent, status)
+	}
+	return code
+}

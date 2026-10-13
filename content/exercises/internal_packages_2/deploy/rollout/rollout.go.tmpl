@@ -1,0 +1,9 @@
+// Package rollout plans the steps of a deploy, host by host.
+package rollout
+
+// Steps returns one "deploy <release> to <host>" line per host, in order.
+// The release name comes from naming.Release.
+func Steps(service, version string, hosts []string) []string {
+	// TODO(3): Import the internal naming package and build the steps.
+	return nil
+}

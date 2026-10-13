@@ -1,0 +1,38 @@
+// Package kubeconfig is the Gopherlings exercise "kubeconfig: building a rest.Config".
+package kubeconfig
+
+import (
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+)
+
+// RESTConfig builds the connection settings for the context contextName in
+// cfg. It does not contact the cluster.
+func RESTConfig(cfg *clientcmdapi.Config, contextName string) (*rest.Config, error) {
+	// TODO(1): This always uses the current context and ignores contextName.
+	// Build the client config with clientcmd.NewNonInteractiveClientConfig.
+	clientConfig := clientcmd.NewDefaultClientConfig(*cfg, &clientcmd.ConfigOverrides{})
+	return clientConfig.ClientConfig()
+}
+
+// Tune applies the deploy bot's client settings to c: its rate limits, its
+// request timeout and the user agent that identifies it in audit logs.
+func Tune(c *rest.Config, userAgent string) {
+	// TODO(2): Fix the three wrong settings below and set c.UserAgent.
+	c.QPS = 40
+	c.Burst = 20
+	c.Timeout = 30
+}
+
+// Namespace returns the default namespace of the context contextName in cfg,
+// or "default" when the context doesn't set one.
+func Namespace(cfg *clientcmdapi.Config, contextName string) (string, error) {
+	// TODO(3): Replace this hand-written lookup with the Namespace method of
+	// a client config built for contextName.
+	ctx, ok := cfg.Contexts[contextName]
+	if !ok {
+		return "", nil
+	}
+	return ctx.Namespace, nil
+}

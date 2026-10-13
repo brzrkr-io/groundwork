@@ -1,0 +1,146 @@
+package tlscheck
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
+	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"testing"
+	"time"
+)
+
+// newTLSServer starts a local HTTPS server that answers "ok". Its
+// certificate is srv.Certificate().
+func newTLSServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "ok")
+	}))
+	// Rejected handshakes are expected in these tests; keep the log quiet.
+	srv.Config.ErrorLog = log.New(io.Discard, "", 0)
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// otherCA loads a CA certificate that did NOT sign the test server's
+// certificate.
+func otherCA(t *testing.T) *x509.Certificate {
+	t.Helper()
+	data, err := os.ReadFile("testdata/other_ca.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		t.Fatal("testdata/other_ca.pem holds no PEM block")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
+}
+
+func TestDaysUntilExpiry(t *testing.T) {
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+	tests := []struct {
+		name     string
+		notAfter time.Time
+		want     int
+	}{
+		{"30 days and 5 hours left", now.Add(30*day + 5*time.Hour), 30},
+		{"exactly 90 days left", now.Add(90 * day), 90},
+		{"12 hours left", now.Add(12 * time.Hour), 0},
+		{"expired 3 days ago", now.Add(-3 * day), -3},
+		{"expired 36 hours ago", now.Add(-36 * time.Hour), -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cert := &x509.Certificate{NotAfter: tt.notAfter}
+			if got := DaysUntilExpiry(cert, now); got != tt.want {
+				t.Errorf("DaysUntilExpiry(NotAfter %v, now %v) = %d, want %d", tt.notAfter, now, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewClient(t *testing.T) {
+	srv := newTLSServer(t)
+
+	t.Run("settings", func(t *testing.T) {
+		client := NewClient(srv.Certificate())
+		if client.Timeout != 5*time.Second {
+			t.Errorf("NewClient(ca).Timeout = %v, want 5s", client.Timeout)
+		}
+		transport, ok := client.Transport.(*http.Transport)
+		if !ok || transport.TLSClientConfig == nil {
+			t.Fatal("NewClient(ca).Transport is not an *http.Transport with a TLSClientConfig")
+		}
+		if got := transport.TLSClientConfig.MinVersion; got != tls.VersionTLS12 {
+			t.Errorf("NewClient(ca) MinVersion = %#x, want tls.VersionTLS12 (%#x)", got, tls.VersionTLS12)
+		}
+		if transport.TLSClientConfig.InsecureSkipVerify {
+			t.Error("NewClient(ca) sets InsecureSkipVerify, want certificates verified")
+		}
+	})
+
+	t.Run("trusts a server signed by ca", func(t *testing.T) {
+		client := NewClient(srv.Certificate())
+		resp, err := client.Get(srv.URL)
+		if err != nil {
+			t.Fatalf("Get(%q) with NewClient(server's CA) failed: %v", srv.URL, err)
+		}
+		resp.Body.Close()
+	})
+
+	t.Run("rejects a server signed by another CA", func(t *testing.T) {
+		client := NewClient(otherCA(t))
+		resp, err := client.Get(srv.URL)
+		if err == nil {
+			resp.Body.Close()
+			t.Fatalf("Get(%q) with NewClient(other CA) succeeded, want a certificate error", srv.URL)
+		}
+	})
+}
+
+func TestPeerCertificate(t *testing.T) {
+	t.Run("TLS server", func(t *testing.T) {
+		srv := newTLSServer(t)
+		got, err := PeerCertificate(srv.Client(), srv.URL)
+		if err != nil {
+			t.Fatalf("PeerCertificate(client, %q) returned error: %v", srv.URL, err)
+		}
+		want := srv.Certificate()
+		if got == nil {
+			t.Fatalf("PeerCertificate(client, %q) = nil, want the server's certificate", srv.URL)
+		}
+		if !got.Equal(want) {
+			t.Errorf("PeerCertificate(client, %q) = certificate for %v, want the server's certificate for %v", srv.URL, got.DNSNames, want.DNSNames)
+		}
+	})
+
+	t.Run("plain HTTP server", func(t *testing.T) {
+		srv := httptest.NewServer(http.NotFoundHandler())
+		defer srv.Close()
+		_, err := PeerCertificate(srv.Client(), srv.URL)
+		if err == nil {
+			t.Errorf("PeerCertificate(client, %q) returned a nil error, want an error", srv.URL)
+		}
+	})
+
+	t.Run("server down", func(t *testing.T) {
+		srv := newTLSServer(t)
+		client := srv.Client()
+		srv.Close()
+		_, err := PeerCertificate(client, srv.URL)
+		if err == nil {
+			t.Errorf("PeerCertificate(client, %q) returned a nil error, want an error", srv.URL)
+		}
+	})
+}

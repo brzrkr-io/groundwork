@@ -1,0 +1,77 @@
+package pool
+
+import (
+	"slices"
+	"testing"
+)
+
+// withSpare returns hosts in a slice with spare capacity, like a pool that
+// has grown and shrunk over time.
+func withSpare(hosts ...string) []string {
+	return append(make([]string, 0, len(hosts)+4), hosts...)
+}
+
+// checkIndependent fails the test if pool changed, or if changing got changes
+// pool.
+func checkIndependent(t *testing.T, call string, pool, before, got []string) {
+	t.Helper()
+	if !slices.Equal(pool, before) {
+		t.Fatalf("%s changed pool to %q, want it to stay %q", call, pool, before)
+	}
+	if len(got) == 0 {
+		return
+	}
+	got[0] = "changed"
+	if !slices.Equal(pool, before) {
+		t.Errorf("after setting the result's [0] to %q, pool became %q, want it to stay %q", "changed", pool, before)
+	}
+}
+
+func TestDrain(t *testing.T) {
+	tests := []struct {
+		name string
+		pool []string
+		host string
+		want []string
+	}{
+		{"middle host", withSpare("web-1", "web-2", "web-3"), "web-2", []string{"web-1", "web-3"}},
+		{"first host", withSpare("web-1", "web-2", "web-3"), "web-1", []string{"web-2", "web-3"}},
+		{"every copy", withSpare("web-1", "web-2", "web-3", "web-2"), "web-2", []string{"web-1", "web-3"}},
+		{"not in pool", withSpare("web-1", "web-2"), "db-1", []string{"web-1", "web-2"}},
+		{"last host", withSpare("cache-1"), "cache-1", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := slices.Clone(tt.pool)
+			got := Drain(tt.pool, tt.host)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Drain(%q, %q) = %q, want %q", before, tt.host, got, tt.want)
+			}
+			checkIndependent(t, "Drain", tt.pool, before, got)
+		})
+	}
+}
+
+func TestPromote(t *testing.T) {
+	tests := []struct {
+		name string
+		pool []string
+		host string
+		want []string
+	}{
+		{"last to front", withSpare("db-1", "db-2", "db-3"), "db-3", []string{"db-3", "db-1", "db-2"}},
+		{"middle to front", withSpare("db-1", "db-2", "db-3", "db-4"), "db-3", []string{"db-3", "db-1", "db-2", "db-4"}},
+		{"already first", withSpare("db-1", "db-2", "db-3"), "db-1", []string{"db-1", "db-2", "db-3"}},
+		{"not in pool", withSpare("db-1", "db-2"), "db-9", []string{"db-1", "db-2"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := slices.Clone(tt.pool)
+			got := Promote(tt.pool, tt.host)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Promote(%q, %q) = %q, want %q", before, tt.host, got, tt.want)
+			}
+			checkIndependent(t, "Promote", tt.pool, before, got)
+		})
+	}
+}

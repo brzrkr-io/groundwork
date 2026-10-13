@@ -1,0 +1,5 @@
+[
+  {"name": "web-1", "env": "prod", "region": "eu-west-1", "address": "10.1.1.11", "tags": ["web"]},
+  {"name": "web-2", "env": "qa", "region": "eu-west-1", "address": "10.1.1.12", "tags": ["web"]},
+  {"name": "", "env": "prod", "region": "eu-west-1", "address": "10.1.1.300"}
+]

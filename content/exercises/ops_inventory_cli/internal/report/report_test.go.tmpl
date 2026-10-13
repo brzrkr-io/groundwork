@@ -1,0 +1,95 @@
+package report
+
+import (
+	"os"
+	"strings"
+	"testing"
+
+	"gopherlings.local/ops_inventory_cli/internal/inventory"
+)
+
+var sample = []inventory.Host{
+	{Name: "cache-1", Env: "staging", Region: "eu-west-1", Address: "10.1.3.10", Tags: []string{"cache", "redis"}},
+	{Name: "db-1", Env: "prod", Region: "us-east-1", Address: "10.0.2.10", Tags: []string{"db"}},
+	{Name: "build-1", Env: "dev", Region: "us-east-1", Address: "10.9.0.5"},
+}
+
+func TestWriteTable(t *testing.T) {
+	t.Run("three hosts", func(t *testing.T) {
+		// testdata/table.golden holds the exact expected output.
+		want, err := os.ReadFile("testdata/table.golden")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got strings.Builder
+		if err := WriteTable(&got, sample); err != nil {
+			t.Fatalf("WriteTable() error = %v", err)
+		}
+		if got.String() != string(want) {
+			t.Errorf("WriteTable() wrote\n%s\nwant\n%s", got.String(), want)
+		}
+	})
+
+	t.Run("no hosts prints just the header", func(t *testing.T) {
+		var got strings.Builder
+		if err := WriteTable(&got, nil); err != nil {
+			t.Fatalf("WriteTable() error = %v", err)
+		}
+		want := "NAME  ENV  REGION  ADDRESS  TAGS\n"
+		if got.String() != want {
+			t.Errorf("WriteTable(nil) wrote %q, want %q", got.String(), want)
+		}
+	})
+}
+
+func TestWriteJSON(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []inventory.Host
+		want  string
+	}{
+		{
+			name:  "two hosts",
+			hosts: sample[1:],
+			want: `[
+  {
+    "name": "db-1",
+    "env": "prod",
+    "region": "us-east-1",
+    "address": "10.0.2.10",
+    "tags": [
+      "db"
+    ]
+  },
+  {
+    "name": "build-1",
+    "env": "dev",
+    "region": "us-east-1",
+    "address": "10.9.0.5"
+  }
+]
+`,
+		},
+		{
+			name:  "nil list",
+			hosts: nil,
+			want:  "[]\n",
+		},
+		{
+			name:  "empty list",
+			hosts: []inventory.Host{},
+			want:  "[]\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got strings.Builder
+			if err := WriteJSON(&got, tt.hosts); err != nil {
+				t.Fatalf("WriteJSON() error = %v", err)
+			}
+			if got.String() != tt.want {
+				t.Errorf("WriteJSON() wrote\n%s\nwant\n%s", got.String(), tt.want)
+			}
+		})
+	}
+}

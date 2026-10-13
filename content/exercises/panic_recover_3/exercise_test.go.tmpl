@@ -1,0 +1,176 @@
+package recovery3
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestPanicError(t *testing.T) {
+	tests := []struct {
+		arg    string // how the value is written in Go code
+		value  any
+		want   string
+		wantIs bool // whether errors.Is(err, ErrDatabaseDown) should be true
+	}{
+		{`"boom"`, "boom", "panic: boom", false},
+		{`"template missing"`, "template missing", "panic: template missing", false},
+		{"ErrDatabaseDown", ErrDatabaseDown, "panic: database is down", true},
+		{`fmt.Errorf("query users: %w", ErrDatabaseDown)`, fmt.Errorf("query users: %w", ErrDatabaseDown), "panic: query users: database is down", true},
+		{`errors.New("cache miss")`, errors.New("cache miss"), "panic: cache miss", false},
+		{"42", 42, "panic: unexpected value 42 (int)", false},
+		{`[]string{"web-1", "web-2"}`, []string{"web-1", "web-2"}, "panic: unexpected value [web-1 web-2] ([]string)", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.arg, func(t *testing.T) {
+			err := PanicError(tc.value)
+			if err == nil {
+				t.Fatalf("PanicError(%s) = nil, want %q", tc.arg, tc.want)
+			}
+			if err.Error() != tc.want {
+				t.Errorf("PanicError(%s) = %q, want %q", tc.arg, err.Error(), tc.want)
+			}
+			if got := errors.Is(err, ErrDatabaseDown); got != tc.wantIs {
+				t.Errorf("errors.Is(PanicError(%s), ErrDatabaseDown) = %v, want %v", tc.arg, got, tc.wantIs)
+			}
+		})
+	}
+}
+
+// serve calls a protected handler. If a panic escapes, it reports a test
+// failure instead of crashing the whole test run.
+func serve(t *testing.T, h Handler, req Request) Response {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("handler from Protect let a panic escape: %v", r)
+		}
+	}()
+	return h(req)
+}
+
+// errorTexts returns the message of every error in the log.
+func errorTexts(errs *ErrorLog) []string {
+	var texts []string
+	for _, err := range errs.Errors {
+		texts = append(texts, err.Error())
+	}
+	return texts
+}
+
+func hello(req Request) Response {
+	return Response{Status: 200, Body: "hello from " + req.Path}
+}
+
+func notFound(req Request) Response {
+	return Response{Status: 404, Body: "no such page"}
+}
+
+func dbDown(req Request) Response {
+	panic(fmt.Errorf("query users: %w", ErrDatabaseDown))
+}
+
+func templateMissing(req Request) Response {
+	panic("template status.html missing")
+}
+
+// thirdSegment has a bug: it assumes every path has at least three parts.
+func thirdSegment(req Request) Response {
+	parts := strings.Split(req.Path, "/")
+	return Response{Status: 200, Body: parts[3]}
+}
+
+func TestProtect(t *testing.T) {
+	internalError := Response{Status: 500, Body: "internal server error"}
+	tests := []struct {
+		name    string
+		handler Handler
+		path    string
+		want    Response
+		wantLog []string
+	}{
+		{
+			name:    "home",
+			handler: hello,
+			path:    "/",
+			want:    Response{Status: 200, Body: "hello from /"},
+		},
+		{
+			name:    "users",
+			handler: notFound,
+			path:    "/users/42",
+			want:    Response{Status: 404, Body: "no such page"},
+		},
+		{
+			name:    "users",
+			handler: dbDown,
+			path:    "/users",
+			want:    internalError,
+			wantLog: []string{`handler "users": panic: query users: database is down`},
+		},
+		{
+			name:    "status",
+			handler: templateMissing,
+			path:    "/status",
+			want:    internalError,
+			wantLog: []string{`handler "status": panic: template status.html missing`},
+		},
+		{
+			name:    "deploys",
+			handler: thirdSegment,
+			path:    "/deploys",
+			want:    internalError,
+			wantLog: []string{`handler "deploys": panic: runtime error: index out of range [3] with length 2`},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name+" "+tc.path, func(t *testing.T) {
+			errs := &ErrorLog{}
+			h := Protect(tc.name, tc.handler, errs)
+			got := serve(t, h, Request{Method: "GET", Path: tc.path})
+			if got != tc.want {
+				t.Errorf("Protect(%q, ...) answered GET %s with %+v, want %+v", tc.name, tc.path, got, tc.want)
+			}
+			if gotLog := errorTexts(errs); !slices.Equal(gotLog, tc.wantLog) {
+				t.Errorf("Protect(%q, ...) recorded %q, want %q", tc.name, gotLog, tc.wantLog)
+			}
+		})
+	}
+
+	t.Run("errors.Is sees through the recorded error", func(t *testing.T) {
+		errs := &ErrorLog{}
+		h := Protect("users", dbDown, errs)
+		serve(t, h, Request{Method: "GET", Path: "/users"})
+		if len(errs.Errors) != 1 {
+			t.Fatalf("Protect recorded %d errors, want 1", len(errs.Errors))
+		}
+		if !errors.Is(errs.Errors[0], ErrDatabaseDown) {
+			t.Errorf("errors.Is(recorded error, ErrDatabaseDown) = false, want true")
+		}
+	})
+}
+
+func TestShouldPage(t *testing.T) {
+	dbPanic := fmt.Errorf("handler %q: %w", "users", fmt.Errorf("panic: %w", ErrDatabaseDown))
+	templatePanic := fmt.Errorf("handler %q: %w", "status", errors.New("panic: template missing"))
+	tests := []struct {
+		name string
+		errs []error
+		want bool
+	}{
+		{"empty log", nil, false},
+		{"only other errors", []error{templatePanic, errors.New("cache miss")}, false},
+		{"database error alone", []error{dbPanic}, true},
+		{"database error last", []error{templatePanic, dbPanic}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			errs := &ErrorLog{Errors: tc.errs}
+			if got := ShouldPage(errs); got != tc.want {
+				t.Errorf("ShouldPage(%q) = %v, want %v", errorTexts(errs), got, tc.want)
+			}
+		})
+	}
+}

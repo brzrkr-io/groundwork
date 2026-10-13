@@ -1,0 +1,49 @@
+// Package auditlog is the Gopherlings exercise "Files: an append-only audit log".
+package auditlog
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+// LogName is the audit log's file name inside its directory.
+const LogName = "audit.log"
+
+// AppendAudit adds entry as one line at the end of dir/audit.log, creating
+// the directory and the file if needed.
+func AppendAudit(dir, entry string) error {
+	// TODO(2): Create dir and any missing parents.
+
+	// TODO(1): Bug: os.Create wipes earlier entries. Open the file for
+	// appending instead, and return the error from Close.
+	f, err := os.Create(filepath.Join(dir, LogName))
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(f, entry); err != nil {
+		f.Close()
+		return err
+	}
+	f.Close()
+	return nil
+}
+
+// ReadAudit returns the lines of dir/audit.log. A log that doesn't exist yet
+// has no entries.
+func ReadAudit(dir string) ([]string, error) {
+	f, err := os.Open(filepath.Join(dir, LogName))
+	if err != nil {
+		// TODO(3): A missing log means no entries: return an empty slice and nil.
+		return nil, err
+	}
+	defer f.Close()
+
+	entries := []string{}
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		entries = append(entries, sc.Text())
+	}
+	return entries, sc.Err()
+}

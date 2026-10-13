@@ -1,0 +1,50 @@
+// Package errvalues3 is the Gopherlings exercise "Errors are values: parse health checks".
+package errvalues3
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// Check is one health check: probe Path on Port for the service Name.
+type Check struct {
+	Name string
+	Port int
+	Path string
+}
+
+// ParseCheck parses a line like "api 8080 /healthz".
+func ParseCheck(line string) (Check, error) {
+	fields := strings.Fields(line)
+	if len(fields) != 3 {
+		return Check{}, fmt.Errorf("check %q: want 3 fields, got %d", line, len(fields))
+	}
+	port, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return Check{}, fmt.Errorf("check %q: port %q is not a number", line, fields[1])
+	}
+	if port < 1 || port > 65535 {
+		return Check{}, fmt.Errorf("check %q: port %d is out of range 1-65535", line, port)
+	}
+	if !strings.HasPrefix(fields[2], "/") {
+		return Check{}, fmt.Errorf("check %q: path %q must start with \"/\"", line, fields[2])
+	}
+	return Check{Name: fields[0], Port: port, Path: fields[2]}, nil
+}
+
+// ParseAll parses every non-blank line and stops at the first bad one.
+func ParseAll(lines []string) ([]Check, error) {
+	var checks []Check
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		c, err := ParseCheck(line)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %v", i+1, err)
+		}
+		checks = append(checks, c)
+	}
+	return checks, nil
+}

@@ -1,0 +1,40 @@
+// Command deployctl prints its own version. Try it:
+//
+//	go run -ldflags "-X main.version=1.4.2" .
+package main
+
+import (
+	"fmt"
+	"runtime/debug"
+)
+
+// version is stamped in at build time with -ldflags "-X main.version=...".
+// It stays empty in a plain "go build".
+var version string
+
+func main() {
+	// ok is false when the binary has no build info. info is then nil.
+	info, _ := debug.ReadBuildInfo()
+	fmt.Println(VersionLine("deployctl", version, info))
+}
+
+// Version returns the stamped version, else the module version from info,
+// else "dev".
+func Version(stamped string, info *debug.BuildInfo) string {
+	// TODO(1): Apply the three rules from the README in order.
+	return stamped
+}
+
+// Revision returns the first 7 characters of the vcs.revision setting, with
+// "-dirty" added when vcs.modified is "true". It returns "unknown" when
+// there is no revision.
+func Revision(info *debug.BuildInfo) string {
+	// TODO(2): Look through info.Settings.
+	return "unknown"
+}
+
+// VersionLine returns a line such as "deployctl 1.4.2 (commit 3f2a9c1)".
+func VersionLine(name, stamped string, info *debug.BuildInfo) string {
+	// TODO(3): Combine name, Version and Revision.
+	return name
+}

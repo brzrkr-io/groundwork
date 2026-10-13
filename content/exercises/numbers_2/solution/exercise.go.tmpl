@@ -1,0 +1,19 @@
+// Package numbers is the Gopherlings exercise "Numbers: fix the metrics math".
+package numbers
+
+// Shard returns the shard that stores the logs of userID.
+func Shard(userID, shards int) int {
+	return userID % shards
+}
+
+// ErrorRatePercent returns the percentage of requests that failed, rounded
+// down to a whole number.
+func ErrorRatePercent(errors, requests int) int {
+	// Multiply first: errors/requests on its own is 0 for any rate below 100%.
+	return errors * 100 / requests
+}
+
+// DiskFreePercent returns the free space as a percentage of the disk size.
+func DiskFreePercent(totalGiB, usedGiB float64) float64 {
+	return (totalGiB - usedGiB) / totalGiB * 100
+}

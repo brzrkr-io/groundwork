@@ -1,0 +1,117 @@
+package silence
+
+import (
+	"maps"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestParsedValues(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantFor    time.Duration
+		wantAuthor string
+	}{
+		{"defaults", []string{}, time.Hour, "oncall"},
+		{"both set", []string{"-for", "30m", "-author", "pat"}, 30 * time.Minute, "pat"},
+		{"equals form", []string{"-for=2h", "-author=sam"}, 2 * time.Hour, "sam"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr strings.Builder
+			got, err := ParseArgs(tt.args, &stderr)
+			if err != nil {
+				t.Fatalf("ParseArgs(%q) error = %v, want nil (stderr: %q)", tt.args, err, stderr.String())
+			}
+			if got.For != tt.wantFor {
+				t.Errorf("ParseArgs(%q).For = %v, want %v", tt.args, got.For, tt.wantFor)
+			}
+			if got.Author != tt.wantAuthor {
+				t.Errorf("ParseArgs(%q).Author = %q, want %q", tt.args, got.Author, tt.wantAuthor)
+			}
+		})
+	}
+}
+
+// checkFlagError checks that ParseArgs fails and that stderr starts with
+// flag's error line for the bad value.
+func checkFlagError(t *testing.T, args []string, wantStart string) {
+	t.Helper()
+	var stderr strings.Builder
+	_, err := ParseArgs(args, &stderr)
+	if err == nil {
+		t.Fatalf("ParseArgs(%q) error = nil, want an error", args)
+	}
+	if !strings.HasPrefix(stderr.String(), wantStart) {
+		t.Errorf("ParseArgs(%q) stderr = %q, want it to start with %q", args, stderr.String(), wantStart)
+	}
+}
+
+func TestLabels(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want map[string]string
+	}{
+		{"none", []string{}, map[string]string{}},
+		{"one", []string{"-label", "team=sre"}, map[string]string{"team": "sre"}},
+		{"two", []string{"-label", "team=sre", "-label=alertname=DiskFull"}, map[string]string{"team": "sre", "alertname": "DiskFull"}},
+		{"value with equals", []string{"-label", "query=a=b"}, map[string]string{"query": "a=b"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr strings.Builder
+			got, err := ParseArgs(tt.args, &stderr)
+			if err != nil {
+				t.Fatalf("ParseArgs(%q) error = %v, want nil (stderr: %q)", tt.args, err, stderr.String())
+			}
+			// maps.Equal treats an empty map and nil as equal.
+			if !maps.Equal(got.Labels, tt.want) {
+				t.Errorf("ParseArgs(%q).Labels = %v, want %v", tt.args, got.Labels, tt.want)
+			}
+		})
+	}
+
+	bad := []string{"team", "=sre", "team="}
+	for _, label := range bad {
+		t.Run("bad "+label, func(t *testing.T) {
+			want := `invalid value "` + label + `" for flag -label: label must look like key=value` + "\n"
+			checkFlagError(t, []string{"-label", label}, want)
+		})
+	}
+}
+
+func TestEnv(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"default", []string{}, "dev"},
+		{"prod", []string{"-env", "prod"}, "prod"},
+		{"staging", []string{"-env=staging"}, "staging"},
+		{"dev", []string{"-env", "dev", "-for", "10m"}, "dev"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr strings.Builder
+			got, err := ParseArgs(tt.args, &stderr)
+			if err != nil {
+				t.Fatalf("ParseArgs(%q) error = %v, want nil (stderr: %q)", tt.args, err, stderr.String())
+			}
+			if got.Env != tt.want {
+				t.Errorf("ParseArgs(%q).Env = %q, want %q", tt.args, got.Env, tt.want)
+			}
+		})
+	}
+
+	bad := []string{"production", "PROD", ""}
+	for _, env := range bad {
+		t.Run("bad "+env, func(t *testing.T) {
+			want := `invalid value "` + env + `" for flag -env: env must be dev, staging or prod` + "\n"
+			checkFlagError(t, []string{"-env", env}, want)
+		})
+	}
+}

@@ -1,0 +1,39 @@
+// Package disk understands disk usage readings such as "web-1=72".
+package disk
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// Reading is the disk usage of one host, in percent.
+type Reading struct {
+	Host    string
+	Percent int
+}
+
+// Status returns "ok" below 80 percent, "warn" from 80 and "full" from 90.
+func Status(percent int) string {
+	switch {
+	case percent >= 90:
+		return "full"
+	case percent >= 80:
+		return "warn"
+	default:
+		return "ok"
+	}
+}
+
+// Parse turns "web-1=72" into Reading{Host: "web-1", Percent: 72}.
+func Parse(arg string) (Reading, error) {
+	host, value, found := strings.Cut(arg, "=")
+	if !found || host == "" {
+		return Reading{}, fmt.Errorf("bad reading %q: want HOST=PERCENT", arg)
+	}
+	percent, err := strconv.Atoi(value)
+	if err != nil || percent < 0 || percent > 100 {
+		return Reading{}, fmt.Errorf("bad percent in %q: want 0-100", arg)
+	}
+	return Reading{Host: host, Percent: percent}, nil
+}

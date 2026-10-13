@@ -1,0 +1,89 @@
+package httpserver
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestHealthz(t *testing.T) {
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rec := httptest.NewRecorder()
+	Healthz(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /healthz: status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	wantType := "text/plain; charset=utf-8"
+	if got := rec.Header().Get("Content-Type"); got != wantType {
+		t.Errorf("GET /healthz: Content-Type = %q, want %q", got, wantType)
+	}
+	if got := rec.Body.String(); got != "ok\n" {
+		t.Errorf("GET /healthz: body = %q, want %q", got, "ok\n")
+	}
+}
+
+func TestServeService(t *testing.T) {
+	catalog := Catalog{"payments": "v1.4.2", "search": "v2.0.1"}
+	tests := []struct {
+		name        string
+		wantCode    int
+		wantVersion string // X-Service-Version header
+		wantBody    string
+	}{
+		{"payments", http.StatusOK, "v1.4.2", "payments v1.4.2\n"},
+		{"search", http.StatusOK, "v2.0.1", "search v2.0.1\n"},
+		{"billing", http.StatusNotFound, "", "unknown service: billing\n"},
+		{"auth", http.StatusNotFound, "", "unknown service: auth\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/services/"+tt.name, nil)
+			req.SetPathValue("name", tt.name) // what the mux does for {name}
+			rec := httptest.NewRecorder()
+			catalog.ServeService(rec, req)
+
+			if rec.Code != tt.wantCode {
+				t.Errorf("GET /services/%s: status = %d, want %d", tt.name, rec.Code, tt.wantCode)
+			}
+			if got := rec.Header().Get("X-Service-Version"); got != tt.wantVersion {
+				t.Errorf("GET /services/%s: X-Service-Version = %q, want %q", tt.name, got, tt.wantVersion)
+			}
+			if got := rec.Body.String(); got != tt.wantBody {
+				t.Errorf("GET /services/%s: body = %q, want %q", tt.name, got, tt.wantBody)
+			}
+		})
+	}
+}
+
+func TestNewMux(t *testing.T) {
+	mux := NewMux(Catalog{"payments": "v1.4.2"})
+	tests := []struct {
+		method    string
+		path      string
+		wantCode  int
+		wantAllow bool // the Allow header must mention GET
+	}{
+		{"GET", "/healthz", http.StatusOK, false},
+		{"GET", "/services/payments", http.StatusOK, false},
+		{"POST", "/healthz", http.StatusMethodNotAllowed, true},
+		{"DELETE", "/services/payments", http.StatusMethodNotAllowed, true},
+		{"GET", "/nope", http.StatusNotFound, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantCode {
+				t.Errorf("%s %s: status = %d, want %d", tt.method, tt.path, rec.Code, tt.wantCode)
+			}
+			allow := rec.Header().Get("Allow")
+			if tt.wantAllow && !strings.Contains(allow, "GET") {
+				t.Errorf("%s %s: Allow = %q, want it to contain %q", tt.method, tt.path, allow, "GET")
+			}
+		})
+	}
+}

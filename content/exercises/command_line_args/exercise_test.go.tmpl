@@ -1,0 +1,60 @@
+package cliargs
+
+import (
+	"bytes"
+	"testing"
+)
+
+type runCase struct {
+	name       string
+	args       []string
+	wantCode   int
+	wantStdout string
+	wantStderr string
+}
+
+// checkRun calls Run with each case's args and compares the exit code and
+// everything written to stdout and stderr.
+func checkRun(t *testing.T, tests []runCase) {
+	t.Helper()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(tt.args, &stdout, &stderr)
+			if code != tt.wantCode {
+				t.Errorf("Run(%q) exit code = %d, want %d", tt.args, code, tt.wantCode)
+			}
+			if got := stdout.String(); got != tt.wantStdout {
+				t.Errorf("Run(%q) stdout = %q, want %q", tt.args, got, tt.wantStdout)
+			}
+			if got := stderr.String(); got != tt.wantStderr {
+				t.Errorf("Run(%q) stderr = %q, want %q", tt.args, got, tt.wantStderr)
+			}
+		})
+	}
+}
+
+func TestUsage(t *testing.T) {
+	checkRun(t, []runCase{
+		{"no arguments", []string{"scale"}, 2, "", "usage: scale SERVICE REPLICAS\n"},
+		{"only service", []string{"./scale", "api"}, 2, "", "usage: ./scale SERVICE REPLICAS\n"},
+		{"too many", []string{"scale", "api", "3", "now"}, 2, "", "usage: scale SERVICE REPLICAS\n"},
+	})
+}
+
+func TestScale(t *testing.T) {
+	checkRun(t, []runCase{
+		{"api to 3", []string{"scale", "api", "3"}, 0, "scaling api to 3 replicas\n", ""},
+		{"worker to 12", []string{"./scale", "worker", "12"}, 0, "scaling worker to 12 replicas\n", ""},
+		{"cron to 0", []string{"scale", "cron", "0"}, 0, "scaling cron to 0 replicas\n", ""},
+	})
+}
+
+func TestBadReplicas(t *testing.T) {
+	checkRun(t, []runCase{
+		{"word", []string{"scale", "api", "abc"}, 2, "", "scale: replicas must be a whole number >= 0, got \"abc\"\n"},
+		{"negative", []string{"./scale", "api", "-1"}, 2, "", "./scale: replicas must be a whole number >= 0, got \"-1\"\n"},
+		{"decimal", []string{"scale", "web", "2.5"}, 2, "", "scale: replicas must be a whole number >= 0, got \"2.5\"\n"},
+		{"empty", []string{"scale", "web", ""}, 2, "", "scale: replicas must be a whole number >= 0, got \"\"\n"},
+	})
+}

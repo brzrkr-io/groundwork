@@ -1,0 +1,5 @@
+upstream api {
+    server 10.0.1.15:8080;
+    server 10.0.1.16:8080;
+    server 10.0.1.17:8080;
+}

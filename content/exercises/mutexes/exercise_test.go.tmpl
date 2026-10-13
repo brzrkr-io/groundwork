@@ -1,0 +1,131 @@
+package mutexes
+
+import (
+	"maps"
+	"sync"
+	"testing"
+	"time"
+)
+
+// These tests run with the race detector. If a method touches c.hits
+// without holding the lock, the test fails with "race detected".
+
+func TestInc(t *testing.T) {
+	t.Run("one goroutine", func(t *testing.T) {
+		c := NewHitCounter()
+		c.Inc("/login")
+		c.Inc("/login")
+		c.Inc("/health")
+
+		want := map[string]int{"/login": 2, "/health": 1}
+		if !maps.Equal(c.hits, want) {
+			t.Errorf("after Inc(/login) x2 and Inc(/health) x1, hits = %v, want %v", c.hits, want)
+		}
+	})
+
+	t.Run("many goroutines", func(t *testing.T) {
+		c := NewHitCounter()
+		var wg sync.WaitGroup
+		for range 20 {
+			wg.Go(func() {
+				for range 50 {
+					c.Inc("/api/orders")
+				}
+				c.Inc("/health")
+			})
+		}
+		wg.Wait()
+
+		want := map[string]int{"/api/orders": 1000, "/health": 20}
+		if !maps.Equal(c.hits, want) {
+			t.Errorf("after 20 goroutines each called Inc(/api/orders) x50 and Inc(/health) x1, hits = %v, want %v", c.hits, want)
+		}
+	})
+}
+
+func TestCount(t *testing.T) {
+	t.Run("existing and missing paths", func(t *testing.T) {
+		c := NewHitCounter()
+		c.hits = map[string]int{"/login": 2, "/metrics": 7}
+
+		tests := []struct {
+			path string
+			want int
+		}{
+			{"/login", 2},
+			{"/metrics", 7},
+			{"/health", 0},
+		}
+		for _, tt := range tests {
+			if got := c.Count(tt.path); got != tt.want {
+				t.Errorf("Count(%q) = %d, want %d", tt.path, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("while another goroutine writes", func(t *testing.T) {
+		c := NewHitCounter()
+		var wg sync.WaitGroup
+		wg.Go(func() { // a writer that holds the write lock properly
+			for range 100 {
+				c.mu.Lock()
+				c.hits["/api"]++
+				c.mu.Unlock()
+			}
+		})
+		for range 4 { // readers
+			wg.Go(func() {
+				for range 100 {
+					c.Count("/api")
+				}
+			})
+		}
+		wg.Wait()
+
+		if got := c.Count("/api"); got != 100 {
+			t.Errorf("Count(%q) = %d, want 100", "/api", got)
+		}
+	})
+}
+
+func TestSnapshot(t *testing.T) {
+	t.Run("returns a copy", func(t *testing.T) {
+		c := NewHitCounter()
+		c.hits = map[string]int{"/login": 2, "/metrics": 7}
+
+		snap := c.Snapshot()
+		want := map[string]int{"/login": 2, "/metrics": 7}
+		if !maps.Equal(snap, want) {
+			t.Fatalf("Snapshot() = %v, want %v", snap, want)
+		}
+
+		snap["/login"] = 100
+		delete(snap, "/metrics")
+		if !maps.Equal(c.hits, want) {
+			t.Errorf("changing the snapshot changed the counter to %v; Snapshot should return a copy", c.hits)
+		}
+	})
+
+	t.Run("waits for the write lock", func(t *testing.T) {
+		c := NewHitCounter()
+		c.mu.Lock() // pretend a writer is busy
+
+		snapshots := make(chan map[string]int, 1)
+		go func() { snapshots <- c.Snapshot() }()
+
+		select {
+		case <-snapshots:
+			t.Fatal("Snapshot returned while another goroutine held the write lock; take the read lock first")
+		case <-time.After(50 * time.Millisecond):
+			// Good: Snapshot is waiting for the lock.
+		}
+
+		c.hits["/api"] = 3
+		c.mu.Unlock() // the writer is done; now Snapshot can take the read lock
+
+		want := map[string]int{"/api": 3}
+		if got := <-snapshots; !maps.Equal(got, want) {
+			t.Errorf("Snapshot() = %v, want %v", got, want)
+		}
+	})
+}

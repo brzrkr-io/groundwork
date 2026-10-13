@@ -1,0 +1,182 @@
+package queues
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/workqueue"
+)
+
+var errUnavailable = errors.New("alerting service unavailable")
+
+// newTestQueue returns a queue whose retries wait 1ms, 2ms, 4ms, ... (at most
+// 10ms), so tests finish quickly. key starts with the given number of earlier
+// failures. The queue is shut down when the test ends.
+func newTestQueue(t *testing.T, key string, failures int) workqueue.TypedRateLimitingInterface[string] {
+	limiter := workqueue.NewTypedItemExponentialFailureRateLimiter[string](time.Millisecond, 10*time.Millisecond)
+	for range failures {
+		limiter.When(key) // each call counts one failure for key
+	}
+	q := workqueue.NewTypedRateLimitingQueue(limiter)
+	t.Cleanup(q.ShutDown)
+	return q
+}
+
+// waitFor polls cond every 10ms for up to 5s.
+func waitFor(t *testing.T, cond func() bool) error {
+	return wait.PollUntilContextTimeout(t.Context(), 10*time.Millisecond, 5*time.Second, true,
+		func(context.Context) (bool, error) { return cond(), nil })
+}
+
+func TestProcessNextItem(t *testing.T) {
+	tests := []struct {
+		key                     string
+		wantNamespace, wantName string
+	}{
+		{"monitoring/alert-rules", "monitoring", "alert-rules"},
+		{"payments/alert-rules", "payments", "alert-rules"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			q := newTestQueue(t, tt.key, 0)
+			q.Add(tt.key)
+
+			var gotNamespace, gotName string
+			record := func(namespace, name string) error {
+				gotNamespace, gotName = namespace, name
+				return nil
+			}
+			if got := ProcessNextItem(q, record); !got {
+				t.Errorf("ProcessNextItem with %q queued = false, want true", tt.key)
+			}
+			if gotNamespace != tt.wantNamespace || gotName != tt.wantName {
+				t.Errorf("ProcessNextItem with %q queued called sync(%q, %q), want sync(%q, %q)",
+					tt.key, gotNamespace, gotName, tt.wantNamespace, tt.wantName)
+			}
+
+			// A key can only go back in the queue after Done.
+			q.Add(tt.key)
+			if got := q.Len(); got != 1 {
+				t.Errorf("after ProcessNextItem, Add(%q) left q.Len() = %d, want 1", tt.key, got)
+			}
+		})
+	}
+
+	t.Run("queue shut down", func(t *testing.T) {
+		q := newTestQueue(t, "monitoring/alert-rules", 0)
+		q.ShutDown()
+		if got := ProcessNextItem(q, func(string, string) error { return nil }); got {
+			t.Errorf("ProcessNextItem on a shut down queue = true, want false")
+		}
+	})
+}
+
+func TestHandleResultSuccess(t *testing.T) {
+	tests := []struct {
+		key      string
+		failures int
+	}{
+		{"monitoring/alert-rules", 1},
+		{"payments/alert-rules", 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			q := newTestQueue(t, tt.key, tt.failures)
+
+			if dropped := HandleResult(q, tt.key, nil); dropped {
+				t.Errorf("HandleResult(q, %q, nil) = true, want false", tt.key)
+			}
+			if got := q.NumRequeues(tt.key); got != 0 {
+				t.Errorf("after HandleResult(q, %q, nil) with %d earlier failures, NumRequeues = %d, want 0",
+					tt.key, tt.failures, got)
+			}
+			if got := q.Len(); got != 0 {
+				t.Errorf("after HandleResult(q, %q, nil), q.Len() = %d, want 0", tt.key, got)
+			}
+		})
+	}
+}
+
+func TestHandleResultGivesUp(t *testing.T) {
+	tests := []struct {
+		name            string
+		failures        int
+		wantDropped     bool
+		wantNumRequeues int
+	}{
+		{"first failure is retried", 0, false, 1},
+		{"third failure is retried", 2, false, 3},
+		{"fourth failure is dropped", 3, true, 0},
+		{"already past the limit", 5, true, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := "monitoring/alert-rules"
+			q := newTestQueue(t, key, tt.failures)
+
+			if got := HandleResult(q, key, errUnavailable); got != tt.wantDropped {
+				t.Errorf("HandleResult(q, %q, err) with %d earlier failures = %v, want %v",
+					key, tt.failures, got, tt.wantDropped)
+			}
+			if got := q.NumRequeues(key); got != tt.wantNumRequeues {
+				t.Errorf("after HandleResult(q, %q, err) with %d earlier failures, NumRequeues = %d, want %d",
+					key, tt.failures, got, tt.wantNumRequeues)
+			}
+
+			if tt.wantDropped {
+				if got := q.Len(); got != 0 {
+					t.Errorf("after dropping %q, q.Len() = %d, want 0", key, got)
+				}
+				return
+			}
+			// A retried key comes back into the queue after its short delay.
+			if err := waitFor(t, func() bool { return q.Len() == 1 }); err != nil {
+				t.Errorf("after HandleResult(q, %q, err), the key did not come back into the queue within 5s", key)
+			}
+		})
+	}
+
+	t.Run("a key that always fails is tried 4 times", func(t *testing.T) {
+		key := "payments/alert-rules"
+		q := newTestQueue(t, key, 0)
+
+		var mu sync.Mutex
+		attempts := 0
+		alwaysFails := func(namespace, name string) error {
+			mu.Lock()
+			defer mu.Unlock()
+			attempts++
+			return errUnavailable
+		}
+		countAttempts := func() int {
+			mu.Lock()
+			defer mu.Unlock()
+			return attempts
+		}
+
+		finished := make(chan struct{})
+		go func() {
+			defer close(finished)
+			for ProcessNextItem(q, alwaysFails) {
+			}
+		}()
+		q.Add(key)
+
+		want := MaxRetries + 1
+		err := waitFor(t, func() bool { return countAttempts() == want && q.NumRequeues(key) == 0 })
+		q.ShutDown()
+		select {
+		case <-finished:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("worker did not stop within 5s of ShutDown")
+		}
+		if err != nil || countAttempts() != want {
+			t.Errorf("sync was called %d times and NumRequeues = %d, want %d calls and NumRequeues 0 (fix tasks 1 and 3 first)",
+				countAttempts(), q.NumRequeues(key), want)
+		}
+	})
+}

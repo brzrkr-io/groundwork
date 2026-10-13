@@ -1,0 +1,90 @@
+package stringers3
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestReplicasString(t *testing.T) {
+	tests := []struct {
+		replicas Replicas
+		want     string
+	}{
+		{Replicas{Ready: 3, Desired: 5}, "3/5"},
+		{Replicas{Ready: 0, Desired: 1}, "0/1"},
+		{Replicas{Ready: 12, Desired: 12}, "12/12"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.want, func(t *testing.T) {
+			if got := fmt.Sprint(tc.replicas); got != tc.want {
+				t.Errorf("fmt.Sprint(%#v) = %q, want %q", tc.replicas, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDeploymentString(t *testing.T) {
+	tests := []struct {
+		dep  Deployment
+		want string
+	}{
+		{
+			Deployment{Name: "api", Namespace: "prod", Replicas: Replicas{Ready: 1, Desired: 3}, Status: Degraded},
+			"prod/api 1/3 Degraded",
+		},
+		{
+			Deployment{Name: "worker", Namespace: "staging", Replicas: Replicas{Ready: 2, Desired: 2}, Status: Available},
+			"staging/worker 2/2 Available",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.want, func(t *testing.T) {
+			if got := fmt.Sprint(tc.dep); got != tc.want {
+				t.Errorf("fmt.Sprint(%#v) = %q, want %q", tc.dep, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestReport(t *testing.T) {
+	tests := []struct {
+		name string
+		deps []Deployment
+		want string
+	}{
+		{
+			name: "three deployments",
+			deps: []Deployment{
+				{Name: "api", Namespace: "prod", Replicas: Replicas{Ready: 3, Desired: 3}, Status: Available},
+				{Name: "web", Namespace: "prod", Replicas: Replicas{Ready: 1, Desired: 2}, Status: Progressing},
+				{Name: "worker", Namespace: "staging", Replicas: Replicas{Ready: 0, Desired: 1}, Status: Degraded},
+			},
+			want: "deployments: 3, degraded: 1\n" +
+				"prod/api 3/3 Available\n" +
+				"prod/web 1/2 Progressing\n" +
+				"staging/worker 0/1 Degraded\n",
+		},
+		{
+			name: "two degraded",
+			deps: []Deployment{
+				{Name: "cache", Namespace: "prod", Replicas: Replicas{Ready: 0, Desired: 2}, Status: Degraded},
+				{Name: "db", Namespace: "prod", Replicas: Replicas{Ready: 1, Desired: 3}, Status: Degraded},
+			},
+			want: "deployments: 2, degraded: 2\n" +
+				"prod/cache 0/2 Degraded\n" +
+				"prod/db 1/3 Degraded\n",
+		},
+		{
+			name: "no deployments",
+			deps: nil,
+			want: "deployments: 0, degraded: 0\n",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Report(tc.deps); got != tc.want {
+				t.Errorf("Report(deps) = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

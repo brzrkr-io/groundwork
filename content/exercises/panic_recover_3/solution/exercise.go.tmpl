@@ -1,0 +1,73 @@
+// Package recovery3 is the Gopherlings exercise "panic and recover: protect the status API".
+package recovery3
+
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrDatabaseDown is what the data layer panics with when it loses its
+// database connection.
+var ErrDatabaseDown = errors.New("database is down")
+
+// Request is a simplified HTTP request.
+type Request struct {
+	Method string
+	Path   string
+}
+
+// Response is a simplified HTTP response.
+type Response struct {
+	Status int
+	Body   string
+}
+
+// Handler answers one request.
+type Handler func(Request) Response
+
+// ErrorLog collects the errors that handlers produced, for the on-call
+// dashboard.
+type ErrorLog struct {
+	Errors []error
+}
+
+// Record adds err to the log.
+func (l *ErrorLog) Record(err error) {
+	l.Errors = append(l.Errors, err)
+}
+
+// PanicError turns a value recovered from a panic into an error.
+func PanicError(v any) error {
+	switch v := v.(type) {
+	case error:
+		return fmt.Errorf("panic: %w", v)
+	case string:
+		return errors.New("panic: " + v)
+	default:
+		return fmt.Errorf("panic: unexpected value %v (%T)", v, v)
+	}
+}
+
+// Protect wraps h so that a panic in h becomes a 500 response and an entry
+// in errs, instead of crashing the server.
+func Protect(name string, h Handler, errs *ErrorLog) Handler {
+	return func(req Request) (resp Response) {
+		defer func() {
+			if r := recover(); r != nil {
+				errs.Record(fmt.Errorf("handler %q: %w", name, PanicError(r)))
+				resp = Response{Status: 500, Body: "internal server error"}
+			}
+		}()
+		return h(req)
+	}
+}
+
+// ShouldPage reports whether any error in errs means the database is down.
+func ShouldPage(errs *ErrorLog) bool {
+	for _, err := range errs.Errors {
+		if errors.Is(err, ErrDatabaseDown) {
+			return true
+		}
+	}
+	return false
+}

@@ -1,0 +1,110 @@
+package reload
+
+import (
+	"errors"
+	"os"
+	"strings"
+	"syscall"
+	"testing"
+)
+
+func TestExitCodeFor(t *testing.T) {
+	tests := []struct {
+		sig  os.Signal
+		want int
+	}{
+		{os.Interrupt, 130},
+		{syscall.SIGTERM, 143},
+		{syscall.SIGHUP, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.sig.String(), func(t *testing.T) {
+			if got := ExitCodeFor(tt.sig); got != tt.want {
+				t.Errorf("ExitCodeFor(%v) = %d, want %d", tt.sig, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestServe(t *testing.T) {
+	badIndent := errors.New("parse routes.yaml: line 3: bad indent")
+	tests := []struct {
+		name        string
+		send        []os.Signal
+		reloadErrs  []error // what each reload call returns, in order
+		want        int
+		wantReloads int
+		wantLog     string
+	}{
+		{
+			name: "channel closed without signals",
+			want: 0,
+		},
+		{
+			name:        "one SIGHUP reloads and keeps running",
+			send:        []os.Signal{syscall.SIGHUP},
+			reloadErrs:  []error{nil},
+			want:        0,
+			wantReloads: 1,
+			wantLog:     "reloaded config\n",
+		},
+		{
+			name:        "failed reload keeps running, then SIGTERM",
+			send:        []os.Signal{syscall.SIGHUP, syscall.SIGHUP, syscall.SIGTERM},
+			reloadErrs:  []error{badIndent, nil},
+			want:        143,
+			wantReloads: 2,
+			wantLog: "reload failed: parse routes.yaml: line 3: bad indent; keeping old config\n" +
+				"reloaded config\n" +
+				"received terminated: shutting down\n",
+		},
+		{
+			name:        "SIGHUP then Ctrl-C",
+			send:        []os.Signal{syscall.SIGHUP, os.Interrupt},
+			reloadErrs:  []error{nil},
+			want:        130,
+			wantReloads: 1,
+			wantLog:     "reloaded config\nreceived interrupt: shutting down\n",
+		},
+		{
+			name:        "Ctrl-C stops before a later SIGHUP",
+			send:        []os.Signal{os.Interrupt, syscall.SIGHUP},
+			want:        130,
+			wantReloads: 0,
+			wantLog:     "received interrupt: shutting down\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Fill a buffered channel and close it, so Serve runs to the end
+			// without waiting for real signals.
+			sigs := make(chan os.Signal, len(tt.send))
+			for _, s := range tt.send {
+				sigs <- s
+			}
+			close(sigs)
+
+			reloads := 0
+			reload := func() error {
+				if reloads >= len(tt.reloadErrs) {
+					t.Fatalf("reload called %d times, want %d", reloads+1, tt.wantReloads)
+				}
+				err := tt.reloadErrs[reloads]
+				reloads++
+				return err
+			}
+
+			var log strings.Builder
+			got := Serve(sigs, reload, &log)
+			if got != tt.want {
+				t.Errorf("Serve(%v) = %d, want %d", tt.send, got, tt.want)
+			}
+			if reloads != tt.wantReloads {
+				t.Errorf("Serve(%v) called reload %d times, want %d", tt.send, reloads, tt.wantReloads)
+			}
+			if log.String() != tt.wantLog {
+				t.Errorf("Serve(%v) log = %q, want %q", tt.send, log.String(), tt.wantLog)
+			}
+		})
+	}
+}

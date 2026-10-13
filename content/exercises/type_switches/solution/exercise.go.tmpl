@@ -1,0 +1,63 @@
+// Package typeswitches is the Gopherlings exercise "Type assertions and switches".
+package typeswitches
+
+import "fmt"
+
+// DeployEvent says that a new version of a service was rolled out.
+type DeployEvent struct {
+	Service string
+	Version string
+}
+
+// ScaleEvent says that a service changed its number of replicas.
+type ScaleEvent struct {
+	Service string
+	From    int
+	To      int
+}
+
+// AlertEvent says that monitoring raised an alert for a service.
+type AlertEvent struct {
+	Service  string
+	Severity string
+	Message  string
+}
+
+// AsAlert returns the AlertEvent held in e and true, or the zero AlertEvent
+// and false when e holds anything else.
+func AsAlert(e any) (AlertEvent, bool) {
+	alert, ok := e.(AlertEvent)
+	return alert, ok
+}
+
+// Describe returns a one-line description of the event held in e.
+func Describe(e any) string {
+	switch v := e.(type) {
+	case DeployEvent:
+		return fmt.Sprintf("deploy %s %s", v.Service, v.Version)
+	case ScaleEvent:
+		return fmt.Sprintf("scale %s %d -> %d", v.Service, v.From, v.To)
+	case AlertEvent:
+		return fmt.Sprintf("alert %s [%s]: %s", v.Service, v.Severity, v.Message)
+	default:
+		return fmt.Sprintf("unknown event %T", e)
+	}
+}
+
+// Tally counts the events by kind: "deploy", "scale", "alert" or "unknown".
+func Tally(events []any) map[string]int {
+	counts := map[string]int{}
+	for _, e := range events {
+		switch e.(type) {
+		case DeployEvent:
+			counts["deploy"]++
+		case ScaleEvent:
+			counts["scale"]++
+		case AlertEvent:
+			counts["alert"]++
+		default:
+			counts["unknown"]++
+		}
+	}
+	return counts
+}

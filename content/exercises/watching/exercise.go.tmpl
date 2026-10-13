@@ -1,0 +1,34 @@
+// Package watching is the Gopherlings exercise "Watching resources: streaming Pod events".
+package watching
+
+import (
+	"context"
+
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
+)
+
+// Describe returns a one-line summary of a Pod event, such as
+// "ADDED shop/web-1". For an event that does not carry a Pod, it returns just
+// the event type, such as "ERROR".
+func Describe(ev watch.Event) string {
+	// TODO(1): Return the type and the Pod's namespace/name, or just the type.
+	return ""
+}
+
+// Collect reads events from w until it has n descriptions or the channel is
+// closed. It stops the watch and returns the descriptions in order.
+func Collect(w watch.Interface, n int) []string {
+	// TODO(2): Describe the events from w.ResultChan(), and stop w before
+	// you return.
+	return nil
+}
+
+// WatchPods watches the Pods in namespace and calls handle with every event.
+// It returns nil once ctx is cancelled or the server closes the watch, and
+// an error if the watch can't be started.
+func WatchPods(ctx context.Context, cs kubernetes.Interface, namespace string, handle func(watch.Event)) error {
+	// TODO(3): Start the watch, stop it when you return, and pass every event
+	// to handle until ctx is cancelled or the channel is closed.
+	return nil
+}

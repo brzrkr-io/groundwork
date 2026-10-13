@@ -1,0 +1,38 @@
+// Package inventory is the Gopherlings exercise "Subtests and helpers: files and t.TempDir".
+package inventory
+
+import (
+	"fmt"
+	"os"
+	"strings"
+)
+
+// LoadHosts reads a hosts file with one hostname per line. It trims spaces
+// around each line and skips blank lines and comment lines (lines starting
+// with "#"). It returns the hosts in order, or an error if the file can't be
+// read.
+//
+// This code is correct. Your job in this exercise is to write a test for it.
+func LoadHosts(path string) ([]string, error) {
+	return loadHosts(path)
+}
+
+// loadHosts points at the real implementation. Gopherlings' grader swaps in
+// broken versions to check that your test catches them.
+var loadHosts = realLoadHosts
+
+func realLoadHosts(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("load hosts: %w", err)
+	}
+	var hosts []string
+	for line := range strings.SplitSeq(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		hosts = append(hosts, line)
+	}
+	return hosts, nil
+}

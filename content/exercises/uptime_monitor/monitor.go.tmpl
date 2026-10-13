@@ -1,0 +1,51 @@
+// Package uptime checks HTTP endpoints concurrently and reports which are up.
+package uptime
+
+import (
+	"context"
+	"net/http"
+	"time"
+)
+
+// Target is one endpoint to monitor.
+type Target struct {
+	Name string // a short label, like "api"
+	URL  string // the URL to GET, like "https://api.example.com/healthz"
+}
+
+// Result is the outcome of checking one Target.
+type Result struct {
+	Target   Target
+	Up       bool          // true when the last attempt got a 2xx status
+	Status   int           // HTTP status of the last attempt; 0 if there was no response
+	Latency  time.Duration // how long the last attempt took
+	Attempts int           // how many attempts were made
+	Err      error         // why the target is down; nil when it is up
+}
+
+// Summary describes one round of checks.
+type Summary struct {
+	Up         int           // number of targets that are up
+	Down       int           // number of targets that are down
+	AvgLatency time.Duration // average Latency of the up targets; 0 if none are up
+	Slowest    string        // Name of the up target with the highest Latency; "" if none are up
+	Status     string        // "OK", "DEGRADED" or "DOWN"
+}
+
+// Monitor holds the settings for checking targets.
+type Monitor struct {
+	Client     *http.Client  // used for every request
+	Timeout    time.Duration // limit for each attempt
+	Retries    int           // extra attempts after a failed first attempt
+	RetryDelay time.Duration // wait between attempts
+	Workers    int           // how many targets are checked at the same time (at least 1)
+}
+
+// Run checks every target straight away and then once every interval,
+// calling report with the Summary of each round, until ctx is cancelled. It
+// returns ctx.Err().
+func (m *Monitor) Run(ctx context.Context, targets []Target, interval time.Duration, report func(Summary)) error {
+	// TODO(6): Use Every to run rounds. Each round runs CheckAll, then
+	// Summarize, then report.
+	return nil
+}

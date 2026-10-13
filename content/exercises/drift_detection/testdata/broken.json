@@ -1,0 +1,4 @@
+[
+  { "kind": "bucket", "name": "acme-logs", "tags": { "Env": "prod" } },
+  { "kind": "instance", "name": "web-1"
+]

@@ -1,0 +1,24 @@
+// Package zones is the Gopherlings exercise "Arrays".
+package zones
+
+// WeeklyTotal returns the sum of seven daily error counts.
+func WeeklyTotal(daily [7]int) int {
+	total := 0
+	for i := range len(daily) {
+		total += daily[i]
+	}
+	return total
+}
+
+// ZoneNames returns the three availability zones of region: region plus
+// "a", "b" and "c".
+func ZoneNames(region string) [3]string {
+	return [3]string{region + "a", region + "b", region + "c"}
+}
+
+// WithZoneDown returns a copy of status with the given zone marked unhealthy.
+func WithZoneDown(status [3]bool, zone int) [3]bool {
+	// status is already a copy of the caller's array, so changing it is safe.
+	status[zone] = false
+	return status
+}

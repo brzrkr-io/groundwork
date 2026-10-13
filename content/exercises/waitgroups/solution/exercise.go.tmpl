@@ -1,0 +1,47 @@
+// Package waitgroups is the Gopherlings exercise "WaitGroups".
+package waitgroups
+
+import "sync"
+
+// DeployAll deploys to every region at the same time and returns once all
+// of the deploys have finished.
+func DeployAll(regions []string, deploy func(region string)) {
+	var wg sync.WaitGroup
+	for _, region := range regions {
+		wg.Go(func() {
+			deploy(region)
+		})
+	}
+	wg.Wait()
+}
+
+// ResolveAll resolves every host at the same time and returns the addresses
+// in the same order as hosts.
+func ResolveAll(hosts []string, resolve func(host string) string) []string {
+	addrs := make([]string, len(hosts))
+	var wg sync.WaitGroup
+	for i, host := range hosts {
+		wg.Go(func() {
+			addrs[i] = resolve(host)
+		})
+	}
+	wg.Wait()
+	return addrs
+}
+
+// BackupAll backs up every database at the same time and returns once all
+// of the backups have finished.
+func BackupAll(databases []string, backup func(db string)) {
+	var wg sync.WaitGroup
+	for _, db := range databases {
+		startBackup(&wg, db, backup)
+	}
+	wg.Wait()
+}
+
+// startBackup runs backup(db) in a new goroutine that wg.Wait() waits for.
+func startBackup(wg *sync.WaitGroup, db string, backup func(db string)) {
+	wg.Go(func() {
+		backup(db)
+	})
+}

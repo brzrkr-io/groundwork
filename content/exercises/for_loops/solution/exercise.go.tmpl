@@ -1,0 +1,40 @@
+// Package loops is the Gopherlings exercise "For loops: backoff and progress bars".
+package loops
+
+import "strings"
+
+// TotalBackoff returns the total seconds waited over attempts retries, where
+// the delay starts at baseSeconds and doubles after each retry.
+func TotalBackoff(attempts, baseSeconds int) int {
+	total, delay := 0, baseSeconds
+	for range attempts {
+		total += delay
+		delay *= 2
+	}
+	return total
+}
+
+// ProgressBar draws a bar like "[##---]" with done '#' and total-done '-'.
+func ProgressBar(done, total int) string {
+	var b strings.Builder
+	b.WriteString("[")
+	for range done {
+		b.WriteString("#")
+	}
+	for range total - done {
+		b.WriteString("-")
+	}
+	b.WriteString("]")
+	return b.String()
+}
+
+// RetriesWithin returns how many doubling retries fit in budgetSeconds.
+func RetriesWithin(budgetSeconds, baseSeconds int) int {
+	used, delay, retries := 0, baseSeconds, 0
+	for used+delay <= budgetSeconds {
+		used += delay
+		delay *= 2
+		retries++
+	}
+	return retries
+}

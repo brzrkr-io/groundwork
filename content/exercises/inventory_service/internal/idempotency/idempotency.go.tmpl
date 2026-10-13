@@ -1,0 +1,116 @@
+// Package idempotency remembers requests by Idempotency-Key, so a retried
+// request can get the first request's response instead of running again.
+package idempotency
+
+import (
+	"bytes"
+	"maps"
+	"net/http"
+	"sync"
+)
+
+// Response is a response remembered for an Idempotency-Key.
+type Response struct {
+	Status int
+	Header http.Header
+	Body   []byte
+}
+
+// State says what a Store knows about a key.
+type State int
+
+const (
+	KeyNew  State = iota // never seen: the caller now owns the key
+	KeyBusy              // another request with this key is still running
+	KeyDone              // finished: a saved response is available
+)
+
+// Store remembers which Idempotency-Keys are running and the responses of
+// the ones that finished. It is safe for concurrent use.
+type Store struct {
+	mu      sync.Mutex
+	running map[string]bool
+	done    map[string]Response
+}
+
+// NewStore returns an empty Store.
+func NewStore() *Store {
+	return &Store{running: map[string]bool{}, done: map[string]Response{}}
+}
+
+// Start looks key up. For a new key it marks the key as running and returns
+// KeyNew; the caller must later call Finish or Forget. For a finished key it
+// returns KeyDone and the saved response.
+func (st *Store) Start(key string) (Response, State) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if resp, ok := st.done[key]; ok {
+		return resp, KeyDone
+	}
+	if st.running[key] {
+		return Response{}, KeyBusy
+	}
+	st.running[key] = true
+	return Response{}, KeyNew
+}
+
+// Finish saves resp for key, so later requests with the key replay it.
+func (st *Store) Finish(key string, resp Response) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	delete(st.running, key)
+	st.done[key] = resp
+}
+
+// Forget drops key without saving anything, so the client can retry.
+func (st *Store) Forget(key string) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	delete(st.running, key)
+}
+
+// Capture is an http.ResponseWriter that records a response in memory
+// instead of sending it.
+type Capture struct {
+	header http.Header
+	status int
+	body   bytes.Buffer
+}
+
+// NewCapture returns an empty Capture.
+func NewCapture() *Capture {
+	return &Capture{header: http.Header{}}
+}
+
+// Header returns the headers the handler is building.
+func (c *Capture) Header() http.Header { return c.header }
+
+// WriteHeader records the status code. Only the first call counts.
+func (c *Capture) WriteHeader(code int) {
+	if c.status == 0 {
+		c.status = code
+	}
+}
+
+// Write records body bytes. Writing without WriteHeader means status 200.
+func (c *Capture) Write(b []byte) (int, error) {
+	if c.status == 0 {
+		c.status = http.StatusOK
+	}
+	return c.body.Write(b)
+}
+
+// Response returns everything the handler wrote.
+func (c *Capture) Response() Response {
+	if c.status == 0 {
+		c.status = http.StatusOK
+	}
+	return Response{Status: c.status, Header: c.header.Clone(), Body: bytes.Clone(c.body.Bytes())}
+}
+
+// Send writes a saved response to w: headers, status code, then body.
+func Send(w http.ResponseWriter, resp Response) {
+	maps.Copy(w.Header(), resp.Header)
+	w.WriteHeader(resp.Status)
+	w.Write(resp.Body)
+}

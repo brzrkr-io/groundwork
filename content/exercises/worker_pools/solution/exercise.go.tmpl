@@ -1,0 +1,73 @@
+// Package workerpool is the Gopherlings exercise "Worker pools".
+package workerpool
+
+import "sync"
+
+// Job is one host to check. Index is the host's position in the input.
+type Job struct {
+	Index int
+	Host  string
+}
+
+// Result is the outcome of one Job.
+type Result struct {
+	Index int
+	Host  string
+	Up    bool
+}
+
+// CheckAll checks every host using a pool of workers goroutines and returns
+// the results in the same order as hosts.
+func CheckAll(hosts []string, workers int, check func(host string) bool) []Result {
+	jobs := sendJobs(hosts)
+	results := startWorkers(workers, jobs, check)
+	return collect(results, len(hosts))
+}
+
+// sendJobs sends a Job for every host on the returned channel from a new
+// goroutine, then closes the channel.
+func sendJobs(hosts []string) <-chan Job {
+	jobs := make(chan Job)
+	go func() {
+		for i, host := range hosts {
+			jobs <- Job{Index: i, Host: host}
+		}
+		close(jobs)
+	}()
+	return jobs
+}
+
+// worker checks hosts from jobs until jobs is closed, sending one Result per
+// Job.
+func worker(jobs <-chan Job, results chan<- Result, check func(host string) bool) {
+	for job := range jobs {
+		results <- Result{Index: job.Index, Host: job.Host, Up: check(job.Host)}
+	}
+}
+
+// startWorkers starts n workers and returns their results channel, which is
+// closed once every worker has returned.
+func startWorkers(n int, jobs <-chan Job, check func(host string) bool) <-chan Result {
+	results := make(chan Result)
+	var wg sync.WaitGroup
+	for range n {
+		wg.Go(func() {
+			worker(jobs, results, check)
+		})
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	return results
+}
+
+// collect receives every result until results is closed and returns them in
+// input order.
+func collect(results <-chan Result, n int) []Result {
+	out := make([]Result, n)
+	for r := range results {
+		out[r.Index] = r
+	}
+	return out
+}

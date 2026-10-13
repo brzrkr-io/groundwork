@@ -1,0 +1,46 @@
+// Command depcheck reports which versions of key libraries are compiled into
+// this binary, so you can answer "are we affected by that CVE?".
+package main
+
+import (
+	"fmt"
+	"runtime/debug"
+)
+
+func main() {
+	info, _ := debug.ReadBuildInfo()
+	fmt.Println("built:", BuildTime(info))
+	for _, line := range Report(info, []string{"k8s.io/client-go", "golang.org/x/net"}) {
+		fmt.Println(line)
+	}
+}
+
+// DepVersion returns the version of the dependency with the given module
+// path. If the dependency was replaced, it returns the replacement's
+// version. It returns "not found" when info is nil or has no such
+// dependency.
+func DepVersion(info *debug.BuildInfo, path string) string {
+	if info == nil {
+		return "not found"
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == path {
+			// TODO(1): Use the replacement's version when Replace is not nil.
+			return dep.Version
+		}
+	}
+	return "not found"
+}
+
+// BuildTime returns the vcs.time setting formatted as "2006-01-02 15:04 UTC",
+// or "unknown".
+func BuildTime(info *debug.BuildInfo) string {
+	// TODO(2): Find vcs.time, parse it and format it in UTC.
+	return "unknown"
+}
+
+// Report returns one "<path> <version>" line per path, in order.
+func Report(info *debug.BuildInfo, paths []string) []string {
+	// TODO(3): Build the lines with DepVersion.
+	return nil
+}

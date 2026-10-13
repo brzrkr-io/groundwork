@@ -1,0 +1,15 @@
+// Package region understands Google Cloud region names such as "us-central1".
+package region
+
+import "strings"
+
+// Valid reports whether name looks like a GCP region: exactly two
+// dash-separated parts, the second ending in a digit ("europe-west4").
+func Valid(name string) bool {
+	parts := strings.Split(name, "-")
+	if len(parts) != 2 || parts[1] == "" {
+		return false
+	}
+	last := parts[1][len(parts[1])-1]
+	return last >= '0' && last <= '9'
+}

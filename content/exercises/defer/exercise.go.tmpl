@@ -1,0 +1,80 @@
+// Package cleanup is the Gopherlings exercise "defer".
+package cleanup
+
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrCommandFailed is wrapped by every error that Run returns.
+var ErrCommandFailed = errors.New("command failed")
+
+// Recorder is a fake server connection. Each method appends a line to
+// Events instead of talking to a real server.
+type Recorder struct {
+	Events []string
+	FailOn string // Run fails for this command
+}
+
+// Connect records "connect <host>".
+func (r *Recorder) Connect(host string) {
+	r.Events = append(r.Events, "connect "+host)
+}
+
+// Close records "close <host>".
+func (r *Recorder) Close(host string) {
+	r.Events = append(r.Events, "close "+host)
+}
+
+// Lock records "lock <name>".
+func (r *Recorder) Lock(name string) {
+	r.Events = append(r.Events, "lock "+name)
+}
+
+// Unlock records "unlock <name>".
+func (r *Recorder) Unlock(name string) {
+	r.Events = append(r.Events, "unlock "+name)
+}
+
+// Run records "run <cmd>". It returns an error wrapping ErrCommandFailed
+// when cmd is r.FailOn.
+func (r *Recorder) Run(cmd string) error {
+	r.Events = append(r.Events, "run "+cmd)
+	if cmd == r.FailOn {
+		return fmt.Errorf("run %s: %w", cmd, ErrCommandFailed)
+	}
+	return nil
+}
+
+// Deploy connects to host and runs cmds in order, stopping at the first
+// command that fails.
+func Deploy(r *Recorder, host string, cmds []string) error {
+	r.Connect(host)
+	// TODO(1): Make sure the connection is closed on every return path.
+	for _, cmd := range cmds {
+		if err := r.Run(cmd); err != nil {
+			return err
+		}
+	}
+	r.Close(host)
+	return nil
+}
+
+// Migrate takes the "migrations" lock, connects to host and runs "migrate".
+func Migrate(r *Recorder, host string) error {
+	// TODO(2): Lock "migrations" and connect to host, deferring the matching
+	// Unlock and Close. Then run "migrate" and return its error.
+	return nil
+}
+
+// Backup connects to host and runs "dump" then "upload".
+func Backup(r *Recorder, host string) (err error) {
+	r.Connect(host)
+	defer r.Close(host)
+	// TODO(3): Defer a closure that prefixes any error with "backup <host>: ".
+
+	if err := r.Run("dump"); err != nil {
+		return err
+	}
+	return r.Run("upload")
+}

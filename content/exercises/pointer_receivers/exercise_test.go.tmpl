@@ -1,0 +1,109 @@
+package receivers
+
+import "testing"
+
+func TestCounter(t *testing.T) {
+	t.Run("Inc on a zero counter", func(t *testing.T) {
+		var c Counter
+		c.Inc()
+		c.Inc()
+		c.Inc()
+		if c.Count != 3 {
+			t.Errorf("after 3 calls to Inc(), Count = %d, want 3", c.Count)
+		}
+	})
+	t.Run("Inc through a pointer", func(t *testing.T) {
+		c := &Counter{Count: 10}
+		c.Inc()
+		if c.Count != 11 {
+			t.Errorf("Counter{Count: 10}.Inc() left Count = %d, want 11", c.Count)
+		}
+	})
+	t.Run("Reset after Inc", func(t *testing.T) {
+		var c Counter
+		c.Inc()
+		c.Inc()
+		c.Reset()
+		if c.Count != 0 {
+			t.Errorf("after Inc(), Inc(), Reset(), Count = %d, want 0", c.Count)
+		}
+	})
+	t.Run("Reset a large counter", func(t *testing.T) {
+		c := &Counter{Count: 42}
+		c.Reset()
+		if c.Count != 0 {
+			t.Errorf("Counter{Count: 42}.Reset() left Count = %d, want 0", c.Count)
+		}
+	})
+}
+
+func TestAccept(t *testing.T) {
+	tests := []struct {
+		name            string
+		server          Server
+		want            bool
+		wantConnections int
+	}{
+		{"idle server accepts", Server{Name: "web-1"}, true, 1},
+		{"busy server accepts", Server{Name: "web-2", Connections: 4}, true, 5},
+		{"draining server refuses", Server{Name: "web-3", Draining: true, Connections: 3}, false, 3},
+		{"empty draining server refuses", Server{Name: "web-4", Draining: true}, false, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := tc.server
+			if got := s.Accept(); got != tc.want {
+				t.Errorf("%+v.Accept() = %t, want %t", tc.server, got, tc.want)
+			}
+			if s.Connections != tc.wantConnections {
+				t.Errorf("after %+v.Accept(), Connections = %d, want %d", tc.server, s.Connections, tc.wantConnections)
+			}
+		})
+	}
+
+	t.Run("accept twice on a variable", func(t *testing.T) {
+		s := Server{Name: "web-5"}
+		s.Accept()
+		s.Accept()
+		if s.Connections != 2 {
+			t.Errorf("after 2 calls to Accept(), Connections = %d, want 2", s.Connections)
+		}
+	})
+}
+
+func TestDrain(t *testing.T) {
+	tests := []struct {
+		name   string
+		server Server
+		want   int
+	}{
+		{"busy server", Server{Name: "web-1", Connections: 7}, 7},
+		{"one connection", Server{Name: "web-2", Connections: 1}, 1},
+		{"idle server", Server{Name: "web-3"}, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := tc.server
+			if got := s.Drain(); got != tc.want {
+				t.Errorf("%+v.Drain() = %d, want %d", tc.server, got, tc.want)
+			}
+			if !s.Draining {
+				t.Errorf("after %+v.Drain(), Draining = false, want true", tc.server)
+			}
+			if s.Connections != 0 {
+				t.Errorf("after %+v.Drain(), Connections = %d, want 0", tc.server, s.Connections)
+			}
+		})
+	}
+
+	t.Run("accept after drain", func(t *testing.T) {
+		s := Server{Name: "web-4", Connections: 2}
+		s.Drain()
+		if s.Accept() {
+			t.Errorf("Accept() after Drain() = true, want false")
+		}
+		if s.Connections != 0 {
+			t.Errorf("Accept() after Drain() left Connections = %d, want 0", s.Connections)
+		}
+	})
+}

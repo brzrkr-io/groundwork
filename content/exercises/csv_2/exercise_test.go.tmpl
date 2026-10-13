@@ -1,0 +1,169 @@
+package dnsrecords
+
+import (
+	"encoding/csv"
+	"errors"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestReadRecords(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []Record
+	}{
+		{
+			name:  "comment then two records",
+			input: "# zone example.com\napi\tA\t10.0.0.1\nwww\tCNAME\tapi.example.com\n",
+			want: []Record{
+				{Name: "api", Type: "A", Value: "10.0.0.1"},
+				{Name: "www", Type: "CNAME", Value: "api.example.com"},
+			},
+		},
+		{
+			name:  "comments and blank lines in between",
+			input: "mail\tMX\t10 mx1.example.com\n\n# legacy\nold\tA\t192.168.1.20\n",
+			want: []Record{
+				{Name: "mail", Type: "MX", Value: "10 mx1.example.com"},
+				{Name: "old", Type: "A", Value: "192.168.1.20"},
+			},
+		},
+		{
+			name:  "value containing a comma",
+			input: "_dmarc\tTXT\tv=DMARC1,p=none\n",
+			want: []Record{
+				{Name: "_dmarc", Type: "TXT", Value: "v=DMARC1,p=none"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReadRecords(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("ReadRecords(%q) returned error %q, want nil", tt.input, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ReadRecords(%q) = %+v, want %+v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+var errDiskFull = errors.New("disk full")
+
+// failingWriter is an io.Writer that always fails, like a full disk.
+type failingWriter struct{}
+
+func (failingWriter) Write(p []byte) (int, error) {
+	return 0, errDiskFull
+}
+
+func TestWriteRecords(t *testing.T) {
+	tests := []struct {
+		name    string
+		records []Record
+		want    string
+	}{
+		{
+			name: "two records",
+			records: []Record{
+				{Name: "api", Type: "A", Value: "10.0.0.1"},
+				{Name: "www", Type: "CNAME", Value: "api.example.com"},
+			},
+			want: "api\tA\t10.0.0.1\nwww\tCNAME\tapi.example.com\n",
+		},
+		{
+			name: "one record with a space in the value",
+			records: []Record{
+				{Name: "mail", Type: "MX", Value: "10 mx1.example.com"},
+			},
+			want: "mail\tMX\t10 mx1.example.com\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sb strings.Builder
+			if err := WriteRecords(&sb, tt.records); err != nil {
+				t.Fatalf("WriteRecords(%+v) returned error %q, want nil", tt.records, err)
+			}
+			if got := sb.String(); got != tt.want {
+				t.Errorf("WriteRecords(%+v) wrote %q, want %q", tt.records, got, tt.want)
+			}
+		})
+	}
+
+	failTests := []struct {
+		name    string
+		records []Record
+	}{
+		{name: "one record", records: []Record{{Name: "api", Type: "A", Value: "10.0.0.1"}}},
+		{name: "two records", records: []Record{
+			{Name: "db", Type: "A", Value: "10.0.0.3"},
+			{Name: "www", Type: "CNAME", Value: "api.example.com"},
+		}},
+	}
+	for _, tt := range failTests {
+		t.Run("failing writer, "+tt.name, func(t *testing.T) {
+			err := WriteRecords(failingWriter{}, tt.records)
+			if !errors.Is(err, errDiskFull) {
+				t.Errorf("WriteRecords(failingWriter, %+v) = %v, want %q", tt.records, err, errDiskFull)
+			}
+		})
+	}
+}
+
+func TestBadLines(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []int
+	}{
+		{
+			name:  "too few and too many fields",
+			input: "# zone example.com\napi\tA\t10.0.0.1\nwww\tCNAME\n\ndb\tA\t10.0.0.3\textra\n",
+			want:  []int{3, 5},
+		},
+		{
+			name:  "bad first record",
+			input: "api\t10.0.0.1\nwww\tCNAME\tapi.example.com\n# end\nmail\n",
+			want:  []int{1, 4},
+		},
+		{
+			name:  "no bad records",
+			input: "# zone example.com\napi\tA\t10.0.0.1\n",
+			want:  nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := BadLines(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("BadLines(%q) returned error %q, want nil", tt.input, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("BadLines(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+
+	quoteTests := []struct {
+		name  string
+		input string
+	}{
+		{name: "stray quote", input: "api\tTXT\tv=\"spf1\n"},
+		{name: "stray quote after a bad record", input: "www\tCNAME\nold\tTXT\tsay \"hi\"\n"},
+	}
+	for _, tt := range quoteTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := BadLines(strings.NewReader(tt.input))
+			if !errors.Is(err, csv.ErrBareQuote) {
+				t.Errorf("BadLines(%q) = %v, %v, want nil and an error wrapping csv.ErrBareQuote", tt.input, got, err)
+			}
+			if got != nil {
+				t.Errorf("BadLines(%q) = %v, want nil when there is an error", tt.input, got)
+			}
+		})
+	}
+}

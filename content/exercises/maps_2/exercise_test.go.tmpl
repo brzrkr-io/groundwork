@@ -1,0 +1,152 @@
+package deployconf
+
+import (
+	"maps"
+	"testing"
+)
+
+func TestReplicas(t *testing.T) {
+	replicas := map[string]int{"api": 5, "web": 3, "batch": 0, "cron": 0}
+	tests := []struct {
+		name    string
+		service string
+		want    int
+	}{
+		{"listed", "api", 5},
+		{"listed, other count", "web", 3},
+		{"scaled down", "batch", 0},
+		{"also scaled down", "cron", 0},
+		{"not listed", "worker", 2},
+		{"not listed either", "proxy", 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Replicas(replicas, tt.service); got != tt.want {
+				t.Errorf("Replicas(%v, %q) = %d, want %d", replicas, tt.service, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnset(t *testing.T) {
+	tests := []struct {
+		name  string
+		env   map[string]string
+		keys  []string
+		want  int
+		after map[string]string // what env should hold afterwards
+	}{
+		{
+			"one there, one missing",
+			map[string]string{"DEBUG": "1", "LOG_LEVEL": "info", "PORT": "8080"},
+			[]string{"DEBUG", "TRACE"},
+			1,
+			map[string]string{"LOG_LEVEL": "info", "PORT": "8080"},
+		},
+		{
+			"all there",
+			map[string]string{"DEBUG": "1", "TRACE": "1", "PORT": "8080"},
+			[]string{"DEBUG", "TRACE"},
+			2,
+			map[string]string{"PORT": "8080"},
+		},
+		{
+			"set to an empty value",
+			map[string]string{"PROXY": "", "PORT": "8080"},
+			[]string{"PROXY"},
+			1,
+			map[string]string{"PORT": "8080"},
+		},
+		{
+			"none there",
+			map[string]string{"PORT": "8080"},
+			[]string{"DEBUG", "TRACE"},
+			0,
+			map[string]string{"PORT": "8080"},
+		},
+		{
+			"same key twice",
+			map[string]string{"DEBUG": "1", "PORT": "8080"},
+			[]string{"DEBUG", "DEBUG"},
+			1,
+			map[string]string{"PORT": "8080"},
+		},
+		{
+			"no keys",
+			map[string]string{"PORT": "8080"},
+			nil,
+			0,
+			map[string]string{"PORT": "8080"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := maps.Clone(tt.env) // a copy, for the failure message
+			got := Unset(tt.env, tt.keys...)
+			if got != tt.want {
+				t.Errorf("Unset(%v, %q...) = %d, want %d", before, tt.keys, got, tt.want)
+			}
+			if !maps.Equal(tt.env, tt.after) {
+				t.Errorf("after Unset(%v, %q...), env = %v, want %v",
+					before, tt.keys, tt.env, tt.after)
+			}
+		})
+	}
+}
+
+func TestMerge(t *testing.T) {
+	tests := []struct {
+		name      string
+		defaults  map[string]string
+		overrides map[string]string
+		want      map[string]string
+	}{
+		{
+			"override and add",
+			map[string]string{"LOG_LEVEL": "info", "PORT": "8080"},
+			map[string]string{"LOG_LEVEL": "debug", "REGION": "eu-west-1"},
+			map[string]string{"LOG_LEVEL": "debug", "PORT": "8080", "REGION": "eu-west-1"},
+		},
+		{
+			"no overrides",
+			map[string]string{"LOG_LEVEL": "info", "PORT": "8080"},
+			nil,
+			map[string]string{"LOG_LEVEL": "info", "PORT": "8080"},
+		},
+		{
+			"no defaults",
+			nil,
+			map[string]string{"REGION": "us-east-1"},
+			map[string]string{"REGION": "us-east-1"},
+		},
+		{
+			"override everything",
+			map[string]string{"PORT": "8080"},
+			map[string]string{"PORT": "9090"},
+			map[string]string{"PORT": "9090"},
+		},
+		{
+			"nothing at all",
+			nil,
+			nil,
+			map[string]string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defaultsBefore := maps.Clone(tt.defaults)
+			overridesBefore := maps.Clone(tt.overrides)
+			got := Merge(tt.defaults, tt.overrides)
+			if !maps.Equal(got, tt.want) {
+				t.Errorf("Merge(%v, %v) = %v, want %v",
+					defaultsBefore, overridesBefore, got, tt.want)
+			}
+			if !maps.Equal(tt.defaults, defaultsBefore) {
+				t.Errorf("Merge changed defaults from %v to %v", defaultsBefore, tt.defaults)
+			}
+			if !maps.Equal(tt.overrides, overridesBefore) {
+				t.Errorf("Merge changed overrides from %v to %v", overridesBefore, tt.overrides)
+			}
+		})
+	}
+}

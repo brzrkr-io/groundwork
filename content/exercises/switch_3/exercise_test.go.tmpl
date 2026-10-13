@@ -1,0 +1,60 @@
+package switches
+
+import "testing"
+
+func TestPortService(t *testing.T) {
+	// Each line is one case: the input, then the answer we want.
+	tests := []struct {
+		port int
+		want string
+	}{
+		{22, "ssh"},
+		{80, "http"},
+		{8080, "http"},
+		{443, "https"},
+		{8443, "https"},
+		{5432, "postgres"},
+		{6379, "redis"},
+		{25, "system"},
+		{1023, "system"},
+		{1024, "unknown"},
+		{9000, "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := PortService(tt.port); got != tt.want {
+				t.Errorf("PortService(%d) = %q, want %q", tt.port, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestContainerAction(t *testing.T) {
+	// Each line is one case: the inputs, then the answer we want.
+	tests := []struct {
+		state    string
+		exitCode int
+		restarts int
+		want     string
+	}{
+		{"running", 0, 0, "none"},
+		{"running", 1, 7, "none"},
+		{"exited", 0, 0, "none"},
+		{"exited", 0, 9, "none"},
+		{"exited", 1, 2, "restart"},
+		{"exited", 137, 4, "restart"},
+		{"exited", 1, 5, "give up"},
+		{"exited", 2, 8, "give up"},
+		{"oomkilled", 137, 1, "add memory"},
+		{"oomkilled", 137, 6, "add memory"},
+		{"paused", 0, 0, "inspect"},
+		{"", 0, 0, "inspect"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.state, func(t *testing.T) {
+			if got := ContainerAction(tt.state, tt.exitCode, tt.restarts); got != tt.want {
+				t.Errorf("ContainerAction(%q, %d, %d) = %q, want %q", tt.state, tt.exitCode, tt.restarts, got, tt.want)
+			}
+		})
+	}
+}

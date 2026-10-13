@@ -1,0 +1,84 @@
+// Package logcount is the Gopherlings exercise "Practice: log level counter".
+package logcount
+
+import (
+	"cmp"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+)
+
+// standardLevels lists the four usual log levels, most severe first.
+var standardLevels = []string{"ERROR", "WARN", "INFO", "DEBUG"}
+
+// ParseLine splits a log line such as "2025-01-02T10:00:00Z ERROR db timeout"
+// into its level ("ERROR") and message ("db timeout"). ok is false when the
+// line has fewer than three fields.
+func ParseLine(line string) (level, message string, ok bool) {
+	fields := strings.Fields(line)
+	if len(fields) < 3 {
+		return "", "", false
+	}
+	return strings.ToUpper(fields[1]), strings.Join(fields[2:], " "), true
+}
+
+// CountLevels counts how many valid lines there are for each level.
+func CountLevels(lines []string) map[string]int {
+	counts := make(map[string]int)
+	for _, line := range lines {
+		level, _, ok := ParseLine(line)
+		if !ok {
+			continue
+		}
+		counts[level]++
+	}
+	return counts
+}
+
+// Summary formats counts as "ERROR=2 WARN=1 INFO=5 DEBUG=0", followed by any
+// other levels in alphabetical order.
+func Summary(counts map[string]int) string {
+	var parts []string
+	for _, level := range standardLevels {
+		parts = append(parts, fmt.Sprintf("%s=%d", level, counts[level]))
+	}
+	for _, level := range slices.Sorted(maps.Keys(counts)) {
+		if slices.Contains(standardLevels, level) {
+			continue // already written above
+		}
+		parts = append(parts, fmt.Sprintf("%s=%d", level, counts[level]))
+	}
+	return strings.Join(parts, " ")
+}
+
+// TopMessages returns up to n entries like "3x db timeout" for the most
+// repeated messages at the given level, highest count first and ties in
+// alphabetical order.
+func TopMessages(lines []string, level string, n int) []string {
+	counts := make(map[string]int)
+	for _, line := range lines {
+		lineLevel, message, ok := ParseLine(line)
+		if ok && lineLevel == level {
+			counts[message]++
+		}
+	}
+
+	messages := slices.Sorted(maps.Keys(counts))
+	slices.SortFunc(messages, func(a, b string) int {
+		// b before a: higher counts come first.
+		if c := cmp.Compare(counts[b], counts[a]); c != 0 {
+			return c
+		}
+		return cmp.Compare(a, b)
+	})
+	if len(messages) > n {
+		messages = messages[:n]
+	}
+
+	top := []string{}
+	for _, message := range messages {
+		top = append(top, fmt.Sprintf("%dx %s", counts[message], message))
+	}
+	return top
+}

@@ -1,0 +1,33 @@
+// Package mutexes is the Gopherlings exercise "Mutexes".
+package mutexes
+
+import "sync"
+
+// HitCounter counts requests per path. It is safe to use from many
+// goroutines at once.
+type HitCounter struct {
+	mu   sync.RWMutex // protects hits
+	hits map[string]int
+}
+
+// NewHitCounter returns an empty HitCounter.
+func NewHitCounter() *HitCounter {
+	return &HitCounter{hits: make(map[string]int)}
+}
+
+// Inc adds one hit for path.
+func (c *HitCounter) Inc(path string) {
+	// TODO(1): Hold the write lock while adding 1 to c.hits[path].
+}
+
+// Count returns the number of hits for path.
+func (c *HitCounter) Count(path string) int {
+	// TODO(2): Hold the read lock while reading c.hits[path].
+	return 0
+}
+
+// Snapshot returns a copy of every path's hit count.
+func (c *HitCounter) Snapshot() map[string]int {
+	// TODO(3): Hold the read lock and return a copy of c.hits.
+	return nil
+}

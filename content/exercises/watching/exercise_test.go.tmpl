@@ -1,0 +1,217 @@
+package watching
+
+import (
+	"context"
+	"fmt"
+	"slices"
+	"testing"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
+)
+
+// pod builds a Pod with just a namespace and a name.
+func pod(namespace, name string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+	}
+}
+
+func TestDescribe(t *testing.T) {
+	tests := []struct {
+		name string
+		ev   watch.Event
+		want string
+	}{
+		{"added", watch.Event{Type: watch.Added, Object: pod("shop", "web-1")}, "ADDED shop/web-1"},
+		{"modified", watch.Event{Type: watch.Modified, Object: pod("payments", "checkout-2")}, "MODIFIED payments/checkout-2"},
+		{"deleted", watch.Event{Type: watch.Deleted, Object: pod("staging", "api-1")}, "DELETED staging/api-1"},
+		{"error", watch.Event{Type: watch.Error, Object: &metav1.Status{Message: "too old resource version"}}, "ERROR"},
+		{"not a pod", watch.Event{Type: watch.Added, Object: &corev1.Service{}}, "ADDED"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Describe(tt.ev); got != tt.want {
+				t.Errorf("Describe(%s event) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCollect(t *testing.T) {
+	webEvents := []watch.Event{
+		{Type: watch.Added, Object: pod("shop", "web-1")},
+		{Type: watch.Added, Object: pod("shop", "web-2")},
+		{Type: watch.Modified, Object: pod("shop", "web-1")},
+	}
+	tests := []struct {
+		name   string
+		events []watch.Event // queued on the watch before Collect runs
+		closed bool          // whether the server closes the watch after them
+		n      int
+		want   []string
+	}{
+		{"stops after 2", webEvents, false, 2, []string{"ADDED shop/web-1", "ADDED shop/web-2"}},
+		{"stops after 1", webEvents, false, 1, []string{"ADDED shop/web-1"}},
+		{"closed after 3", webEvents, true, 5, []string{"ADDED shop/web-1", "ADDED shop/web-2", "MODIFIED shop/web-1"}},
+		{"closed with no events", nil, true, 3, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A fake watch with room for 10 events, so the test can queue
+			// them before Collect starts reading.
+			fw := watch.NewFakeWithChanSize(10, false)
+			for _, ev := range tt.events {
+				fw.Action(ev.Type, ev.Object)
+			}
+			if tt.closed {
+				fw.Stop() // closes the channel, like a server ending the watch
+			}
+
+			done := make(chan []string, 1)
+			go func() { done <- Collect(fw, tt.n) }()
+			select {
+			case got := <-done:
+				if !slices.Equal(got, tt.want) {
+					t.Errorf("Collect(w, %d) = %q, want %q", tt.n, got, tt.want)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatalf("Collect(w, %d) did not return within 2s, want it to stop after %d events or when the channel is closed", tt.n, tt.n)
+			}
+			if !fw.IsStopped() {
+				t.Errorf("after Collect(w, %d) the watch is not stopped, want w.Stop() to be called", tt.n)
+			}
+		})
+	}
+}
+
+func TestWatchPods(t *testing.T) {
+	t.Run("shop until cancelled", func(t *testing.T) {
+		watchUntilCancelled(t, "shop", []string{"ADDED web-1", "ADDED api-7", "MODIFIED api-7", "DELETED api-7"})
+	})
+	t.Run("payments until cancelled", func(t *testing.T) {
+		watchUntilCancelled(t, "payments", []string{"ADDED checkout-1", "ADDED api-7", "MODIFIED api-7", "DELETED api-7"})
+	})
+	t.Run("server closes with no events", func(t *testing.T) {
+		watchUntilServerCloses(t, nil)
+	})
+	t.Run("server closes after two events", func(t *testing.T) {
+		watchUntilServerCloses(t, []string{"web-1", "web-2"})
+	})
+}
+
+// watchUntilCancelled runs WatchPods against a fake cluster, changes a Pod,
+// checks the events that reach handle, then cancels ctx.
+func watchUntilCancelled(t *testing.T, namespace string, want []string) {
+	// shop/web-1 and payments/checkout-1 exist before the watch starts.
+	cs := fake.NewClientset(pod("shop", "web-1"), pod("payments", "checkout-1"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	seen := make(chan string, 10)
+	done := make(chan error, 1)
+	go func() { done <- WatchPods(ctx, cs, namespace, recorder(seen)) }()
+
+	// The first event shows that the watch has started.
+	got := []string{next(t, seen, done)}
+
+	// Create, update and delete a Pod while WatchPods is running.
+	pods := cs.CoreV1().Pods(namespace)
+	p, err := pods.Create(ctx, pod(namespace, "api-7"), metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Labels = map[string]string{"version": "2"}
+	if _, err := pods.Update(ctx, p, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pods.Delete(ctx, "api-7", metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	for len(got) < len(want) {
+		got = append(got, next(t, seen, done))
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("WatchPods(ctx, cs, %q, handle) events = %q, want %q", namespace, got, want)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("WatchPods(ctx, cs, %q, handle) = %v after ctx was cancelled, want nil", namespace, err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("WatchPods(ctx, cs, %q, handle) did not return within 2s of ctx being cancelled", namespace)
+	}
+}
+
+// watchUntilServerCloses queues an ADDED event for each named Pod on a fake
+// watch, closes it the way a server ends a watch, and runs WatchPods on it.
+func watchUntilServerCloses(t *testing.T, queued []string) {
+	fw := watch.NewFakeWithChanSize(10, false)
+	var want []string
+	for _, name := range queued {
+		fw.Add(pod("shop", name))
+		want = append(want, "ADDED "+name)
+	}
+	fw.Stop()
+
+	// PrependWatchReactor makes the fake clientset hand out fw for every Pod
+	// watch.
+	cs := fake.NewClientset()
+	cs.PrependWatchReactor("pods", k8stesting.DefaultWatchReactor(fw, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	seen := make(chan string, 10)
+	done := make(chan error, 1)
+	go func() { done <- WatchPods(ctx, cs, "shop", recorder(seen)) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("WatchPods(ctx, cs, %q, handle) = %v after the server closed the watch, want nil", "shop", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("WatchPods(ctx, cs, %q, handle) did not return within 2s of the server closing the watch", "shop")
+	}
+	close(seen)
+	var got []string
+	for s := range seen {
+		got = append(got, s)
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("WatchPods(ctx, cs, %q, handle) events = %q, want %q", "shop", got, want)
+	}
+}
+
+// recorder returns a handler that sends "<TYPE> <pod name>" to seen for
+// every event.
+func recorder(seen chan<- string) func(watch.Event) {
+	return func(ev watch.Event) {
+		name := "(not a pod)"
+		if p, ok := ev.Object.(*corev1.Pod); ok {
+			name = p.Name
+		}
+		seen <- fmt.Sprintf("%s %s", ev.Type, name)
+	}
+}
+
+// next waits up to 2s for the next event that WatchPods passes to handle.
+func next(t *testing.T, seen <-chan string, done <-chan error) string {
+	t.Helper()
+	select {
+	case s := <-seen:
+		return s
+	case err := <-done:
+		t.Fatalf("WatchPods returned %v before ctx was cancelled, want it to keep watching", err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("no event within 2s, want WatchPods to call handle for every event")
+	}
+	return ""
+}

@@ -1,0 +1,67 @@
+package alerts
+
+import "testing"
+
+func TestAlert(t *testing.T) {
+	tests := []struct {
+		name     string
+		severity string
+		hosts    []string
+		want     string
+	}{
+		{"two hosts", "critical", []string{"web-1", "web-2"}, "critical: web-1, web-2"},
+		{"three hosts", "warning", []string{"db-1", "db-2", "db-3"}, "warning: db-1, db-2, db-3"},
+		{"one host", "warning", []string{"db-1"}, "warning: db-1"},
+		{"one other host", "info", []string{"cache-7"}, "info: cache-7"},
+		{"no hosts", "critical", nil, "critical: no hosts"},
+		{"no hosts, other severity", "warning", nil, "warning: no hosts"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Alert(tt.severity, tt.hosts...); got != tt.want {
+				t.Errorf("Alert(%q, %q...) = %q, want %q", tt.severity, tt.hosts, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPageOnCall(t *testing.T) {
+	tests := []struct {
+		name string
+		down []string
+		want string
+	}{
+		{"three hosts", []string{"web-1", "web-2", "web-3"}, "critical: web-1, web-2, web-3"},
+		{"two hosts", []string{"db-1", "db-2"}, "critical: db-1, db-2"},
+		{"one host", []string{"lb-1"}, "critical: lb-1"},
+		{"no hosts", nil, "critical: no hosts"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PageOnCall(tt.down); got != tt.want {
+				t.Errorf("PageOnCall(%q) = %q, want %q", tt.down, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWarnCanary(t *testing.T) {
+	tests := []struct {
+		name   string
+		canary string
+		others []string
+		want   string
+	}{
+		{"two others", "canary-1", []string{"web-1", "web-2"}, "warning: canary-1, web-1, web-2"},
+		{"one other", "canary-2", []string{"api-1"}, "warning: canary-2, api-1"},
+		{"no others", "canary-1", nil, "warning: canary-1"},
+		{"no others, other canary", "canary-9", []string{}, "warning: canary-9"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := WarnCanary(tt.canary, tt.others); got != tt.want {
+				t.Errorf("WarnCanary(%q, %q) = %q, want %q", tt.canary, tt.others, got, tt.want)
+			}
+		})
+	}
+}

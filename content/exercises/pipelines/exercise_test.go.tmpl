@@ -1,0 +1,114 @@
+package pipelines
+
+import (
+	"slices"
+	"testing"
+	"time"
+)
+
+// receiveAll receives from ch until it is closed and returns everything it
+// got. If nothing arrives for 2 seconds, it fails the test instead of hanging.
+func receiveAll[T any](t *testing.T, ch <-chan T) []T {
+	t.Helper()
+	if ch == nil {
+		t.Fatal("the stage returned a nil channel")
+	}
+	var got []T
+	for {
+		select {
+		case v, ok := <-ch:
+			if !ok {
+				return got
+			}
+			got = append(got, v)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("waited 2s for a value after receiving %v: is the output channel closed when the stage finishes?", got)
+		}
+	}
+}
+
+// sendAll returns a closed, buffered channel holding values.
+func sendAll[T any](values []T) <-chan T {
+	ch := make(chan T, len(values))
+	for _, v := range values {
+		ch <- v
+	}
+	close(ch)
+	return ch
+}
+
+func TestGenerate(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+	}{
+		{"two lines", []string{"INFO started", "ERROR disk full"}},
+		{"three lines", []string{"WARN slow", "INFO ok", "ERROR timeout"}},
+		{"no lines", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := receiveAll(t, Generate(tt.lines))
+			if !slices.Equal(got, tt.lines) {
+				t.Errorf("Generate(%q) carried %q, want %q", tt.lines, got, tt.lines)
+			}
+		})
+	}
+}
+
+func TestParse(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		want  []Entry
+	}{
+		{
+			"levels and messages",
+			[]string{"ERROR disk full", "INFO started on :8080"},
+			[]Entry{{"ERROR", "disk full"}, {"INFO", "started on :8080"}},
+		},
+		{
+			"line without a space",
+			[]string{"HEARTBEAT", "WARN slow query"},
+			[]Entry{{"HEARTBEAT", ""}, {"WARN", "slow query"}},
+		},
+		{"no lines", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := receiveAll(t, Parse(sendAll(tt.lines)))
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Parse(%q) carried %v, want %v", tt.lines, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestOnlyLevel(t *testing.T) {
+	t.Run("filters entries", func(t *testing.T) {
+		entries := []Entry{{"INFO", "started"}, {"ERROR", "disk full"}, {"WARN", "slow"}, {"ERROR", "timeout"}}
+		tests := []struct {
+			level string
+			want  []Entry
+		}{
+			{"ERROR", []Entry{{"ERROR", "disk full"}, {"ERROR", "timeout"}}},
+			{"WARN", []Entry{{"WARN", "slow"}}},
+			{"DEBUG", nil},
+		}
+		for _, tt := range tests {
+			got := receiveAll(t, OnlyLevel(sendAll(entries), tt.level))
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("OnlyLevel(%v, %q) carried %v, want %v", entries, tt.level, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("whole pipeline", func(t *testing.T) {
+		lines := []string{"INFO started", "ERROR disk full", "WARN slow", "ERROR timeout"}
+		got := receiveAll(t, OnlyLevel(Parse(Generate(lines)), "ERROR"))
+		want := []Entry{{"ERROR", "disk full"}, {"ERROR", "timeout"}}
+		if !slices.Equal(got, want) {
+			t.Errorf("OnlyLevel(Parse(Generate(%q)), %q) carried %v, want %v", lines, "ERROR", got, want)
+		}
+	})
+}

@@ -1,0 +1,65 @@
+package constants
+
+import "testing"
+
+func TestSidecarPort(t *testing.T) {
+	tests := []struct {
+		name string
+		n    int
+		want int
+	}{
+		{name: "first sidecar", n: 1, want: 8081},
+		{name: "second sidecar", n: 2, want: 8082},
+		{name: "tenth sidecar", n: 10, want: 8090},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SidecarPort(tt.n)
+			if got != tt.want {
+				t.Errorf("SidecarPort(%d) = %d, want %d", tt.n, got, tt.want)
+			}
+		})
+	}
+	if DefaultPort != 8080 {
+		t.Errorf("DefaultPort = %d, want 8080", DefaultPort)
+	}
+}
+
+func TestDNSName(t *testing.T) {
+	tests := []struct {
+		name          string
+		clusterDomain string
+		want          string
+	}{
+		{name: "default domain", clusterDomain: "cluster.local", want: "checkout.payments.svc.cluster.local"},
+		{name: "custom domain", clusterDomain: "k8s.internal", want: "checkout.payments.svc.k8s.internal"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DNSName(tt.clusterDomain)
+			if got != tt.want {
+				t.Errorf("DNSName(%q) = %q, want %q", tt.clusterDomain, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSpareReplicas(t *testing.T) {
+	tests := []struct {
+		name    string
+		running int
+		want    int
+	}{
+		{name: "three running", running: 3, want: 7},
+		{name: "at the limit", running: 10, want: 0},
+		{name: "none running", running: 0, want: 10},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SpareReplicas(tt.running)
+			if got != tt.want {
+				t.Errorf("SpareReplicas(%d) = %d, want %d", tt.running, got, tt.want)
+			}
+		})
+	}
+}

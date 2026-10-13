@@ -1,0 +1,120 @@
+// Package health is the Gopherlings exercise "Health checks: readiness gates".
+package health
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+// Check is one named dependency check. Run returns nil when the dependency
+// is healthy.
+type Check struct {
+	Name string
+	Run  func(ctx context.Context) error
+}
+
+// Result is the outcome of running one Check.
+type Result struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+// Report is the JSON body that the readiness endpoint sends.
+type Report struct {
+	Status string   `json:"status"`
+	Checks []Result `json:"checks,omitempty"`
+}
+
+// WriteReport sends report as JSON with the given HTTP status code.
+func WriteReport(w http.ResponseWriter, code int, report Report) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code) // must come before the first Write
+	json.NewEncoder(w).Encode(report)
+}
+
+// runCheck runs c with a context that expires after timeout.
+func runCheck(ctx context.Context, c Check, timeout time.Duration) Result {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	if err := c.Run(ctx); err != nil {
+		return Result{Name: c.Name, Status: "fail", Error: err.Error()}
+	}
+	return Result{Name: c.Name, Status: "ok"}
+}
+
+// RunChecks runs all checks at the same time and returns their results in
+// the same order as checks.
+func RunChecks(ctx context.Context, checks []Check, timeout time.Duration) []Result {
+	results := make([]Result, len(checks))
+	var wg sync.WaitGroup
+	for i, c := range checks {
+		// Each goroutine writes only its own element, so no mutex is needed.
+		wg.Go(func() {
+			results[i] = runCheck(ctx, c, timeout)
+		})
+	}
+	wg.Wait()
+	return results
+}
+
+// Gate decides whether this pod should get traffic. The zero value is a
+// gate that is still starting up.
+type Gate struct {
+	ready    atomic.Bool
+	draining atomic.Bool
+}
+
+// MarkReady records that startup has finished.
+func (g *Gate) MarkReady() {
+	g.ready.Store(true)
+}
+
+// MarkDraining records that the pod is shutting down.
+func (g *Gate) MarkDraining() {
+	g.draining.Store(true)
+}
+
+// State returns "draining", "starting" or "ready".
+func (g *Gate) State() string {
+	switch {
+	case g.draining.Load():
+		return "draining"
+	case !g.ready.Load():
+		return "starting"
+	default:
+		return "ready"
+	}
+}
+
+// Readyz returns the readiness handler. It answers 503 unless the gate is
+// ready, and otherwise reports the result of the checks.
+func (g *Gate) Readyz(checks []Check, timeout time.Duration) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if state := g.State(); state != "ready" {
+			WriteReport(w, http.StatusServiceUnavailable, Report{Status: state})
+			return
+		}
+
+		report := Report{Status: "ok", Checks: RunChecks(r.Context(), checks, timeout)}
+		code := http.StatusOK
+		for _, res := range report.Checks {
+			if res.Status != "ok" {
+				report.Status = "fail"
+				code = http.StatusServiceUnavailable
+			}
+		}
+		WriteReport(w, code, report)
+	})
+}
+
+// Livez answers the liveness probe. It stays 200 while starting and draining.
+func Livez(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "ok\n")
+}

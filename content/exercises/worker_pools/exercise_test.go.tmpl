@@ -1,0 +1,183 @@
+package workerpool
+
+import (
+	"fmt"
+	"slices"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+var healthy = map[string]bool{"web-1": true, "web-2": false, "db-1": true, "db-2": true, "cache-1": false}
+
+func check(host string) bool { return healthy[host] }
+
+// within runs f and fails the test if f has not returned after 2 seconds.
+func within(t *testing.T, call string, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s did not return within 2s", call)
+	}
+}
+
+func TestWorker(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+		want  []Result
+	}{
+		{"two jobs", []string{"web-1", "web-2"}, []Result{{0, "web-1", true}, {1, "web-2", false}}},
+		{"three jobs", []string{"db-1", "cache-1", "db-2"}, []Result{{0, "db-1", true}, {1, "cache-1", false}, {2, "db-2", true}}},
+		{"no jobs", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jobs := make(chan Job, len(tt.hosts))
+			for i, host := range tt.hosts {
+				jobs <- Job{Index: i, Host: host}
+			}
+			close(jobs)
+			results := make(chan Result, len(tt.hosts)+1) // room for every result
+
+			within(t, "worker (with jobs already closed)", func() {
+				worker(jobs, results, check)
+			})
+
+			var got []Result
+			for range len(results) {
+				got = append(got, <-results)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("worker sent %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStartWorkers(t *testing.T) {
+	tests := []struct {
+		name        string
+		hosts       int
+		workers     int
+		wantMax     int           // the most checks running at once
+		wantElapsed time.Duration // each check takes 1s
+	}{
+		{"3 workers, 3 hosts", 3, 3, 3, 1 * time.Second},
+		{"3 workers, 10 hosts", 10, 3, 3, 4 * time.Second},
+		{"2 workers, 5 hosts", 5, 2, 2, 3 * time.Second},
+		{"1 worker, 3 hosts", 3, 1, 1, 3 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// synctest.Test gives the test a fake clock: sleeps finish
+			// instantly, but time.Now moves forward by the right amount.
+			synctest.Test(t, func(t *testing.T) {
+				jobs := make(chan Job, tt.hosts)
+				for i := range tt.hosts {
+					jobs <- Job{Index: i, Host: fmt.Sprintf("host-%d", i)}
+				}
+				close(jobs)
+
+				var mu sync.Mutex
+				running, maxRunning := 0, 0
+				slowCheck := func(host string) bool {
+					mu.Lock()
+					running++
+					maxRunning = max(maxRunning, running)
+					mu.Unlock()
+
+					time.Sleep(time.Second) // each check takes 1 second
+
+					mu.Lock()
+					running--
+					mu.Unlock()
+					return true
+				}
+
+				start := time.Now()
+				results := startWorkers(tt.workers, jobs, slowCheck)
+				if results == nil {
+					t.Fatal("startWorkers returned a nil channel")
+				}
+
+				got := receiveIndexes(t, results, tt.hosts)
+				elapsed := time.Since(start)
+
+				slices.Sort(got)
+				if want := indexes(tt.hosts); !slices.Equal(got, want) {
+					t.Errorf("got results for indexes %v, want %v", got, want)
+				}
+				if maxRunning != tt.wantMax {
+					t.Errorf("with %d workers, at most %d checks ran at once, want %d", tt.workers, maxRunning, tt.wantMax)
+				}
+				if elapsed != tt.wantElapsed {
+					t.Errorf("checking %d hosts with %d workers took %v, want %v", tt.hosts, tt.workers, elapsed, tt.wantElapsed)
+				}
+			})
+		})
+	}
+}
+
+// receiveIndexes receives from results until it is closed and returns the
+// Index of every result. It fails the test if results is never closed.
+func receiveIndexes(t *testing.T, results <-chan Result, want int) []int {
+	t.Helper()
+	var got []int
+	for {
+		select {
+		case r, ok := <-results:
+			if !ok {
+				return got // closed: every worker is done
+			}
+			got = append(got, r.Index)
+		case <-time.After(time.Hour):
+			t.Fatalf("results was never closed (received %d of %d results)", len(got), want)
+		}
+	}
+}
+
+// indexes returns 0, 1, ..., n-1.
+func indexes(n int) []int {
+	var out []int
+	for i := range n {
+		out = append(out, i)
+	}
+	return out
+}
+
+func TestCollect(t *testing.T) {
+	t.Run("puts results in input order", func(t *testing.T) {
+		results := make(chan Result, 3)
+		results <- Result{2, "db-1", true}
+		results <- Result{0, "web-1", true}
+		results <- Result{1, "web-2", false}
+		close(results)
+
+		var got []Result
+		within(t, "collect", func() { got = collect(results, 3) })
+
+		want := []Result{{0, "web-1", true}, {1, "web-2", false}, {2, "db-1", true}}
+		if !slices.Equal(got, want) {
+			t.Errorf("collect = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("CheckAll end to end", func(t *testing.T) {
+		hosts := []string{"web-1", "web-2", "db-1", "db-2", "cache-1"}
+		var got []Result
+		within(t, "CheckAll", func() { got = CheckAll(hosts, 2, check) })
+
+		want := []Result{{0, "web-1", true}, {1, "web-2", false}, {2, "db-1", true}, {3, "db-2", true}, {4, "cache-1", false}}
+		if !slices.Equal(got, want) {
+			t.Errorf("CheckAll(%q, 2) = %v, want %v", hosts, got, want)
+		}
+	})
+}

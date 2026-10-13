@@ -1,0 +1,91 @@
+package customerr2
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestPortInUseErrorMessage(t *testing.T) {
+	tests := []struct {
+		port  int
+		owner string
+		want  string
+	}{
+		{8080, "nginx", `port 8080 is already used by "nginx"`},
+		{5432, "postgres", `port 5432 is already used by "postgres"`},
+		{9090, "prometheus", `port 9090 is already used by "prometheus"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.owner, func(t *testing.T) {
+			err := &PortInUseError{Port: tt.port, Owner: tt.owner}
+			if got := err.Error(); got != tt.want {
+				t.Errorf("(&PortInUseError{Port: %d, Owner: %q}).Error() = %q, want %q",
+					tt.port, tt.owner, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReserve(t *testing.T) {
+	t.Run("free ports return nil", func(t *testing.T) {
+		used := map[int]string{8080: "nginx"}
+		for _, port := range []int{9090, 3000} {
+			err := Reserve(used, port, "api")
+			if err != nil {
+				// %T shows the type stored inside the error interface.
+				t.Errorf("Reserve(used, %d, %q) returned a non-nil error holding %T, want nil", port, "api", err)
+			}
+			if used[port] != "api" {
+				t.Errorf("after Reserve(used, %d, %q), used[%d] = %q, want %q", port, "api", port, used[port], "api")
+			}
+		}
+	})
+
+	t.Run("taken ports return a *PortInUseError", func(t *testing.T) {
+		used := map[int]string{8080: "nginx", 5432: "postgres"}
+		tests := []struct {
+			port  int
+			owner string
+		}{
+			{8080, "nginx"},
+			{5432, "postgres"},
+		}
+		for _, tt := range tests {
+			port, owner := tt.port, tt.owner
+			err := Reserve(used, port, "api")
+			perr, ok := err.(*PortInUseError)
+			if !ok || perr == nil {
+				t.Errorf("Reserve(used, %d, %q) = %v (type %T), want a *PortInUseError", port, "api", err, err)
+				continue
+			}
+			if perr.Port != port || perr.Owner != owner {
+				t.Errorf("Reserve(used, %d, %q) = &PortInUseError{Port: %d, Owner: %q}, want &PortInUseError{Port: %d, Owner: %q}",
+					port, "api", perr.Port, perr.Owner, port, owner)
+			}
+			if used[port] != owner {
+				t.Errorf("after Reserve(used, %d, %q), used[%d] = %q, want it unchanged (%q)", port, "api", port, used[port], owner)
+			}
+		}
+	})
+}
+
+func TestAdvice(t *testing.T) {
+	tests := []struct {
+		name string // the argument, written as Go code
+		err  error
+		want string
+	}{
+		{`nil`, nil, "ok"},
+		{`&PortInUseError{Port: 8080, Owner: "nginx"}`, &PortInUseError{Port: 8080, Owner: "nginx"}, `stop "nginx" or choose a port other than 8080`},
+		{`&PortInUseError{Port: 5432, Owner: "postgres"}`, &PortInUseError{Port: 5432, Owner: "postgres"}, `stop "postgres" or choose a port other than 5432`},
+		{`errors.New("port registry unreachable")`, errors.New("port registry unreachable"), "unexpected error: port registry unreachable"},
+		{`errors.New("permission denied")`, errors.New("permission denied"), "unexpected error: permission denied"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Advice(tt.err); got != tt.want {
+				t.Errorf("Advice(%s) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}

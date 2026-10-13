@@ -1,0 +1,37 @@
+// Package httpserver is the Gopherlings exercise "HTTP servers: handlers and routes".
+package httpserver
+
+import (
+	"fmt"
+	"net/http"
+)
+
+// Catalog maps each service name to the version that is deployed.
+type Catalog map[string]string
+
+// Healthz answers load balancer health checks with "ok".
+func Healthz(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	fmt.Fprint(w, "ok\n")
+}
+
+// ServeService reports the deployed version of the service named in the
+// path, as in GET /services/payments.
+func (c Catalog) ServeService(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	version, ok := c[name]
+	if !ok {
+		http.Error(w, "unknown service: "+name, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("X-Service-Version", version)
+	fmt.Fprintf(w, "%s %s\n", name, version)
+}
+
+// NewMux returns a router that serves the health check and the catalog.
+func NewMux(c Catalog) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", Healthz)
+	mux.HandleFunc("GET /services/{name}", c.ServeService)
+	return mux
+}

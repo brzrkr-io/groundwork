@@ -1,0 +1,97 @@
+package drift
+
+// This file is complete. Read it to see how the actual state is gathered from
+// AWS, but you do not need to change it.
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
+)
+
+// BucketAPI is the part of the S3 client that Actual needs. *s3.Client
+// satisfies it; the tests use a fake.
+type BucketAPI interface {
+	ListBuckets(ctx context.Context, in *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error)
+	GetBucketTagging(ctx context.Context, in *s3.GetBucketTaggingInput, optFns ...func(*s3.Options)) (*s3.GetBucketTaggingOutput, error)
+}
+
+// The real S3 client must keep satisfying BucketAPI.
+var _ BucketAPI = (*s3.Client)(nil)
+
+// Actual returns what really exists in AWS: every S3 bucket and every EC2
+// instance, with their tags.
+func Actual(ctx context.Context, buckets BucketAPI, instances ec2.DescribeInstancesAPIClient) ([]Resource, error) {
+	var out []Resource
+
+	list, err := buckets.ListBuckets(ctx, &s3.ListBucketsInput{})
+	if err != nil {
+		return nil, fmt.Errorf("list buckets: %w", err)
+	}
+	for _, b := range list.Buckets {
+		name := aws.ToString(b.Name)
+		tags, err := bucketTags(ctx, buckets, name)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, Resource{Kind: "bucket", Name: name, Tags: tags})
+	}
+
+	p := ec2.NewDescribeInstancesPaginator(instances, &ec2.DescribeInstancesInput{})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("describe instances: %w", err)
+		}
+		for _, r := range page.Reservations {
+			for _, inst := range r.Instances {
+				// Terminated instances stay visible for about an hour.
+				// They are gone, so they are not part of the actual state.
+				if inst.State != nil && inst.State.Name == ec2types.InstanceStateNameTerminated {
+					continue
+				}
+				out = append(out, instanceResource(inst))
+			}
+		}
+	}
+	return out, nil
+}
+
+// bucketTags returns the tags of one bucket. S3 answers a bucket without any
+// tags with the error code "NoSuchTagSet", which is not a real failure.
+func bucketTags(ctx context.Context, api BucketAPI, name string) (map[string]string, error) {
+	tags := map[string]string{}
+	out, err := api.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{Bucket: aws.String(name)})
+	if apiErr, ok := errors.AsType[smithy.APIError](err); ok && apiErr.ErrorCode() == "NoSuchTagSet" {
+		return tags, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get tags for bucket %s: %w", name, err)
+	}
+	for _, t := range out.TagSet {
+		tags[aws.ToString(t.Key)] = aws.ToString(t.Value)
+	}
+	return tags, nil
+}
+
+// instanceResource turns an EC2 instance into a Resource. The instance's name
+// comes from its "Name" tag (falling back to the instance ID), so "Name" is
+// not repeated in Tags.
+func instanceResource(inst ec2types.Instance) Resource {
+	r := Resource{Kind: "instance", Name: aws.ToString(inst.InstanceId), Tags: map[string]string{}}
+	for _, t := range inst.Tags {
+		key, value := aws.ToString(t.Key), aws.ToString(t.Value)
+		if key == "Name" {
+			r.Name = value
+			continue
+		}
+		r.Tags[key] = value
+	}
+	return r
+}

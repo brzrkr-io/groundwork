@@ -1,0 +1,67 @@
+// Package retry is the Gopherlings exercise "Retries: backoff and jitter".
+package retry
+
+import (
+	"context"
+	"errors"
+	"time"
+)
+
+// ErrTemporary marks a failure that may go away if you try again.
+// Operations wrap it: fmt.Errorf("GET /healthz: 503: %w", ErrTemporary).
+var ErrTemporary = errors.New("temporary failure")
+
+// Backoff returns how long to wait after the given attempt (counting from 0):
+// base doubled attempt times, but never more than limit.
+func Backoff(attempt int, base, limit time.Duration) time.Duration {
+	d := base
+	for range attempt {
+		d *= 2
+		// Stop as soon as we reach the limit, so huge attempt numbers
+		// can't overflow.
+		if d >= limit {
+			return limit
+		}
+	}
+	return d
+}
+
+// Jitter spreads out a wait d using equal jitter: d/2 + rnd()*d/2.
+// rnd returns a number from 0 up to (but not including) 1.
+func Jitter(d time.Duration, rnd func() float64) time.Duration {
+	half := d / 2
+	return half + time.Duration(rnd()*float64(half))
+}
+
+// Policy says how Do retries an operation.
+type Policy struct {
+	// MaxAttempts is the most times Do calls the operation, including the
+	// first try.
+	MaxAttempts int
+	// Base is the wait after the first failure; Max caps every wait.
+	Base, Max time.Duration
+	// Rand returns a random number from 0 up to 1, used for jitter.
+	Rand func() float64
+	// Sleep waits for d, or returns an error if ctx is cancelled first.
+	Sleep func(ctx context.Context, d time.Duration) error
+}
+
+// Do calls op until it succeeds, fails permanently, or runs out of attempts.
+// It waits between attempts using exponential backoff with jitter.
+func Do(ctx context.Context, p Policy, op func(context.Context) error) error {
+	var err error
+	for attempt := range p.MaxAttempts {
+		err = op(ctx)
+		if err == nil || !errors.Is(err, ErrTemporary) {
+			return err
+		}
+		if attempt == p.MaxAttempts-1 {
+			break
+		}
+		wait := Jitter(Backoff(attempt, p.Base, p.Max), p.Rand)
+		if sleepErr := p.Sleep(ctx, wait); sleepErr != nil {
+			return sleepErr
+		}
+	}
+	return err
+}

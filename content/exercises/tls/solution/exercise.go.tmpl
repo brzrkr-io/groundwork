@@ -1,0 +1,46 @@
+// Package tlscheck is the Gopherlings exercise "TLS: trust a CA and read certificates".
+package tlscheck
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"net/http"
+	"time"
+)
+
+// DaysUntilExpiry returns the whole days from now until cert expires.
+// Expired certificates give zero or a negative number.
+func DaysUntilExpiry(cert *x509.Certificate, now time.Time) int {
+	return int(cert.NotAfter.Sub(now) / (24 * time.Hour))
+}
+
+// NewClient returns an HTTP client that trusts only servers signed by ca
+// and refuses TLS versions older than 1.2.
+func NewClient(ca *x509.Certificate) *http.Client {
+	pool := x509.NewCertPool()
+	pool.AddCert(ca)
+	return &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:    pool,
+				MinVersion: tls.VersionTLS12,
+			},
+		},
+	}
+}
+
+// PeerCertificate sends a GET request to url and returns the certificate
+// the server presented.
+func PeerCertificate(client *http.Client, url string) (*x509.Certificate, error) {
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.TLS == nil {
+		return nil, fmt.Errorf("%s is not using TLS", url)
+	}
+	return resp.TLS.PeerCertificates[0], nil
+}

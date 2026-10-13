@@ -1,0 +1,57 @@
+// Package dotenv is the Gopherlings exercise "Practice: .env file parser".
+package dotenv
+
+import (
+	"errors"
+	"io"
+	"regexp"
+)
+
+// Errors returned by Unquote and ParseLine. Check for them with errors.Is.
+var (
+	ErrUnterminatedQuote = errors.New("unterminated quote")
+	ErrMissingEquals     = errors.New(`missing "="`)
+	ErrInvalidKey        = errors.New("invalid key")
+)
+
+// validKey matches a valid variable name: a letter or underscore, followed by
+// letters, digits or underscores.
+var validKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// Unquote removes one pair of matching single or double quotes around value.
+// A value that opens a quote without closing it is an error.
+func Unquote(value string) (string, error) {
+	// TODO(1): Strip matching quotes, or return ErrUnterminatedQuote.
+	return value, nil
+}
+
+// ParseLine splits one KEY=VALUE line into its key and value. The line must
+// not be blank or a comment.
+func ParseLine(line string) (key, value string, err error) {
+	// TODO(2): Trim, drop "export " and split at the first "=" into key and
+	// value. You will need to import "strings".
+
+	if !validKey.MatchString(key) {
+		// TODO(2): Wrap ErrInvalidKey with the key, as the README shows.
+		// You will need to import "fmt".
+		return "", "", ErrInvalidKey
+	}
+
+	// TODO(2): Unquote the value.
+	return key, value, nil
+}
+
+// Parse reads a .env file and returns its variables. It reports every
+// invalid line, each prefixed with its line number.
+func Parse(r io.Reader) (map[string]string, error) {
+	// TODO(3): Scan r line by line, skip blank and comment lines, collect the
+	// errors from ParseLine and join them. You will need to import "bufio".
+	return nil, nil
+}
+
+// Environ returns vars as "KEY=VALUE" strings, sorted by key.
+func Environ(vars map[string]string) []string {
+	// TODO(4): Sort the keys and build the list. You will need to import
+	// "slices".
+	return nil
+}

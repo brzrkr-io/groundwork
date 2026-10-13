@@ -1,0 +1,55 @@
+// Package pods is the Gopherlings exercise "Decoding JSON: fix the kubectl pod reader".
+package pods
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+)
+
+// Metadata holds a pod's identity.
+type Metadata struct {
+	Name string `json:"name"`
+	// TODO(2): This field is never filled in. Fix it, then update Ref.
+	namespace string `json:"namespace"`
+}
+
+// Status holds a pod's current state.
+type Status struct {
+	// TODO(2): This tag doesn't match the JSON key. Fix it.
+	Phase string `json:"state"`
+}
+
+// Pod is one pod from `kubectl get pods -o json`.
+type Pod struct {
+	Metadata Metadata `json:"metadata"`
+	Status   Status   `json:"status"`
+}
+
+// Ref returns the pod as "namespace/name", the way kubectl prints it.
+func (p Pod) Ref() string {
+	return p.Metadata.namespace + "/" + p.Metadata.Name
+}
+
+// PodList is the top-level object kubectl prints for a list of pods.
+type PodList struct {
+	Items []Pod `json:"items"`
+}
+
+// DecodePods decodes a PodList and returns its items.
+func DecodePods(data []byte) ([]Pod, error) {
+	var list PodList
+	// TODO(1): This always fails on valid JSON. Fix the bug.
+	if err := json.Unmarshal(data, list); err != nil {
+		return nil, fmt.Errorf("decode pods: %w", err)
+	}
+	return list.Items, nil
+}
+
+// CountPhases reads a stream of pod objects from r and counts them by phase.
+func CountPhases(r io.Reader) (map[string]int, error) {
+	counts := map[string]int{}
+	// TODO(3): Decode pods from r one at a time until io.EOF, counting each
+	// pod's Status.Phase. Wrap errors as "pod N: %w".
+	return counts, nil
+}

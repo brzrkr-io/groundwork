@@ -1,0 +1,115 @@
+package generics3
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestLatest(t *testing.T) {
+	lineTests := []struct {
+		name   string
+		pushes []string
+		want   string
+		wantOK bool
+	}{
+		{"empty ring", nil, "", false},
+		{"one line", []string{"deploy started"}, "deploy started", true},
+		{"newest of two", []string{"deploy started", "deploy finished"}, "deploy finished", true},
+		{"newest of three", []string{"pull image", "start pod", "pod ready"}, "pod ready", true},
+	}
+	for _, tt := range lineTests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := NewRing[string](5)
+			for _, line := range tt.pushes {
+				r.Push(line)
+			}
+			got, ok := r.Latest()
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("after Push(%q): Latest() = %q, %v, want %q, %v", tt.pushes, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+
+	t.Run("deploys", func(t *testing.T) {
+		r := NewRing[Deploy](5)
+		r.Push(Deploy{Service: "api", Version: "1.4.0"})
+		r.Push(Deploy{Service: "web", Version: "2.0.1"})
+		want := Deploy{Service: "web", Version: "2.0.1"}
+		got, ok := r.Latest()
+		if got != want || !ok {
+			t.Errorf("Latest() = %+v, %v, want %+v, true", got, ok, want)
+		}
+	})
+}
+
+func TestPush(t *testing.T) {
+	tests := []struct {
+		name   string
+		limit  int
+		pushes []string
+		want   []string
+	}{
+		{"under the limit", 3, []string{"v1", "v2"}, []string{"v1", "v2"}},
+		{"exactly full", 2, []string{"v1", "v2"}, []string{"v1", "v2"}},
+		{"drops the oldest", 2, []string{"v1", "v2", "v3"}, []string{"v2", "v3"}},
+		{"drops several", 3, []string{"v1", "v2", "v3", "v4", "v5"}, []string{"v3", "v4", "v5"}},
+		{"limit of one", 1, []string{"v1", "v2", "v3"}, []string{"v3"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := NewRing[string](tt.limit)
+			for _, v := range tt.pushes {
+				r.Push(v)
+			}
+			// The test is in the same package, so it can read r.items directly.
+			if !slices.Equal(r.items, tt.want) {
+				t.Errorf("NewRing(%d) then Push(%q): ring holds %q, want %q", tt.limit, tt.pushes, r.items, tt.want)
+			}
+		})
+	}
+}
+
+func TestItems(t *testing.T) {
+	orderTests := []struct {
+		name   string
+		pushes []string
+		want   []string
+	}{
+		{"oldest first", []string{"pull image", "start pod", "pod ready"}, []string{"pull image", "start pod", "pod ready"}},
+		{"one line", []string{"health check ok"}, []string{"health check ok"}},
+		{"empty ring", nil, []string{}},
+	}
+	for _, tt := range orderTests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := NewRing[string](5)
+			for _, line := range tt.pushes {
+				r.Push(line)
+			}
+			if got := r.Items(); !slices.Equal(got, tt.want) {
+				t.Errorf("after Push(%q): Items() = %q, want %q", tt.pushes, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("returns a copy of strings", func(t *testing.T) {
+		r := NewRing[string](5)
+		r.Push("v1")
+		r.Push("v2")
+		items := r.Items()
+		items[0] = "changed"
+		if got := r.Items()[0]; got != "v1" {
+			t.Errorf("after changing the result of Items(), Items()[0] = %q, want %q", got, "v1")
+		}
+	})
+
+	t.Run("returns a copy of deploys", func(t *testing.T) {
+		r := NewRing[Deploy](5)
+		r.Push(Deploy{Service: "api", Version: "1.4.0"})
+		r.Push(Deploy{Service: "web", Version: "2.0.1"})
+		items := r.Items()
+		items[0].Version = "9.9.9"
+		if got := r.Items()[0].Version; got != "1.4.0" {
+			t.Errorf("after changing the result of Items(), Items()[0].Version = %q, want %q", got, "1.4.0")
+		}
+	})
+}

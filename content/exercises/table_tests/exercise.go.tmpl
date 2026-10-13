@@ -1,0 +1,32 @@
+// Package disk is the Gopherlings exercise "Table-driven tests".
+package disk
+
+// DiskAlert turns how full a disk is, as a percentage from 0 to 100, into an
+// alert level:
+//
+//	below 0 or above 100 -> "invalid"
+//	90 or more           -> "critical"
+//	80 or more           -> "warning"
+//	anything else        -> "ok"
+//
+// This code is correct. Your job in this exercise is to write a test for it.
+func DiskAlert(usedPercent int) string {
+	return diskAlert(usedPercent)
+}
+
+// diskAlert points at the real implementation. Gopherlings' grader swaps in
+// broken versions to check that your test catches them.
+var diskAlert = realDiskAlert
+
+func realDiskAlert(usedPercent int) string {
+	switch {
+	case usedPercent < 0 || usedPercent > 100:
+		return "invalid"
+	case usedPercent >= 90:
+		return "critical"
+	case usedPercent >= 80:
+		return "warning"
+	default:
+		return "ok"
+	}
+}

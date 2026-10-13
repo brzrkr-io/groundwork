@@ -1,0 +1,59 @@
+package retry
+
+import (
+	"errors"
+	"slices"
+	"testing"
+	"time"
+)
+
+// fakeSleeper records each duration instead of sleeping, so tests run
+// instantly and can check the backoff.
+type fakeSleeper struct {
+	slept []time.Duration
+}
+
+func (f *fakeSleeper) Sleep(d time.Duration) {
+	f.slept = append(f.slept, d)
+}
+
+func TestRetrySucceedsOnThirdTry(t *testing.T) {
+	s := &fakeSleeper{}
+	calls := 0
+	fn := func() error {
+		calls++
+		if calls < 3 {
+			return errors.New("connection refused")
+		}
+		return nil
+	}
+
+	if err := Retry(s, 5, fn); err != nil {
+		t.Fatalf("Retry returned error %v, want nil", err)
+	}
+	if calls != 3 {
+		t.Errorf("fn was called %d times, want 3", calls)
+	}
+	if want := []time.Duration{time.Second, 2 * time.Second}; !slices.Equal(s.slept, want) {
+		t.Errorf("Retry slept %v, want %v", s.slept, want)
+	}
+}
+
+func TestRetryGivesUp(t *testing.T) {
+	s := &fakeSleeper{}
+	calls := 0
+	fn := func() error {
+		calls++
+		return errors.New("connection refused")
+	}
+
+	if err := Retry(s, 3, fn); err == nil {
+		t.Errorf("Retry returned nil, want an error")
+	}
+	if calls != 3 {
+		t.Errorf("fn was called %d times, want 3", calls)
+	}
+	if want := []time.Duration{time.Second, 2 * time.Second}; !slices.Equal(s.slept, want) {
+		t.Errorf("Retry slept %v, want %v", s.slept, want)
+	}
+}

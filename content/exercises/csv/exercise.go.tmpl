@@ -1,0 +1,37 @@
+// Package inventory is the Gopherlings exercise "CSV files: a host inventory".
+package inventory
+
+import (
+	"encoding/csv"
+	"io"
+)
+
+// Host is one machine from the inventory.
+type Host struct {
+	Name   string
+	Region string
+	Owner  string
+}
+
+// ReadHosts reads a CSV inventory with a header row and returns its hosts.
+func ReadHosts(r io.Reader) ([]Host, error) {
+	// TODO(1): Read all records, map the header's column names to their
+	// positions, check the hostname, region and owner columns exist, and
+	// build one Host per data row.
+	return nil, nil
+}
+
+// WriteHosts writes hosts as CSV with the header hostname,region,owner.
+func WriteHosts(w io.Writer, hosts []Host) error {
+	cw := csv.NewWriter(w)
+	// TODO(2): Write the header record, then one record per host.
+
+	cw.Flush()
+	return cw.Error()
+}
+
+// FilterCSV copies the hosts in region from the inventory in r to w as CSV.
+func FilterCSV(r io.Reader, w io.Writer, region string) error {
+	// TODO(3): Read the hosts, keep the ones in region, and write them.
+	return nil
+}

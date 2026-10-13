@@ -1,0 +1,84 @@
+package text
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestCharCount(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want int
+	}{
+		{"ascii", "deploy", 6},
+		{"accent", "café", 4},
+		{"emoji", "🚀 done", 6},
+		{"cyrillic", "сервер", 6},
+		{"empty", "", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CharCount(tt.s); got != tt.want {
+				t.Errorf("CharCount(%q) = %d, want %d", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  string
+		n    int
+		want string
+	}{
+		{"long ascii", "deploy finished", 6, "deploy..."},
+		{"long alert", "disk almost full on db-1", 4, "disk..."},
+		{"short", "ok", 10, "ok"},
+		{"exactly n", "canary", 6, "canary"},
+		{"accent at the cut", "café crashed", 4, "café..."},
+		{"accent fits", "café", 4, "café"},
+		{"emoji", "🚀🚀🚀 launch", 2, "🚀🚀..."},
+		{"emoji fits", "🚀 go", 4, "🚀 go"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Truncate(tt.msg, tt.n); got != tt.want {
+				t.Errorf("Truncate(%q, %d) = %q, want %q", tt.msg, tt.n, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidLabel(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want bool
+	}{
+		{"word", "production", true},
+		{"version", "v1.2.3", true},
+		{"mixed", "Api_gateway-2", true},
+		{"single character", "a", true},
+		{"63 characters", strings.Repeat("a", 63), true},
+		{"64 characters", strings.Repeat("a", 64), false},
+		{"empty", "", false},
+		{"starts with dash", "-canary", false},
+		{"starts with dot", ".hidden", false},
+		{"ends with dot", "canary.", false},
+		{"ends with underscore", "canary_", false},
+		{"space", "eu west", false},
+		{"slash", "team/api", false},
+		{"accented letter", "café", false},
+		{"arabic digit", "v٣", false},
+		{"emoji", "ship🚀it", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ValidLabel(tt.s); got != tt.want {
+				t.Errorf("ValidLabel(%q) = %t, want %t", tt.s, got, tt.want)
+			}
+		})
+	}
+}

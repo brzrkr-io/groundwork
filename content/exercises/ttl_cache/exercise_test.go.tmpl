@@ -1,0 +1,180 @@
+package cache
+
+import (
+	"fmt"
+	"sync"
+	"testing"
+	"time"
+)
+
+// fakeClock is a clock the test moves by hand.
+type fakeClock struct {
+	t time.Time
+}
+
+func (c *fakeClock) now() time.Time          { return c.t }
+func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
+
+func newClock() *fakeClock {
+	return &fakeClock{t: time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)}
+}
+
+// wantGet checks that c.Get(k) returns want, wantOK.
+func wantGet(t *testing.T, c *Cache[string, string], k, want string, wantOK bool) {
+	t.Helper()
+	got, ok := c.Get(k)
+	if got != want || ok != wantOK {
+		t.Errorf("Get(%q) = %q, %t, want %q, %t", k, got, ok, want, wantOK)
+	}
+}
+
+func TestSetGet(t *testing.T) {
+	t.Run("missing keys", func(t *testing.T) {
+		c := New[string, string](time.Minute, newClock().now)
+		wantGet(t, c, "web-1", "", false)
+		wantGet(t, c, "db-1", "", false)
+	})
+
+	t.Run("fresh entries", func(t *testing.T) {
+		clock := newClock()
+		c := New[string, string](time.Minute, clock.now)
+		c.Set("web-1", "eu-west-1")
+		c.Set("db-1", "us-east-1")
+		clock.advance(30 * time.Second)
+		wantGet(t, c, "web-1", "eu-west-1", true)
+		wantGet(t, c, "db-1", "us-east-1", true)
+	})
+
+	t.Run("expires exactly ttl after Set", func(t *testing.T) {
+		clock := newClock()
+		c := New[string, string](time.Minute, clock.now)
+		c.Set("web-1", "eu-west-1")
+		clock.advance(time.Minute - time.Nanosecond)
+		wantGet(t, c, "web-1", "eu-west-1", true)
+		clock.advance(time.Nanosecond) // now == expiresAt
+		wantGet(t, c, "web-1", "", false)
+		clock.advance(time.Hour)
+		wantGet(t, c, "web-1", "", false)
+	})
+
+	t.Run("Set replaces the value and the expiry", func(t *testing.T) {
+		clock := newClock()
+		c := New[string, string](time.Minute, clock.now)
+		c.Set("web-1", "eu-west-1")
+		clock.advance(40 * time.Second)
+		c.Set("web-1", "eu-central-1")
+		clock.advance(40 * time.Second) // 80s after the first Set
+		wantGet(t, c, "web-1", "eu-central-1", true)
+	})
+
+	t.Run("other key and value types", func(t *testing.T) {
+		c := New[int, bool](time.Minute, newClock().now)
+		c.Set(443, true)
+		if got, ok := c.Get(443); !got || !ok {
+			t.Errorf("Get(443) = %t, %t, want true, true", got, ok)
+		}
+		if got, ok := c.Get(80); got || ok {
+			t.Errorf("Get(80) = %t, %t, want false, false", got, ok)
+		}
+	})
+}
+
+func TestDeleteAndLen(t *testing.T) {
+	t.Run("counts and deletes entries", func(t *testing.T) {
+		c := New[string, string](time.Minute, newClock().now)
+		if got := c.Len(); got != 0 {
+			t.Errorf("Len() of a new cache = %d, want 0", got)
+		}
+		c.Set("web-1", "eu-west-1")
+		c.Set("web-2", "eu-west-1")
+		c.Set("db-1", "us-east-1")
+		c.Set("db-1", "us-east-2") // replaces, does not add
+		if got := c.Len(); got != 3 {
+			t.Errorf("Len() after setting 3 keys = %d, want 3", got)
+		}
+		c.Delete("web-2")
+		c.Delete("cache-9") // missing: nothing happens
+		if got := c.Len(); got != 2 {
+			t.Errorf("Len() after Delete(%q) = %d, want 2", "web-2", got)
+		}
+		wantGet(t, c, "web-2", "", false)
+		wantGet(t, c, "web-1", "eu-west-1", true)
+	})
+
+	t.Run("expired entries count until removed", func(t *testing.T) {
+		clock := newClock()
+		c := New[string, string](time.Minute, clock.now)
+		c.Set("web-1", "eu-west-1")
+		c.Set("web-2", "eu-west-1")
+		clock.advance(2 * time.Minute)
+		if got := c.Len(); got != 2 {
+			t.Errorf("Len() with 2 expired entries = %d, want 2", got)
+		}
+		c.Get("web-1") // finds it expired and deletes it
+		if got := c.Len(); got != 1 {
+			t.Errorf("Len() after Get of an expired entry = %d, want 1", got)
+		}
+	})
+
+	t.Run("safe for concurrent use", func(t *testing.T) {
+		c := New[string, string](time.Minute, newClock().now)
+		var wg sync.WaitGroup
+		for i := range 20 {
+			wg.Go(func() {
+				host := fmt.Sprintf("web-%d", i)
+				temp := fmt.Sprintf("tmp-%d", i)
+				c.Set(host, "eu-west-1")
+				c.Set(temp, "eu-west-1")
+				c.Get(host)
+				c.Len()
+				c.Delete(temp)
+			})
+		}
+		wg.Wait()
+		if got := c.Len(); got != 20 {
+			t.Errorf("Len() after 20 goroutines each kept one key = %d, want 20", got)
+		}
+	})
+}
+
+func TestCleanup(t *testing.T) {
+	t.Run("removes only expired entries", func(t *testing.T) {
+		clock := newClock()
+		c := New[string, string](time.Minute, clock.now)
+		c.Set("web-1", "eu-west-1") // expires at 09:01:00
+		clock.advance(30 * time.Second)
+		c.Set("web-2", "eu-west-1") // expires at 09:01:30
+		clock.advance(20 * time.Second)
+		c.Set("db-1", "us-east-1") // expires at 09:01:50
+
+		clock.advance(10 * time.Second) // 09:01:00
+		if got := c.Cleanup(); got != 1 {
+			t.Errorf("Cleanup() at 09:01:00 = %d, want 1", got)
+		}
+		clock.advance(30 * time.Second) // 09:01:30
+		if got := c.Cleanup(); got != 1 {
+			t.Errorf("Cleanup() at 09:01:30 = %d, want 1", got)
+		}
+		if got := c.Len(); got != 1 {
+			t.Errorf("Len() after both cleanups = %d, want 1", got)
+		}
+		wantGet(t, c, "db-1", "us-east-1", true)
+	})
+
+	t.Run("nothing to remove", func(t *testing.T) {
+		clock := newClock()
+		c := New[string, string](time.Minute, clock.now)
+		if got := c.Cleanup(); got != 0 {
+			t.Errorf("Cleanup() on an empty cache = %d, want 0", got)
+		}
+		c.Set("web-1", "eu-west-1")
+		c.Set("web-2", "eu-west-1")
+		if got := c.Cleanup(); got != 0 {
+			t.Errorf("Cleanup() with 2 fresh entries = %d, want 0", got)
+		}
+		clock.advance(time.Minute)
+		if got := c.Cleanup(); got != 2 {
+			t.Errorf("Cleanup() with 2 expired entries = %d, want 2", got)
+		}
+	})
+}

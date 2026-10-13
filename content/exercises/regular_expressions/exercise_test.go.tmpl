@@ -1,0 +1,103 @@
+package regex
+
+import "testing"
+
+func TestIsSemverTag(t *testing.T) {
+	tests := []struct {
+		tag  string
+		want bool
+	}{
+		{"v1.4.2", true},
+		{"v10.0.15", true},
+		{"v0.0.1", true},
+		{"1.4.2", false},
+		{"v1.4", false},
+		{"v1.4.2-rc.1", false},
+		{"xv1.4.2", false},
+		{"v1.4.x", false},
+		{"v1x4x2", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			if got := IsSemverTag(tt.tag); got != tt.want {
+				t.Errorf("IsSemverTag(%q) = %v, want %v", tt.tag, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseSemver(t *testing.T) {
+	tests := []struct {
+		tag    string
+		want   Version
+		wantOK bool
+	}{
+		{"v1.4.2", Version{Major: 1, Minor: 4, Patch: 2}, true},
+		{"v10.0.15", Version{Major: 10, Minor: 0, Patch: 15}, true},
+		{"v0.31.0", Version{Major: 0, Minor: 31, Patch: 0}, true},
+		{"1.4.2", Version{}, false},
+		{"v1.4.2-rc.1", Version{}, false},
+		{"latest", Version{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			got, ok := ParseSemver(tt.tag)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("ParseSemver(%q) = %+v, %v, want %+v, %v", tt.tag, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestParseLogLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want LogLine
+	}{
+		{
+			name: "error line",
+			line: "2026-10-11T09:14:03Z ERROR [payments] connection refused",
+			want: LogLine{Time: "2026-10-11T09:14:03Z", Level: "ERROR", Service: "payments", Message: "connection refused"},
+		},
+		{
+			name: "info line",
+			line: "2026-10-11T09:15:40Z INFO [api-gateway] GET /healthz 200 [cached]",
+			want: LogLine{Time: "2026-10-11T09:15:40Z", Level: "INFO", Service: "api-gateway", Message: "GET /healthz 200 [cached]"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseLogLine(tt.line)
+			if err != nil {
+				t.Fatalf("ParseLogLine(%q) returned error %q, want no error", tt.line, err)
+			}
+			if got != tt.want {
+				t.Errorf("ParseLogLine(%q) = %+v, want %+v", tt.line, got, tt.want)
+			}
+		})
+	}
+
+	bad := []struct {
+		name string
+		line string
+	}{
+		{"plain text", "hello world"},
+		{"empty", ""},
+		{"lowercase level", "2026-10-11T09:14:03Z error [payments] connection refused"},
+		{"no brackets", "2026-10-11T09:14:03Z ERROR payments connection refused"},
+	}
+	for _, tt := range bad {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseLogLine(tt.line)
+			want := "not a log line: \"" + tt.line + "\""
+			if err == nil {
+				t.Fatalf("ParseLogLine(%q) returned no error, want %q", tt.line, want)
+			}
+			if err.Error() != want {
+				t.Errorf("ParseLogLine(%q) error = %q, want %q", tt.line, err.Error(), want)
+			}
+		})
+	}
+}

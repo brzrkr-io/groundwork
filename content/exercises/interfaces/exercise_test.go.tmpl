@@ -1,0 +1,132 @@
+package interfaces
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestSlackAndEmailNotify(t *testing.T) {
+	tests := []struct {
+		name  string
+		n     Notifier
+		alert Alert
+		want  string
+	}{
+		{
+			name:  "slack to ops",
+			n:     Slack{Channel: "ops"},
+			alert: Alert{Service: "api", Message: "disk full"},
+			want:  "slack #ops: [api] disk full",
+		},
+		{
+			name:  "slack to payments-alerts",
+			n:     Slack{Channel: "payments-alerts"},
+			alert: Alert{Service: "checkout", Message: "error rate above 5%"},
+			want:  "slack #payments-alerts: [checkout] error rate above 5%",
+		},
+		{
+			name:  "email to oncall",
+			n:     Email{To: "oncall@example.com"},
+			alert: Alert{Service: "api", Message: "disk full"},
+			want:  "email oncall@example.com: [api] disk full",
+		},
+		{
+			name:  "email to dba",
+			n:     Email{To: "dba@example.com"},
+			alert: Alert{Service: "postgres", Message: "replica lag 30s"},
+			want:  "email dba@example.com: [postgres] replica lag 30s",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.n.Notify(tt.alert); got != tt.want {
+				t.Errorf("%#v.Notify(%#v) = %q, want %q", tt.n, tt.alert, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNotifyAll(t *testing.T) {
+	diskFull := Alert{Service: "api", Message: "disk full"}
+	certExpiring := Alert{Service: "ingress", Message: "certificate expires in 3 days"}
+
+	tests := []struct {
+		name  string
+		ns    []Notifier
+		alert Alert
+		want  []string
+	}{
+		{
+			name:  "slack then email",
+			ns:    []Notifier{Slack{Channel: "ops"}, Email{To: "oncall@example.com"}},
+			alert: diskFull,
+			want: []string{
+				"slack #ops: [api] disk full",
+				"email oncall@example.com: [api] disk full",
+			},
+		},
+		{
+			name: "order is kept",
+			ns: []Notifier{
+				Email{To: "security@example.com"},
+				Slack{Channel: "ops"},
+				Slack{Channel: "platform"},
+			},
+			alert: certExpiring,
+			want: []string{
+				"email security@example.com: [ingress] certificate expires in 3 days",
+				"slack #ops: [ingress] certificate expires in 3 days",
+				"slack #platform: [ingress] certificate expires in 3 days",
+			},
+		},
+		{
+			name:  "no notifiers",
+			ns:    []Notifier{},
+			alert: diskFull,
+			want:  []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NotifyAll(tt.ns, tt.alert)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("NotifyAll(%#v, %#v) = %q, want %q", tt.ns, tt.alert, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPagerDutyNotify(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		alert Alert
+		want  string
+	}{
+		{
+			name:  "api disk full",
+			key:   "key-123",
+			alert: Alert{Service: "api", Message: "disk full"},
+			want:  "pagerduty key-123: [api] disk full",
+		},
+		{
+			name:  "node not ready",
+			key:   "platform-7f3a",
+			alert: Alert{Service: "kubelet", Message: "node worker-2 not ready"},
+			want:  "pagerduty platform-7f3a: [kubelet] node worker-2 not ready",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Ask "does PagerDuty satisfy Notifier?" without breaking the
+			// build while the method is still missing.
+			n, ok := any(PagerDuty{ServiceKey: tt.key}).(Notifier)
+			if !ok {
+				t.Fatal("PagerDuty does not satisfy Notifier yet: it needs a method Notify(a Alert) string")
+			}
+			if got := n.Notify(tt.alert); got != tt.want {
+				t.Errorf("PagerDuty{ServiceKey: %q}.Notify(%#v) = %q, want %q", tt.key, tt.alert, got, tt.want)
+			}
+		})
+	}
+}

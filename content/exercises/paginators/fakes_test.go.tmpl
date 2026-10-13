@@ -1,0 +1,150 @@
+package pager
+
+// This file holds the pretend AWS clients the tests use. You don't need to
+// change it, but reading it shows exactly how pages and tokens work.
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+)
+
+// The fakes satisfy the same small SDK interfaces as *s3.Client and
+// *ec2.Client, so the functions you write accept either.
+var (
+	_ s3.ListObjectsV2APIClient      = (*fakeS3)(nil)
+	_ ec2.DescribeInstancesAPIClient = (*fakeEC2)(nil)
+)
+
+// maxCalls stops a fake from serving pages forever if the code under test
+// gets stuck in a loop.
+const maxCalls = 20
+
+// fakeS3 pretends to be one S3 bucket. Like real S3, it answers
+// ListObjectsV2 one page at a time: at most pageSize keys per page (fewer if
+// the request's MaxKeys is smaller), plus a continuation token while more
+// keys remain.
+type fakeS3 struct {
+	bucket   string
+	keys     []string // every key in the bucket, sorted
+	pageSize int
+	failCall int   // if > 0, this call (1 = the first) returns failErr
+	failErr  error // the error for failCall
+	calls    int   // how many times ListObjectsV2 was called
+}
+
+// ListObjectsV2 serves one page of keys.
+func (f *fakeS3) ListObjectsV2(ctx context.Context, in *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+	f.calls++
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if f.calls > maxCalls {
+		return nil, fmt.Errorf("fakeS3: more than %d ListObjectsV2 calls, is the code stuck in a loop?", maxCalls)
+	}
+	if f.calls == f.failCall {
+		return nil, f.failErr
+	}
+	if got := aws.ToString(in.Bucket); got != f.bucket {
+		return nil, fmt.Errorf("fakeS3: no such bucket %q", got)
+	}
+
+	var matching []string
+	for _, k := range f.keys {
+		if strings.HasPrefix(k, aws.ToString(in.Prefix)) {
+			matching = append(matching, k)
+		}
+	}
+
+	// The token is just the position of the next key. Real tokens are long
+	// random-looking strings, but they work the same way.
+	start := 0
+	if in.ContinuationToken != nil {
+		n, err := strconv.Atoi(*in.ContinuationToken)
+		if err != nil || n < 0 || n > len(matching) {
+			return nil, fmt.Errorf("fakeS3: invalid continuation token %q", *in.ContinuationToken)
+		}
+		start = n
+	}
+	size := f.pageSize
+	if in.MaxKeys != nil && int(*in.MaxKeys) > 0 && int(*in.MaxKeys) < size {
+		size = int(*in.MaxKeys)
+	}
+	end := min(start+size, len(matching))
+
+	out := &s3.ListObjectsV2Output{
+		Name:        in.Bucket,
+		Prefix:      in.Prefix,
+		KeyCount:    aws.Int32(int32(end - start)),
+		IsTruncated: aws.Bool(end < len(matching)),
+	}
+	for _, k := range matching[start:end] {
+		out.Contents = append(out.Contents, s3types.Object{Key: aws.String(k)})
+	}
+	if end < len(matching) {
+		out.NextContinuationToken = aws.String(strconv.Itoa(end))
+	}
+	return out, nil
+}
+
+// fakeEC2 pretends to be an AWS account's EC2 instances. pages[0] is the
+// first page of DescribeInstances, pages[1] the second, and so on.
+type fakeEC2 struct {
+	pages       [][]types.Reservation
+	failCall    int   // if > 0, this call (1 = the first) returns failErr
+	failErr     error // the error for failCall
+	cancelAfter int   // if > 0, cancel is called right after serving this call
+	cancel      context.CancelFunc
+	calls       int // how many times DescribeInstances was called
+}
+
+// DescribeInstances serves one page of reservations.
+func (f *fakeEC2) DescribeInstances(ctx context.Context, in *ec2.DescribeInstancesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	f.calls++
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if f.calls > maxCalls {
+		return nil, fmt.Errorf("fakeEC2: more than %d DescribeInstances calls, is the code stuck in a loop?", maxCalls)
+	}
+	if f.calls == f.failCall {
+		return nil, f.failErr
+	}
+
+	i := 0
+	if in.NextToken != nil {
+		n, err := strconv.Atoi(*in.NextToken)
+		if err != nil || n < 1 || n >= len(f.pages) {
+			return nil, fmt.Errorf("fakeEC2: invalid NextToken %q", *in.NextToken)
+		}
+		i = n
+	}
+
+	out := &ec2.DescribeInstancesOutput{}
+	if i < len(f.pages) {
+		out.Reservations = f.pages[i]
+	}
+	if i+1 < len(f.pages) {
+		out.NextToken = aws.String(strconv.Itoa(i + 1))
+	}
+	if f.calls == f.cancelAfter {
+		f.cancel()
+	}
+	return out, nil
+}
+
+// reservation builds one EC2 reservation holding instances with the given IDs.
+func reservation(ids ...string) types.Reservation {
+	var r types.Reservation
+	for _, id := range ids {
+		r.Instances = append(r.Instances, types.Instance{InstanceId: aws.String(id)})
+	}
+	return r
+}

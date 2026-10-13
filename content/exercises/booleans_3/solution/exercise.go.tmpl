@@ -1,0 +1,18 @@
+// Package booleans is the Gopherlings exercise "Booleans: autoscaler decisions".
+package booleans
+
+// ShouldScaleUp reports whether the autoscaler should add a replica.
+func ShouldScaleUp(cpuPercent, replicas, maxReplicas int, cooldown bool) bool {
+	return cpuPercent > 75 && replicas < maxReplicas && !cooldown
+}
+
+// ShouldScaleDown reports whether the autoscaler should remove a replica.
+func ShouldScaleDown(cpuPercent, replicas, minReplicas int, cooldown bool) bool {
+	return cpuPercent < 25 && replicas > minReplicas && !cooldown
+}
+
+// IsStable reports whether the autoscaler would neither scale up nor down.
+func IsStable(cpuPercent, replicas, minReplicas, maxReplicas int, cooldown bool) bool {
+	return !ShouldScaleUp(cpuPercent, replicas, maxReplicas, cooldown) &&
+		!ShouldScaleDown(cpuPercent, replicas, minReplicas, cooldown)
+}

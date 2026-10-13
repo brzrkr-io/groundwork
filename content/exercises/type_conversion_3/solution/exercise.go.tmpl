@@ -1,0 +1,22 @@
+// Package conversion is the Gopherlings exercise "Type conversion: report disk usage".
+package conversion
+
+import "strconv"
+
+// MiBToGiB converts a size in MiB to GiB.
+func MiBToGiB(mib int) float64 {
+	return float64(mib) / 1024
+}
+
+// GiBString returns a size in MiB as GiB text, such as "1.5 GiB".
+func GiBString(mib int) string {
+	return strconv.FormatFloat(MiBToGiB(mib), 'f', 1, 64) + " GiB"
+}
+
+// DiskLine returns a disk usage line, such as
+// "/var: 1.5 GiB of 2.0 GiB used (75%)".
+func DiskLine(mount string, usedMiB, totalMiB int) string {
+	pct := float64(usedMiB) / float64(totalMiB) * 100
+	return mount + ": " + GiBString(usedMiB) + " of " + GiBString(totalMiB) +
+		" used (" + strconv.Itoa(int(pct)) + "%)"
+}

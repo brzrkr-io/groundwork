@@ -1,0 +1,4 @@
+NAME         IP
+web-1        10.0.1.15
+web-2        10.0.1.16
+db-primary   10.0.2.5

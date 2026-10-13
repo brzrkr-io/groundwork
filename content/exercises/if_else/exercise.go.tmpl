@@ -1,0 +1,24 @@
+// Package ifelse is the Gopherlings exercise "if and else".
+package ifelse
+
+// DiskAlert returns "ok", "warning" or "critical" for a disk usage
+// percentage.
+func DiskAlert(usedPercent int) string {
+	// TODO(1): Return "critical" at 90 and above, "warning" at 80 to 89,
+	// and "ok" below 80.
+	return "ok"
+}
+
+// ClampReplicas keeps a requested replica count between 1 and 10.
+func ClampReplicas(requested int) int {
+	// TODO(2): Return 1 below 1 and 10 above 10, using early returns.
+	return requested
+}
+
+// ScaleAdvice suggests a scaling action from the requests per replica.
+func ScaleAdvice(totalRequests, replicas int) string {
+	// TODO(3): Return "no replicas" when replicas is below 1. Otherwise
+	// compute the requests per replica in an if short statement and return
+	// "scale up", "scale down" or "steady".
+	return "steady"
+}

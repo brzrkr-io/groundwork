@@ -1,0 +1,33 @@
+// Package alerts is the Gopherlings exercise "Variadic functions: fix the pager bot".
+package alerts
+
+import "strings"
+
+// Alert builds a pager message: the severity, then the hosts separated by
+// ", ". With no hosts it says "no hosts".
+func Alert(severity string, hosts ...string) string {
+	// TODO(1): Handle no hosts, and stop the trailing ", " after the last host.
+	var b strings.Builder
+	b.WriteString(severity)
+	b.WriteString(": ")
+	for _, h := range hosts {
+		b.WriteString(h)
+		b.WriteString(", ")
+	}
+	return b.String()
+}
+
+// PageOnCall builds a critical alert for every host in down.
+func PageOnCall(down []string) string {
+	// TODO(2): Pass every host in down to Alert, not just the first.
+	if len(down) == 0 {
+		return Alert("critical")
+	}
+	return Alert("critical", down[0])
+}
+
+// WarnCanary builds a warning alert listing canary first, then others.
+func WarnCanary(canary string, others []string) string {
+	// TODO(3): Include every host in others after canary.
+	return Alert("warning", canary)
+}

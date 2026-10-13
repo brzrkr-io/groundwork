@@ -1,0 +1,125 @@
+package ipaddr
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestNormalizeCIDR(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"10.1.2.3/16", "10.1.0.0/16"},
+		{"172.16.99.1/12", "172.16.0.0/12"},
+		{"192.168.7.0/24", "192.168.7.0/24"},
+		{"10.0.0.7/32", "10.0.0.7/32"},
+		{"2001:db8::1/32", "2001:db8::/32"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := NormalizeCIDR(tt.in)
+			if err != nil {
+				t.Fatalf("NormalizeCIDR(%q) returned error %v, want nil", tt.in, err)
+			}
+			if got != tt.want {
+				t.Errorf("NormalizeCIDR(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+
+	for _, bad := range []string{"10.1.2.3", "10.0.0.0/40"} {
+		t.Run(bad, func(t *testing.T) {
+			got, err := NormalizeCIDR(bad)
+			if err == nil {
+				t.Errorf("NormalizeCIDR(%q) = %q, nil; want an error", bad, got)
+			}
+		})
+	}
+}
+
+func TestFindOverlaps(t *testing.T) {
+	tests := []struct {
+		name  string
+		cidrs []string
+		want  []string
+	}{
+		{
+			name:  "three overlapping pairs",
+			cidrs: []string{"10.0.0.0/16", "10.0.1.0/24", "192.168.0.0/16", "10.0.1.128/25"},
+			want: []string{
+				"10.0.0.0/16 overlaps 10.0.1.0/24",
+				"10.0.0.0/16 overlaps 10.0.1.128/25",
+				"10.0.1.0/24 overlaps 10.0.1.128/25",
+			},
+		},
+		{
+			name:  "one pair",
+			cidrs: []string{"172.31.0.0/16", "10.0.0.0/8", "172.31.200.0/24"},
+			want:  []string{"172.31.0.0/16 overlaps 172.31.200.0/24"},
+		},
+		{
+			name:  "no overlaps",
+			cidrs: []string{"10.0.0.0/16", "10.1.0.0/16"},
+			want:  nil,
+		},
+		{
+			name:  "single CIDR",
+			cidrs: []string{"10.0.0.0/16"},
+			want:  nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FindOverlaps(tt.cidrs)
+			if err != nil {
+				t.Fatalf("FindOverlaps(%q) returned error %v, want nil", tt.cidrs, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("FindOverlaps(%q) = %q, want %q", tt.cidrs, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("invalid CIDR", func(t *testing.T) {
+		cidrs := []string{"10.0.0.0/16", "10.0.0.0/99"}
+		got, err := FindOverlaps(cidrs)
+		if err == nil {
+			t.Errorf("FindOverlaps(%q) = %q, nil; want an error", cidrs, got)
+		}
+	})
+}
+
+func TestSize(t *testing.T) {
+	tests := []struct {
+		in   string
+		want int
+	}{
+		{"10.0.0.0/24", 256},
+		{"10.0.0.0/16", 65536},
+		{"10.0.0.0/8", 16777216},
+		{"10.0.0.0/28", 16},
+		{"10.0.0.7/32", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := Size(tt.in)
+			if err != nil {
+				t.Fatalf("Size(%q) returned error %v, want nil", tt.in, err)
+			}
+			if got != tt.want {
+				t.Errorf("Size(%q) = %d, want %d", tt.in, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("IPv6", func(t *testing.T) {
+		got, err := Size("2001:db8::/32")
+		if err == nil {
+			t.Fatalf("Size(%q) = %d, nil; want an error", "2001:db8::/32", got)
+		}
+		if want := "size: CIDR is not IPv4"; err.Error() != want {
+			t.Errorf("Size(%q) error = %q, want %q", "2001:db8::/32", err.Error(), want)
+		}
+	})
+}

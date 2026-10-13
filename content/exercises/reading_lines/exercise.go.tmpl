@@ -1,0 +1,35 @@
+// Package lines is the Gopherlings exercise "Reading input line by line: a hosts list".
+package lines
+
+import "io"
+
+// Target is a host and port to probe.
+type Target struct {
+	Host string
+	Port int
+}
+
+// CountLines returns the number of lines in r, blank lines included.
+func CountLines(r io.Reader) (int, error) {
+	// TODO(1): Scan r line by line, count every line, and return sc.Err().
+	// Add import "bufio".
+	return 0, nil
+}
+
+// ReadHosts returns the trimmed hostnames in r, skipping blank lines and
+// lines that start with "#".
+func ReadHosts(r io.Reader) ([]string, error) {
+	// TODO(2): Collect the trimmed hostnames, skipping blanks and comments.
+	// Add import "strings".
+	return nil, nil
+}
+
+// ParseTargets parses one "host:port" target per line, skipping blank lines
+// and comments. It stops at the first bad line with an error that names the
+// line number.
+func ParseTargets(r io.Reader) ([]Target, error) {
+	// TODO(3): Parse each kept line into a Target. Return
+	// `line N: missing port in "..."` or `line N: invalid port "..."` errors.
+	// Add imports "fmt" and "strconv".
+	return nil, nil
+}

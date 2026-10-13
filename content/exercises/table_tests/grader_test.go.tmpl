@@ -1,0 +1,196 @@
+package disk
+
+// This file is how Gopherlings grades the test you write. You don't need to
+// change it, but you are welcome to read it.
+//
+// TestGrader re-runs your tests against the real code, where they must pass,
+// and then against each mutant below, where they must fail. A mutant is a
+// copy of the code with one deliberate bug.
+
+import (
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+// learnerTests selects the tests you write in exercise_test.go.
+const learnerTests = "^TestDiskAlert$"
+
+// mutants are the bugs your tests must catch.
+var mutants = []mutant{
+	{
+		name: "never_warning",
+		bug:  `DiskAlert never returned "warning" (it said "ok" instead)`,
+		install: func() {
+			diskAlert = func(used int) string {
+				if realDiskAlert(used) == "warning" {
+					return "ok"
+				}
+				return realDiskAlert(used)
+			}
+		},
+	},
+	{
+		name: "never_critical",
+		bug:  `DiskAlert never returned "critical" (it said "warning" instead)`,
+		install: func() {
+			diskAlert = func(used int) string {
+				if realDiskAlert(used) == "critical" {
+					return "warning"
+				}
+				return realDiskAlert(used)
+			}
+		},
+	},
+	{
+		name: "warning_uses_greater_than",
+		bug:  `DiskAlert(80) said "ok" (used > 80 instead of >= 80)`,
+		install: func() {
+			diskAlert = func(used int) string {
+				if used == 80 {
+					return "ok"
+				}
+				return realDiskAlert(used)
+			}
+		},
+	},
+	{
+		name: "warning_starts_at_79",
+		bug:  `DiskAlert(79) said "warning" (the warning level started too early)`,
+		install: func() {
+			diskAlert = func(used int) string {
+				if used == 79 {
+					return "warning"
+				}
+				return realDiskAlert(used)
+			}
+		},
+	},
+	{
+		name: "critical_uses_greater_than",
+		bug:  `DiskAlert(90) said "warning" (used > 90 instead of >= 90)`,
+		install: func() {
+			diskAlert = func(used int) string {
+				if used == 90 {
+					return "warning"
+				}
+				return realDiskAlert(used)
+			}
+		},
+	},
+	{
+		name: "critical_starts_at_89",
+		bug:  `DiskAlert(89) said "critical" (the critical level started too early)`,
+		install: func() {
+			diskAlert = func(used int) string {
+				if used == 89 {
+					return "critical"
+				}
+				return realDiskAlert(used)
+			}
+		},
+	},
+	{
+		name: "rejects_0",
+		bug:  `DiskAlert(0) said "invalid" for an empty disk`,
+		install: func() {
+			diskAlert = func(used int) string {
+				if used == 0 {
+					return "invalid"
+				}
+				return realDiskAlert(used)
+			}
+		},
+	},
+	{
+		name: "rejects_100",
+		bug:  `DiskAlert(100) said "invalid" for a full disk`,
+		install: func() {
+			diskAlert = func(used int) string {
+				if used == 100 {
+					return "invalid"
+				}
+				return realDiskAlert(used)
+			}
+		},
+	},
+	{
+		name: "accepts_minus_1",
+		bug:  `DiskAlert(-1) said "ok" instead of "invalid"`,
+		install: func() {
+			diskAlert = func(used int) string {
+				if used == -1 {
+					return "ok"
+				}
+				return realDiskAlert(used)
+			}
+		},
+	},
+	{
+		name: "accepts_101",
+		bug:  `DiskAlert(101) said "critical" instead of "invalid"`,
+		install: func() {
+			diskAlert = func(used int) string {
+				if used == 101 {
+					return "critical"
+				}
+				return realDiskAlert(used)
+			}
+		},
+	},
+}
+
+// Everything below is the same in every Testing exercise.
+
+// mutantEnv names the environment variable that tells a re-run which mutant
+// to install.
+const mutantEnv = "GOPHERLINGS_MUTANT"
+
+type mutant struct {
+	name    string // short name, used in GOPHERLINGS_MUTANT and test output
+	bug     string // completes "your tests didn't notice when ..."
+	install func() // swaps the bug into the package
+}
+
+// TestMain runs before any test. In a re-run started by TestGrader, it
+// installs the mutant named by GOPHERLINGS_MUTANT.
+func TestMain(m *testing.M) {
+	if name := os.Getenv(mutantEnv); name != "" {
+		for _, mu := range mutants {
+			if mu.name == name {
+				mu.install()
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func TestGrader(t *testing.T) {
+	if _, rerun := os.LookupEnv(mutantEnv); rerun {
+		t.Skip("TestGrader does not run inside its own re-runs")
+	}
+	out, err := runLearnerTests("")
+	if strings.Contains(out, "no tests to run") {
+		t.Fatalf("found no test matching %s in exercise_test.go", learnerTests)
+	}
+	if err != nil {
+		t.Fatalf("your tests must pass on the real code first, but they failed:\n%s", out)
+	}
+	for _, mu := range mutants {
+		t.Run(mu.name, func(t *testing.T) {
+			if _, err := runLearnerTests(mu.name); err == nil {
+				t.Errorf("your tests didn't notice when %s", mu.bug)
+			}
+		})
+	}
+}
+
+// runLearnerTests re-runs this test binary with only your tests selected and
+// the named mutant installed. An empty name means the real code.
+func runLearnerTests(mutant string) (string, error) {
+	cmd := exec.Command(os.Args[0], "-test.run="+learnerTests)
+	cmd.Env = append(os.Environ(), mutantEnv+"="+mutant)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

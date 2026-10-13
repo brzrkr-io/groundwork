@@ -1,0 +1,105 @@
+package auditlog
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+)
+
+// readLog returns the raw contents of dir/audit.log.
+func readLog(t *testing.T, dir string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, LogName))
+	if err != nil {
+		t.Fatalf("reading %s: %v", LogName, err)
+	}
+	return string(data)
+}
+
+func TestAppendAuditKeepsEntries(t *testing.T) {
+	tests := []struct {
+		name    string
+		old     string // existing log content; "" means no log yet
+		entries []string
+		want    string
+	}{
+		{"one entry, new log", "", []string{"deploy api v1.4.2 by alice"}, "deploy api v1.4.2 by alice\n"},
+		{"two entries, new log", "", []string{"deploy api v1.4.2 by alice", "rollback api v1.4.1 by bob"}, "deploy api v1.4.2 by alice\nrollback api v1.4.1 by bob\n"},
+		{"existing log", "restart worker by carol\n", []string{"scale worker to 5 by dave"}, "restart worker by carol\nscale worker to 5 by dave\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if tt.old != "" {
+				if err := os.WriteFile(filepath.Join(dir, LogName), []byte(tt.old), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, e := range tt.entries {
+				if err := AppendAudit(dir, e); err != nil {
+					t.Fatalf("AppendAudit(dir, %q) = %v, want nil", e, err)
+				}
+			}
+			if got := readLog(t, dir); got != tt.want {
+				t.Errorf("audit.log holds %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAppendAuditCreatesDir(t *testing.T) {
+	tests := []struct {
+		name string
+		sub  string // directory under t.TempDir() that doesn't exist yet
+	}{
+		{"one level", "logs"},
+		{"several levels", filepath.Join("var", "log", "deployer")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), tt.sub)
+			entry := "deploy api v2.0.0 by erin"
+			if err := AppendAudit(dir, entry); err != nil {
+				t.Fatalf("AppendAudit(%q, %q) = %v, want nil", dir, entry, err)
+			}
+			if got, want := readLog(t, dir), entry+"\n"; got != want {
+				t.Errorf("audit.log holds %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestReadAudit(t *testing.T) {
+	t.Run("existing log", func(t *testing.T) {
+		dir := t.TempDir()
+		content := "deploy api v1.4.2 by alice\nrollback api v1.4.1 by bob\n"
+		if err := os.WriteFile(filepath.Join(dir, LogName), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"deploy api v1.4.2 by alice", "rollback api v1.4.1 by bob"}
+		got, err := ReadAudit(dir)
+		if err != nil || !slices.Equal(got, want) {
+			t.Errorf("ReadAudit(dir) = %q, %v, want %q, nil", got, err, want)
+		}
+	})
+
+	missing := []struct {
+		name string
+		dir  string
+	}{
+		{"no log file yet", t.TempDir()},
+		{"no directory yet", filepath.Join(t.TempDir(), "var", "log", "deployer")},
+	}
+	for _, tt := range missing {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ReadAudit(tt.dir)
+			if err != nil {
+				t.Fatalf("ReadAudit(%q) error = %v, want nil", tt.dir, err)
+			}
+			if got == nil || len(got) != 0 {
+				t.Errorf("ReadAudit(%q) = %#v, want []string{} (empty, not nil)", tt.dir, got)
+			}
+		})
+	}
+}

@@ -1,0 +1,43 @@
+package slug
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestMake(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"payments", "payments"},
+		{"Payments API", "payments-api"},
+		{"checkout-v1.4.2", "checkout-v1-4-2"},
+		{"eu_west/batch", "eu-west-batch"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			if got := Make(tt.in); got != tt.want {
+				t.Errorf("Make(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMakeLength(t *testing.T) {
+	tests := []struct {
+		name, in, want string
+	}{
+		{"dashes at the ends", "  API  ", "api"},
+		{"dashes inside stay", "checkout (canary)", "checkout--canary"},
+		{"70 characters", strings.Repeat("a", 70), strings.Repeat("a", 63)},
+		{"exactly 63", strings.Repeat("b", 63), strings.Repeat("b", 63)},
+		{"cut ends on a dash", strings.Repeat("c", 62) + " d", strings.Repeat("c", 62)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Make(tt.in); got != tt.want {
+				t.Errorf("Make(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

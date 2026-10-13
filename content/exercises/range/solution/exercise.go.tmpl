@@ -1,0 +1,35 @@
+// Package latency is the Gopherlings exercise "Looping with range".
+package latency
+
+// TotalLatency returns the sum of all latencies in ms.
+func TotalLatency(ms []int) int {
+	total := 0
+	for _, v := range ms {
+		total += v
+	}
+	return total
+}
+
+// Slowest returns the host with the highest latency, and that latency.
+// hosts[i] has latency ms[i]. On a tie, the first host wins.
+func Slowest(hosts []string, ms []int) (string, int) {
+	slowest, worst := "", 0
+	for i, host := range hosts {
+		// The first host is always the slowest so far; later ones must beat it.
+		if i == 0 || ms[i] > worst {
+			slowest, worst = host, ms[i]
+		}
+	}
+	return slowest, worst
+}
+
+// Unhealthy returns the hosts whose health check failed, in order.
+func Unhealthy(hosts []string, healthy []bool) []string {
+	var down []string
+	for i, ok := range healthy {
+		if !ok {
+			down = append(down, hosts[i])
+		}
+	}
+	return down
+}

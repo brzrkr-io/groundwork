@@ -1,0 +1,195 @@
+package retry
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"testing"
+	"time"
+)
+
+func TestBackoff(t *testing.T) {
+	tests := []struct {
+		attempt     int
+		base, limit time.Duration
+		want        time.Duration
+	}{
+		{0, 100 * time.Millisecond, 2 * time.Second, 100 * time.Millisecond},
+		{1, 100 * time.Millisecond, 2 * time.Second, 200 * time.Millisecond},
+		{2, 100 * time.Millisecond, 2 * time.Second, 400 * time.Millisecond},
+		{3, 100 * time.Millisecond, 2 * time.Second, 800 * time.Millisecond},
+		{4, 100 * time.Millisecond, 2 * time.Second, 1600 * time.Millisecond},
+		{5, 100 * time.Millisecond, 2 * time.Second, 2 * time.Second},
+		{10, 100 * time.Millisecond, 2 * time.Second, 2 * time.Second},
+		{0, time.Second, 30 * time.Second, time.Second},
+		{3, time.Second, 30 * time.Second, 8 * time.Second},
+		{5, time.Second, 30 * time.Second, 30 * time.Second},
+		{100, time.Second, 30 * time.Second, 30 * time.Second},
+	}
+	for _, tt := range tests {
+		name := fmt.Sprintf("attempt %d base %v limit %v", tt.attempt, tt.base, tt.limit)
+		t.Run(name, func(t *testing.T) {
+			if got := Backoff(tt.attempt, tt.base, tt.limit); got != tt.want {
+				t.Errorf("Backoff(%d, %v, %v) = %v, want %v", tt.attempt, tt.base, tt.limit, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestJitter(t *testing.T) {
+	tests := []struct {
+		d    time.Duration
+		rnd  float64
+		want time.Duration
+	}{
+		{2 * time.Second, 0, time.Second},
+		{2 * time.Second, 0.5, 1500 * time.Millisecond},
+		{2 * time.Second, 0.75, 1750 * time.Millisecond},
+		{400 * time.Millisecond, 0, 200 * time.Millisecond},
+		{400 * time.Millisecond, 0.25, 250 * time.Millisecond},
+		{400 * time.Millisecond, 0.5, 300 * time.Millisecond},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%v rnd %v", tt.d, tt.rnd), func(t *testing.T) {
+			calls := 0
+			rnd := func() float64 {
+				calls++
+				return tt.rnd
+			}
+			if got := Jitter(tt.d, rnd); got != tt.want {
+				t.Errorf("Jitter(%v, rnd returning %v) = %v, want %v", tt.d, tt.rnd, got, tt.want)
+			}
+			if calls != 1 {
+				t.Errorf("Jitter called rnd %d times, want 1", calls)
+			}
+		})
+	}
+}
+
+// fakeSleeper records every wait it is asked for and returns at once.
+type fakeSleeper struct {
+	slept []time.Duration
+	err   error // returned by every Sleep call
+}
+
+func (f *fakeSleeper) Sleep(ctx context.Context, d time.Duration) error {
+	f.slept = append(f.slept, d)
+	return f.err
+}
+
+var errNotFound = errors.New("404 not found")
+
+func TestDo(t *testing.T) {
+	tests := []struct {
+		name        string
+		maxAttempts int
+		failures    int   // how many calls fail before op succeeds
+		failWith    error // what the failing calls wrap
+		sleepErr    error // what Sleep returns
+		wantCalls   int
+		wantSlept   []time.Duration
+		wantErr     string // "" means nil
+	}{
+		{
+			name:        "succeeds first time",
+			maxAttempts: 3,
+			failures:    0,
+			wantCalls:   1,
+			wantSlept:   nil,
+			wantErr:     "",
+		},
+		{
+			name:        "succeeds after two temporary failures",
+			maxAttempts: 5,
+			failures:    2,
+			failWith:    ErrTemporary,
+			wantCalls:   3,
+			wantSlept:   []time.Duration{75 * time.Millisecond, 150 * time.Millisecond},
+			wantErr:     "",
+		},
+		{
+			name:        "permanent error is returned at once",
+			maxAttempts: 5,
+			failures:    10,
+			failWith:    errNotFound,
+			wantCalls:   1,
+			wantSlept:   nil,
+			wantErr:     "call 1: 404 not found",
+		},
+		{
+			name:        "gives up after 3 attempts",
+			maxAttempts: 3,
+			failures:    10,
+			failWith:    ErrTemporary,
+			wantCalls:   3,
+			wantSlept:   []time.Duration{75 * time.Millisecond, 150 * time.Millisecond},
+			wantErr:     "call 3: temporary failure",
+		},
+		{
+			name:        "gives up after 6 attempts, waits are capped",
+			maxAttempts: 6,
+			failures:    10,
+			failWith:    ErrTemporary,
+			wantCalls:   6,
+			wantSlept: []time.Duration{
+				75 * time.Millisecond,
+				150 * time.Millisecond,
+				300 * time.Millisecond,
+				600 * time.Millisecond,
+				600 * time.Millisecond,
+			},
+			wantErr: "call 6: temporary failure",
+		},
+		{
+			name:        "stops when Sleep is cancelled",
+			maxAttempts: 5,
+			failures:    10,
+			failWith:    ErrTemporary,
+			sleepErr:    context.Canceled,
+			wantCalls:   1,
+			wantSlept:   []time.Duration{75 * time.Millisecond},
+			wantErr:     "context canceled",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sleeper := &fakeSleeper{err: tt.sleepErr}
+			p := Policy{
+				MaxAttempts: tt.maxAttempts,
+				Base:        100 * time.Millisecond,
+				Max:         800 * time.Millisecond,
+				Rand:        func() float64 { return 0.5 },
+				Sleep:       sleeper.Sleep,
+			}
+			calls := 0
+			op := func(ctx context.Context) error {
+				calls++
+				if calls <= tt.failures {
+					return fmt.Errorf("call %d: %w", calls, tt.failWith)
+				}
+				return nil
+			}
+
+			err := Do(context.Background(), p, op)
+
+			if got := errText(err); got != tt.wantErr {
+				t.Errorf("Do() error = %q, want %q", got, tt.wantErr)
+			}
+			if calls != tt.wantCalls {
+				t.Errorf("Do() called op %d times, want %d", calls, tt.wantCalls)
+			}
+			if !slices.Equal(sleeper.slept, tt.wantSlept) {
+				t.Errorf("Do() slept %v, want %v", sleeper.slept, tt.wantSlept)
+			}
+		})
+	}
+}
+
+// errText returns err's message, or "" for a nil error.
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}

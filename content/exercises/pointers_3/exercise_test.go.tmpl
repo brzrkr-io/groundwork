@@ -1,0 +1,128 @@
+package pointers3
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestWithReplicas(t *testing.T) {
+	for _, n := range []int{3, 0, -1, 8080} {
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			spec := DeploymentSpec{Name: "api"}
+			got := WithReplicas(spec, n)
+			if got.Name != "api" {
+				t.Errorf("WithReplicas({Name: %q}, %d).Name = %q, want %q", "api", n, got.Name, "api")
+			}
+			if got.Replicas == nil {
+				t.Fatalf("WithReplicas({Name: %q}, %d).Replicas = nil, want a pointer to %d", "api", n, n)
+			}
+			if *got.Replicas != n {
+				t.Errorf("*WithReplicas({Name: %q}, %d).Replicas = %d, want %d", "api", n, *got.Replicas, n)
+			}
+			if again := WithReplicas(spec, n); again.Replicas == got.Replicas {
+				t.Errorf("WithReplicas returned the same pointer twice for %d, want a new int on every call", n)
+			}
+		})
+	}
+}
+
+func TestEffectiveReplicas(t *testing.T) {
+	// Values for the tests to point at.
+	zero, one, four, ten := 0, 1, 4, 10
+
+	// Each line is one case: the spec, then the replica count we want.
+	tests := []struct {
+		name string
+		spec DeploymentSpec
+		want int
+	}{
+		{"not set", DeploymentSpec{Name: "api"}, 1},
+		{"not set again", DeploymentSpec{Name: "worker"}, 1},
+		{"set to 4", DeploymentSpec{Name: "api", Replicas: &four}, 4},
+		{"set to 10", DeploymentSpec{Name: "web", Replicas: &ten}, 10},
+		{"set to 1", DeploymentSpec{Name: "cron", Replicas: &one}, 1},
+		{"scaled to zero", DeploymentSpec{Name: "batch", Replicas: &zero}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Show the pointed-to value, because a raw address is unreadable.
+			replicas := "nil"
+			if tt.spec.Replicas != nil {
+				replicas = fmt.Sprintf("&%d", *tt.spec.Replicas)
+			}
+			if got := EffectiveReplicas(tt.spec); got != tt.want {
+				t.Errorf("EffectiveReplicas({Name: %q, Replicas: %s}) = %d, want %d", tt.spec.Name, replicas, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMerge(t *testing.T) {
+	base := Config{Image: "web:1.0", Replicas: 3, Debug: true}
+
+	// Values for the overrides to point at.
+	web2, web3 := "web:2.0", "web:3.0"
+	zero, two, five := 0, 2, 5
+	debugOn, debugOff := true, false
+
+	// Each line is one case: a description, the layers, then the Config we
+	// want back from Merge(base, layers...).
+	tests := []struct {
+		name   string
+		layers []Overrides
+		want   Config
+	}{
+		{
+			"no layers",
+			nil,
+			Config{Image: "web:1.0", Replicas: 3, Debug: true},
+		},
+		{
+			"one empty layer",
+			[]Overrides{{}},
+			Config{Image: "web:1.0", Replicas: 3, Debug: true},
+		},
+		{
+			"image only",
+			[]Overrides{{Image: &web2}},
+			Config{Image: "web:2.0", Replicas: 3, Debug: true},
+		},
+		{
+			"replicas set to 0",
+			[]Overrides{{Replicas: &zero}},
+			Config{Image: "web:1.0", Replicas: 0, Debug: true},
+		},
+		{
+			"debug set to false",
+			[]Overrides{{Debug: &debugOff}},
+			Config{Image: "web:1.0", Replicas: 3, Debug: false},
+		},
+		{
+			"every field",
+			[]Overrides{{Image: &web3, Replicas: &five, Debug: &debugOff}},
+			Config{Image: "web:3.0", Replicas: 5, Debug: false},
+		},
+		{
+			"later layer wins",
+			[]Overrides{{Image: &web2, Replicas: &five}, {Replicas: &two, Debug: &debugOff}},
+			Config{Image: "web:2.0", Replicas: 2, Debug: false},
+		},
+		{
+			"empty later layer keeps earlier changes",
+			[]Overrides{{Image: &web3, Debug: &debugOff}, {}},
+			Config{Image: "web:3.0", Replicas: 3, Debug: false},
+		},
+		{
+			"three layers",
+			[]Overrides{{Debug: &debugOff}, {Image: &web2}, {Image: &web3, Debug: &debugOn}},
+			Config{Image: "web:3.0", Replicas: 3, Debug: true},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Merge(base, tt.layers...); got != tt.want {
+				t.Errorf("Merge(%+v, %s) = %+v, want %+v", base, tt.name, got, tt.want)
+			}
+		})
+	}
+}

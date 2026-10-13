@@ -1,0 +1,57 @@
+package dnsname
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestSlug(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"two words", "Payments API", "payments-api"},
+		{"already fine", "orders", "orders"},
+		{"runs of separators", "  Billing -- Worker!! ", "billing-worker"},
+		{"underscore and dot", "My_Service.v2", "my-service-v2"},
+		{"digits and dashes", "eu-west-1 Gateway", "eu-west-1-gateway"},
+		{"emoji at both ends", "🚀 Launch Service 🚀", "launch-service"},
+		{"accented letter", "Café Orders", "caf-orders"},
+		{"accent in the middle", "Zürich Edge", "z-rich-edge"},
+		{"nothing kept", "***", ""},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Slug(tt.input); got != tt.want {
+				t.Errorf("Slug(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDNSLabel(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"short", "Payments API", "payments-api"},
+		{"short with emoji", "Search 🔍 Indexer", "search-indexer"},
+		{"only punctuation", "!!!", "unnamed"},
+		{"only non-ascii", "日本語", "unnamed"},
+		{"empty", "", "unnamed"},
+		{"exactly 63", strings.Repeat("b", 63), strings.Repeat("b", 63)},
+		{"too long", strings.Repeat("a", 70), strings.Repeat("a", 63)},
+		{"cut leaves a dash", strings.Repeat("a", 62) + " backup", strings.Repeat("a", 62)},
+		{"cut inside a word", strings.Repeat("x", 60) + " Backup", strings.Repeat("x", 60) + "-ba"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DNSLabel(tt.input); got != tt.want {
+				t.Errorf("DNSLabel(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

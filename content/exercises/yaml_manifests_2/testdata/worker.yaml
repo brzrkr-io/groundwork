@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: payments
+spec:
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: migrate
+          image: registry.example.com:5000/payments/migrate:latest
+          resources:
+            limits:
+              memory: 128Mi
+        - name: worker
+          image: registry.example.com/payments/worker:0.9.3

@@ -1,0 +1,70 @@
+package returns
+
+import "testing"
+
+func TestParseImage(t *testing.T) {
+	// Each line is one case: the input, then the answers we want.
+	tests := []struct {
+		name     string
+		ref      string
+		wantName string
+		wantTag  string
+		wantErr  bool
+	}{
+		{"name and tag", "nginx:1.27", "nginx", "1.27", false},
+		{"no tag", "redis", "redis", "latest", false},
+		{"with a path", "team/api:v2.3.0", "team/api", "v2.3.0", false},
+		{"empty name", ":1.27", "", "", true},
+		{"empty tag", "nginx:", "", "", true},
+		{"empty", "", "", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, tag, err := ParseImage(tt.ref)
+			if tt.wantErr && err == nil {
+				t.Fatalf("ParseImage(%q) returned a nil error, want an error", tt.ref)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("ParseImage(%q) returned error %v, want nil", tt.ref, err)
+			}
+			if name != tt.wantName || tag != tt.wantTag {
+				t.Errorf("ParseImage(%q) = %q, %q, want %q, %q",
+					tt.ref, name, tag, tt.wantName, tt.wantTag)
+			}
+		})
+	}
+}
+
+func TestParseTTL(t *testing.T) {
+	tests := []struct {
+		name    string
+		ttl     string
+		want    int
+		wantErr bool
+	}{
+		{"seconds", "90s", 90, false},
+		{"minutes", "5m", 300, false},
+		{"hours", "2h", 7200, false},
+		{"one second", "1s", 1, false},
+		{"zero", "0s", 0, true},
+		{"negative", "-5m", 0, true},
+		{"no unit", "10", 0, true},
+		{"unknown unit", "1d", 0, true},
+		{"not a number", "xm", 0, true},
+		{"empty", "", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseTTL(tt.ttl)
+			if tt.wantErr && err == nil {
+				t.Fatalf("ParseTTL(%q) returned a nil error, want an error", tt.ttl)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("ParseTTL(%q) returned error %v, want nil", tt.ttl, err)
+			}
+			if got != tt.want {
+				t.Errorf("ParseTTL(%q) = %d, want %d", tt.ttl, got, tt.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,37 @@
+// Package upstream is the Gopherlings exercise "Golden files: write your own".
+package upstream
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// WriteUpstreamConfig writes an nginx upstream block to the file
+// <dir>/<name>.conf. The block is named name and lists one "server" line per
+// backend, indented by four spaces, in the order given:
+//
+//	upstream api {
+//	    server 10.0.1.15:8080;
+//	    server 10.0.1.16:8080;
+//	}
+//
+// This code is correct. Your job in this exercise is to write a test for it.
+func WriteUpstreamConfig(dir, name string, backends []string) error {
+	return writeUpstreamConfig(dir, name, backends)
+}
+
+// writeUpstreamConfig points at the real implementation. Gopherlings' grader
+// swaps in broken versions to check that your test catches them.
+var writeUpstreamConfig = realWriteUpstreamConfig
+
+func realWriteUpstreamConfig(dir, name string, backends []string) error {
+	var conf strings.Builder
+	fmt.Fprintf(&conf, "upstream %s {\n", name)
+	for _, b := range backends {
+		fmt.Fprintf(&conf, "    server %s;\n", b)
+	}
+	conf.WriteString("}\n")
+	return os.WriteFile(filepath.Join(dir, name+".conf"), []byte(conf.String()), 0o644)
+}

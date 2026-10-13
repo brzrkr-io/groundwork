@@ -1,0 +1,150 @@
+package alerts
+
+// This file is how Gopherlings grades the test you write. You don't need to
+// change it, but you are welcome to read it.
+//
+// TestTruncate checks that your fixed Truncate works. TestGrader re-runs
+// your tests against the real code, where they must pass, and then against
+// each mutant below, where they must fail. A mutant is a copy of the code
+// with one deliberate bug.
+
+import (
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+// learnerTests selects the tests you write in exercise_test.go.
+const learnerTests = "^FuzzTruncate$"
+
+// mutants are the bugs your tests must catch.
+var mutants = []mutant{
+	{
+		name: "one_byte_too_long",
+		bug:  `Truncate returned one byte more than the limit`,
+		install: func() {
+			truncate = func(msg string, limit int) string {
+				return realTruncate(msg, limit+1)
+			}
+		},
+	},
+	{
+		name: "adds_ellipsis",
+		bug:  `Truncate replaced the last 3 bytes with "…", so the result was not the start of the message`,
+		install: func() {
+			truncate = func(msg string, limit int) string {
+				if len(msg) <= limit || limit < 3 {
+					return realTruncate(msg, limit)
+				}
+				return realTruncate(msg, limit-3) + "…" // "…" is 3 bytes
+			}
+		},
+	},
+	{
+		name: "panics_on_negative_limit",
+		bug:  `Truncate panicked on a negative limit`,
+		install: func() {
+			truncate = func(msg string, limit int) string {
+				if limit < 0 {
+					return msg[:limit] // panics: slice bounds out of range
+				}
+				return realTruncate(msg, limit)
+			}
+		},
+	},
+	{
+		name: "cuts_characters",
+		bug:  `Truncate cut "é" in half (the original bug)`,
+		install: func() {
+			truncate = func(msg string, limit int) string {
+				limit = max(limit, 0)
+				if len(msg) <= limit {
+					return msg
+				}
+				return msg[:limit]
+			}
+		},
+	},
+}
+
+func TestTruncate(t *testing.T) {
+	tests := []struct {
+		name  string
+		msg   string
+		limit int
+		want  string
+	}{
+		{"fits", "disk full", 20, "disk full"},
+		{"exact fit", "disk full", 9, "disk full"},
+		{"ascii cut", "disk 92% full on db-1", 10, "disk 92% f"},
+		{"zero limit", "disk full", 0, ""},
+		{"negative limit", "disk full", -1, ""},
+		{"cut inside é", "héllo", 2, "h"},
+		{"cut after é", "héllo", 3, "hé"},
+		{"cut inside emoji", "🔥 db-1 down", 3, ""},
+		{"cut after emoji", "🔥 db-1 down", 5, "🔥 "},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Truncate(tc.msg, tc.limit)
+			if got != tc.want {
+				t.Errorf("Truncate(%q, %d) = %q, want %q", tc.msg, tc.limit, got, tc.want)
+			}
+		})
+	}
+}
+
+// Everything below is the same in every Testing exercise.
+
+// mutantEnv names the environment variable that tells a re-run which mutant
+// to install.
+const mutantEnv = "GOPHERLINGS_MUTANT"
+
+type mutant struct {
+	name    string // short name, used in GOPHERLINGS_MUTANT and test output
+	bug     string // completes "your tests didn't notice when ..."
+	install func() // swaps the bug into the package
+}
+
+// TestMain runs before any test. In a re-run started by TestGrader, it
+// installs the mutant named by GOPHERLINGS_MUTANT.
+func TestMain(m *testing.M) {
+	if name := os.Getenv(mutantEnv); name != "" {
+		for _, mu := range mutants {
+			if mu.name == name {
+				mu.install()
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func TestGrader(t *testing.T) {
+	if _, rerun := os.LookupEnv(mutantEnv); rerun {
+		t.Skip("TestGrader does not run inside its own re-runs")
+	}
+	out, err := runLearnerTests("")
+	if strings.Contains(out, "no tests to run") {
+		t.Fatalf("found no test matching %s in exercise_test.go", learnerTests)
+	}
+	if err != nil {
+		t.Fatalf("your tests must pass on the real code first, but they failed:\n%s", out)
+	}
+	for _, mu := range mutants {
+		t.Run(mu.name, func(t *testing.T) {
+			if _, err := runLearnerTests(mu.name); err == nil {
+				t.Errorf("your tests didn't notice when %s", mu.bug)
+			}
+		})
+	}
+}
+
+// runLearnerTests re-runs this test binary with only your tests selected and
+// the named mutant installed. An empty name means the real code.
+func runLearnerTests(mutant string) (string, error) {
+	cmd := exec.Command(os.Args[0], "-test.run="+learnerTests)
+	cmd.Env = append(os.Environ(), mutantEnv+"="+mutant)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

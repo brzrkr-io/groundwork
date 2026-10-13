@@ -1,0 +1,72 @@
+// Package logreport is the Gopherlings exercise "Project: access log report".
+package logreport
+
+import (
+	"errors"
+	"io"
+	"regexp"
+	"time"
+)
+
+// Entry is one request from an access log.
+type Entry struct {
+	IP       string
+	Time     time.Time
+	Method   string
+	Path     string // without the query string: "/api/orders", not "/api/orders?page=2"
+	Status   int
+	Bytes    int
+	Duration time.Duration
+}
+
+// ErrMalformed means a line does not look like an access log line at all.
+var ErrMalformed = errors.New("malformed line")
+
+// timeLayout is the reference time written the way nginx writes timestamps.
+const timeLayout = "02/Jan/2006:15:04:05 -0700"
+
+// linePattern matches one access log line, for example:
+//
+//	10.0.0.7 - - [11/Oct/2026:13:55:36 +0000] "GET /api/orders HTTP/1.1" 200 512 0.043
+var linePattern = regexp.MustCompile(
+	`^(?P<ip>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] ` +
+		`"(?P<method>[A-Z]+) (?P<path>\S+) [^"]*" ` +
+		`(?P<status>\d{3}) (?P<bytes>\d+) (?P<duration>\d+\.\d+)$`,
+)
+
+// ParseLine turns one access log line into an Entry.
+func ParseLine(line string) (Entry, error) {
+	m := linePattern.FindStringSubmatch(line)
+	if m == nil {
+		// TODO(1): Wrap ErrMalformed with the line, as the README shows.
+		// You will need to import "fmt".
+		return Entry{}, ErrMalformed
+	}
+	group := func(name string) string {
+		return m[linePattern.SubexpIndex(name)]
+	}
+
+	t, err := time.Parse(timeLayout, group("time"))
+	if err != nil {
+		return Entry{}, err
+	}
+
+	// TODO(1): Convert status, bytes and duration, cut the query string off
+	// the path, and fill in every Entry field. You will need to import
+	// "strconv" and "strings".
+	return Entry{IP: group("ip"), Time: t}, nil
+}
+
+// Log is everything ReadLog found in an access log.
+type Log struct {
+	Entries  []Entry // the lines that parsed, in file order
+	Problems []error // one error per line that did not parse, in file order
+}
+
+// ReadLog parses every line of r. Lines that fail to parse are recorded in
+// Problems; only a failure to read r is returned as an error.
+func ReadLog(r io.Reader) (Log, error) {
+	// TODO(2): Scan r line by line, skip blank lines, and collect entries and
+	// line-numbered problems. You will need to import "bufio".
+	return Log{}, nil
+}

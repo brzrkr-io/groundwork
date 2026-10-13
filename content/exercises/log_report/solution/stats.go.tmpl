@@ -1,0 +1,64 @@
+package logreport
+
+import (
+	"cmp"
+	"fmt"
+	"slices"
+	"time"
+)
+
+// PathCount is how many requests one path received.
+type PathCount struct {
+	Path  string `json:"path"`
+	Count int    `json:"count"`
+}
+
+// CountByClass counts entries by status class: "2xx", "3xx", "4xx", "5xx".
+func CountByClass(entries []Entry) map[string]int {
+	counts := map[string]int{}
+	for _, e := range entries {
+		counts[fmt.Sprintf("%dxx", e.Status/100)]++
+	}
+	return counts
+}
+
+// TopPaths returns the n most requested paths, busiest first. Paths with
+// the same count are ordered alphabetically.
+func TopPaths(entries []Entry, n int) []PathCount {
+	counts := map[string]int{}
+	for _, e := range entries {
+		counts[e.Path]++
+	}
+
+	top := make([]PathCount, 0, len(counts))
+	for path, count := range counts {
+		top = append(top, PathCount{Path: path, Count: count})
+	}
+	slices.SortFunc(top, func(a, b PathCount) int {
+		if a.Count != b.Count {
+			return cmp.Compare(b.Count, a.Count) // b before a: biggest first
+		}
+		return cmp.Compare(a.Path, b.Path)
+	})
+
+	if len(top) > n {
+		top = top[:n]
+	}
+	return top
+}
+
+// Percentile returns the p-th percentile (1-100) of durations using the
+// nearest-rank method. It returns 0 for an empty slice and never reorders
+// durations.
+func Percentile(durations []time.Duration, p int) time.Duration {
+	if len(durations) == 0 {
+		return 0
+	}
+	sorted := slices.Clone(durations)
+	slices.Sort(sorted)
+
+	// rank = ceil(p/100 * n), using whole numbers only.
+	rank := (p*len(sorted) + 99) / 100
+	rank = max(rank, 1)
+	return sorted[rank-1]
+}

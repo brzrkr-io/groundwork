@@ -1,0 +1,35 @@
+package uptime
+
+import "time"
+
+// Summarize counts the up and down results, works out the average and
+// slowest latency of the up targets, and picks the overall Status.
+func Summarize(results []Result) Summary {
+	var s Summary
+	var total, slowest time.Duration
+	for _, r := range results {
+		if !r.Up {
+			s.Down++
+			continue
+		}
+		s.Up++
+		total += r.Latency
+		if s.Slowest == "" || r.Latency > slowest {
+			s.Slowest = r.Target.Name
+			slowest = r.Latency
+		}
+	}
+	if s.Up > 0 {
+		s.AvgLatency = total / time.Duration(s.Up)
+	}
+
+	switch {
+	case s.Down == 0:
+		s.Status = "OK"
+	case s.Up == 0:
+		s.Status = "DOWN"
+	default:
+		s.Status = "DEGRADED"
+	}
+	return s
+}

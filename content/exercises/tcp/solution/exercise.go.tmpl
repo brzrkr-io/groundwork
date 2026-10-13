@@ -1,0 +1,78 @@
+// Package tcp is the Gopherlings exercise "TCP: a line-based control protocol".
+package tcp
+
+import (
+	"bufio"
+	"fmt"
+	"net"
+	"os"
+	"strings"
+	"time"
+)
+
+// Serve accepts clients on ln until ln is closed, and handles each one in
+// the background with HandleConn.
+func Serve(ln net.Listener) error {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return err
+		}
+		go HandleConn(conn)
+	}
+}
+
+// Respond returns the reply to one command line, and whether the server
+// should close the connection after sending it.
+func Respond(line string) (reply string, quit bool) {
+	if line == "PING" {
+		return "PONG", false
+	}
+	if text, ok := strings.CutPrefix(line, "ECHO "); ok {
+		return text, false
+	}
+	if line == "QUIT" {
+		return "BYE", true
+	}
+	return "ERR unknown command", false
+}
+
+// HandleConn answers each command line the client sends on conn.
+func HandleConn(conn net.Conn) {
+	defer conn.Close()
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		reply, quit := Respond(scanner.Text())
+		fmt.Fprintf(conn, "%s\n", reply)
+		if quit {
+			return
+		}
+	}
+	// A broken connection ends the loop too; report that on stderr, as a
+	// server would in its log.
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "tcp: reading from %s: %v\n", conn.RemoteAddr(), err)
+	}
+}
+
+// SendCommand sends cmd to the server at addr and returns the first line of
+// the reply.
+func SendCommand(addr, cmd string) (string, error) {
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+
+	if err := conn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		return "", err
+	}
+	if _, err := fmt.Fprintf(conn, "%s\n", cmd); err != nil {
+		return "", err
+	}
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(line, "\n"), nil
+}

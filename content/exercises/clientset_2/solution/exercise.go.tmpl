@@ -1,0 +1,52 @@
+// Package clients changes existing Kubernetes objects through client-go.
+package clients
+
+import (
+	"context"
+	"maps"
+
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+)
+
+// ScaleDeployment sets the replica count of the Deployment namespace/name
+// and leaves everything else about it unchanged.
+func ScaleDeployment(ctx context.Context, cs kubernetes.Interface, namespace, name string, replicas int32) error {
+	d, err := cs.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	// Update replaces the whole object, so change the copy we just read.
+	d.Spec.Replicas = new(replicas)
+	_, err = cs.AppsV1().Deployments(namespace).Update(ctx, d, metav1.UpdateOptions{})
+	return err
+}
+
+// ApplyConfigMap makes sure the ConfigMap namespace/name exists and holds
+// data. It creates the ConfigMap if it is missing and updates it otherwise,
+// and returns the ConfigMap as the API server stored it.
+func ApplyConfigMap(ctx context.Context, cs kubernetes.Interface, namespace, name string, data map[string]string) (*corev1.ConfigMap, error) {
+	desired := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Data:       data,
+	}
+	created, err := cs.CoreV1().ConfigMaps(namespace).Create(ctx, desired, metav1.CreateOptions{})
+	if err == nil {
+		return created, nil
+	}
+	if !apierrors.IsAlreadyExists(err) {
+		return nil, err
+	}
+
+	existing, err := cs.CoreV1().ConfigMaps(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	if maps.Equal(existing.Data, data) {
+		return existing, nil // already up to date: no write needed
+	}
+	existing.Data = data
+	return cs.CoreV1().ConfigMaps(namespace).Update(ctx, existing, metav1.UpdateOptions{})
+}

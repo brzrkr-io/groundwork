@@ -1,0 +1,20 @@
+// Package switches is the Gopherlings exercise "Switch: size, method, latency".
+package switches
+
+// InstanceSize picks an instance size for an environment.
+func InstanceSize(env string) string {
+	// TODO(1): Use a switch on env: production, staging, dev/test, default.
+	return "unknown"
+}
+
+// MethodKind classifies an HTTP method as "read", "write" or "unknown".
+func MethodKind(method string) string {
+	// TODO(2): Add import "strings" and switch on strings.ToUpper(method).
+	return "unknown"
+}
+
+// LatencyRating rates a response time in milliseconds.
+func LatencyRating(ms int) string {
+	// TODO(3): Use a tagless switch: fast, ok, slow, critical.
+	return "fast"
+}

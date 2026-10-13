@@ -1,0 +1,68 @@
+// Package manifests is the Gopherlings exercise "YAML manifests: decoding kinds and linting images".
+package manifests
+
+import (
+	"fmt"
+	"strings"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/yaml"
+)
+
+// DecodeObject decodes one YAML document into the Go type that matches its
+// kind: Deployment, Service or ConfigMap.
+func DecodeObject(doc []byte) (runtime.Object, error) {
+	var tm metav1.TypeMeta
+	if err := yaml.Unmarshal(doc, &tm); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+
+	var obj runtime.Object
+	switch tm.Kind {
+	case "Deployment":
+		obj = &appsv1.Deployment{}
+	case "Service":
+		obj = &corev1.Service{}
+	case "ConfigMap":
+		obj = &corev1.ConfigMap{}
+	default:
+		return nil, fmt.Errorf("unsupported kind %q", tm.Kind)
+	}
+
+	if err := yaml.Unmarshal(doc, obj); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", tm.Kind, err)
+	}
+	return obj, nil
+}
+
+// ImageTag returns the tag of a container image, or "" if it has none.
+func ImageTag(image string) string {
+	colon := strings.LastIndex(image, ":")
+	// A colon before the last slash belongs to a registry port, not a tag.
+	// "<=" also covers images with no colon at all (colon is -1).
+	if colon <= strings.LastIndex(image, "/") {
+		return ""
+	}
+	return image[colon+1:]
+}
+
+// Lint returns one line per problem found in the Deployment's containers:
+// images without a tag or with the latest tag, and missing resource limits.
+func Lint(d *appsv1.Deployment) []string {
+	var problems []string
+	for _, c := range d.Spec.Template.Spec.Containers {
+		switch ImageTag(c.Image) {
+		case "":
+			problems = append(problems, fmt.Sprintf("container %q: image %q has no tag", c.Name, c.Image))
+		case "latest":
+			problems = append(problems, fmt.Sprintf("container %q: image %q uses the latest tag", c.Name, c.Image))
+		}
+		if len(c.Resources.Limits) == 0 {
+			problems = append(problems, fmt.Sprintf("container %q: no resource limits", c.Name))
+		}
+	}
+	return problems
+}

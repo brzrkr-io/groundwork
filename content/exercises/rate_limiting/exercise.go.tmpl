@@ -1,0 +1,77 @@
+// Package ratelimit is the Gopherlings exercise "Rate limiting: token buckets".
+package ratelimit
+
+import (
+	"net/http"
+	"sync"
+	"time"
+)
+
+// Bucket is a token bucket rate limiter. It is safe to use from many
+// goroutines at once.
+type Bucket struct {
+	mu     sync.Mutex
+	rate   float64          // tokens added per second
+	burst  float64          // the most tokens the bucket can hold
+	tokens float64          // tokens available right now
+	last   time.Time        // when tokens was last refilled
+	now    func() time.Time // the clock; tests pass a fake one
+}
+
+// NewBucket returns a full bucket that refills at rate tokens per second and
+// holds at most burst tokens.
+func NewBucket(rate float64, burst int, now func() time.Time) *Bucket {
+	return &Bucket{
+		rate:  rate,
+		burst: float64(burst),
+		now:   now,
+		// TODO(1): Start full: set tokens to the burst, and last to now().
+	}
+}
+
+// Allow refills the bucket for the time since the last call, then takes one
+// token if there is one. It reports whether the request may go ahead.
+func (b *Bucket) Allow() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// TODO(1): Refill the tokens (never above burst) and update last.
+	// Then, if there is at least one token, take it and return true.
+	return false
+}
+
+// Middleware rejects requests with 429 Too Many Requests when b has no
+// tokens left, and passes the rest on to next.
+func Middleware(b *Bucket, next http.Handler) http.Handler {
+	// TODO(2): Return a handler that calls b.Allow for every request.
+	return next
+}
+
+// PerClient gives every client IP address its own Bucket, so one noisy
+// client can't use up everyone else's requests.
+type PerClient struct {
+	mu      sync.Mutex
+	buckets map[string]*Bucket // client IP -> that client's bucket
+	rate    float64
+	burst   int
+	now     func() time.Time
+}
+
+// NewPerClient returns a PerClient whose buckets refill at rate tokens per
+// second and hold at most burst tokens.
+func NewPerClient(rate float64, burst int, now func() time.Time) *PerClient {
+	return &PerClient{
+		buckets: make(map[string]*Bucket),
+		rate:    rate,
+		burst:   burst,
+		now:     now,
+	}
+}
+
+// Allow reports whether the client that sent r may make another request.
+// Clients are told apart by the IP address in r.RemoteAddr.
+func (p *PerClient) Allow(r *http.Request) bool {
+	// TODO(3): Find the client's bucket, creating it on first sight, and
+	// ask it. Add "net" to the imports for net.SplitHostPort.
+	return true
+}

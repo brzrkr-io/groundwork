@@ -1,0 +1,136 @@
+package diskwatch
+
+// This file is how Gopherlings grades the test you write. You don't need to
+// change it, but you are welcome to read it.
+//
+// TestGrader re-runs your tests against the real code, where they must pass,
+// and then against each mutant below, where they must fail. A mutant is a
+// copy of the code with one deliberate bug.
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+// learnerTests selects the tests you write in exercise_test.go.
+const learnerTests = "^TestCheckDisk$"
+
+// mutants are the bugs your tests must catch.
+var mutants = []mutant{
+	{
+		name: "never_alerts",
+		bug:  `CheckDisk never sent any alert`,
+		install: func() {
+			checkDisk = func(n Notifier, host string, usedPercent int) {}
+		},
+	},
+	{
+		name: "alerts_twice",
+		bug:  `CheckDisk sent every alert twice`,
+		install: func() {
+			checkDisk = func(n Notifier, host string, usedPercent int) {
+				realCheckDisk(n, host, usedPercent)
+				realCheckDisk(n, host, usedPercent)
+			}
+		},
+	},
+	{
+		name: "wrong_text",
+		bug:  `CheckDisk sent "disk on web-1 is 93 full" (no % sign)`,
+		install: func() {
+			checkDisk = func(n Notifier, host string, usedPercent int) {
+				if usedPercent >= 90 {
+					n.Notify(fmt.Sprintf("disk on %s is %d full", host, usedPercent))
+				}
+			}
+		},
+	},
+	{
+		name: "silent_at_90",
+		bug:  `CheckDisk sent no alert for a disk exactly 90% full`,
+		install: func() {
+			checkDisk = func(n Notifier, host string, usedPercent int) {
+				if usedPercent > 90 {
+					realCheckDisk(n, host, usedPercent)
+				}
+			}
+		},
+	},
+	{
+		name: "always_alerts",
+		bug:  `CheckDisk alerted for a healthy disk at 50% full`,
+		install: func() {
+			checkDisk = func(n Notifier, host string, usedPercent int) {
+				n.Notify(fmt.Sprintf("disk on %s is %d%% full", host, usedPercent))
+			}
+		},
+	},
+	{
+		name: "alerts_at_89",
+		bug:  `CheckDisk alerted for a healthy disk at 89% full`,
+		install: func() {
+			checkDisk = func(n Notifier, host string, usedPercent int) {
+				if usedPercent >= 89 {
+					n.Notify(fmt.Sprintf("disk on %s is %d%% full", host, usedPercent))
+				}
+			}
+		},
+	},
+}
+
+// Everything below is the same in every Testing exercise.
+
+// mutantEnv names the environment variable that tells a re-run which mutant
+// to install.
+const mutantEnv = "GOPHERLINGS_MUTANT"
+
+type mutant struct {
+	name    string // short name, used in GOPHERLINGS_MUTANT and test output
+	bug     string // completes "your tests didn't notice when ..."
+	install func() // swaps the bug into the package
+}
+
+// TestMain runs before any test. In a re-run started by TestGrader, it
+// installs the mutant named by GOPHERLINGS_MUTANT.
+func TestMain(m *testing.M) {
+	if name := os.Getenv(mutantEnv); name != "" {
+		for _, mu := range mutants {
+			if mu.name == name {
+				mu.install()
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func TestGrader(t *testing.T) {
+	if _, rerun := os.LookupEnv(mutantEnv); rerun {
+		t.Skip("TestGrader does not run inside its own re-runs")
+	}
+	out, err := runLearnerTests("")
+	if strings.Contains(out, "no tests to run") {
+		t.Fatalf("found no test matching %s in exercise_test.go", learnerTests)
+	}
+	if err != nil {
+		t.Fatalf("your tests must pass on the real code first, but they failed:\n%s", out)
+	}
+	for _, mu := range mutants {
+		t.Run(mu.name, func(t *testing.T) {
+			if _, err := runLearnerTests(mu.name); err == nil {
+				t.Errorf("your tests didn't notice when %s", mu.bug)
+			}
+		})
+	}
+}
+
+// runLearnerTests re-runs this test binary with only your tests selected and
+// the named mutant installed. An empty name means the real code.
+func runLearnerTests(mutant string) (string, error) {
+	cmd := exec.Command(os.Args[0], "-test.run="+learnerTests)
+	cmd.Env = append(os.Environ(), mutantEnv+"="+mutant)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

@@ -1,0 +1,28 @@
+package deploykit_test
+
+import (
+	"strings"
+	"testing"
+
+	"gopherlings.local/internal_packages/deploykit"
+)
+
+func TestReleaseName(t *testing.T) {
+	long := strings.Repeat("x", 70)
+	tests := []struct {
+		name             string
+		service, version string
+		want             string
+	}{
+		{"simple", "Payments API", "v1.4.2", "payments-api-v1-4-2"},
+		{"already clean", "checkout", "v2", "checkout-v2"},
+		{"too long", long, "v1", strings.Repeat("x", 63)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := deploykit.ReleaseName(tt.service, tt.version); got != tt.want {
+				t.Errorf("ReleaseName(%q, %q) = %q, want %q", tt.service, tt.version, got, tt.want)
+			}
+		})
+	}
+}

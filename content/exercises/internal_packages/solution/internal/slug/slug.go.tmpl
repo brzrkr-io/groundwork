@@ -1,0 +1,26 @@
+// Package slug turns free text into names that are safe to use for
+// Kubernetes objects. It is internal: only this module can import it.
+package slug
+
+import "strings"
+
+// maxLen is the longest name Kubernetes accepts for most objects.
+const maxLen = 63
+
+// Make lower-cases s, replaces every character that isn't a letter or digit
+// with "-", keeps at most 63 characters and trims "-" from both ends.
+func Make(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	name := b.String()
+	if len(name) > maxLen {
+		name = name[:maxLen]
+	}
+	return strings.Trim(name, "-")
+}

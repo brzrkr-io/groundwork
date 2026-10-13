@@ -1,0 +1,54 @@
+// Package stringers3 is the Gopherlings exercise "Stringers: a kubectl-style deployment report".
+package stringers3
+
+import "fmt"
+
+// Status says how a deployment's rollout is going.
+type Status int
+
+// The rollout statuses.
+const (
+	Progressing Status = iota
+	Available
+	Degraded
+)
+
+// String returns the status's name, such as "Available".
+func (s Status) String() string {
+	switch s {
+	case Progressing:
+		return "Progressing"
+	case Available:
+		return "Available"
+	case Degraded:
+		return "Degraded"
+	default:
+		return fmt.Sprintf("Status(%d)", int(s))
+	}
+}
+
+// Replicas counts how many copies of a deployment are ready.
+type Replicas struct {
+	Ready   int
+	Desired int
+}
+
+// TODO(1): Add a String method to Replicas that returns "3/5".
+
+// Deployment is one service rolled out in one namespace.
+type Deployment struct {
+	Name      string
+	Namespace string
+	Replicas  Replicas
+	Status    Status
+}
+
+// TODO(2): Add a String method to Deployment that returns
+// "prod/api 1/3 Degraded".
+
+// Report returns a summary line and then one line per deployment.
+func Report(deps []Deployment) string {
+	// TODO(3): Build the report with a strings.Builder.
+	// Add "strings" to the imports.
+	return ""
+}

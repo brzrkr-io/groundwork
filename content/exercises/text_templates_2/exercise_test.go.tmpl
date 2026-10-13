@@ -1,0 +1,113 @@
+package unitfile
+
+import "testing"
+
+func TestUnitSection(t *testing.T) {
+	tests := []struct {
+		name string
+		u    Unit
+		want string
+	}{
+		{
+			"two dependencies",
+			Unit{Description: "Payments API", After: []string{"network.target", "postgres.service"}},
+			"[Unit]\nDescription=Payments API\nAfter=network.target\nAfter=postgres.service\n",
+		},
+		{
+			"one dependency",
+			Unit{Description: "Log shipper", After: []string{"network-online.target"}},
+			"[Unit]\nDescription=Log shipper\nAfter=network-online.target\n",
+		},
+		{
+			"no dependencies",
+			Unit{Description: "Cache warmer"},
+			"[Unit]\nDescription=Cache warmer\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := UnitSection(tt.u)
+			if err != nil {
+				t.Fatalf("UnitSection(%+v) returned error %v, want nil", tt.u, err)
+			}
+			if got != tt.want {
+				t.Errorf("UnitSection(%+v) = %q, want %q", tt.u, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestServiceSection(t *testing.T) {
+	tests := []struct {
+		name string
+		s    Service
+		want string
+	}{
+		{
+			"all fields set",
+			Service{ExecStart: "/usr/local/bin/payments --port=8080", User: "svc-payments", Restart: "always"},
+			"[Service]\nExecStart=/usr/local/bin/payments --port=8080\nUser=svc-payments\nRestart=always\n",
+		},
+		{
+			"no user",
+			Service{ExecStart: "/usr/bin/shipper", Restart: "always"},
+			"[Service]\nExecStart=/usr/bin/shipper\nRestart=always\n",
+		},
+		{
+			"no restart policy",
+			Service{ExecStart: "/opt/warmer/run", User: "warmer"},
+			"[Service]\nExecStart=/opt/warmer/run\nUser=warmer\nRestart=on-failure\n",
+		},
+		{
+			"neither user nor restart",
+			Service{ExecStart: "/usr/bin/true"},
+			"[Service]\nExecStart=/usr/bin/true\nRestart=on-failure\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ServiceSection(tt.s)
+			if err != nil {
+				t.Fatalf("ServiceSection(%+v) returned error %v, want nil", tt.s, err)
+			}
+			if got != tt.want {
+				t.Errorf("ServiceSection(%+v) = %q, want %q", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEnvironmentLines(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			"keys come out sorted",
+			map[string]string{"LOG_LEVEL": "info", "DB_HOST": "db.internal", "PORT": "8080"},
+			"Environment=\"DB_HOST=db.internal\"\nEnvironment=\"LOG_LEVEL=info\"\nEnvironment=\"PORT=8080\"\n",
+		},
+		{
+			"one variable",
+			map[string]string{"REGION": "eu-west-1"},
+			"Environment=\"REGION=eu-west-1\"\n",
+		},
+		{
+			"empty map",
+			map[string]string{},
+			"",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := EnvironmentLines(tt.env)
+			if err != nil {
+				t.Fatalf("EnvironmentLines(%v) returned error %v, want nil", tt.env, err)
+			}
+			if got != tt.want {
+				t.Errorf("EnvironmentLines(%v) = %q, want %q", tt.env, got, tt.want)
+			}
+		})
+	}
+}

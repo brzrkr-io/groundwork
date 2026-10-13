@@ -1,0 +1,174 @@
+package stackdrift
+
+import (
+	"context"
+	"maps"
+	"slices"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+// stackTags are the tags CloudFormation adds to every instance it creates in
+// the payments stack. Nobody wrote them in the desired state.
+func stackTags(logicalID string) map[string]string {
+	return map[string]string{
+		"aws:cloudformation:stack-name": "payments",
+		"aws:cloudformation:logical-id": logicalID,
+		"aws:cloudformation:stack-id":   "arn:aws:cloudformation:us-east-1:123456789012:stack/payments/6c1f0e20-2b9a-11ef-9d1c-0a1b2c3d4e5f",
+	}
+}
+
+// with returns a copy of a with the tags in b added.
+func with(a, b map[string]string) map[string]string {
+	out := maps.Clone(a)
+	maps.Copy(out, b)
+	return out
+}
+
+func TestChangedKeys(t *testing.T) {
+	desired := map[string]string{"Env": "prod", "Owner": "payments"}
+
+	tests := []struct {
+		name string
+		want map[string]string
+		got  map[string]string
+		keys []string
+	}{
+		{
+			name: "only CloudFormation tags added",
+			want: desired,
+			got:  with(desired, stackTags("ApiServer1")),
+			keys: nil,
+		},
+		{
+			name: "real change next to managed tags",
+			want: desired,
+			got:  with(stackTags("ApiServer1"), map[string]string{"Env": "prod", "Owner": "bob"}),
+			keys: []string{"Owner"},
+		},
+		{
+			name: "missing tag next to managed tags",
+			want: desired,
+			got:  with(stackTags("Worker1"), map[string]string{"Owner": "payments"}),
+			keys: []string{"Env"},
+		},
+		{
+			name: "aws- without a colon is a normal tag",
+			want: desired,
+			got:  with(desired, map[string]string{"aws-team": "sre", "aws:backup:source-resource": "pay-api-1"}),
+			keys: []string{"aws-team"},
+		},
+		{
+			name: "no tags at all",
+			want: nil,
+			got:  nil,
+			keys: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ChangedKeys(tt.want, tt.got)
+			if !slices.Equal(got, tt.keys) {
+				t.Errorf("ChangedKeys(%v, %v) = %q, want %q", tt.want, tt.got, got, tt.keys)
+			}
+		})
+	}
+}
+
+// fakeEC2 implements ec2.DescribeInstancesAPIClient with a single page.
+type fakeEC2 struct {
+	instances []ec2types.Instance
+}
+
+func (f *fakeEC2) DescribeInstances(ctx context.Context, in *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	return &ec2.DescribeInstancesOutput{
+		Reservations: []ec2types.Reservation{{Instances: f.instances}},
+	}, nil
+}
+
+// instance builds a running EC2 instance. name becomes its "Name" tag.
+func instance(id, name string, tags map[string]string) ec2types.Instance {
+	inst := ec2types.Instance{
+		InstanceId: aws.String(id),
+		State:      &ec2types.InstanceState{Name: ec2types.InstanceStateNameRunning},
+		Tags:       []ec2types.Tag{{Key: aws.String("Name"), Value: aws.String(name)}},
+	}
+	for k, v := range tags {
+		inst.Tags = append(inst.Tags, ec2types.Tag{Key: aws.String(k), Value: aws.String(v)})
+	}
+	return inst
+}
+
+func TestDiff(t *testing.T) {
+	prod := map[string]string{"Env": "prod", "Owner": "payments"}
+	desired := []Resource{
+		{Kind: "instance", Name: "pay-api-1", Tags: prod},
+		{Kind: "instance", Name: "pay-api-2", Tags: prod},
+		{Kind: "instance", Name: "pay-worker-1", Tags: prod},
+	}
+
+	tests := []struct {
+		name      string
+		instances []ec2types.Instance
+		want      []Change
+	}{
+		{
+			name: "stack matches, only managed tags",
+			instances: []ec2types.Instance{
+				instance("i-01", "pay-api-1", with(prod, stackTags("ApiServer1"))),
+				instance("i-02", "pay-api-2", with(prod, stackTags("ApiServer2"))),
+				instance("i-03", "pay-worker-1", with(prod, stackTags("Worker1"))),
+			},
+			want: nil,
+		},
+		{
+			name: "owner edited, server missing, stray batch box",
+			instances: []ec2types.Instance{
+				instance("i-01", "pay-api-1", with(stackTags("ApiServer1"), map[string]string{"Env": "prod", "Owner": "bob"})),
+				instance("i-03", "pay-worker-1", with(prod, stackTags("Worker1"))),
+				instance("i-09", "batch-tmp", map[string]string{"Owner": "data"}),
+			},
+			want: []Change{
+				{Action: "delete", ID: "instance/batch-tmp"},
+				{Action: "update", ID: "instance/pay-api-1", Keys: []string{"Owner"}},
+				{Action: "create", ID: "instance/pay-api-2"},
+			},
+		},
+		{
+			name: "hotfix tag, worker missing, debug box",
+			instances: []ec2types.Instance{
+				instance("i-07", "debug-box", nil),
+				instance("i-02", "pay-api-2", with(prod, with(stackTags("ApiServer2"), map[string]string{"hotfix": "INC-77"}))),
+				instance("i-01", "pay-api-1", with(prod, stackTags("ApiServer1"))),
+			},
+			want: []Change{
+				{Action: "delete", ID: "instance/debug-box"},
+				{Action: "update", ID: "instance/pay-api-2", Keys: []string{"hotfix"}},
+				{Action: "create", ID: "instance/pay-worker-1"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual, err := Actual(context.Background(), &fakeEC2{instances: tt.instances})
+			if err != nil {
+				t.Fatalf("Actual() error = %v", err)
+			}
+			got := Diff(desired, actual)
+			if !sameChanges(got, tt.want) {
+				t.Errorf("Diff(desired, %v) = %+v, want %+v", actual, got, tt.want)
+			}
+		})
+	}
+}
+
+// sameChanges reports whether two change lists are equal. A nil list and an
+// empty list both mean "no changes".
+func sameChanges(a, b []Change) bool {
+	return slices.EqualFunc(a, b, func(x, y Change) bool {
+		return x.Action == y.Action && x.ID == y.ID && slices.Equal(x.Keys, y.Keys)
+	})
+}

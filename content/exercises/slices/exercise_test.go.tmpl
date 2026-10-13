@@ -1,0 +1,74 @@
+package hosts
+
+import (
+	"fmt"
+	"slices"
+	"testing"
+)
+
+// slices.Equal (from the standard "slices" package) reports whether two
+// slices have the same length and the same elements in the same order. A nil
+// slice and an empty slice count as equal.
+
+func TestFirstN(t *testing.T) {
+	cases := []struct {
+		hosts []string
+		n     int
+		want  []string
+	}{
+		{[]string{"web-1", "web-2", "web-3"}, 2, []string{"web-1", "web-2"}},
+		{[]string{"web-1", "web-2", "web-3"}, 1, []string{"web-1"}},
+		{[]string{"web-1", "web-2", "web-3"}, 3, []string{"web-1", "web-2", "web-3"}},
+		{[]string{"web-1", "web-2"}, 5, []string{"web-1", "web-2"}},
+		{[]string{"web-1", "web-2"}, 0, []string{}},
+		{nil, 3, []string{}},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_of_%d", c.n, len(c.hosts)), func(t *testing.T) {
+			if got := FirstN(c.hosts, c.n); !slices.Equal(got, c.want) {
+				t.Errorf("FirstN(%q, %d) = %q, want %q", c.hosts, c.n, got, c.want)
+			}
+		})
+	}
+}
+
+func TestLastN(t *testing.T) {
+	cases := []struct {
+		hosts []string
+		n     int
+		want  []string
+	}{
+		{[]string{"web-1", "web-2", "web-3"}, 2, []string{"web-2", "web-3"}},
+		{[]string{"web-1", "web-2", "web-3"}, 1, []string{"web-3"}},
+		{[]string{"db-1", "db-2", "db-3", "db-4"}, 4, []string{"db-1", "db-2", "db-3", "db-4"}},
+		{[]string{"web-1"}, 4, []string{"web-1"}},
+		{[]string{"web-1", "web-2"}, 0, []string{}},
+		{nil, 2, []string{}},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_of_%d", c.n, len(c.hosts)), func(t *testing.T) {
+			if got := LastN(c.hosts, c.n); !slices.Equal(got, c.want) {
+				t.Errorf("LastN(%q, %d) = %q, want %q", c.hosts, c.n, got, c.want)
+			}
+		})
+	}
+}
+
+func TestPortRange(t *testing.T) {
+	cases := []struct {
+		start, count int
+		want         []int
+	}{
+		{8080, 3, []int{8080, 8081, 8082}},
+		{9100, 1, []int{9100}},
+		{30000, 5, []int{30000, 30001, 30002, 30003, 30004}},
+		{9100, 0, []int{}},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_count_%d", c.start, c.count), func(t *testing.T) {
+			if got := PortRange(c.start, c.count); !slices.Equal(got, c.want) {
+				t.Errorf("PortRange(%d, %d) = %v, want %v", c.start, c.count, got, c.want)
+			}
+		})
+	}
+}

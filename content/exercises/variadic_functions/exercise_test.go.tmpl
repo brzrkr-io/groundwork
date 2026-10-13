@@ -1,0 +1,89 @@
+package toolkit
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestMax(t *testing.T) {
+	tests := []struct {
+		name   string
+		values []int
+		want   int
+	}{
+		{"largest in the middle", []int{120, 340, 95}, 340},
+		{"largest at the end", []int{12, 8, 40}, 40},
+		{"just one", []int{7}, 7},
+		{"all negative", []int{-5, -2, -9}, -2},
+		{"none", nil, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// tt.values... passes each value in the slice separately.
+			if got := Max(tt.values...); got != tt.want {
+				t.Errorf("Max(%v...) = %d, want %d", tt.values, got, tt.want)
+			}
+		})
+	}
+	t.Run("called with separate values", func(t *testing.T) {
+		if got := Max(3, 30, 300); got != 300 {
+			t.Errorf("Max(3, 30, 300) = %d, want 300", got)
+		}
+	})
+}
+
+func TestJoinPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		parts []string
+		want  string
+	}{
+		{"three parts", []string{"var", "log", "nginx"}, "var/log/nginx"},
+		{"two parts", []string{"etc", "hosts"}, "etc/hosts"},
+		{"one part", []string{"tmp"}, "tmp"},
+		{"empty part in the middle", []string{"etc", "", "app.conf"}, "etc/app.conf"},
+		{"empty part first", []string{"", "srv", "data"}, "srv/data"},
+		{"empty part last", []string{"opt", "app", ""}, "opt/app"},
+		{"only empty parts", []string{"", ""}, ""},
+		{"no parts", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := JoinPath(tt.parts...); got != tt.want {
+				t.Errorf("JoinPath(%q...) = %q, want %q", tt.parts, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTags(t *testing.T) {
+	t.Run("separate values", func(t *testing.T) {
+		got := Tags("team=platform", "env=prod", "tier=web")
+		want := []string{"team=platform", "env=prod", "tier=web"}
+		if !slices.Equal(got, want) {
+			t.Errorf(`Tags("team=platform", "env=prod", "tier=web") = %q, want %q`, got, want)
+		}
+	})
+	t.Run("no extras", func(t *testing.T) {
+		got := Tags("team=platform")
+		want := []string{"team=platform"}
+		if !slices.Equal(got, want) {
+			t.Errorf(`Tags("team=platform") = %q, want %q`, got, want)
+		}
+	})
+	t.Run("a slice with ...", func(t *testing.T) {
+		extra := []string{"env=dev", "owner=sam"}
+		got := Tags("team=data", extra...)
+		want := []string{"team=data", "env=dev", "owner=sam"}
+		if !slices.Equal(got, want) {
+			t.Errorf(`Tags("team=data", %q...) = %q, want %q`, extra, got, want)
+		}
+	})
+	t.Run("one extra", func(t *testing.T) {
+		got := Tags("team=web", "env=staging")
+		want := []string{"team=web", "env=staging"}
+		if !slices.Equal(got, want) {
+			t.Errorf(`Tags("team=web", "env=staging") = %q, want %q`, got, want)
+		}
+	})
+}

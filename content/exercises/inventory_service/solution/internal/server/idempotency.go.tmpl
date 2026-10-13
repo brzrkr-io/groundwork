@@ -1,0 +1,41 @@
+package server
+
+import (
+	"net/http"
+
+	"gopherlings.local/inventory_service/internal/idempotency"
+)
+
+// idempotent makes POST requests safe to retry. See the README for the
+// exact rules.
+func (s *Server) idempotent(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("Idempotency-Key")
+		if key == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		resp, state := s.idem.Start(key)
+		switch state {
+		case idempotency.KeyDone:
+			w.Header().Set("Idempotent-Replayed", "true")
+			idempotency.Send(w, resp)
+			return
+		case idempotency.KeyBusy:
+			writeError(w, http.StatusConflict, "a request with this Idempotency-Key is still in progress")
+			return
+		}
+
+		c := idempotency.NewCapture()
+		next.ServeHTTP(c, r)
+		resp = c.Response()
+		// Server errors are not saved, so the client can retry with the same key.
+		if resp.Status >= 500 {
+			s.idem.Forget(key)
+		} else {
+			s.idem.Finish(key, resp)
+		}
+		idempotency.Send(w, resp)
+	})
+}

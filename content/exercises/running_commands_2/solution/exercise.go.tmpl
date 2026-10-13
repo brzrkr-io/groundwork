@@ -1,0 +1,50 @@
+// Package toolrun is the Gopherlings exercise "Running commands: stdin, stderr and PATH lookups".
+package toolrun
+
+import (
+	"bytes"
+	"errors"
+	"os"
+	"os/exec"
+	"strings"
+)
+
+// RolloutStatus runs "kubectl rollout status deployment/<deployment>" with
+// KUBECONFIG set to kubeconfig, and returns kubectl's trimmed stdout. An empty
+// namespace leaves out the -n flag, so kubectl uses its default namespace.
+func RolloutStatus(kubectl, kubeconfig, namespace, deployment string) (string, error) {
+	args := []string{"rollout", "status", "deployment/" + deployment}
+	if namespace != "" {
+		args = append(args, "-n", namespace)
+	}
+	cmd := exec.Command(kubectl, args...)
+	cmd.Env = append(os.Environ(), "KUBECONFIG="+kubeconfig)
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+// Apply runs "kubectl apply -f -", feeding manifest to kubectl's stdin, and
+// returns exactly what kubectl wrote to stdout and to stderr.
+func Apply(kubectl, manifest string) (stdout, stderr string, err error) {
+	cmd := exec.Command(kubectl, "apply", "-f", "-")
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	err = cmd.Run()
+	return outBuf.String(), errBuf.String(), err
+}
+
+// Installed reports whether the program name can be found, either on PATH
+// or, if name contains a slash, at that exact path. A program that simply
+// isn't there gives false and a nil error. Any other problem is returned.
+func Installed(name string) (bool, error) {
+	_, err := exec.LookPath(name)
+	if errors.Is(err, exec.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}

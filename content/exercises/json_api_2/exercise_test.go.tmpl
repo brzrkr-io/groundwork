@@ -1,0 +1,174 @@
+package jsonapi
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// checkResponse compares the status code, Content-Type and body with what
+// we want. rec.Result() returns the response exactly as a client would
+// receive it, so headers set too late don't show up.
+func checkResponse(t *testing.T, rec *httptest.ResponseRecorder, wantCode int, wantBody string) {
+	t.Helper()
+	res := rec.Result()
+	if res.StatusCode != wantCode {
+		t.Errorf("status = %d, want %d", res.StatusCode, wantCode)
+	}
+	if got := res.Header.Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type = %q, want %q", got, "application/json")
+	}
+	if got := rec.Body.String(); got != wantBody {
+		t.Errorf("body = %q, want %q", got, wantBody)
+	}
+}
+
+func TestResponseHelpers(t *testing.T) {
+	// Each case calls one helper, then lists the response we want.
+	tests := []struct {
+		name     string
+		write    func(w http.ResponseWriter)
+		wantCode int
+		wantBody string
+	}{
+		{
+			name: "writeJSON with 200",
+			write: func(w http.ResponseWriter) {
+				writeJSON(w, http.StatusOK, Alert{Name: "DiskFull", Severity: "critical", Summary: "disk 95% full"})
+			},
+			wantCode: 200,
+			wantBody: `{"name":"DiskFull","severity":"critical","summary":"disk 95% full"}` + "\n",
+		},
+		{
+			name: "writeJSON with 201",
+			write: func(w http.ResponseWriter) {
+				writeJSON(w, http.StatusCreated, Alert{Name: "HighLatency", Severity: "warning"})
+			},
+			wantCode: 201,
+			wantBody: `{"name":"HighLatency","severity":"warning","summary":""}` + "\n",
+		},
+		{
+			name: "writeError with 400",
+			write: func(w http.ResponseWriter) {
+				writeError(w, http.StatusBadRequest, "name is required")
+			},
+			wantCode: 400,
+			wantBody: `{"error":"name is required"}` + "\n",
+		},
+		{
+			name: "writeError with 409",
+			write: func(w http.ResponseWriter) {
+				writeError(w, http.StatusConflict, "alert already exists: DiskFull")
+			},
+			wantCode: 409,
+			wantBody: `{"error":"alert already exists: DiskFull"}` + "\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			tt.write(rec)
+			checkResponse(t, rec, tt.wantCode, tt.wantBody)
+		})
+	}
+}
+
+func TestCreateAlert(t *testing.T) {
+	// Each case sends one request body and lists the response we want.
+	tests := []struct {
+		name     string
+		body     string
+		wantCode int
+		wantBody string
+	}{
+		{
+			name:     "new alert",
+			body:     `{"name":"DiskFull","severity":"critical","summary":"disk 95% full"}`,
+			wantCode: 201,
+			wantBody: `{"name":"DiskFull","severity":"critical","summary":"disk 95% full"}` + "\n",
+		},
+		{
+			name:     "new alert without summary",
+			body:     `{"name":"HighLatency","severity":"warning"}`,
+			wantCode: 201,
+			wantBody: `{"name":"HighLatency","severity":"warning","summary":""}` + "\n",
+		},
+		{
+			name:     "misspelled summary field",
+			body:     `{"name":"DiskFull","severity":"critical","sumary":"disk 95% full"}`,
+			wantCode: 400,
+			wantBody: `{"error":"invalid request body"}` + "\n",
+		},
+		{
+			name:     "broken JSON",
+			body:     `{"name":`,
+			wantCode: 400,
+			wantBody: `{"error":"invalid request body"}` + "\n",
+		},
+		{
+			name:     "bad severity",
+			body:     `{"name":"DiskFull","severity":"urgent"}`,
+			wantCode: 400,
+			wantBody: `{"error":"severity must be info, warning or critical"}` + "\n",
+		},
+		{
+			name:     "name already taken",
+			body:     `{"name":"CertExpiring","severity":"info"}`,
+			wantCode: 409,
+			wantBody: `{"error":"alert already exists: CertExpiring"}` + "\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Every case starts with a store that holds only "CertExpiring".
+			store := NewStore(Alert{Name: "CertExpiring", Severity: "warning"})
+			req := httptest.NewRequest("POST", "/alerts", strings.NewReader(tt.body))
+			rec := httptest.NewRecorder()
+			NewAPI(store).Routes().ServeHTTP(rec, req)
+			checkResponse(t, rec, tt.wantCode, tt.wantBody)
+		})
+	}
+}
+
+func TestListAlerts(t *testing.T) {
+	diskFull := Alert{Name: "DiskFull", Severity: "critical", Summary: "disk 95% full"}
+	certExpiring := Alert{Name: "CertExpiring", Severity: "warning", Summary: "cert expires in 7 days"}
+	podCrash := Alert{Name: "PodCrashLooping", Severity: "critical", Summary: "api restarted 5 times"}
+	highLatency := Alert{Name: "HighLatency", Severity: "info", Summary: "p99 over 500ms"}
+
+	// Each case fills a store, then lists the body we want from GET /alerts.
+	tests := []struct {
+		name     string
+		alerts   []Alert
+		wantBody string
+	}{
+		{
+			name:     "no alerts",
+			alerts:   nil,
+			wantBody: "[]\n",
+		},
+		{
+			name:     "one alert",
+			alerts:   []Alert{diskFull},
+			wantBody: `[{"name":"DiskFull","severity":"critical","summary":"disk 95% full"}]` + "\n",
+		},
+		{
+			name:   "four alerts, sorted by name",
+			alerts: []Alert{podCrash, diskFull, highLatency, certExpiring},
+			wantBody: `[{"name":"CertExpiring","severity":"warning","summary":"cert expires in 7 days"},` +
+				`{"name":"DiskFull","severity":"critical","summary":"disk 95% full"},` +
+				`{"name":"HighLatency","severity":"info","summary":"p99 over 500ms"},` +
+				`{"name":"PodCrashLooping","severity":"critical","summary":"api restarted 5 times"}]` + "\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := NewStore(tt.alerts...)
+			req := httptest.NewRequest("GET", "/alerts", nil)
+			rec := httptest.NewRecorder()
+			NewAPI(store).Routes().ServeHTTP(rec, req)
+			checkResponse(t, rec, 200, tt.wantBody)
+		})
+	}
+}

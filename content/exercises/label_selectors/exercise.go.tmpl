@@ -1,0 +1,31 @@
+// Package selectors is the Gopherlings exercise "Labels and selectors: matching in Go".
+package selectors
+
+import (
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
+)
+
+// ServiceSelects reports whether svc's selector picks pod, that is, whether
+// every key/value pair in svc.Spec.Selector is also one of pod's labels.
+func ServiceSelects(svc corev1.Service, pod corev1.Pod) bool {
+	// TODO(1): Build a selector from svc.Spec.Selector and match it against
+	// the Pod's labels.
+	return false
+}
+
+// MatchingPodNames returns the names of the pods that sel matches, in the
+// same order as pods.
+func MatchingPodNames(pods []corev1.Pod, sel labels.Selector) []string {
+	// TODO(2): Collect the name of every Pod whose labels match sel.
+	return nil
+}
+
+// SelectPods parses expr as a label selector and returns the names of the
+// pods it matches, in the same order as pods. It returns an error if expr is
+// not a valid selector.
+func SelectPods(pods []corev1.Pod, expr string) ([]string, error) {
+	// TODO(3): Parse expr with labels.Parse. Return a wrapped error if it is
+	// invalid, otherwise reuse MatchingPodNames. You will need to import "fmt".
+	return nil, nil
+}

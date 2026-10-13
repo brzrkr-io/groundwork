@@ -1,0 +1,103 @@
+package events
+
+import (
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestAuditJSON(t *testing.T) {
+	at := time.Date(2026, 10, 11, 14, 5, 0, 0, time.UTC)
+	tests := []struct {
+		user, action, target string
+		at                   time.Time
+		want                 string
+	}{
+		{"pat", "deploy", "api", at, `{"time":"2026-10-11T14:05:00Z","user":"pat","action":"deploy","target":"api"}`},
+		{"sam", "rollback", "billing", at.Add(90 * time.Minute), `{"time":"2026-10-11T15:35:00Z","user":"sam","action":"rollback","target":"billing"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.user+" "+tt.action, func(t *testing.T) {
+			got, err := AuditJSON(tt.user, tt.action, tt.target, tt.at)
+			if err != nil {
+				t.Fatalf("AuditJSON(%q, %q, %q, ...) returned error: %v", tt.user, tt.action, tt.target, err)
+			}
+			if got != tt.want {
+				t.Errorf("AuditJSON(%q, %q, %q, ...) = %q, want %q", tt.user, tt.action, tt.target, got, tt.want)
+			}
+		})
+	}
+}
+
+var (
+	apiAlert = Alert{Service: "api", Severity: "critical", Region: "eu-west-1", Message: "error rate above 5%"}
+	dbAlert  = Alert{Service: "db", Severity: "warning", Region: "us-east-1", Message: "disk 85% full", Silenced: true}
+)
+
+const (
+	apiLine = `{"service":"api","severity":"critical","region":"eu-west-1","message":"error rate above 5%"}`
+	dbLine  = `{"service":"db","severity":"warning","region":"us-east-1","message":"disk 85% full","silenced":true}`
+)
+
+func TestAlertTags(t *testing.T) {
+	tests := []struct {
+		name  string
+		alert Alert
+		want  string
+	}{
+		{"not silenced", apiAlert, apiLine},
+		{"silenced", dbAlert, dbLine},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, err := json.Marshal(tt.alert)
+			if err != nil {
+				t.Fatalf("json.Marshal(%+v) returned error: %v", tt.alert, err)
+			}
+			if got := string(b); got != tt.want {
+				t.Errorf("json.Marshal(%+v) = %q, want %q", tt.alert, got, tt.want)
+			}
+		})
+	}
+}
+
+var errDiskFull = errors.New("disk full")
+
+// brokenWriter is an io.Writer whose writes always fail.
+type brokenWriter struct{}
+
+func (brokenWriter) Write(p []byte) (int, error) {
+	return 0, errDiskFull
+}
+
+func TestWriteJSONLines(t *testing.T) {
+	tests := []struct {
+		name   string
+		alerts []Alert
+		want   string
+	}{
+		{"two alerts", []Alert{apiAlert, dbAlert}, apiLine + "\n" + dbLine + "\n"},
+		{"one alert", []Alert{dbAlert}, dbLine + "\n"},
+		{"no alerts", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sb strings.Builder
+			if err := WriteJSONLines(&sb, tt.alerts); err != nil {
+				t.Fatalf("WriteJSONLines(w, %d alerts) returned error: %v", len(tt.alerts), err)
+			}
+			if got := sb.String(); got != tt.want {
+				t.Errorf("WriteJSONLines(w, %d alerts) wrote %q, want %q", len(tt.alerts), got, tt.want)
+			}
+		})
+	}
+
+	t.Run("write fails", func(t *testing.T) {
+		err := WriteJSONLines(brokenWriter{}, []Alert{apiAlert, dbAlert})
+		if !errors.Is(err, errDiskFull) {
+			t.Errorf("WriteJSONLines(brokenWriter, 2 alerts) = %v, want %v", err, errDiskFull)
+		}
+	})
+}

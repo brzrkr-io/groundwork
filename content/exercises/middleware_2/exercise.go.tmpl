@@ -1,0 +1,57 @@
+// Package middleware is the Gopherlings exercise "Middleware: chains, status codes and auth".
+package middleware
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+)
+
+// Middleware wraps a handler with extra behaviour and returns the wrapped
+// handler.
+type Middleware func(http.Handler) http.Handler
+
+// Chain wraps h with every middleware in mws. The first one listed is the
+// outermost, so it runs first.
+func Chain(h http.Handler, mws ...Middleware) http.Handler {
+	// TODO(1): Fix the bug: the middlewares run in reverse order.
+	for _, mw := range mws {
+		h = mw(h)
+	}
+	return h
+}
+
+// statusRecorder is a ResponseWriter that remembers the status code the
+// handler sent.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+// TODO(2): Give statusRecorder a WriteHeader method that remembers the
+// code and passes it on to the real ResponseWriter.
+
+// AccessLog returns middleware that writes "METHOD PATH STATUS" and a
+// newline to out after each request.
+func AccessLog(out io.Writer) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(rec, r)
+			fmt.Fprintf(out, "%s %s %d\n", r.Method, r.URL.Path, rec.status)
+		})
+	}
+}
+
+// RequireToken returns middleware that only lets requests through when
+// they carry the header "Authorization: Bearer <token>".
+func RequireToken(token string) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// TODO(3): Reply 401 with a JSON error, without calling next,
+			// unless the Authorization header holds the right token.
+			// Add the "crypto/subtle" import.
+			next.ServeHTTP(w, r)
+		})
+	}
+}

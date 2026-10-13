@@ -1,0 +1,21 @@
+// Package conversion is the Gopherlings exercise "Type conversion".
+package conversion
+
+import "strconv"
+
+// HealthyPercent returns the percentage of pods that are healthy.
+func HealthyPercent(healthy, total int) float64 {
+	return float64(healthy) / float64(total) * 100
+}
+
+// ListenAddr returns a host:port listen address, such as "0.0.0.0:8080".
+func ListenAddr(host string, port int) string {
+	return host + ":" + strconv.Itoa(port)
+}
+
+// HealthLabel returns a status label, such as "3/4 pods healthy (75.0%)".
+func HealthLabel(healthy, total int) string {
+	pct := HealthyPercent(healthy, total)
+	return strconv.Itoa(healthy) + "/" + strconv.Itoa(total) +
+		" pods healthy (" + strconv.FormatFloat(pct, 'f', 1, 64) + "%)"
+}

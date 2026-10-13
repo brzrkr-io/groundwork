@@ -1,0 +1,199 @@
+package shutdown
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+func TestRecordingStopper(t *testing.T) {
+	tests := []struct {
+		name  string
+		calls [][]string // the InstanceIds of each StopInstances call
+		err   error
+		want  []string
+	}{
+		{"one call", [][]string{{"i-0a1"}}, nil, []string{"i-0a1"}},
+		{"two calls", [][]string{{"i-web-1", "i-web-2"}, {"i-db-1"}}, nil, []string{"i-web-1", "i-web-2", "i-db-1"}},
+		{"failing call is still recorded", [][]string{{"i-0a1"}}, errors.New("UnauthorizedOperation"), []string{"i-0a1"}},
+		{"two failing calls", [][]string{{"i-0a1"}, {"i-0b2", "i-0c3"}}, errors.New("RequestLimitExceeded"), []string{"i-0a1", "i-0b2", "i-0c3"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &RecordingStopper{Err: tt.err}
+			for _, ids := range tt.calls {
+				out, err := r.StopInstances(context.Background(), &ec2.StopInstancesInput{InstanceIds: ids})
+				if err != tt.err {
+					t.Errorf("StopInstances(%q) error = %v, want %v", ids, err, tt.err)
+				}
+				if tt.err != nil && out != nil {
+					t.Errorf("StopInstances(%q) output = non-nil, want nil when Err is set", ids)
+				}
+				if tt.err == nil && out == nil {
+					t.Errorf("StopInstances(%q) output = nil, want an output", ids)
+				}
+			}
+			if r.Calls != len(tt.calls) {
+				t.Errorf("Calls = %d, want %d", r.Calls, len(tt.calls))
+			}
+			if !slices.Equal(r.Stopped, tt.want) {
+				t.Errorf("Stopped = %q, want %q", r.Stopped, tt.want)
+			}
+		})
+	}
+}
+
+// tag builds a test tag. An empty key or value means that field is nil.
+func tag(key, value string) ec2types.Tag {
+	var t ec2types.Tag
+	if key != "" {
+		t.Key = aws.String(key)
+	}
+	if value != "" {
+		t.Value = aws.String(value)
+	}
+	return t
+}
+
+// tagValue calls TagValue and turns a panic into a test failure, so one
+// crash doesn't stop the other tests.
+func tagValue(t *testing.T, tags []ec2types.Tag, key string) string {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("TagValue(tags, %q) panicked: %v", key, r)
+		}
+	}()
+	return TagValue(tags, key)
+}
+
+func TestTagValue(t *testing.T) {
+	tests := []struct {
+		name string
+		tags []ec2types.Tag
+		key  string
+		want string
+	}{
+		{"found", []ec2types.Tag{tag("Name", "web-1"), tag("Env", "dev")}, "Env", "dev"},
+		{"other key", []ec2types.Tag{tag("Name", "web-1"), tag("Env", "dev")}, "Name", "web-1"},
+		{"missing key", []ec2types.Tag{tag("Name", "web-1")}, "Env", ""},
+		{"no tags", nil, "Env", ""},
+		{"nil value", []ec2types.Tag{tag("Env", "prod"), tag("Owner", "")}, "Owner", ""},
+		{"nil value of another tag", []ec2types.Tag{tag("Backup", ""), tag("Env", "prod")}, "Env", "prod"},
+		{"nil key", []ec2types.Tag{tag("", "orphan"), tag("Env", "staging")}, "Env", "staging"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tagValue(t, tt.tags, tt.key); got != tt.want {
+				t.Errorf("TagValue(tags, %q) = %q, want %q", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+// instance builds a test instance. An empty state means State is nil.
+func instance(id string, state ec2types.InstanceStateName, env string) ec2types.Instance {
+	inst := ec2types.Instance{
+		InstanceId: aws.String(id),
+		Tags:       []ec2types.Tag{tag("Name", id), tag("Env", env)},
+	}
+	if state != "" {
+		inst.State = &ec2types.InstanceState{Name: state}
+	}
+	return inst
+}
+
+func TestStopDevInstances(t *testing.T) {
+	running := ec2types.InstanceStateNameRunning
+	tests := []struct {
+		name      string
+		instances []ec2types.Instance
+		want      []string
+	}{
+		{
+			name: "running dev instances",
+			instances: []ec2types.Instance{
+				instance("i-dev-2", running, "dev"),
+				instance("i-prod-1", running, "prod"),
+				instance("i-dev-1", running, "dev"),
+			},
+			want: []string{"i-dev-1", "i-dev-2"},
+		},
+		{
+			name: "skips instances that are not running",
+			instances: []ec2types.Instance{
+				instance("i-dev-3", running, "dev"),
+				instance("i-dev-4", ec2types.InstanceStateNameStopped, "dev"),
+				instance("i-dev-5", ec2types.InstanceStateNameTerminated, "dev"),
+				instance("i-dev-6", "", "dev"),
+				instance("i-dev-7", ec2types.InstanceStateNamePending, "dev"),
+			},
+			want: []string{"i-dev-3"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			api := &RecordingStopper{}
+			got, err := StopDevInstances(context.Background(), api, tt.instances)
+			if err != nil {
+				t.Fatalf("StopDevInstances() error = %v, want nil", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("StopDevInstances() = %q, want %q", got, tt.want)
+			}
+			if api.Calls != 1 {
+				t.Errorf("StopDevInstances() called StopInstances %d times, want 1", api.Calls)
+			}
+			if !slices.Equal(api.Stopped, tt.want) {
+				t.Errorf("StopDevInstances() asked AWS to stop %q, want %q", api.Stopped, tt.want)
+			}
+		})
+	}
+
+	nothing := []struct {
+		name      string
+		instances []ec2types.Instance
+	}{
+		{"no instances", nil},
+		{"nothing to stop", []ec2types.Instance{
+			instance("i-prod-1", running, "prod"),
+			instance("i-dev-4", ec2types.InstanceStateNameStopped, "dev"),
+		}},
+	}
+	for _, tt := range nothing {
+		t.Run(tt.name, func(t *testing.T) {
+			api := &RecordingStopper{}
+			got, err := StopDevInstances(context.Background(), api, tt.instances)
+			if err != nil {
+				t.Fatalf("StopDevInstances() error = %v, want nil", err)
+			}
+			if len(got) != 0 {
+				t.Errorf("StopDevInstances() = %q, want no IDs", got)
+			}
+			if api.Calls != 0 {
+				t.Errorf("StopDevInstances() called StopInstances %d times, want 0", api.Calls)
+			}
+		})
+	}
+
+	t.Run("error", func(t *testing.T) {
+		apiErr := errors.New("UnauthorizedOperation")
+		api := &RecordingStopper{Err: apiErr}
+		got, err := StopDevInstances(context.Background(), api, []ec2types.Instance{instance("i-dev-1", running, "dev")})
+		want := "stop instances: UnauthorizedOperation"
+		if err == nil || err.Error() != want {
+			t.Fatalf("StopDevInstances() error = %v, want %q", err, want)
+		}
+		if !errors.Is(err, apiErr) {
+			t.Errorf("StopDevInstances() error does not wrap the API error")
+		}
+		if got != nil {
+			t.Errorf("StopDevInstances() = %q, want nil on error", got)
+		}
+	})
+}

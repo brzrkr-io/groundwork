@@ -1,0 +1,8 @@
+[default]
+region = us-east-1
+
+[profile ci]
+region = us-east-2
+
+[profile ops]
+region = eu-central-1

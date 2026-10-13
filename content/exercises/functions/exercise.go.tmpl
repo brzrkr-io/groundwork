@@ -1,0 +1,29 @@
+// Package functions is the Gopherlings exercise "Functions: a human-readable byte formatter".
+package functions
+
+import "fmt"
+
+// Byte unit sizes.
+const (
+	KiB = 1024
+	MiB = 1024 * KiB
+	GiB = 1024 * MiB
+)
+
+// MiBToBytes returns the number of bytes in mib mebibytes.
+func MiBToBytes(mib int) int {
+	// TODO(1): Convert mebibytes to bytes.
+	return mib
+}
+
+// FormatUnit formats bytes in the given unit with one decimal, like "1.5 KiB".
+func FormatUnit(bytes, unitSize int, unit string) string {
+	// TODO(2): Divide as floats and format with one decimal place.
+	return fmt.Sprintf("%d %s", bytes, unit)
+}
+
+// HumanBytes formats bytes in the biggest unit that fits, like "512.0 MiB".
+func HumanBytes(bytes int) string {
+	// TODO(3): Pick GiB, MiB, KiB or B and use FormatUnit.
+	return fmt.Sprintf("%d B", bytes)
+}

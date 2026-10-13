@@ -1,0 +1,90 @@
+// Package retry is the Gopherlings exercise "Retries: retryable HTTP errors".
+package retry
+
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
+// Retryable is implemented by errors that know whether trying again might
+// help.
+type Retryable interface {
+	Retryable() bool
+}
+
+// StatusError is a failed HTTP response from the image registry.
+type StatusError struct {
+	Code int
+}
+
+// Error describes the failed response, for example "registry returned 503".
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("registry returned %d", e.Code)
+}
+
+// Retryable reports whether the request is worth retrying: true for 429,
+// 502, 503 and 504, false for every other code.
+func (e *StatusError) Retryable() bool {
+	// TODO(2): Return true for 429, 502, 503 and 504, and false otherwise.
+	return false
+}
+
+// IsRetryable reports whether err, or any error it wraps, implements
+// Retryable and says it is worth retrying.
+func IsRetryable(err error) bool {
+	// TODO(2): Use errors.As to find a Retryable inside err. Add "errors" to
+	// the imports.
+	return false
+}
+
+// Backoff returns base doubled attempt times, but never more than limit.
+func Backoff(attempt int, base, limit time.Duration) time.Duration {
+	d := base
+	for range attempt {
+		d *= 2
+		if d >= limit {
+			return limit
+		}
+	}
+	return d
+}
+
+// Policy says how Do retries an operation.
+type Policy struct {
+	// MaxAttempts is the most times Do calls the operation, including the
+	// first try.
+	MaxAttempts int
+	// Base is the wait after the first failure; Max caps every wait.
+	Base, Max time.Duration
+	// ShouldRetry reports whether an error is worth retrying.
+	ShouldRetry func(err error) bool
+	// Sleep waits for d, or returns an error if ctx is cancelled first.
+	Sleep func(ctx context.Context, d time.Duration) error
+}
+
+// Do calls op until it succeeds, fails with an error ShouldRetry rejects, or
+// has been called MaxAttempts times. It sleeps for Backoff between attempts,
+// but never after the last one.
+func Do(ctx context.Context, p Policy, op func(context.Context) error) error {
+	// TODO(1): Fix the two bugs: op is called one time too many, and Do
+	// sleeps after the last attempt.
+	var err error
+	for attempt := 0; attempt <= p.MaxAttempts; attempt++ {
+		err = op(ctx)
+		if err == nil || !p.ShouldRetry(err) {
+			return err
+		}
+		if sleepErr := p.Sleep(ctx, Backoff(attempt, p.Base, p.Max)); sleepErr != nil {
+			return sleepErr
+		}
+	}
+	return err
+}
+
+// SleepCtx waits for d, or until ctx is cancelled, whichever comes first.
+// It returns nil after a full wait, or ctx.Err() if ctx was cancelled.
+func SleepCtx(ctx context.Context, d time.Duration) error {
+	// TODO(3): Wait for time.After(d) or ctx.Done() with a select.
+	return nil
+}

@@ -1,0 +1,114 @@
+package logscan
+
+import (
+	"errors"
+	"io"
+	"strings"
+	"testing"
+	"testing/iotest"
+)
+
+// appLog is a short application log used by several tests.
+const appLog = `2026-10-11T09:00:01Z INFO  api started on :8080
+2026-10-11T09:00:07Z ERROR db connection refused
+2026-10-11T09:00:09Z WARN  retrying db connection
+2026-10-11T09:00:12Z ERROR db connection refused
+2026-10-11T09:00:15Z INFO  db connected
+`
+
+// run calls Run with fake streams and returns everything it produced.
+func run(args []string, stdin io.Reader) (code int, stdout, stderr string) {
+	var out, errOut strings.Builder
+	code = Run(args, stdin, &out, &errOut)
+	return code, out.String(), errOut.String()
+}
+
+func TestSummaryOnStderr(t *testing.T) {
+	tests := []struct {
+		name       string
+		pattern    string
+		wantStdout string
+		wantStderr string
+	}{
+		{"two errors", "ERROR",
+			"2026-10-11T09:00:07Z ERROR db connection refused\n" +
+				"2026-10-11T09:00:12Z ERROR db connection refused\n",
+			"logscan: 2 matching line(s)\n"},
+		{"one warning", "WARN",
+			"2026-10-11T09:00:09Z WARN  retrying db connection\n",
+			"logscan: 1 matching line(s)\n"},
+		{"no panics", "PANIC",
+			"",
+			"logscan: 0 matching line(s)\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := []string{tt.pattern}
+			_, stdout, stderr := run(args, strings.NewReader(appLog))
+			if stdout != tt.wantStdout {
+				t.Errorf("Run(%q) stdout = %q, want %q", args, stdout, tt.wantStdout)
+			}
+			if stderr != tt.wantStderr {
+				t.Errorf("Run(%q) stderr = %q, want %q", args, stderr, tt.wantStderr)
+			}
+		})
+	}
+}
+
+func TestExitCode(t *testing.T) {
+	tests := []struct {
+		name  string
+		args  []string
+		input string
+		want  int
+	}{
+		{"match", []string{"ERROR"}, appLog, 0},
+		{"another match", []string{"db connected"}, appLog, 0},
+		{"no match", []string{"PANIC"}, appLog, 1},
+		{"matching is case-sensitive", []string{"error"}, appLog, 1},
+		{"empty input", []string{"ERROR"}, "", 1},
+		{"no pattern", []string{}, appLog, 2},
+		{"two patterns", []string{"ERROR", "WARN"}, appLog, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, _, _ := run(tt.args, strings.NewReader(tt.input))
+			if code != tt.want {
+				t.Errorf("Run(%q) = %d, want %d", tt.args, code, tt.want)
+			}
+		})
+	}
+}
+
+// errDisk stands in for a failure while reading stdin.
+var errDisk = errors.New("disk read failed")
+
+func TestReadError(t *testing.T) {
+	tests := []struct {
+		name       string
+		before     string // what stdin delivers before it fails
+		wantStdout string
+	}{
+		{"after a match", "2026-10-11T09:00:07Z ERROR db connection refused\n",
+			"2026-10-11T09:00:07Z ERROR db connection refused\n"},
+		{"after no match", "2026-10-11T09:00:01Z INFO  api started on :8080\n", ""},
+		{"straight away", "", ""},
+	}
+	const wantStderr = "logscan: reading stdin: disk read failed\n"
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := []string{"ERROR"}
+			stdin := io.MultiReader(strings.NewReader(tt.before), iotest.ErrReader(errDisk))
+			code, stdout, stderr := run(args, stdin)
+			if code != 2 {
+				t.Errorf("Run(%q) = %d, want 2", args, code)
+			}
+			if stdout != tt.wantStdout {
+				t.Errorf("Run(%q) stdout = %q, want %q", args, stdout, tt.wantStdout)
+			}
+			if stderr != wantStderr {
+				t.Errorf("Run(%q) stderr = %q, want %q", args, stderr, wantStderr)
+			}
+		})
+	}
+}

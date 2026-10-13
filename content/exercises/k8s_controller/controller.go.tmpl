@@ -1,0 +1,79 @@
+// Package controller exposes labelled Deployments with a ClusterIP Service.
+//
+// This file wires the pieces together. You don't need to change it, but read
+// it: it is the shape of almost every Kubernetes controller.
+package controller
+
+import (
+	"context"
+	"sync"
+
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	appslisters "k8s.io/client-go/listers/apps/v1"
+	"k8s.io/client-go/util/workqueue"
+)
+
+// Controller keeps one Service per exposed Deployment.
+type Controller struct {
+	// clientset talks to the API server: reads and writes of Services.
+	clientset kubernetes.Interface
+	// factory owns the Deployment informer (list + watch + local cache).
+	factory informers.SharedInformerFactory
+	// deployments reads Deployments from the informer's local cache.
+	deployments appslisters.DeploymentLister
+	// queue holds "namespace/name" keys of Deployments to reconcile.
+	queue workqueue.TypedRateLimitingInterface[string]
+}
+
+// New builds a Controller for the cluster behind cs. Call Run to start it.
+func New(cs kubernetes.Interface) (*Controller, error) {
+	return newController(cs, workqueue.DefaultTypedControllerRateLimiter[string]())
+}
+
+// newController is New with a chosen retry rate limiter. The tests use a
+// fast one so that retries happen within milliseconds.
+func newController(cs kubernetes.Interface, limiter workqueue.TypedRateLimiter[string]) (*Controller, error) {
+	factory := informers.NewSharedInformerFactory(cs, 0)
+	deployments := factory.Apps().V1().Deployments()
+
+	c := &Controller{
+		clientset:   cs,
+		factory:     factory,
+		deployments: deployments.Lister(),
+		queue:       workqueue.NewTypedRateLimitingQueue(limiter),
+	}
+	if err := c.addHandlers(deployments.TypedInformer()); err != nil {
+		c.queue.ShutDown()
+		return nil, err
+	}
+	return c, nil
+}
+
+// Run starts the informer and the given number of workers, then blocks until
+// ctx is cancelled. Everything it started has stopped by the time it returns.
+func (c *Controller) Run(ctx context.Context, workers int) error {
+	c.factory.StartWithContext(ctx)
+
+	// Never work from a half-filled cache: a Deployment that hasn't been
+	// listed yet would look deleted. This only fails if ctx is cancelled.
+	if err := c.factory.WaitForCacheSyncWithContext(ctx).AsError(); err != nil {
+		c.queue.ShutDown()
+		c.factory.Shutdown()
+		return err
+	}
+
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() { c.runWorker(ctx) })
+	}
+
+	<-ctx.Done()
+	// Shut down in order: the queue first, so idle workers wake up and
+	// return; then wait for the workers; then wait for the informer
+	// goroutines, which are already stopping because ctx is cancelled.
+	c.queue.ShutDown()
+	wg.Wait()
+	c.factory.Shutdown()
+	return nil
+}

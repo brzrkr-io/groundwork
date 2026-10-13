@@ -1,0 +1,63 @@
+package functions
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestMiBToBytes(t *testing.T) {
+	// Each line is one case: the inputs, then the answer we want.
+	cases := []struct {
+		mib, want int
+	}{
+		{1, 1048576},
+		{512, 536870912},
+		{0, 0},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%d_MiB", c.mib), func(t *testing.T) {
+			if got := MiBToBytes(c.mib); got != c.want {
+				t.Errorf("MiBToBytes(%d) = %d, want %d", c.mib, got, c.want)
+			}
+		})
+	}
+}
+
+func TestFormatUnit(t *testing.T) {
+	cases := []struct {
+		bytes, unitSize int
+		unit, want      string
+	}{
+		{1536, KiB, "KiB", "1.5 KiB"},
+		{3 * MiB, MiB, "MiB", "3.0 MiB"},
+		{5 * GiB / 2, GiB, "GiB", "2.5 GiB"},
+	}
+	for _, c := range cases {
+		t.Run(c.want, func(t *testing.T) {
+			if got := FormatUnit(c.bytes, c.unitSize, c.unit); got != c.want {
+				t.Errorf("FormatUnit(%d, %d, %q) = %q, want %q", c.bytes, c.unitSize, c.unit, got, c.want)
+			}
+		})
+	}
+}
+
+func TestHumanBytes(t *testing.T) {
+	cases := []struct {
+		bytes int
+		want  string
+	}{
+		{500, "500 B"},
+		{0, "0 B"},
+		{1024, "1.0 KiB"},
+		{2560, "2.5 KiB"},
+		{MiBToBytes(512), "512.0 MiB"},
+		{3 * GiB / 2, "1.5 GiB"},
+	}
+	for _, c := range cases {
+		t.Run(c.want, func(t *testing.T) {
+			if got := HumanBytes(c.bytes); got != c.want {
+				t.Errorf("HumanBytes(%d) = %q, want %q", c.bytes, got, c.want)
+			}
+		})
+	}
+}

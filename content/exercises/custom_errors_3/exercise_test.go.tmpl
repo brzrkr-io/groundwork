@@ -1,0 +1,92 @@
+package customerr3
+
+import (
+	"errors"
+	"strconv"
+	"testing"
+)
+
+func TestHTTPErrorMessage(t *testing.T) {
+	tests := []struct {
+		url    string
+		status int
+		want   string
+	}{
+		{"http://api:8080/healthz", 503, "GET http://api:8080/healthz: status 503"},
+		{"http://web-2/ready", 404, "GET http://web-2/ready: status 404"},
+		{"https://auth.internal/livez", 500, "GET https://auth.internal/livez: status 500"},
+	}
+	for _, tt := range tests {
+		t.Run(strconv.Itoa(tt.status), func(t *testing.T) {
+			err := &HTTPError{URL: tt.url, StatusCode: tt.status}
+			if got := err.Error(); got != tt.want {
+				t.Errorf("(&HTTPError{URL: %q, StatusCode: %d}).Error() = %q, want %q",
+					tt.url, tt.status, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckResponse(t *testing.T) {
+	healthy := []int{200, 204, 299}
+	for _, status := range healthy {
+		t.Run("healthy "+strconv.Itoa(status), func(t *testing.T) {
+			url := "http://api:8080/healthz"
+			if err := CheckResponse(url, status); err != nil {
+				t.Errorf("CheckResponse(%q, %d) = %v, want nil", url, status, err)
+			}
+		})
+	}
+
+	unhealthy := []struct {
+		url    string
+		status int
+	}{
+		{"http://api:8080/healthz", 503},
+		{"http://web-2/ready", 404},
+		{"http://web-2/ready", 302},
+		{"http://cache:6379/ping", 199},
+		{"http://cache:6379/ping", 300},
+	}
+	for _, tt := range unhealthy {
+		t.Run("unhealthy "+strconv.Itoa(tt.status), func(t *testing.T) {
+			err := CheckResponse(tt.url, tt.status)
+			herr, ok := err.(*HTTPError)
+			if !ok {
+				t.Fatalf("CheckResponse(%q, %d) = %v (type %T), want a *HTTPError", tt.url, tt.status, err, err)
+			}
+			if herr.URL != tt.url || herr.StatusCode != tt.status {
+				t.Errorf("CheckResponse(%q, %d) = &HTTPError{URL: %q, StatusCode: %d}, want &HTTPError{URL: %q, StatusCode: %d}",
+					tt.url, tt.status, herr.URL, herr.StatusCode, tt.url, tt.status)
+			}
+		})
+	}
+}
+
+func TestRetryable(t *testing.T) {
+	tests := []struct {
+		name string // the argument, written as Go code
+		err  error
+		want bool
+	}{
+		{`&TimeoutError{Host: "db-1", Seconds: 5}`, &TimeoutError{Host: "db-1", Seconds: 5}, true},
+		{`&TimeoutError{Host: "api-3", Seconds: 30}`, &TimeoutError{Host: "api-3", Seconds: 30}, true},
+		{`&HTTPError{URL: "http://api/healthz", StatusCode: 500}`, &HTTPError{URL: "http://api/healthz", StatusCode: 500}, true},
+		{`&HTTPError{URL: "http://api/healthz", StatusCode: 503}`, &HTTPError{URL: "http://api/healthz", StatusCode: 503}, true},
+		{`&HTTPError{URL: "http://api/healthz", StatusCode: 599}`, &HTTPError{URL: "http://api/healthz", StatusCode: 599}, true},
+		{`&HTTPError{URL: "http://api/healthz", StatusCode: 429}`, &HTTPError{URL: "http://api/healthz", StatusCode: 429}, true},
+		{`&HTTPError{URL: "http://api/healthz", StatusCode: 404}`, &HTTPError{URL: "http://api/healthz", StatusCode: 404}, false},
+		{`&HTTPError{URL: "http://api/healthz", StatusCode: 401}`, &HTTPError{URL: "http://api/healthz", StatusCode: 401}, false},
+		{`&HTTPError{URL: "http://api/healthz", StatusCode: 302}`, &HTTPError{URL: "http://api/healthz", StatusCode: 302}, false},
+		{`errors.New("dns lookup failed")`, errors.New("dns lookup failed"), false},
+		{`errors.New("certificate expired")`, errors.New("certificate expired"), false},
+		{`nil`, nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Retryable(tt.err); got != tt.want {
+				t.Errorf("Retryable(%s) = %t, want %t", tt.name, got, tt.want)
+			}
+		})
+	}
+}

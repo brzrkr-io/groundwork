@@ -1,0 +1,152 @@
+package structs2
+
+import (
+	"fmt"
+	"testing"
+)
+
+// checkHosts reports every host in got that differs from the one in want.
+// Host has no map or slice fields, so two hosts can be compared with !=.
+func checkHosts(t *testing.T, call string, got, want []Host) {
+	t.Helper()
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("after %s, hosts[%d] = %+v, want %+v", call, i, got[i], want[i])
+		}
+	}
+}
+
+func TestMarkAllUnhealthy(t *testing.T) {
+	// Each case is the hosts we pass in, then the hosts we want afterwards.
+	tests := []struct {
+		name  string
+		hosts []Host
+		want  []Host
+	}{
+		{
+			name: "all healthy",
+			hosts: []Host{
+				{Name: "web-1", Addr: "10.0.0.5", Healthy: true},
+				{Name: "web-2", Addr: "10.0.0.6", Healthy: true},
+			},
+			want: []Host{
+				{Name: "web-1", Addr: "10.0.0.5", Healthy: false},
+				{Name: "web-2", Addr: "10.0.0.6", Healthy: false},
+			},
+		},
+		{
+			name: "mixed",
+			hosts: []Host{
+				{Name: "db-1", Addr: "10.0.1.10", Healthy: false, Failures: 3},
+				{Name: "db-2", Addr: "10.0.1.11", Healthy: true, Failures: 1},
+				{Name: "db-3", Addr: "10.0.1.12", Healthy: true},
+			},
+			want: []Host{
+				{Name: "db-1", Addr: "10.0.1.10", Healthy: false, Failures: 3},
+				{Name: "db-2", Addr: "10.0.1.11", Healthy: false, Failures: 1},
+				{Name: "db-3", Addr: "10.0.1.12", Healthy: false},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			MarkAllUnhealthy(tt.hosts)
+			checkHosts(t, "MarkAllUnhealthy(hosts)", tt.hosts, tt.want)
+		})
+	}
+}
+
+func TestRecordFailure(t *testing.T) {
+	// Each case is the hosts we pass in, the name we record a failure for,
+	// then the hosts we want afterwards.
+	tests := []struct {
+		name     string
+		hosts    []Host
+		hostName string
+		want     []Host
+	}{
+		{
+			name:     "first failure stays healthy",
+			hosts:    []Host{{Name: "api-1", Healthy: true}},
+			hostName: "api-1",
+			want:     []Host{{Name: "api-1", Healthy: true, Failures: 1}},
+		},
+		{
+			name:     "third failure turns unhealthy",
+			hosts:    []Host{{Name: "db-1", Healthy: true, Failures: 2}},
+			hostName: "db-1",
+			want:     []Host{{Name: "db-1", Healthy: false, Failures: 3}},
+		},
+		{
+			name:     "already unhealthy keeps counting",
+			hosts:    []Host{{Name: "db-2", Healthy: false, Failures: 5}},
+			hostName: "db-2",
+			want:     []Host{{Name: "db-2", Healthy: false, Failures: 6}},
+		},
+		{
+			name: "only the named host changes",
+			hosts: []Host{
+				{Name: "web-1", Addr: "10.0.0.5", Healthy: true},
+				{Name: "web-2", Addr: "10.0.0.6", Healthy: true, Failures: 2},
+				{Name: "web-3", Addr: "10.0.0.7", Healthy: true},
+			},
+			hostName: "web-2",
+			want: []Host{
+				{Name: "web-1", Addr: "10.0.0.5", Healthy: true},
+				{Name: "web-2", Addr: "10.0.0.6", Healthy: false, Failures: 3},
+				{Name: "web-3", Addr: "10.0.0.7", Healthy: true},
+			},
+		},
+		{
+			name:     "unknown name changes nothing",
+			hosts:    []Host{{Name: "web-1", Healthy: true, Failures: 1}},
+			hostName: "web-9",
+			want:     []Host{{Name: "web-1", Healthy: true, Failures: 1}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			RecordFailure(tt.hosts, tt.hostName)
+			call := fmt.Sprintf("RecordFailure(hosts, %q)", tt.hostName)
+			checkHosts(t, call, tt.hosts, tt.want)
+		})
+	}
+}
+
+func TestResetAll(t *testing.T) {
+	// Each case is the hosts we pass in, then the hosts we want afterwards.
+	tests := []struct {
+		name  string
+		hosts []Host
+		want  []Host
+	}{
+		{
+			name: "failing hosts",
+			hosts: []Host{
+				{Name: "web-1", Addr: "10.0.0.5", Healthy: false, Failures: 4},
+				{Name: "web-2", Addr: "10.0.0.6", Healthy: true, Failures: 1},
+			},
+			want: []Host{
+				{Name: "web-1", Addr: "10.0.0.5", Healthy: true, Failures: 0},
+				{Name: "web-2", Addr: "10.0.0.6", Healthy: true, Failures: 0},
+			},
+		},
+		{
+			name: "one already fine",
+			hosts: []Host{
+				{Name: "cache-1", Addr: "10.0.2.20", Healthy: true},
+				{Name: "cache-2", Addr: "10.0.2.21", Healthy: false, Failures: 7},
+			},
+			want: []Host{
+				{Name: "cache-1", Addr: "10.0.2.20", Healthy: true},
+				{Name: "cache-2", Addr: "10.0.2.21", Healthy: true},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ResetAll(tt.hosts)
+			checkHosts(t, "ResetAll(hosts)", tt.hosts, tt.want)
+		})
+	}
+}

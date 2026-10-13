@@ -1,0 +1,55 @@
+// Package typeswitches2 is the Gopherlings exercise "Type switches: read decoded config values".
+package typeswitches2
+
+import "strconv"
+
+// GetBool returns the bool stored under key and true. It returns false,
+// false when the key is missing or does not hold a bool.
+func GetBool(cfg map[string]any, key string) (bool, bool) {
+	b, ok := cfg[key].(bool)
+	return b, ok
+}
+
+// GetInt returns the whole number stored under key and true. It accepts an
+// int, a float64 without a fractional part, or a string such as "8080". For
+// anything else it returns 0, false.
+func GetInt(cfg map[string]any, key string) (int, bool) {
+	switch v := cfg[key].(type) {
+	case int:
+		return v, true
+	case float64:
+		n := int(v)
+		if float64(n) != v {
+			return 0, false
+		}
+		return n, true
+	case string:
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	}
+	return 0, false
+}
+
+// GetStrings returns the list of strings stored under key and true. It
+// accepts a []string, or a []any whose elements are all strings. For
+// anything else it returns nil, false.
+func GetStrings(cfg map[string]any, key string) ([]string, bool) {
+	switch v := cfg[key].(type) {
+	case []string:
+		return v, true
+	case []any:
+		list := make([]string, 0, len(v))
+		for _, item := range v {
+			s, ok := item.(string)
+			if !ok {
+				return nil, false
+			}
+			list = append(list, s)
+		}
+		return list, true
+	}
+	return nil, false
+}

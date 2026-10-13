@@ -1,0 +1,88 @@
+package closures
+
+import "testing"
+
+func TestNewThresholdChecker(t *testing.T) {
+	// Each line is one case: the limit and the value, then the answer we want.
+	tests := []struct {
+		name  string
+		limit int
+		value int
+		want  bool
+	}{
+		{"below", 80, 79, false},
+		{"at the limit", 80, 80, true},
+		{"above", 80, 95, true},
+		{"low limit", 5, 4, false},
+		{"low limit reached", 5, 5, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			check := NewThresholdChecker(tt.limit)
+			if got := check(tt.value); got != tt.want {
+				t.Errorf("NewThresholdChecker(%d)(%d) = %t, want %t", tt.limit, tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewRequestCounter(t *testing.T) {
+	t.Run("counts up from 1", func(t *testing.T) {
+		count := NewRequestCounter()
+		for want := 1; want <= 3; want++ {
+			if got := count(); got != want {
+				t.Fatalf("call %d: counter() = %d, want %d", want, got, want)
+			}
+		}
+	})
+	t.Run("counters are independent", func(t *testing.T) {
+		api := NewRequestCounter()
+		web := NewRequestCounter()
+		api()
+		api()
+		if got := web(); got != 1 {
+			t.Errorf("first web() after two api() calls = %d, want 1", got)
+		}
+		if got := api(); got != 3 {
+			t.Errorf("third api() = %d, want 3", got)
+		}
+	})
+}
+
+func TestRetry(t *testing.T) {
+	tests := []struct {
+		name       string
+		attempts   int
+		succeedsOn int // the attempt number where try returns true
+		want       int
+	}{
+		{"first try", 5, 1, 1},
+		{"third try", 5, 3, 3},
+		{"last try", 4, 4, 4},
+		{"never within attempts", 2, 3, 0},
+		{"zero attempts", 0, 1, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			try := func(attempt int) bool {
+				calls++
+				if attempt != calls {
+					t.Errorf("call %d got attempt %d, want %d", calls, attempt, calls)
+				}
+				return attempt == tt.succeedsOn
+			}
+			if got := Retry(tt.attempts, try); got != tt.want {
+				t.Errorf("Retry(%d, succeeds on %d) = %d, want %d", tt.attempts, tt.succeedsOn, got, tt.want)
+			}
+			wantCalls := tt.want
+			if tt.want == 0 {
+				wantCalls = tt.attempts
+			}
+			if calls != wantCalls {
+				t.Errorf("Retry(%d, succeeds on %d) called try %d times, want %d",
+					tt.attempts, tt.succeedsOn, calls, wantCalls)
+			}
+		})
+	}
+}

@@ -1,0 +1,141 @@
+package wrapping
+
+import (
+	"errors"
+	"fmt"
+	"maps"
+	"testing"
+)
+
+func TestStoreGet(t *testing.T) {
+	store := &Store{Files: map[string]string{
+		"web": "port=8080",
+		"api": "port=9000",
+	}}
+
+	found := []struct{ name, want string }{
+		{"web", "port=8080"},
+		{"api", "port=9000"},
+	}
+	for _, tc := range found {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := store.Get(tc.name)
+			if err != nil || got != tc.want {
+				t.Errorf("Get(%q) = %q, %v, want %q, nil", tc.name, got, err, tc.want)
+			}
+		})
+	}
+
+	missing := []struct{ name, wantErr string }{
+		{"cache", `config "cache": not found`},
+		{"db", `config "db": not found`},
+	}
+	for _, tc := range missing {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := store.Get(tc.name)
+			if err == nil {
+				t.Fatalf("Get(%q) error = nil, want %q", tc.name, tc.wantErr)
+			}
+			if err.Error() != tc.wantErr {
+				t.Errorf("Get(%q) error = %q, want %q", tc.name, err.Error(), tc.wantErr)
+			}
+			if !errors.Is(err, ErrNotFound) {
+				t.Errorf("errors.Is(Get(%q) error, ErrNotFound) = false, want true", tc.name)
+			}
+		})
+	}
+}
+
+func TestLoadConfig(t *testing.T) {
+	store := &Store{Files: map[string]string{
+		"web":    "# web server\nport=8080\nreplicas=3",
+		"api":    "port=9000\nregion=eu-west-1",
+		"worker": "queue=jobs\nreplicas 3",
+		"proxy":  "port=443\n\ndebug",
+	}}
+
+	good := []struct {
+		name string
+		want map[string]string
+	}{
+		{"web", map[string]string{"port": "8080", "replicas": "3"}},
+		{"api", map[string]string{"port": "9000", "region": "eu-west-1"}},
+	}
+	for _, tc := range good {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := LoadConfig(store, tc.name)
+			if err != nil || !maps.Equal(got, tc.want) {
+				t.Errorf("LoadConfig(store, %q) = %v, %v, want %v, nil", tc.name, got, err, tc.want)
+			}
+		})
+	}
+
+	notFound := []struct{ name, wantErr string }{
+		{"cache", `load config: config "cache": not found`},
+		{"db", `load config: config "db": not found`},
+	}
+	for _, tc := range notFound {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadConfig(store, tc.name)
+			if err == nil {
+				t.Fatalf("LoadConfig(store, %q) error = nil, want %q", tc.name, tc.wantErr)
+			}
+			if err.Error() != tc.wantErr {
+				t.Errorf("LoadConfig(store, %q) error = %q, want %q", tc.name, err.Error(), tc.wantErr)
+			}
+			if !errors.Is(err, ErrNotFound) {
+				t.Errorf("errors.Is(LoadConfig(store, %q) error, ErrNotFound) = false, want true", tc.name)
+			}
+		})
+	}
+
+	badLines := []struct {
+		name     string
+		wantErr  string
+		wantLine int
+	}{
+		{"worker", `load config: line 2: expected key=value, got "replicas 3"`, 2},
+		{"proxy", `load config: line 3: expected key=value, got "debug"`, 3},
+	}
+	for _, tc := range badLines {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadConfig(store, tc.name)
+			if err == nil {
+				t.Fatalf("LoadConfig(store, %q) error = nil, want %q", tc.name, tc.wantErr)
+			}
+			if err.Error() != tc.wantErr {
+				t.Errorf("LoadConfig(store, %q) error = %q, want %q", tc.name, err.Error(), tc.wantErr)
+			}
+			perr, ok := errors.AsType[*ParseError](err)
+			if !ok {
+				t.Fatalf("errors.AsType[*ParseError](LoadConfig(store, %q) error) found nothing, want a *ParseError", tc.name)
+			}
+			if perr.Line != tc.wantLine {
+				t.Errorf("LoadConfig(store, %q): ParseError.Line = %d, want %d", tc.name, perr.Line, tc.wantLine)
+			}
+		})
+	}
+}
+
+func TestRespond(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"no error", nil, "200 OK"},
+		{"bare ErrNotFound", ErrNotFound, "404 not found"},
+		{"wrapped ErrNotFound", fmt.Errorf("load config: %w", fmt.Errorf("config %q: %w", "web", ErrNotFound)), "404 not found"},
+		{"bare ParseError", &ParseError{Line: 3, Text: "replicas 3"}, "400 bad config on line 3"},
+		{"wrapped ParseError", fmt.Errorf("load config: %w", &ParseError{Line: 7, Text: "debug"}), "400 bad config on line 7"},
+		{"other error", errors.New("disk full"), "500 internal error"},
+		{"wrapped other error", fmt.Errorf("load config: %w", errors.New("permission denied")), "500 internal error"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Respond(tc.err); got != tc.want {
+				t.Errorf("Respond(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
+	}
+}

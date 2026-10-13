@@ -1,0 +1,75 @@
+// Package regex is the Gopherlings exercise "Regular expressions: release tags and log lines".
+package regex
+
+import (
+	"fmt"
+	"regexp"
+	"strconv"
+)
+
+// semverTag matches release tags such as "v1.4.2" and captures the three
+// numbers.
+var semverTag = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)$`)
+
+// IsSemverTag reports whether tag is a release tag such as "v1.4.2".
+func IsSemverTag(tag string) bool {
+	return semverTag.MatchString(tag)
+}
+
+// Version is a parsed release tag.
+type Version struct {
+	Major int
+	Minor int
+	Patch int
+}
+
+// ParseSemver turns a tag such as "v1.4.2" into a Version.
+// The bool is false when tag is not a release tag.
+func ParseSemver(tag string) (Version, bool) {
+	m := semverTag.FindStringSubmatch(tag)
+	if m == nil {
+		return Version{}, false
+	}
+	// m[0] is the whole tag; m[1], m[2] and m[3] are the numbers.
+	var nums [3]int
+	for i, s := range m[1:] {
+		n, err := strconv.Atoi(s)
+		if err != nil { // only possible for numbers too big for an int
+			return Version{}, false
+		}
+		nums[i] = n
+	}
+	return Version{Major: nums[0], Minor: nums[1], Patch: nums[2]}, true
+}
+
+// logLine matches lines such as
+//
+//	2026-10-11T09:14:03Z ERROR [payments] connection refused
+var logLine = regexp.MustCompile(
+	`^(?P<time>\S+) ` +
+		`(?P<level>[A-Z]+) ` +
+		`\[(?P<service>[a-z0-9-]+)\] ` +
+		`(?P<message>.*)$`,
+)
+
+// LogLine is one parsed application log line.
+type LogLine struct {
+	Time    string
+	Level   string
+	Service string
+	Message string
+}
+
+// ParseLogLine splits an application log line into its parts.
+func ParseLogLine(line string) (LogLine, error) {
+	m := logLine.FindStringSubmatch(line)
+	if m == nil {
+		return LogLine{}, fmt.Errorf("not a log line: %q", line)
+	}
+	return LogLine{
+		Time:    m[logLine.SubexpIndex("time")],
+		Level:   m[logLine.SubexpIndex("level")],
+		Service: m[logLine.SubexpIndex("service")],
+		Message: m[logLine.SubexpIndex("message")],
+	}, nil
+}

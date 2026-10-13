@@ -1,0 +1,27 @@
+package controller
+
+import (
+	"maps"
+	"slices"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+)
+
+// DesiredService returns the Service that should exist for the exposed
+// Deployment d. It only builds the object; it does not talk to the API.
+func DesiredService(d *appsv1.Deployment) *corev1.Service {
+	// TODO(2): Build the Service described in the README (task 2): name,
+	// namespace, owner reference, type, selector and one port per container
+	// port. You will need to import
+	// metav1 "k8s.io/apimachinery/pkg/apis/meta/v1" and
+	// "k8s.io/apimachinery/pkg/util/intstr".
+	return &corev1.Service{}
+}
+
+// ServiceInSync reports whether the live Service got already has the
+// selector and ports of the desired Service want.
+func ServiceInSync(got, want *corev1.Service) bool {
+	return maps.Equal(got.Spec.Selector, want.Spec.Selector) &&
+		slices.Equal(got.Spec.Ports, want.Spec.Ports)
+}

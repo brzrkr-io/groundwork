@@ -1,0 +1,16 @@
+// Package returns is the Gopherlings exercise "Multiple return values: image refs and TTLs".
+package returns
+
+// ParseImage splits an image reference "name:tag" into its name and tag.
+// A missing tag means "latest".
+func ParseImage(ref string) (name, tag string, err error) {
+	// TODO(1): Split the reference, default the tag, and reject an empty name
+	// or an empty tag after ":". Add the imports you need.
+	return ref, "", nil
+}
+
+// ParseTTL converts a TTL such as "90s", "5m" or "2h" to seconds.
+func ParseTTL(ttl string) (int, error) {
+	// TODO(2): Parse the number and the unit, and return errors for bad input.
+	return 0, nil
+}

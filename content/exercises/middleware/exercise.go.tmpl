@@ -1,0 +1,46 @@
+// Package middleware is the Gopherlings exercise "Middleware: logging, request IDs and panics".
+package middleware
+
+import (
+	"io"
+	"net/http"
+)
+
+// Middleware wraps a handler with extra behaviour and returns the wrapped
+// handler.
+type Middleware func(http.Handler) http.Handler
+
+// Logging returns middleware that writes one line per request to out, then
+// calls the next handler.
+func Logging(out io.Writer) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// TODO(1): Write "METHOD PATH" and a newline to out.
+			// Add the "fmt" import.
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequestID returns middleware that makes sure every request carries an
+// X-Request-ID header, and sends the same ID back in the response.
+func RequestID(newID func() string) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// TODO(2): Reuse the incoming ID, or make one with newID. Put it
+			// on the request and on the response.
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// Recover returns middleware that turns a panic in the next handler into a
+// 500 response and a log line on out.
+func Recover(out io.Writer) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// TODO(3): Catch a panic from next, log it, and reply 500.
+			next.ServeHTTP(w, r)
+		})
+	}
+}

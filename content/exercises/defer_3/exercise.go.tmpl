@@ -1,0 +1,78 @@
+// Package cleanup3 is the Gopherlings exercise "defer: safe database migrations".
+package cleanup3
+
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrRejected is wrapped by the error Exec returns for a rejected change.
+var ErrRejected = errors.New("rejected")
+
+// ErrConflict is wrapped by the error Commit returns when it fails.
+var ErrConflict = errors.New("write conflict")
+
+// DB is a fake database. Every call appends a line to Events instead of
+// talking to a real database.
+type DB struct {
+	Events   []string
+	Reject   string // Exec fails for this change
+	Conflict bool   // when true, every Commit fails
+}
+
+// Begin records "begin" and starts a transaction.
+func (db *DB) Begin() *Tx {
+	db.Events = append(db.Events, "begin")
+	return &Tx{db: db}
+}
+
+// Tx is a transaction: a group of changes that are kept together with
+// Commit or thrown away together with Rollback.
+type Tx struct {
+	db   *DB
+	done bool // true once the transaction is committed or rolled back
+}
+
+// Exec records "exec <change>". It fails when change is db.Reject.
+func (tx *Tx) Exec(change string) error {
+	tx.db.Events = append(tx.db.Events, "exec "+change)
+	if change == tx.db.Reject {
+		return fmt.Errorf("exec %s: %w", change, ErrRejected)
+	}
+	return nil
+}
+
+// Commit records "commit" and finishes the transaction. It fails when
+// db.Conflict is true, but the transaction is finished either way.
+func (tx *Tx) Commit() error {
+	tx.db.Events = append(tx.db.Events, "commit")
+	tx.done = true
+	if tx.db.Conflict {
+		return fmt.Errorf("commit: %w", ErrConflict)
+	}
+	return nil
+}
+
+// Rollback records "rollback" and finishes the transaction. It does nothing
+// if the transaction is already finished.
+func (tx *Tx) Rollback() {
+	// TODO(1): Do nothing when the transaction is already finished, and mark
+	// it finished after rolling back.
+	tx.db.Events = append(tx.db.Events, "rollback")
+}
+
+// ApplyChanges runs every change inside one transaction. It commits when
+// all changes succeed and rolls back when any change fails.
+func ApplyChanges(db *DB, changes []string) error {
+	// TODO(2): Begin a transaction, defer its Rollback, run each change, and
+	// commit at the end.
+	return nil
+}
+
+// ApplyBatches applies each batch in its own transaction. It keeps going
+// after a failed batch and reports every failure.
+func ApplyBatches(db *DB, batches [][]string) error {
+	// TODO(3): Apply every batch and join the errors, each prefixed with
+	// "batch <n>: ".
+	return nil
+}

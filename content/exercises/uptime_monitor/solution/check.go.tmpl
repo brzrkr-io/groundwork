@@ -1,0 +1,62 @@
+package uptime
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+)
+
+// Check makes one GET request to target.URL, limited to m.Timeout, and
+// reports the outcome. A target is up when it answers with a 2xx status.
+func (m *Monitor) Check(ctx context.Context, target Target) Result {
+	result := Result{Target: target, Attempts: 1}
+
+	ctx, cancel := context.WithTimeout(ctx, m.Timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.URL, nil)
+	if err != nil {
+		result.Err = err
+		return result
+	}
+
+	start := time.Now()
+	resp, err := m.Client.Do(req)
+	result.Latency = time.Since(start)
+	if err != nil {
+		result.Err = err
+		return result
+	}
+	resp.Body.Close()
+
+	result.Status = resp.StatusCode
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		result.Err = fmt.Errorf("unexpected status %d", resp.StatusCode)
+		return result
+	}
+	result.Up = true
+	return result
+}
+
+// CheckWithRetry calls Check up to 1+m.Retries times, waiting m.RetryDelay
+// between attempts, and stops at the first attempt that is up. It returns the
+// last attempt's Result with Attempts set.
+func (m *Monitor) CheckWithRetry(ctx context.Context, target Target) Result {
+	var result Result
+	for attempt := 1; attempt <= 1+m.Retries; attempt++ {
+		if attempt > 1 {
+			select {
+			case <-time.After(m.RetryDelay):
+			case <-ctx.Done():
+				return result // give up; result is the previous attempt
+			}
+		}
+		result = m.Check(ctx, target)
+		result.Attempts = attempt
+		if result.Up {
+			break
+		}
+	}
+	return result
+}

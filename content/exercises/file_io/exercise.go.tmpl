@@ -1,0 +1,28 @@
+// Package fileio is the Gopherlings exercise "Files: read, scan and write".
+package fileio
+
+// DefaultBanner is shown when no banner file exists.
+const DefaultBanner = "Authorized access only.\n"
+
+// LoadBanner returns the contents of the banner file at path, or
+// DefaultBanner if the file does not exist.
+func LoadBanner(path string) (string, error) {
+	// TODO(1): Read the whole file. A missing file gives DefaultBanner and nil;
+	// any other error is returned.
+	return "", nil
+}
+
+// ReadHosts returns the hosts listed in the file at path, one per line,
+// skipping blank lines and # comments.
+func ReadHosts(path string) ([]string, error) {
+	// TODO(2): Open the file, close it when done, and scan it line by line.
+	return nil, nil
+}
+
+// WriteHosts writes hosts to the file at path, one per line, replacing any
+// existing contents.
+func WriteHosts(path string, hosts []string) error {
+	// TODO(3): Create the file, write each host on its own line, and return
+	// the error from Close.
+	return nil
+}

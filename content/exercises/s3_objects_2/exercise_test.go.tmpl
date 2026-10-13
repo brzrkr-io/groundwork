@@ -1,0 +1,133 @@
+package retention
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+)
+
+// The fake bucket lives in fakes_test.go.
+
+// now is the fixed "current time" for every test: 11 October 2026, 03:00 UTC.
+var now = time.Date(2026, 10, 11, 3, 0, 0, 0, time.UTC)
+
+const day = 24 * time.Hour
+
+// aged returns an object whose LastModified is age before now.
+func aged(key string, age time.Duration) types.Object {
+	return types.Object{Key: aws.String(key), LastModified: aws.Time(now.Add(-age))}
+}
+
+func TestExpiredKeys(t *testing.T) {
+	logs := []types.Object{
+		aged("logs/api/2026-08-01.log.gz", 71*day),
+		aged("logs/api/2026-09-01.log.gz", 40*day),
+		aged("logs/api/2026-10-01.log.gz", 10*day),
+		aged("logs/api/2026-10-10.log.gz", 1*day),
+	}
+	tests := []struct {
+		name    string
+		objects []types.Object
+		maxAge  time.Duration
+		want    []string
+	}{
+		{"keep 30 days", logs, 30 * day, []string{"logs/api/2026-08-01.log.gz", "logs/api/2026-09-01.log.gz"}},
+		{"keep 7 days", logs, 7 * day, []string{"logs/api/2026-08-01.log.gz", "logs/api/2026-09-01.log.gz", "logs/api/2026-10-01.log.gz"}},
+		{"exactly maxAge old is kept", []types.Object{
+			aged("logs/api/edge-kept.log.gz", 30*day),
+			aged("logs/api/edge-expired.log.gz", 30*day+time.Second),
+		}, 30 * day, []string{"logs/api/edge-expired.log.gz"}},
+		{"no LastModified is kept", []types.Object{
+			{Key: aws.String("logs/api/undated.log.gz")},
+			{Key: aws.String("logs/api/also-undated.log.gz")},
+		}, 30 * day, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExpiredKeys(tt.objects, now, tt.maxAge)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ExpiredKeys(%s) = %q, want %q", tt.maxAge, got, tt.want)
+			}
+		})
+	}
+}
+
+// newLogBucket returns a fake "ops-logs" bucket. With a 30-day maxAge, the
+// expired objects are the two older checkout logs, the July billing log and
+// the audit record. The audit record is outside logs/ and must never be
+// deleted by a log cleanup.
+func newLogBucket() *fakeS3 {
+	f := newFakeS3("ops-logs")
+	f.put("audit/2026-01-31.json", time.Date(2026, 2, 1, 0, 5, 0, 0, time.UTC))
+	f.put("logs/billing/2026-07-15.log.gz", time.Date(2026, 7, 16, 0, 5, 0, 0, time.UTC))
+	f.put("logs/billing/2026-10-01.log.gz", time.Date(2026, 10, 2, 0, 5, 0, 0, time.UTC))
+	f.put("logs/checkout/2026-08-01.log.gz", time.Date(2026, 8, 2, 0, 5, 0, 0, time.UTC))
+	f.put("logs/checkout/2026-09-01.log.gz", time.Date(2026, 9, 2, 0, 5, 0, 0, time.UTC))
+	f.put("logs/checkout/2026-09-20.log.gz", time.Date(2026, 9, 21, 0, 5, 0, 0, time.UTC))
+	f.put("logs/checkout/2026-10-10.log.gz", time.Date(2026, 10, 11, 0, 5, 0, 0, time.UTC))
+	return f
+}
+
+var cleanupTests = []struct {
+	name   string
+	prefix string
+	want   []string
+}{
+	{"checkout logs", "logs/checkout/", []string{"logs/checkout/2026-08-01.log.gz", "logs/checkout/2026-09-01.log.gz"}},
+	{"billing logs", "logs/billing/", []string{"logs/billing/2026-07-15.log.gz"}},
+}
+
+func TestCleanup(t *testing.T) {
+	for _, tt := range cleanupTests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newLogBucket()
+			got, err := Cleanup(context.Background(), f, "ops-logs", tt.prefix, now, 30*day, false)
+			if err != nil {
+				t.Fatalf("Cleanup(%q) error = %v, want nil", tt.prefix, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Cleanup(%q) = %q, want %q", tt.prefix, got, tt.want)
+			}
+			if !slices.Equal(f.deleted, tt.want) {
+				t.Errorf("Cleanup(%q) deleted %q, want %q", tt.prefix, f.deleted, tt.want)
+			}
+		})
+	}
+
+	t.Run("empty prefix", func(t *testing.T) {
+		f := newLogBucket()
+		got, err := Cleanup(context.Background(), f, "ops-logs", "", now, 30*day, false)
+		if !errors.Is(err, ErrEmptyPrefix) {
+			t.Errorf("Cleanup(%q) error = %v, want ErrEmptyPrefix", "", err)
+		}
+		if got != nil {
+			t.Errorf("Cleanup(%q) = %q, want nil", "", got)
+		}
+		if f.listCalls != 0 || len(f.deleted) != 0 {
+			t.Errorf("Cleanup(%q) made %d list calls and deleted %q, want no calls at all", "", f.listCalls, f.deleted)
+		}
+	})
+}
+
+func TestCleanupDryRun(t *testing.T) {
+	for _, tt := range cleanupTests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newLogBucket()
+			got, err := Cleanup(context.Background(), f, "ops-logs", tt.prefix, now, 30*day, true)
+			if err != nil {
+				t.Fatalf("Cleanup(%q, dry run) error = %v, want nil", tt.prefix, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Cleanup(%q, dry run) = %q, want %q", tt.prefix, got, tt.want)
+			}
+			if len(f.deleted) != 0 {
+				t.Errorf("Cleanup(%q, dry run) deleted %q, want nothing deleted", tt.prefix, f.deleted)
+			}
+		})
+	}
+}

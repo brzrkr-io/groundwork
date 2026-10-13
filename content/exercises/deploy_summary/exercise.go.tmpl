@@ -1,0 +1,32 @@
+// Package deploy is the Gopherlings exercise "Practice: deploy summary".
+package deploy
+
+// TODO(1): Import the packages you need here.
+
+// Release returns the cleaned-up service name and version, such as
+// "api v1.4.2".
+func Release(service, version string) string {
+	// TODO(1): Trim and lower-case the service name, then add the version.
+	return ""
+}
+
+// ReplicasNeeded returns how many replicas serve peakRPS requests per second
+// when each replica serves rpsPerReplica.
+func ReplicasNeeded(peakRPS, rpsPerReplica int) int {
+	// TODO(2): Divide, rounding up.
+	return 0
+}
+
+// Summary returns the one-line deploy summary, such as
+// "api v1.4.2 -> production: 3 replicas x 256 MiB = 768 MiB".
+func Summary(service, version, env string, replicas, memoryMiB int) string {
+	// TODO(3): Build the summary line.
+	return ""
+}
+
+// MonthlyCost returns the monthly memory cost of a deploy, such as
+// "$6.00/month".
+func MonthlyCost(replicas, memoryMiB int, dollarsPerGiB float64) string {
+	// TODO(4): Work out and format the monthly cost.
+	return ""
+}

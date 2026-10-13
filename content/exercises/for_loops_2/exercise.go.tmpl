@@ -1,0 +1,46 @@
+// Package loops is the Gopherlings exercise "For loops: fix the off-by-one bugs".
+package loops
+
+import (
+	"strconv"
+	"strings"
+)
+
+// HostNames returns count host names like "web-1,web-2,web-3".
+func HostNames(prefix string, count int) string {
+	var b strings.Builder
+	// TODO(1): Fix the host numbers and the trailing comma.
+	for i := range count {
+		name := prefix + "-" + strconv.Itoa(i)
+		b.WriteString(name)
+		b.WriteString(",")
+	}
+	return b.String()
+}
+
+// PortList lists ports first..last joined with commas, skipping reserved.
+func PortList(first, last, reserved int) string {
+	var b strings.Builder
+	b.WriteString(strconv.Itoa(first))
+	for port := first + 1; port <= last; port++ {
+		if port == reserved {
+			// TODO(2): Skip only the reserved port.
+			break
+		}
+		b.WriteString(",")
+		b.WriteString(strconv.Itoa(port))
+	}
+	return b.String()
+}
+
+// BatchCount returns how many batches of batchSize cover total items.
+func BatchCount(total, batchSize int) int {
+	batches := 0
+	remaining := total
+	// TODO(3): Count the last, partial batch too.
+	for remaining >= batchSize {
+		remaining -= batchSize
+		batches++
+	}
+	return batches
+}

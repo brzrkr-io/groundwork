@@ -1,0 +1,21 @@
+package naming
+
+import "testing"
+
+func TestRelease(t *testing.T) {
+	tests := []struct {
+		service, version string
+		want             string
+	}{
+		{"checkout", "v2.0.0", "checkout-v2-0-0"},
+		{"Payments", "V1.4.2", "payments-v1-4-2"},
+		{"AUTH", "v10", "auth-v10"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := Release(tt.service, tt.version); got != tt.want {
+				t.Errorf("Release(%q, %q) = %q, want %q", tt.service, tt.version, got, tt.want)
+			}
+		})
+	}
+}

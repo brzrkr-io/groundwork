@@ -1,0 +1,44 @@
+// Package catalog is the Gopherlings exercise "Maps: diff a service catalog".
+package catalog
+
+// ServicesPerTeam counts how many services each team owns.
+func ServicesPerTeam(owners map[string]string) map[string]int {
+	counts := make(map[string]int)
+	for _, team := range owners {
+		counts[team]++
+	}
+	return counts
+}
+
+// Unowned returns the services, in order, that have no owner or an empty team
+// in owners.
+func Unowned(services []string, owners map[string]string) []string {
+	var unowned []string
+	for _, s := range services {
+		// A missing service reads as "", so one check covers both cases.
+		if owners[s] == "" {
+			unowned = append(unowned, s)
+		}
+	}
+	return unowned
+}
+
+// Diff compares the before and after catalogs. It returns how many services
+// were added, how many were removed, and how many moved to another team.
+func Diff(before, after map[string]string) (int, int, int) {
+	added, removed, changed := 0, 0, 0
+	for service, oldTeam := range before {
+		newTeam, ok := after[service]
+		if !ok {
+			removed++
+		} else if newTeam != oldTeam {
+			changed++
+		}
+	}
+	for service := range after {
+		if _, ok := before[service]; !ok {
+			added++
+		}
+	}
+	return added, removed, changed
+}

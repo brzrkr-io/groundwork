@@ -1,0 +1,131 @@
+// Package release is the Gopherlings exercise "Checksums and archives: publish a release".
+package release
+
+import (
+	"archive/tar"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+)
+
+// ChecksumsFile is the name of the checksums file published with a release.
+const ChecksumsFile = "SHA256SUMS"
+
+// Pack writes every regular file under dir to w as a .tar.gz archive, with
+// forward-slash names relative to dir.
+func Pack(dir string, w io.Writer) error {
+	gz := gzip.NewWriter(w)
+	tw := tar.NewWriter(gz)
+
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return nil // directories are implied by the file names
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		hdr, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		hdr.Name = filepath.ToSlash(rel)
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = io.Copy(tw, f)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	// tar writes its end-of-archive marker into gzip, so it must close first.
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	return gz.Close()
+}
+
+// hashFile returns the SHA-256 hash of the file at path as lowercase hex.
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// WriteChecksums writes a sha256sum-format line to w for every regular file
+// directly inside dir, sorted by name. It skips ChecksumsFile itself.
+func WriteChecksums(dir string, w io.Writer) error {
+	entries, err := os.ReadDir(dir) // already sorted by name
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if !e.Type().IsRegular() || e.Name() == ChecksumsFile {
+			continue
+		}
+		sum, err := hashFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "%s  %s\n", sum, e.Name()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Bundle packs srcDir into dist/<name>.tar.gz, then rewrites
+// dist/SHA256SUMS to list every artifact in dist.
+func Bundle(srcDir, dist, name string) error {
+	if err := os.MkdirAll(dist, 0o755); err != nil {
+		return err
+	}
+
+	archive, err := os.Create(filepath.Join(dist, name+".tar.gz"))
+	if err != nil {
+		return err
+	}
+	if err := Pack(srcDir, archive); err != nil {
+		archive.Close()
+		return err
+	}
+	if err := archive.Close(); err != nil {
+		return err
+	}
+
+	sums, err := os.Create(filepath.Join(dist, ChecksumsFile))
+	if err != nil {
+		return err
+	}
+	if err := WriteChecksums(dist, sums); err != nil {
+		sums.Close()
+		return err
+	}
+	return sums.Close()
+}

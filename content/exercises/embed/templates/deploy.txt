@@ -1,0 +1,2 @@
+[deploy] {{.Service}} {{.Version}} is live in {{.Env}}.
+Deployed by {{.User}}.

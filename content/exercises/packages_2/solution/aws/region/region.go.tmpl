@@ -1,0 +1,31 @@
+// Package region understands AWS region names such as "us-east-1".
+package region
+
+import (
+	"strconv"
+	"strings"
+)
+
+// Valid reports whether name looks like an AWS region: at least three
+// dash-separated parts, the last of which is a number ("us-east-1").
+func Valid(name string) bool {
+	parts := strings.Split(name, "-")
+	if len(parts) < 3 {
+		return false
+	}
+	_, err := strconv.Atoi(parts[len(parts)-1])
+	return err == nil
+}
+
+// Partition returns the AWS partition a region belongs to: "aws-us-gov",
+// "aws-cn" or "aws".
+func Partition(name string) string {
+	switch {
+	case strings.HasPrefix(name, "us-gov-"):
+		return "aws-us-gov"
+	case strings.HasPrefix(name, "cn-"):
+		return "aws-cn"
+	default:
+		return "aws"
+	}
+}

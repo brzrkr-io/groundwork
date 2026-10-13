@@ -1,0 +1,31 @@
+// Package returns is the Gopherlings exercise "Multiple return values: don't drop the error".
+package returns
+
+import (
+	"strconv"
+	"strings"
+)
+
+// ParseReplicas converts a replica count such as "3" to a number.
+// Negative counts are rejected.
+func ParseReplicas(s string) (int, error) {
+	// TODO(1): Stop ignoring the error, and reject negative numbers.
+	n, _ := strconv.Atoi(s)
+	return n, nil
+}
+
+// ParseLabel splits a "key=value" label into its trimmed key and value.
+// ok is false when there is no "=" or the key is empty.
+func ParseLabel(label string) (key, value string, ok bool) {
+	k, v, found := strings.Cut(label, "=")
+	// TODO(2): Trim both parts, and return "", "", false for a missing "=" or
+	// an empty key.
+	return k, v, found
+}
+
+// ParseMemoryMiB converts a size such as "512Mi" or "2Gi" to mebibytes.
+func ParseMemoryMiB(size string) (int, error) {
+	// TODO(3): Handle the "Mi" and "Gi" suffixes and return errors for
+	// anything else. Add the imports you need.
+	return 0, nil
+}

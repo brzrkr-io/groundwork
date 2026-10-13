@@ -1,0 +1,34 @@
+// Package rollout is the Gopherlings exercise "append and copy: rolling deploy plan".
+package rollout
+
+import "slices"
+
+// Plan returns the canaries followed by the hosts, skipping blank names.
+func Plan(canaries, hosts []string) []string {
+	var plan []string
+	for i := range len(canaries) {
+		if canaries[i] != "" {
+			plan = append(plan, canaries[i])
+		}
+	}
+	for i := range len(hosts) {
+		if hosts[i] != "" {
+			plan = append(plan, hosts[i])
+		}
+	}
+	return plan
+}
+
+// Batches splits hosts into batches of at most size hosts each.
+func Batches(hosts []string, size int) [][]string {
+	if size < 1 {
+		return nil
+	}
+	var batches [][]string
+	for start := 0; start < len(hosts); start += size {
+		end := min(start+size, len(hosts))
+		// Clone so the batch doesn't share elements with hosts.
+		batches = append(batches, slices.Clone(hosts[start:end]))
+	}
+	return batches
+}

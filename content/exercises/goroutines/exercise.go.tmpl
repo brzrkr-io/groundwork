@@ -1,0 +1,21 @@
+// Package goroutines is the Gopherlings exercise "Goroutines".
+package goroutines
+
+// WarmCaches starts warm(host) for every host in the background and returns
+// without waiting for the warm-ups to finish.
+func WarmCaches(hosts []string, warm func(host string)) {
+	for _, host := range hosts {
+		// TODO(1): Run this call in its own goroutine.
+		warm(host)
+	}
+}
+
+// RestartAll restarts every service at the same time and returns once all
+// of the restarts have finished.
+func RestartAll(services []string, restart func(service string)) {
+	for _, service := range services {
+		// TODO(2): Run every restart at the same time, then wait for all of
+		// them to finish before returning.
+		restart(service)
+	}
+}

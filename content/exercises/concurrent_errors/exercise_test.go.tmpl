@@ -1,0 +1,172 @@
+package fleetops
+
+import (
+	"errors"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+var (
+	errDisk    = errors.New("disk full")
+	errTimeout = errors.New("timeout")
+	errRefused = errors.New("connection refused")
+	errCert    = errors.New("certificate expired")
+)
+
+// message returns err's message, or "<nil>" for a nil error.
+func message(err error) string {
+	if err == nil {
+		return "<nil>"
+	}
+	return err.Error()
+}
+
+// tracker makes tasks that take 1 second and remembers the most tasks that
+// were running at the same moment.
+type tracker struct {
+	mu         sync.Mutex
+	running    int
+	maxRunning int
+}
+
+func (tr *tracker) task(err error) func() error {
+	return func() error {
+		tr.mu.Lock()
+		tr.running++
+		tr.maxRunning = max(tr.maxRunning, tr.running)
+		tr.mu.Unlock()
+
+		time.Sleep(time.Second) // each task takes 1 second
+
+		tr.mu.Lock()
+		tr.running--
+		tr.mu.Unlock()
+		return err
+	}
+}
+
+func TestRunAll(t *testing.T) {
+	tests := []struct {
+		name string
+		errs []error // what each task returns
+		want string  // message of the joined error
+	}{
+		{"two failures", []error{nil, errDisk, nil, errTimeout}, "disk full\ntimeout"},
+		{"order follows tasks", []error{errTimeout, errDisk}, "timeout\ndisk full"},
+		{"all succeed", []error{nil, nil, nil}, "<nil>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// synctest.Test gives the test a fake clock: sleeps finish
+			// instantly, but time.Now moves forward by the right amount.
+			synctest.Test(t, func(t *testing.T) {
+				var tr tracker
+				var tasks []func() error
+				for _, err := range tt.errs {
+					tasks = append(tasks, tr.task(err))
+				}
+
+				start := time.Now()
+				err := RunAll(tasks)
+				elapsed := time.Since(start)
+
+				if got := message(err); got != tt.want {
+					t.Errorf("RunAll(tasks returning %v) = %q, want %q", tt.errs, got, tt.want)
+				}
+				if elapsed != time.Second {
+					t.Errorf("RunAll took %v, want 1s: the tasks should run at the same time", elapsed)
+				}
+			})
+		})
+	}
+}
+
+func TestRunLimited(t *testing.T) {
+	tests := []struct {
+		name        string
+		errs        []error
+		limit       int
+		want        string
+		wantElapsed time.Duration
+	}{
+		{"5 tasks, limit 2", []error{nil, errDisk, nil, nil, errTimeout}, 2, "disk full\ntimeout", 3 * time.Second},
+		{"4 tasks, limit 4", []error{errTimeout, nil, nil, nil}, 4, "timeout", 1 * time.Second},
+		{"3 tasks, limit 1", []error{nil, nil, nil}, 1, "<nil>", 3 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var tr tracker
+				var tasks []func() error
+				for _, err := range tt.errs {
+					tasks = append(tasks, tr.task(err))
+				}
+
+				start := time.Now()
+				err := RunLimited(tasks, tt.limit)
+				elapsed := time.Since(start)
+
+				if got := message(err); got != tt.want {
+					t.Errorf("RunLimited(tasks returning %v, %d) = %q, want %q", tt.errs, tt.limit, got, tt.want)
+				}
+				if tr.maxRunning != tt.limit {
+					t.Errorf("RunLimited(%d tasks, %d): at most %d ran at once, want %d", len(tt.errs), tt.limit, tr.maxRunning, tt.limit)
+				}
+				if elapsed != tt.wantElapsed {
+					t.Errorf("RunLimited(%d tasks, %d) took %v, want %v", len(tt.errs), tt.limit, elapsed, tt.wantElapsed)
+				}
+			})
+		})
+	}
+}
+
+func TestCheckHosts(t *testing.T) {
+	failures := map[string]error{"web-2": errRefused, "db-1": errCert}
+
+	tests := []struct {
+		name        string
+		hosts       []string
+		limit       int
+		want        string
+		wantIs      []error
+		wantElapsed time.Duration
+	}{
+		{
+			"two failures", []string{"web-1", "web-2", "db-1"}, 2,
+			"web-2: connection refused\ndb-1: certificate expired", []error{errRefused, errCert}, 2 * time.Second,
+		},
+		{
+			"one failure", []string{"web-2", "web-1"}, 2,
+			"web-2: connection refused", []error{errRefused}, 1 * time.Second,
+		},
+		{"all healthy", []string{"web-1", "web-3", "db-2"}, 1, "<nil>", nil, 3 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				check := func(host string) error {
+					time.Sleep(time.Second) // each check takes 1 second
+					return failures[host]
+				}
+
+				start := time.Now()
+				err := CheckHosts(tt.hosts, tt.limit, check)
+				elapsed := time.Since(start)
+
+				if got := message(err); got != tt.want {
+					t.Errorf("CheckHosts(%q, %d) = %q, want %q", tt.hosts, tt.limit, got, tt.want)
+				}
+				for _, target := range tt.wantIs {
+					if !errors.Is(err, target) {
+						t.Errorf("errors.Is(err, %q) = false, want true: wrap with %%w", target)
+					}
+				}
+				if elapsed != tt.wantElapsed {
+					t.Errorf("CheckHosts(%q, %d) took %v, want %v", tt.hosts, tt.limit, elapsed, tt.wantElapsed)
+				}
+			})
+		})
+	}
+}

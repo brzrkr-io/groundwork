@@ -1,0 +1,201 @@
+package registry
+
+import (
+	"slices"
+	"testing"
+)
+
+// newTestRegistry builds a registry that already holds services, without
+// calling Register. That way the tests for tasks 3 to 5 work even before
+// task 2 is done.
+func newTestRegistry(services ...Service) *Registry {
+	r := NewRegistry()
+	for _, s := range services {
+		r.services[s.Name] = s
+	}
+	return r
+}
+
+func TestStatusString(t *testing.T) {
+	tests := []struct {
+		status Status
+		want   string
+	}{
+		{StatusUnknown, "unknown"},
+		{StatusHealthy, "healthy"},
+		{StatusUnhealthy, "unhealthy"},
+		{Status(7), "Status(7)"},
+		{Status(-1), "Status(-1)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := tt.status.String(); got != tt.want {
+				t.Errorf("Status(%d).String() = %q, want %q", int(tt.status), got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegisterAndLookup(t *testing.T) {
+	t.Run("registered service can be looked up", func(t *testing.T) {
+		r := NewRegistry()
+		api := Service{Name: "billing-api", Address: "10.0.0.5:8080", Tags: []string{"prod"}}
+		if err := r.Register(api); err != nil {
+			t.Fatalf("Register(%q) = %v, want nil", api.Name, err)
+		}
+		got, ok := r.Lookup("billing-api")
+		if !ok {
+			t.Fatalf("Lookup(%q) ok = false, want true", "billing-api")
+		}
+		if got.Name != "billing-api" || got.Address != "10.0.0.5:8080" {
+			t.Errorf("Lookup(%q) = %+v, want Name %q and Address %q",
+				"billing-api", got, "billing-api", "10.0.0.5:8080")
+		}
+	})
+
+	t.Run("status starts as unknown", func(t *testing.T) {
+		r := NewRegistry()
+		web := Service{Name: "web", Address: "10.0.0.9:80", Status: StatusHealthy}
+		if err := r.Register(web); err != nil {
+			t.Fatalf("Register(%q) = %v, want nil", web.Name, err)
+		}
+		got, _ := r.Lookup("web")
+		if got.Status != StatusUnknown {
+			t.Errorf("Lookup(%q).Status = %v, want %v", "web", got.Status, StatusUnknown)
+		}
+	})
+
+	t.Run("missing service", func(t *testing.T) {
+		r := NewRegistry()
+		got, ok := r.Lookup("ghost")
+		if ok || got.Name != "" {
+			t.Errorf("Lookup(%q) = %+v, %t, want zero Service, false", "ghost", got, ok)
+		}
+	})
+
+	t.Run("empty name", func(t *testing.T) {
+		r := NewRegistry()
+		err := r.Register(Service{Address: "10.0.0.5:8080"})
+		want := "service name is empty"
+		if err == nil || err.Error() != want {
+			t.Errorf("Register(empty name) = %v, want error %q", err, want)
+		}
+	})
+
+	t.Run("duplicate name", func(t *testing.T) {
+		r := NewRegistry()
+		if err := r.Register(Service{Name: "web", Address: "10.0.0.9:80"}); err != nil {
+			t.Fatalf("first Register(%q) = %v, want nil", "web", err)
+		}
+		err := r.Register(Service{Name: "web", Address: "10.0.0.10:80"})
+		want := `service "web" is already registered`
+		if err == nil || err.Error() != want {
+			t.Errorf("second Register(%q) = %v, want error %q", "web", err, want)
+		}
+		got, _ := r.Lookup("web")
+		if got.Address != "10.0.0.9:80" {
+			t.Errorf("after duplicate Register, Lookup(%q).Address = %q, want %q (the first one is kept)",
+				"web", got.Address, "10.0.0.9:80")
+		}
+	})
+}
+
+func TestDeregister(t *testing.T) {
+	r := newTestRegistry(
+		Service{Name: "web", Address: "10.0.0.9:80"},
+		Service{Name: "cache", Address: "10.0.0.20:6379"},
+	)
+
+	if got := r.Deregister("web"); !got {
+		t.Errorf("Deregister(%q) = false, want true", "web")
+	}
+	if _, ok := r.services["web"]; ok {
+		t.Errorf("after Deregister(%q), the service is still in the registry", "web")
+	}
+	if _, ok := r.services["cache"]; !ok {
+		t.Errorf("Deregister(%q) also removed %q", "web", "cache")
+	}
+	if got := r.Deregister("web"); got {
+		t.Errorf("second Deregister(%q) = true, want false", "web")
+	}
+	if got := r.Deregister("ghost"); got {
+		t.Errorf("Deregister(%q) = true, want false", "ghost")
+	}
+}
+
+func TestByTag(t *testing.T) {
+	r := newTestRegistry(
+		Service{Name: "web", Tags: []string{"prod", "eu-west-1"}},
+		Service{Name: "billing-api", Tags: []string{"prod", "us-east-1"}},
+		Service{Name: "cache", Tags: []string{"staging", "eu-west-1"}},
+		Service{Name: "auth", Tags: []string{"prod"}},
+	)
+
+	tests := []struct {
+		tag  string
+		want []string
+	}{
+		{"prod", []string{"auth", "billing-api", "web"}},
+		{"eu-west-1", []string{"cache", "web"}},
+		{"staging", []string{"cache"}},
+		{"ap-south-1", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.tag, func(t *testing.T) {
+			var names []string
+			for _, s := range r.ByTag(tt.tag) {
+				names = append(names, s.Name)
+			}
+			if !slices.Equal(names, tt.want) {
+				t.Errorf("ByTag(%q) gave services %q, want %q", tt.tag, names, tt.want)
+			}
+		})
+	}
+}
+
+// fakeChecker is a HealthChecker for tests. It answers from a map of
+// address to healthy, so no real network calls happen.
+type fakeChecker map[string]bool
+
+// Check reports whether address is marked healthy in the map.
+func (f fakeChecker) Check(address string) bool {
+	return f[address]
+}
+
+func TestCheckAll(t *testing.T) {
+	r := newTestRegistry(
+		Service{Name: "web", Address: "10.0.0.9:80"},
+		Service{Name: "billing-api", Address: "10.0.0.5:8080", Status: StatusHealthy},
+		Service{Name: "cache", Address: "10.0.0.20:6379"},
+	)
+	checker := fakeChecker{
+		"10.0.0.9:80":    true,
+		"10.0.0.5:8080":  false,
+		"10.0.0.20:6379": true,
+	}
+
+	if got := r.CheckAll(checker); got != 2 {
+		t.Errorf("CheckAll() = %d, want 2", got)
+	}
+
+	want := map[string]Status{
+		"web":         StatusHealthy,
+		"billing-api": StatusUnhealthy,
+		"cache":       StatusHealthy,
+	}
+	for name, status := range want {
+		if got := r.services[name].Status; got != status {
+			t.Errorf("after CheckAll, %q has Status %v, want %v", name, got, status)
+		}
+	}
+
+	// Everything goes down: the next check must update every service again.
+	if got := r.CheckAll(fakeChecker{}); got != 0 {
+		t.Errorf("CheckAll() with every service down = %d, want 0", got)
+	}
+	for name := range want {
+		if got := r.services[name].Status; got != StatusUnhealthy {
+			t.Errorf("after second CheckAll, %q has Status %v, want %v", name, got, StatusUnhealthy)
+		}
+	}
+}
