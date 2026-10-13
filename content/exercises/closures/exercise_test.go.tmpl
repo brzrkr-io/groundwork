@@ -3,86 +3,108 @@ package closures
 import "testing"
 
 func TestNewThresholdChecker(t *testing.T) {
-	// Each line is one case: the limit and the value, then the answer we want.
-	tests := []struct {
-		name  string
-		limit int
-		value int
-		want  bool
-	}{
-		{"below", 80, 79, false},
-		{"at the limit", 80, 80, true},
-		{"above", 80, 95, true},
-		{"low limit", 5, 4, false},
-		{"low limit reached", 5, 5, true},
+	atEighty := NewThresholdChecker(80)
+	if atEighty(79) {
+		t.Errorf("NewThresholdChecker(80)(79) = true, want false")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			check := NewThresholdChecker(tt.limit)
-			if got := check(tt.value); got != tt.want {
-				t.Errorf("NewThresholdChecker(%d)(%d) = %t, want %t", tt.limit, tt.value, got, tt.want)
-			}
-		})
+	if !atEighty(80) {
+		t.Errorf("NewThresholdChecker(80)(80) = false, want true")
+	}
+	if !atEighty(95) {
+		t.Errorf("NewThresholdChecker(80)(95) = false, want true")
+	}
+
+	atFive := NewThresholdChecker(5)
+	if atFive(4) {
+		t.Errorf("NewThresholdChecker(5)(4) = true, want false")
+	}
+	if !atFive(5) {
+		t.Errorf("NewThresholdChecker(5)(5) = false, want true")
 	}
 }
 
 func TestNewRequestCounter(t *testing.T) {
-	t.Run("counts up from 1", func(t *testing.T) {
-		count := NewRequestCounter()
-		for want := 1; want <= 3; want++ {
-			if got := count(); got != want {
-				t.Fatalf("call %d: counter() = %d, want %d", want, got, want)
-			}
-		}
-	})
-	t.Run("counters are independent", func(t *testing.T) {
-		api := NewRequestCounter()
-		web := NewRequestCounter()
-		api()
-		api()
-		if got := web(); got != 1 {
-			t.Errorf("first web() after two api() calls = %d, want 1", got)
-		}
-		if got := api(); got != 3 {
-			t.Errorf("third api() = %d, want 3", got)
-		}
-	})
+	// A counter counts up from 1.
+	count := NewRequestCounter()
+	if got := count(); got != 1 {
+		t.Errorf("first count() = %d, want 1", got)
+	}
+	if got := count(); got != 2 {
+		t.Errorf("second count() = %d, want 2", got)
+	}
+	if got := count(); got != 3 {
+		t.Errorf("third count() = %d, want 3", got)
+	}
+
+	// Two counters don't share their count.
+	api := NewRequestCounter()
+	web := NewRequestCounter()
+	api()
+	api()
+	if got := web(); got != 1 {
+		t.Errorf("first web() after two api() calls = %d, want 1", got)
+	}
+	if got := api(); got != 3 {
+		t.Errorf("third api() = %d, want 3", got)
+	}
 }
 
 func TestRetry(t *testing.T) {
-	tests := []struct {
-		name       string
-		attempts   int
-		succeedsOn int // the attempt number where try returns true
-		want       int
-	}{
-		{"first try", 5, 1, 1},
-		{"third try", 5, 3, 3},
-		{"last try", 4, 4, 4},
-		{"never within attempts", 2, 3, 0},
-		{"zero attempts", 0, 1, 0},
+	// try counts its calls and returns true on attempt number succeedsOn.
+	// Before each check we reset calls and pick a new succeedsOn.
+	calls := 0
+	succeedsOn := 0
+	try := func(attempt int) bool {
+		calls++
+		if attempt != calls {
+			t.Errorf("call %d got attempt %d, want %d", calls, attempt, calls)
+		}
+		return attempt == succeedsOn
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			calls := 0
-			try := func(attempt int) bool {
-				calls++
-				if attempt != calls {
-					t.Errorf("call %d got attempt %d, want %d", calls, attempt, calls)
-				}
-				return attempt == tt.succeedsOn
-			}
-			if got := Retry(tt.attempts, try); got != tt.want {
-				t.Errorf("Retry(%d, succeeds on %d) = %d, want %d", tt.attempts, tt.succeedsOn, got, tt.want)
-			}
-			wantCalls := tt.want
-			if tt.want == 0 {
-				wantCalls = tt.attempts
-			}
-			if calls != wantCalls {
-				t.Errorf("Retry(%d, succeeds on %d) called try %d times, want %d",
-					tt.attempts, tt.succeedsOn, calls, wantCalls)
-			}
-		})
+
+	calls = 0
+	succeedsOn = 1
+	if got := Retry(5, try); got != 1 {
+		t.Errorf("Retry(5, succeeds on 1) = %d, want 1", got)
+	}
+	if calls != 1 {
+		t.Errorf("Retry(5, succeeds on 1) called try %d times, want 1", calls)
+	}
+
+	calls = 0
+	succeedsOn = 3
+	if got := Retry(5, try); got != 3 {
+		t.Errorf("Retry(5, succeeds on 3) = %d, want 3", got)
+	}
+	if calls != 3 {
+		t.Errorf("Retry(5, succeeds on 3) called try %d times, want 3", calls)
+	}
+
+	calls = 0
+	succeedsOn = 4
+	if got := Retry(4, try); got != 4 {
+		t.Errorf("Retry(4, succeeds on 4) = %d, want 4", got)
+	}
+	if calls != 4 {
+		t.Errorf("Retry(4, succeeds on 4) called try %d times, want 4", calls)
+	}
+
+	// When try never succeeds, Retry uses every attempt and returns 0.
+	calls = 0
+	succeedsOn = 3
+	if got := Retry(2, try); got != 0 {
+		t.Errorf("Retry(2, succeeds on 3) = %d, want 0", got)
+	}
+	if calls != 2 {
+		t.Errorf("Retry(2, succeeds on 3) called try %d times, want 2", calls)
+	}
+
+	calls = 0
+	succeedsOn = 1
+	if got := Retry(0, try); got != 0 {
+		t.Errorf("Retry(0, succeeds on 1) = %d, want 0", got)
+	}
+	if calls != 0 {
+		t.Errorf("Retry(0, succeeds on 1) called try %d times, want 0", calls)
 	}
 }

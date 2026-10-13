@@ -3,45 +3,37 @@ package zerovalues
 import "testing"
 
 func TestEffectiveTimeout(t *testing.T) {
-	// Each line is one case: the inputs, then the answer we want.
-	tests := []struct {
-		request, service, global int
-		want                     int
-	}{
-		{5, 10, 60, 5},
-		{0, 10, 60, 10},
-		{0, 0, 60, 60},
-		{0, 0, 0, 30},
-		{7, 0, 0, 7},
-		{0, 15, 0, 15},
+	if got := EffectiveTimeout(5, 10, 60); got != 5 {
+		t.Errorf("EffectiveTimeout(5, 10, 60) = %d, want 5", got)
 	}
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			if got := EffectiveTimeout(tt.request, tt.service, tt.global); got != tt.want {
-				t.Errorf("EffectiveTimeout(%d, %d, %d) = %d, want %d", tt.request, tt.service, tt.global, got, tt.want)
-			}
-		})
+	if got := EffectiveTimeout(0, 10, 60); got != 10 {
+		t.Errorf("EffectiveTimeout(0, 10, 60) = %d, want 10", got)
+	}
+	if got := EffectiveTimeout(0, 0, 60); got != 60 {
+		t.Errorf("EffectiveTimeout(0, 0, 60) = %d, want 60", got)
+	}
+	if got := EffectiveTimeout(0, 0, 0); got != 30 {
+		t.Errorf("EffectiveTimeout(0, 0, 0) = %d, want 30", got)
+	}
+	if got := EffectiveTimeout(7, 0, 0); got != 7 {
+		t.Errorf("EffectiveTimeout(7, 0, 0) = %d, want 7", got)
+	}
+	if got := EffectiveTimeout(0, 15, 0); got != 15 {
+		t.Errorf("EffectiveTimeout(0, 15, 0) = %d, want 15", got)
 	}
 }
 
 func TestProbeConfig(t *testing.T) {
-	// Each line is one case: the inputs, then the answer we want.
-	tests := []struct {
-		path   string
-		port   int
-		period int
-		want   string
-	}{
-		{"", 0, 0, "GET /healthz on :8080 every 10s"},
-		{"/ready", 9090, 5, "GET /ready on :9090 every 5s"},
-		{"/live", 0, 30, "GET /live on :8080 every 30s"},
-		{"", 3000, 0, "GET /healthz on :3000 every 10s"},
+	if got := ProbeConfig("", 0, 0); got != "GET /healthz on :8080 every 10s" {
+		t.Errorf(`ProbeConfig("", 0, 0) = %q, want "GET /healthz on :8080 every 10s"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			if got := ProbeConfig(tt.path, tt.port, tt.period); got != tt.want {
-				t.Errorf("ProbeConfig(%q, %d, %d) = %q, want %q", tt.path, tt.port, tt.period, got, tt.want)
-			}
-		})
+	if got := ProbeConfig("/ready", 9090, 5); got != "GET /ready on :9090 every 5s" {
+		t.Errorf(`ProbeConfig("/ready", 9090, 5) = %q, want "GET /ready on :9090 every 5s"`, got)
+	}
+	if got := ProbeConfig("/live", 0, 30); got != "GET /live on :8080 every 30s" {
+		t.Errorf(`ProbeConfig("/live", 0, 30) = %q, want "GET /live on :8080 every 30s"`, got)
+	}
+	if got := ProbeConfig("", 3000, 0); got != "GET /healthz on :3000 every 10s" {
+		t.Errorf(`ProbeConfig("", 3000, 0) = %q, want "GET /healthz on :3000 every 10s"`, got)
 	}
 }

@@ -10,42 +10,28 @@ func TestZeroSummary(t *testing.T) {
 }
 
 func TestPortOrDefault(t *testing.T) {
-	// Each line is one case: the input, then the answer we want.
-	tests := []struct {
-		port int
-		want int
-	}{
-		{0, 8080},
-		{9090, 9090},
-		{443, 443},
+	if got := PortOrDefault(0); got != 8080 {
+		t.Errorf("PortOrDefault(0) = %d, want 8080", got)
 	}
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			if got := PortOrDefault(tt.port); got != tt.want {
-				t.Errorf("PortOrDefault(%d) = %d, want %d", tt.port, got, tt.want)
-			}
-		})
+	if got := PortOrDefault(9090); got != 9090 {
+		t.Errorf("PortOrDefault(9090) = %d, want 9090", got)
+	}
+	if got := PortOrDefault(443); got != 443 {
+		t.Errorf("PortOrDefault(443) = %d, want 443", got)
 	}
 }
 
 func TestConnectionString(t *testing.T) {
-	// Each line is one case: the inputs, then the answer we want.
-	tests := []struct {
-		host    string
-		port    int
-		timeout int
-		want    string
-	}{
-		{"", 0, 0, "localhost:8080 timeout=30s"},
-		{"db.internal", 5432, 5, "db.internal:5432 timeout=5s"},
-		{"cache", 0, 10, "cache:8080 timeout=10s"},
-		{"", 9000, 0, "localhost:9000 timeout=30s"},
+	if got := ConnectionString("", 0, 0); got != "localhost:8080 timeout=30s" {
+		t.Errorf(`ConnectionString("", 0, 0) = %q, want "localhost:8080 timeout=30s"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			if got := ConnectionString(tt.host, tt.port, tt.timeout); got != tt.want {
-				t.Errorf("ConnectionString(%q, %d, %d) = %q, want %q", tt.host, tt.port, tt.timeout, got, tt.want)
-			}
-		})
+	if got := ConnectionString("db.internal", 5432, 5); got != "db.internal:5432 timeout=5s" {
+		t.Errorf(`ConnectionString("db.internal", 5432, 5) = %q, want "db.internal:5432 timeout=5s"`, got)
+	}
+	if got := ConnectionString("cache", 0, 10); got != "cache:8080 timeout=10s" {
+		t.Errorf(`ConnectionString("cache", 0, 10) = %q, want "cache:8080 timeout=10s"`, got)
+	}
+	if got := ConnectionString("", 9000, 0); got != "localhost:9000 timeout=30s" {
+		t.Errorf(`ConnectionString("", 9000, 0) = %q, want "localhost:9000 timeout=30s"`, got)
 	}
 }

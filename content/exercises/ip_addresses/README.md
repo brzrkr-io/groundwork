@@ -56,7 +56,7 @@ neither private nor loopback, we'll call *public*.
 
 ### CIDR notation
 
-A range like `10.0.0.0/24` is written in *CIDR notation*: an address, a
+A range like `10.0.0.0/24` uses *CIDR notation*: an address, a
 slash, and a number of bits. The number says how many of the leading bits are
 fixed. The rest can be anything.
 

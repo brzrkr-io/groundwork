@@ -3,68 +3,71 @@ package returns
 import "testing"
 
 func TestParseImage(t *testing.T) {
-	// Each line is one case: the input, then the answers we want.
-	tests := []struct {
-		name     string
-		ref      string
-		wantName string
-		wantTag  string
-		wantErr  bool
-	}{
-		{"name and tag", "nginx:1.27", "nginx", "1.27", false},
-		{"no tag", "redis", "redis", "latest", false},
-		{"with a path", "team/api:v2.3.0", "team/api", "v2.3.0", false},
-		{"empty name", ":1.27", "", "", true},
-		{"empty tag", "nginx:", "", "", true},
-		{"empty", "", "", "", true},
+	name, tag, err := ParseImage("nginx:1.27")
+	if name != "nginx" || tag != "1.27" || err != nil {
+		t.Errorf(`ParseImage("nginx:1.27") = %q, %q, %v, want "nginx", "1.27", nil`, name, tag, err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			name, tag, err := ParseImage(tt.ref)
-			if tt.wantErr && err == nil {
-				t.Fatalf("ParseImage(%q) returned a nil error, want an error", tt.ref)
-			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("ParseImage(%q) returned error %v, want nil", tt.ref, err)
-			}
-			if name != tt.wantName || tag != tt.wantTag {
-				t.Errorf("ParseImage(%q) = %q, %q, want %q, %q",
-					tt.ref, name, tag, tt.wantName, tt.wantTag)
-			}
-		})
+	name, tag, err = ParseImage("redis")
+	if name != "redis" || tag != "latest" || err != nil {
+		t.Errorf(`ParseImage("redis") = %q, %q, %v, want "redis", "latest", nil`, name, tag, err)
+	}
+	name, tag, err = ParseImage("team/api:v2.3.0")
+	if name != "team/api" || tag != "v2.3.0" || err != nil {
+		t.Errorf(`ParseImage("team/api:v2.3.0") = %q, %q, %v, want "team/api", "v2.3.0", nil`, name, tag, err)
+	}
+	name, tag, err = ParseImage(":1.27")
+	if name != "" || tag != "" || err == nil {
+		t.Errorf(`ParseImage(":1.27") = %q, %q, %v, want "", "" and an error`, name, tag, err)
+	}
+	name, tag, err = ParseImage("nginx:")
+	if name != "" || tag != "" || err == nil {
+		t.Errorf(`ParseImage("nginx:") = %q, %q, %v, want "", "" and an error`, name, tag, err)
+	}
+	name, tag, err = ParseImage("")
+	if name != "" || tag != "" || err == nil {
+		t.Errorf(`ParseImage("") = %q, %q, %v, want "", "" and an error`, name, tag, err)
 	}
 }
 
 func TestParseTTL(t *testing.T) {
-	tests := []struct {
-		name    string
-		ttl     string
-		want    int
-		wantErr bool
-	}{
-		{"seconds", "90s", 90, false},
-		{"minutes", "5m", 300, false},
-		{"hours", "2h", 7200, false},
-		{"one second", "1s", 1, false},
-		{"zero", "0s", 0, true},
-		{"negative", "-5m", 0, true},
-		{"no unit", "10", 0, true},
-		{"unknown unit", "1d", 0, true},
-		{"not a number", "xm", 0, true},
-		{"empty", "", 0, true},
+	got, err := ParseTTL("90s")
+	if got != 90 || err != nil {
+		t.Errorf(`ParseTTL("90s") = %d, %v, want 90, nil`, got, err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseTTL(tt.ttl)
-			if tt.wantErr && err == nil {
-				t.Fatalf("ParseTTL(%q) returned a nil error, want an error", tt.ttl)
-			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("ParseTTL(%q) returned error %v, want nil", tt.ttl, err)
-			}
-			if got != tt.want {
-				t.Errorf("ParseTTL(%q) = %d, want %d", tt.ttl, got, tt.want)
-			}
-		})
+	got, err = ParseTTL("5m")
+	if got != 300 || err != nil {
+		t.Errorf(`ParseTTL("5m") = %d, %v, want 300, nil`, got, err)
+	}
+	got, err = ParseTTL("2h")
+	if got != 7200 || err != nil {
+		t.Errorf(`ParseTTL("2h") = %d, %v, want 7200, nil`, got, err)
+	}
+	got, err = ParseTTL("1s")
+	if got != 1 || err != nil {
+		t.Errorf(`ParseTTL("1s") = %d, %v, want 1, nil`, got, err)
+	}
+	got, err = ParseTTL("0s")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseTTL("0s") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseTTL("-5m")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseTTL("-5m") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseTTL("10")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseTTL("10") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseTTL("1d")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseTTL("1d") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseTTL("xm")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseTTL("xm") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseTTL("")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseTTL("") = %d, %v, want 0 and an error`, got, err)
 	}
 }

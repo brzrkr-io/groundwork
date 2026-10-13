@@ -3,72 +3,61 @@ package booleans
 import "testing"
 
 func TestIsPrivilegedPort(t *testing.T) {
-	// Each line is one case: a name, the input, then the answer we want.
-	tests := []struct {
-		name string
-		port int
-		want bool
-	}{
-		{"ssh", 22, true},
-		{"http", 80, true},
-		{"highest privileged", 1023, true},
-		{"first unprivileged", 1024, false},
-		{"http alt", 8080, false},
+	if !IsPrivilegedPort(22) {
+		t.Errorf("IsPrivilegedPort(22) = false, want true")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := IsPrivilegedPort(tt.port); got != tt.want {
-				t.Errorf("IsPrivilegedPort(%d) = %t, want %t", tt.port, got, tt.want)
-			}
-		})
+	if !IsPrivilegedPort(80) {
+		t.Errorf("IsPrivilegedPort(80) = false, want true")
+	}
+	if !IsPrivilegedPort(1023) {
+		t.Errorf("IsPrivilegedPort(1023) = false, want true")
+	}
+	if IsPrivilegedPort(1024) {
+		t.Errorf("IsPrivilegedPort(1024) = true, want false")
+	}
+	if IsPrivilegedPort(8080) {
+		t.Errorf("IsPrivilegedPort(8080) = true, want false")
 	}
 }
 
 func TestCanDeploy(t *testing.T) {
-	// Each line is one case: the inputs, then the answer we want.
-	tests := []struct {
-		name                                string
-		testsPassed, approved, freezeActive bool
-		want                                bool
-	}{
-		{"all clear", true, true, false, true},
-		{"tests failed", false, true, false, false},
-		{"not approved", true, false, false, false},
-		{"freeze active", true, true, true, false},
-		{"nothing ready", false, false, true, false},
+	if !CanDeploy(true, true, false) {
+		t.Errorf("CanDeploy(true, true, false) = false, want true")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := CanDeploy(tt.testsPassed, tt.approved, tt.freezeActive)
-			if got != tt.want {
-				t.Errorf("CanDeploy(%t, %t, %t) = %t, want %t",
-					tt.testsPassed, tt.approved, tt.freezeActive, got, tt.want)
-			}
-		})
+	if CanDeploy(false, true, false) {
+		t.Errorf("CanDeploy(false, true, false) = true, want false")
+	}
+	if CanDeploy(true, false, false) {
+		t.Errorf("CanDeploy(true, false, false) = true, want false")
+	}
+	if CanDeploy(true, true, true) {
+		t.Errorf("CanDeploy(true, true, true) = true, want false")
+	}
+	if CanDeploy(false, false, true) {
+		t.Errorf("CanDeploy(false, false, true) = true, want false")
 	}
 }
 
 func TestIsWorkHours(t *testing.T) {
-	// Each line is one case: the inputs, then the answer we want.
-	tests := []struct {
-		name    string
-		hour    int
-		weekend bool
-		want    bool
-	}{
-		{"start of day", 9, false, true},
-		{"midday", 12, false, true},
-		{"last work hour", 16, false, true},
-		{"17:00 is after hours", 17, false, false},
-		{"too early", 8, false, false},
-		{"midnight", 0, false, false},
-		{"weekend", 10, true, false},
+	if !IsWorkHours(9, false) {
+		t.Errorf("IsWorkHours(9, false) = false, want true")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := IsWorkHours(tt.hour, tt.weekend); got != tt.want {
-				t.Errorf("IsWorkHours(%d, %t) = %t, want %t", tt.hour, tt.weekend, got, tt.want)
-			}
-		})
+	if !IsWorkHours(12, false) {
+		t.Errorf("IsWorkHours(12, false) = false, want true")
+	}
+	if !IsWorkHours(16, false) {
+		t.Errorf("IsWorkHours(16, false) = false, want true")
+	}
+	if IsWorkHours(17, false) {
+		t.Errorf("IsWorkHours(17, false) = true, want false")
+	}
+	if IsWorkHours(8, false) {
+		t.Errorf("IsWorkHours(8, false) = true, want false")
+	}
+	if IsWorkHours(0, false) {
+		t.Errorf("IsWorkHours(0, false) = true, want false")
+	}
+	if IsWorkHours(10, true) {
+		t.Errorf("IsWorkHours(10, true) = true, want false")
 	}
 }

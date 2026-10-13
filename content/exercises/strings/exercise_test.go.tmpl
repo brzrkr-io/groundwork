@@ -3,60 +3,39 @@ package text
 import "testing"
 
 func TestNormalizeHost(t *testing.T) {
-	tests := []struct {
-		name string
-		host string
-		want string
-	}{
-		{name: "spaces, newline and capitals", host: "  API-01.Prod.Example.COM\n", want: "api-01.prod.example.com"},
-		{name: "tab and trailing space", host: "\tDB.internal ", want: "db.internal"},
-		{name: "already clean", host: "web-02.example.com", want: "web-02.example.com"},
+	if got := NormalizeHost("  API-01.Prod.Example.COM\n"); got != "api-01.prod.example.com" {
+		t.Errorf(`NormalizeHost("  API-01.Prod.Example.COM\n") = %q, want "api-01.prod.example.com"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := NormalizeHost(tt.host)
-			if got != tt.want {
-				t.Errorf("NormalizeHost(%q) = %q, want %q", tt.host, got, tt.want)
-			}
-		})
+
+	if got := NormalizeHost("\tDB.internal "); got != "db.internal" {
+		t.Errorf(`NormalizeHost("\tDB.internal ") = %q, want "db.internal"`, got)
+	}
+
+	if got := NormalizeHost("web-02.example.com"); got != "web-02.example.com" {
+		t.Errorf(`NormalizeHost("web-02.example.com") = %q, want "web-02.example.com"`, got)
 	}
 }
 
 func TestIsInternalImage(t *testing.T) {
-	tests := []struct {
-		name  string
-		image string
-		want  bool
-	}{
-		{name: "internal image", image: "registry.internal/api:v1.4.2", want: true},
-		{name: "docker hub image", image: "docker.io/library/nginx:1.27", want: false},
-		{name: "look-alike registry", image: "registry.internal.evil.com/api:v1", want: false},
+	if got := IsInternalImage("registry.internal/api:v1.4.2"); got != true {
+		t.Errorf(`IsInternalImage("registry.internal/api:v1.4.2") = %t, want true`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := IsInternalImage(tt.image)
-			if got != tt.want {
-				t.Errorf("IsInternalImage(%q) = %t, want %t", tt.image, got, tt.want)
-			}
-		})
+
+	if got := IsInternalImage("docker.io/library/nginx:1.27"); got != false {
+		t.Errorf(`IsInternalImage("docker.io/library/nginx:1.27") = %t, want false`, got)
+	}
+
+	if got := IsInternalImage("registry.internal.evil.com/api:v1"); got != false {
+		t.Errorf(`IsInternalImage("registry.internal.evil.com/api:v1") = %t, want false`, got)
 	}
 }
 
 func TestHeading(t *testing.T) {
-	tests := []struct {
-		name  string
-		title string
-		want  string
-	}{
-		{name: "two words", title: "deploy api", want: "DEPLOY API\n=========="},
-		{name: "one word", title: "rollback", want: "ROLLBACK\n========"},
+	if got := Heading("deploy api"); got != "DEPLOY API\n==========" {
+		t.Errorf(`Heading("deploy api") = %q, want "DEPLOY API\n=========="`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := Heading(tt.title)
-			if got != tt.want {
-				t.Errorf("Heading(%q) = %q, want %q", tt.title, got, tt.want)
-			}
-		})
+
+	if got := Heading("rollback"); got != "ROLLBACK\n========" {
+		t.Errorf(`Heading("rollback") = %q, want "ROLLBACK\n========"`, got)
 	}
 }

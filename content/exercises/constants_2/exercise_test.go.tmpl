@@ -9,21 +9,12 @@ func TestHealthPort(t *testing.T) {
 }
 
 func TestHealthURL(t *testing.T) {
-	tests := []struct {
-		name string
-		host string
-		want string
-	}{
-		{name: "host name", host: "api.internal", want: "http://api.internal/healthz"},
-		{name: "IP address", host: "10.0.3.17", want: "http://10.0.3.17/healthz"},
+	if got := HealthURL("api.internal"); got != "http://api.internal/healthz" {
+		t.Errorf(`HealthURL("api.internal") = %q, want "http://api.internal/healthz"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := HealthURL(tt.host)
-			if got != tt.want {
-				t.Errorf("HealthURL(%q) = %q, want %q", tt.host, got, tt.want)
-			}
-		})
+
+	if got := HealthURL("10.0.3.17"); got != "http://10.0.3.17/healthz" {
+		t.Errorf(`HealthURL("10.0.3.17") = %q, want "http://10.0.3.17/healthz"`, got)
 	}
 }
 

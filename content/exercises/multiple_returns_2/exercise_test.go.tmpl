@@ -3,91 +3,94 @@ package returns
 import "testing"
 
 func TestParseReplicas(t *testing.T) {
-	// Each line is one case: the input, then the answer we want.
-	tests := []struct {
-		name    string
-		s       string
-		want    int
-		wantErr bool
-	}{
-		{"three", "3", 3, false},
-		{"twelve", "12", 12, false},
-		{"zero is allowed", "0", 0, false},
-		{"a word", "three", 0, true},
-		{"empty", "", 0, true},
-		{"negative", "-2", 0, true},
+	got, err := ParseReplicas("3")
+	if got != 3 || err != nil {
+		t.Errorf(`ParseReplicas("3") = %d, %v, want 3, nil`, got, err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseReplicas(tt.s)
-			if tt.wantErr && err == nil {
-				t.Fatalf("ParseReplicas(%q) returned a nil error, want an error", tt.s)
-			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("ParseReplicas(%q) returned error %v, want nil", tt.s, err)
-			}
-			if got != tt.want {
-				t.Errorf("ParseReplicas(%q) = %d, want %d", tt.s, got, tt.want)
-			}
-		})
+	got, err = ParseReplicas("12")
+	if got != 12 || err != nil {
+		t.Errorf(`ParseReplicas("12") = %d, %v, want 12, nil`, got, err)
+	}
+	got, err = ParseReplicas("0")
+	if got != 0 || err != nil {
+		t.Errorf(`ParseReplicas("0") = %d, %v, want 0, nil`, got, err)
+	}
+	got, err = ParseReplicas("three")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseReplicas("three") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseReplicas("")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseReplicas("") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseReplicas("-2")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseReplicas("-2") = %d, %v, want 0 and an error`, got, err)
 	}
 }
 
 func TestParseLabel(t *testing.T) {
-	tests := []struct {
-		name      string
-		label     string
-		wantKey   string
-		wantValue string
-		wantOK    bool
-	}{
-		{"simple", "env=prod", "env", "prod", true},
-		{"spaces", " team = sre ", "team", "sre", true},
-		{"empty value", "tier=", "tier", "", true},
-		{"only first = splits", "query=a=b", "query", "a=b", true},
-		{"no equals", "env", "", "", false},
-		{"empty key", "=prod", "", "", false},
-		{"blank key", "  =prod", "", "", false},
+	key, value, ok := ParseLabel("env=prod")
+	if key != "env" || value != "prod" || !ok {
+		t.Errorf(`ParseLabel("env=prod") = %q, %q, %v, want "env", "prod", true`, key, value, ok)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			key, value, ok := ParseLabel(tt.label)
-			if key != tt.wantKey || value != tt.wantValue || ok != tt.wantOK {
-				t.Errorf("ParseLabel(%q) = %q, %q, %t, want %q, %q, %t",
-					tt.label, key, value, ok, tt.wantKey, tt.wantValue, tt.wantOK)
-			}
-		})
+	key, value, ok = ParseLabel(" team = sre ")
+	if key != "team" || value != "sre" || !ok {
+		t.Errorf(`ParseLabel(" team = sre ") = %q, %q, %v, want "team", "sre", true`, key, value, ok)
+	}
+	key, value, ok = ParseLabel("tier=")
+	if key != "tier" || value != "" || !ok {
+		t.Errorf(`ParseLabel("tier=") = %q, %q, %v, want "tier", "", true`, key, value, ok)
+	}
+	key, value, ok = ParseLabel("query=a=b")
+	if key != "query" || value != "a=b" || !ok {
+		t.Errorf(`ParseLabel("query=a=b") = %q, %q, %v, want "query", "a=b", true`, key, value, ok)
+	}
+	key, value, ok = ParseLabel("env")
+	if key != "" || value != "" || ok {
+		t.Errorf(`ParseLabel("env") = %q, %q, %v, want "", "", false`, key, value, ok)
+	}
+	key, value, ok = ParseLabel("=prod")
+	if key != "" || value != "" || ok {
+		t.Errorf(`ParseLabel("=prod") = %q, %q, %v, want "", "", false`, key, value, ok)
+	}
+	key, value, ok = ParseLabel("  =prod")
+	if key != "" || value != "" || ok {
+		t.Errorf(`ParseLabel("  =prod") = %q, %q, %v, want "", "", false`, key, value, ok)
 	}
 }
 
 func TestParseMemoryMiB(t *testing.T) {
-	tests := []struct {
-		name    string
-		size    string
-		want    int
-		wantErr bool
-	}{
-		{"mebibytes", "512Mi", 512, false},
-		{"more mebibytes", "64Mi", 64, false},
-		{"gibibytes", "2Gi", 2048, false},
-		{"one gibibyte", "1Gi", 1024, false},
-		{"no unit", "512", 0, true},
-		{"wrong unit", "1G", 0, true},
-		{"not a number", "lotsMi", 0, true},
-		{"empty", "", 0, true},
+	got, err := ParseMemoryMiB("512Mi")
+	if got != 512 || err != nil {
+		t.Errorf(`ParseMemoryMiB("512Mi") = %d, %v, want 512, nil`, got, err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseMemoryMiB(tt.size)
-			if tt.wantErr && err == nil {
-				t.Fatalf("ParseMemoryMiB(%q) returned a nil error, want an error", tt.size)
-			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("ParseMemoryMiB(%q) returned error %v, want nil", tt.size, err)
-			}
-			if got != tt.want {
-				t.Errorf("ParseMemoryMiB(%q) = %d, want %d", tt.size, got, tt.want)
-			}
-		})
+	got, err = ParseMemoryMiB("64Mi")
+	if got != 64 || err != nil {
+		t.Errorf(`ParseMemoryMiB("64Mi") = %d, %v, want 64, nil`, got, err)
+	}
+	got, err = ParseMemoryMiB("2Gi")
+	if got != 2048 || err != nil {
+		t.Errorf(`ParseMemoryMiB("2Gi") = %d, %v, want 2048, nil`, got, err)
+	}
+	got, err = ParseMemoryMiB("1Gi")
+	if got != 1024 || err != nil {
+		t.Errorf(`ParseMemoryMiB("1Gi") = %d, %v, want 1024, nil`, got, err)
+	}
+	got, err = ParseMemoryMiB("512")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseMemoryMiB("512") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseMemoryMiB("1G")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseMemoryMiB("1G") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseMemoryMiB("lotsMi")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseMemoryMiB("lotsMi") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseMemoryMiB("")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseMemoryMiB("") = %d, %v, want 0 and an error`, got, err)
 	}
 }

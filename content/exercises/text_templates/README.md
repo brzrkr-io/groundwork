@@ -24,7 +24,7 @@ err = tmpl.Execute(&b, "ops") // b now holds "Hello, ops!"
 - `template.New(name)` creates an empty template. The name shows up in error
   messages.
 - `Execute(w, data)` writes its output to any `io.Writer`, just like the
-  readers from *Reading lines* read from any `io.Reader`. A
+  readers from *Reading input line by line* read from any `io.Reader`. A
   `*strings.Builder` is a writer that collects text in memory; call
   `b.String()` to get it. Pass `&b`, a pointer, so `Execute` can add to it.
 - Both steps can fail. `Parse` fails when the text is malformed, for example

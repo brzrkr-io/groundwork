@@ -3,64 +3,43 @@ package conversion
 import "testing"
 
 func TestHealthyPercent(t *testing.T) {
-	tests := []struct {
-		name    string
-		healthy int
-		total   int
-		want    float64
-	}{
-		{name: "three of four", healthy: 3, total: 4, want: 75},
-		{name: "one of eight", healthy: 1, total: 8, want: 12.5},
-		{name: "all healthy", healthy: 4, total: 4, want: 100},
-		{name: "none healthy", healthy: 0, total: 5, want: 0},
+	if got := HealthyPercent(3, 4); got != 75 {
+		t.Errorf(`HealthyPercent(3, 4) = %v, want 75`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := HealthyPercent(tt.healthy, tt.total)
-			if got != tt.want {
-				t.Errorf("HealthyPercent(%d, %d) = %v, want %v", tt.healthy, tt.total, got, tt.want)
-			}
-		})
+
+	if got := HealthyPercent(1, 8); got != 12.5 {
+		t.Errorf(`HealthyPercent(1, 8) = %v, want 12.5`, got)
+	}
+
+	if got := HealthyPercent(4, 4); got != 100 {
+		t.Errorf(`HealthyPercent(4, 4) = %v, want 100`, got)
+	}
+
+	if got := HealthyPercent(0, 5); got != 0 {
+		t.Errorf(`HealthyPercent(0, 5) = %v, want 0`, got)
 	}
 }
 
 func TestListenAddr(t *testing.T) {
-	tests := []struct {
-		name string
-		host string
-		port int
-		want string
-	}{
-		{name: "all interfaces", host: "0.0.0.0", port: 8080, want: "0.0.0.0:8080"},
-		{name: "localhost", host: "localhost", port: 9090, want: "localhost:9090"},
+	if got := ListenAddr("0.0.0.0", 8080); got != "0.0.0.0:8080" {
+		t.Errorf(`ListenAddr("0.0.0.0", 8080) = %q, want "0.0.0.0:8080"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ListenAddr(tt.host, tt.port)
-			if got != tt.want {
-				t.Errorf("ListenAddr(%q, %d) = %q, want %q", tt.host, tt.port, got, tt.want)
-			}
-		})
+
+	if got := ListenAddr("localhost", 9090); got != "localhost:9090" {
+		t.Errorf(`ListenAddr("localhost", 9090) = %q, want "localhost:9090"`, got)
 	}
 }
 
 func TestHealthLabel(t *testing.T) {
-	tests := []struct {
-		name    string
-		healthy int
-		total   int
-		want    string
-	}{
-		{name: "three of four", healthy: 3, total: 4, want: "3/4 pods healthy (75.0%)"},
-		{name: "two of three", healthy: 2, total: 3, want: "2/3 pods healthy (66.7%)"},
-		{name: "none healthy", healthy: 0, total: 5, want: "0/5 pods healthy (0.0%)"},
+	if got := HealthLabel(3, 4); got != "3/4 pods healthy (75.0%)" {
+		t.Errorf(`HealthLabel(3, 4) = %q, want "3/4 pods healthy (75.0%%)"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := HealthLabel(tt.healthy, tt.total)
-			if got != tt.want {
-				t.Errorf("HealthLabel(%d, %d) = %q, want %q", tt.healthy, tt.total, got, tt.want)
-			}
-		})
+
+	if got := HealthLabel(2, 3); got != "2/3 pods healthy (66.7%)" {
+		t.Errorf(`HealthLabel(2, 3) = %q, want "2/3 pods healthy (66.7%%)"`, got)
+	}
+
+	if got := HealthLabel(0, 5); got != "0/5 pods healthy (0.0%)" {
+		t.Errorf(`HealthLabel(0, 5) = %q, want "0/5 pods healthy (0.0%%)"`, got)
 	}
 }

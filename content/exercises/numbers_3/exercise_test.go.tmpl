@@ -3,64 +3,43 @@ package numbers
 import "testing"
 
 func TestRequestsPerDay(t *testing.T) {
-	tests := []struct {
-		name string
-		rps  int
-		want int
-	}{
-		{name: "one per second", rps: 1, want: 86400},
-		{name: "ten per second", rps: 10, want: 864000},
+	if got := RequestsPerDay(1); got != 86400 {
+		t.Errorf(`RequestsPerDay(1) = %d, want 86400`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := RequestsPerDay(tt.rps)
-			if got != tt.want {
-				t.Errorf("RequestsPerDay(%d) = %d, want %d", tt.rps, got, tt.want)
-			}
-		})
+
+	if got := RequestsPerDay(10); got != 864000 {
+		t.Errorf(`RequestsPerDay(10) = %d, want 864000`, got)
 	}
 }
 
 func TestNodesNeeded(t *testing.T) {
-	tests := []struct {
-		name       string
-		replicas   int
-		perReplica int
-		perNode    int
-		want       int
-	}{
-		{name: "two and a half nodes", replicas: 10, perReplica: 500, perNode: 2000, want: 3},
-		{name: "exactly one node", replicas: 4, perReplica: 500, perNode: 2000, want: 1},
-		{name: "just over one node", replicas: 3, perReplica: 1500, perNode: 4000, want: 2},
-		{name: "no replicas", replicas: 0, perReplica: 500, perNode: 2000, want: 0},
+	if got := NodesNeeded(10, 500, 2000); got != 3 {
+		t.Errorf(`NodesNeeded(10, 500, 2000) = %d, want 3`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := NodesNeeded(tt.replicas, tt.perReplica, tt.perNode)
-			if got != tt.want {
-				t.Errorf("NodesNeeded(%d, %d, %d) = %d, want %d", tt.replicas, tt.perReplica, tt.perNode, got, tt.want)
-			}
-		})
+
+	if got := NodesNeeded(4, 500, 2000); got != 1 {
+		t.Errorf(`NodesNeeded(4, 500, 2000) = %d, want 1`, got)
+	}
+
+	if got := NodesNeeded(3, 1500, 4000); got != 2 {
+		t.Errorf(`NodesNeeded(3, 1500, 4000) = %d, want 2`, got)
+	}
+
+	if got := NodesNeeded(0, 500, 2000); got != 0 {
+		t.Errorf(`NodesNeeded(0, 500, 2000) = %d, want 0`, got)
 	}
 }
 
 func TestMonthlyCost(t *testing.T) {
-	tests := []struct {
-		name        string
-		hourlyPrice float64
-		instances   float64
-		want        float64
-	}{
-		{name: "four small instances", hourlyPrice: 0.125, instances: 4, want: 365},
-		{name: "two bigger instances", hourlyPrice: 0.5, instances: 2, want: 730},
-		{name: "one tiny instance", hourlyPrice: 0.0625, instances: 1, want: 45.625},
+	if got := MonthlyCost(0.125, 4); got != 365 {
+		t.Errorf(`MonthlyCost(0.125, 4) = %v, want 365`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := MonthlyCost(tt.hourlyPrice, tt.instances)
-			if got != tt.want {
-				t.Errorf("MonthlyCost(%v, %v) = %v, want %v", tt.hourlyPrice, tt.instances, got, tt.want)
-			}
-		})
+
+	if got := MonthlyCost(0.5, 2); got != 730 {
+		t.Errorf(`MonthlyCost(0.5, 2) = %v, want 730`, got)
+	}
+
+	if got := MonthlyCost(0.0625, 1); got != 45.625 {
+		t.Errorf(`MonthlyCost(0.0625, 1) = %v, want 45.625`, got)
 	}
 }

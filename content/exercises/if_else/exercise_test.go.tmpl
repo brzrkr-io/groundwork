@@ -3,74 +3,73 @@ package ifelse
 import "testing"
 
 func TestDiskAlert(t *testing.T) {
-	// Each line is one case: a name, the input, then the answer we want.
-	tests := []struct {
-		name        string
-		usedPercent int
-		want        string
-	}{
-		{"mostly empty", 42, "ok"},
-		{"just below warning", 79, "ok"},
-		{"warning starts", 80, "warning"},
-		{"top of warning", 89, "warning"},
-		{"critical starts", 90, "critical"},
-		{"full", 100, "critical"},
+	if got := DiskAlert(42); got != "ok" {
+		t.Errorf(`DiskAlert(42) = %q, want "ok"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := DiskAlert(tt.usedPercent); got != tt.want {
-				t.Errorf("DiskAlert(%d) = %q, want %q", tt.usedPercent, got, tt.want)
-			}
-		})
+	if got := DiskAlert(79); got != "ok" {
+		t.Errorf(`DiskAlert(79) = %q, want "ok"`, got)
+	}
+	if got := DiskAlert(80); got != "warning" {
+		t.Errorf(`DiskAlert(80) = %q, want "warning"`, got)
+	}
+	if got := DiskAlert(89); got != "warning" {
+		t.Errorf(`DiskAlert(89) = %q, want "warning"`, got)
+	}
+	if got := DiskAlert(90); got != "critical" {
+		t.Errorf(`DiskAlert(90) = %q, want "critical"`, got)
+	}
+	if got := DiskAlert(100); got != "critical" {
+		t.Errorf(`DiskAlert(100) = %q, want "critical"`, got)
 	}
 }
 
 func TestClampReplicas(t *testing.T) {
-	// Each line is one case: a name, the input, then the answer we want.
-	tests := []struct {
-		name      string
-		requested int
-		want      int
-	}{
-		{"negative", -3, 1},
-		{"zero", 0, 1},
-		{"minimum", 1, 1},
-		{"in range", 4, 4},
-		{"maximum", 10, 10},
-		{"too many", 25, 10},
+	if got := ClampReplicas(-3); got != 1 {
+		t.Errorf("ClampReplicas(-3) = %d, want 1", got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := ClampReplicas(tt.requested); got != tt.want {
-				t.Errorf("ClampReplicas(%d) = %d, want %d", tt.requested, got, tt.want)
-			}
-		})
+	if got := ClampReplicas(0); got != 1 {
+		t.Errorf("ClampReplicas(0) = %d, want 1", got)
+	}
+	if got := ClampReplicas(1); got != 1 {
+		t.Errorf("ClampReplicas(1) = %d, want 1", got)
+	}
+	if got := ClampReplicas(4); got != 4 {
+		t.Errorf("ClampReplicas(4) = %d, want 4", got)
+	}
+	if got := ClampReplicas(10); got != 10 {
+		t.Errorf("ClampReplicas(10) = %d, want 10", got)
+	}
+	if got := ClampReplicas(25); got != 10 {
+		t.Errorf("ClampReplicas(25) = %d, want 10", got)
 	}
 }
 
 func TestScaleAdvice(t *testing.T) {
-	// Each line is one case: a name, the inputs, then the answer we want.
-	tests := []struct {
-		name          string
-		totalRequests int
-		replicas      int
-		want          string
-	}{
-		{"no replicas", 1000, 0, "no replicas"},
-		{"negative replicas", 1000, -1, "no replicas"},
-		{"busy", 1000, 5, "scale up"},
-		{"just over 100", 202, 2, "scale up"},
-		{"exactly 100", 500, 5, "steady"},
-		{"steady", 300, 5, "steady"},
-		{"exactly 20", 100, 5, "steady"},
-		{"quiet", 50, 5, "scale down"},
-		{"integer division", 59, 3, "scale down"},
+	if got := ScaleAdvice(1000, 0); got != "no replicas" {
+		t.Errorf(`ScaleAdvice(1000, 0) = %q, want "no replicas"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := ScaleAdvice(tt.totalRequests, tt.replicas); got != tt.want {
-				t.Errorf("ScaleAdvice(%d, %d) = %q, want %q", tt.totalRequests, tt.replicas, got, tt.want)
-			}
-		})
+	if got := ScaleAdvice(1000, -1); got != "no replicas" {
+		t.Errorf(`ScaleAdvice(1000, -1) = %q, want "no replicas"`, got)
+	}
+	if got := ScaleAdvice(1000, 5); got != "scale up" {
+		t.Errorf(`ScaleAdvice(1000, 5) = %q, want "scale up"`, got)
+	}
+	if got := ScaleAdvice(202, 2); got != "scale up" {
+		t.Errorf(`ScaleAdvice(202, 2) = %q, want "scale up"`, got)
+	}
+	if got := ScaleAdvice(500, 5); got != "steady" {
+		t.Errorf(`ScaleAdvice(500, 5) = %q, want "steady"`, got)
+	}
+	if got := ScaleAdvice(300, 5); got != "steady" {
+		t.Errorf(`ScaleAdvice(300, 5) = %q, want "steady"`, got)
+	}
+	if got := ScaleAdvice(100, 5); got != "steady" {
+		t.Errorf(`ScaleAdvice(100, 5) = %q, want "steady"`, got)
+	}
+	if got := ScaleAdvice(50, 5); got != "scale down" {
+		t.Errorf(`ScaleAdvice(50, 5) = %q, want "scale down"`, got)
+	}
+	if got := ScaleAdvice(59, 3); got != "scale down" {
+		t.Errorf(`ScaleAdvice(59, 3) = %q, want "scale down"`, got)
 	}
 }

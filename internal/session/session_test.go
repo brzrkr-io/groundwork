@@ -12,28 +12,30 @@ import (
 
 const starter = "package x\n\n// TODO(1): fix\nfunc F() int { return 0 }\n"
 
+const threeExercises = `{"title":"t","modules":[
+	{"title":"m1","dir":"one","exercises":[{"name":"a","title":"A"},{"name":"b","title":"B"}]},
+	{"title":"m2","dir":"two","exercises":[{"name":"c","title":"C"}]}]}`
+
 func testCourse(t *testing.T) *course.Course {
 	t.Helper()
-	return courseWithStarter(t, starter)
+	return loadCourse(t, threeExercises, starter)
 }
 
 func courseWithStarter(t *testing.T, starter string) *course.Course {
 	t.Helper()
-	pack := func(name string) fstest.MapFS {
-		return fstest.MapFS{
-			"exercises/" + name + "/README.md":                 {Data: []byte("# " + name + "\n\n## Your task\n")},
-			"exercises/" + name + "/hints.md":                  {Data: []byte("## One\na\n## Two\nb\n")},
-			"exercises/" + name + "/exercise.go.tmpl":          {Data: []byte(starter)},
-			"exercises/" + name + "/solution/exercise.go.tmpl": {Data: []byte("package x\n\nfunc F() int { return 1 }\n")},
-		}
-	}
-	files := fstest.MapFS{"course.json": {Data: []byte(`{"title":"t","modules":[
-		{"title":"m1","dir":"one","exercises":[{"name":"a","title":"A"},{"name":"b","title":"B"}]},
-		{"title":"m2","dir":"two","exercises":[{"name":"c","title":"C"}]}]}`)}}
-	for _, name := range []string{"a", "b", "c"} {
-		for path, file := range pack(name) {
-			files[path] = file
-		}
+	return loadCourse(t, threeExercises, starter)
+}
+
+// loadCourse builds a course from courseJSON with a small pack for every
+// exercise named in it.
+func loadCourse(t *testing.T, courseJSON, starter string) *course.Course {
+	t.Helper()
+	files := fstest.MapFS{"course.json": {Data: []byte(courseJSON)}}
+	for _, name := range []string{"a", "b", "c", "new"} {
+		files["exercises/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n\n## Your task\n")}
+		files["exercises/"+name+"/hints.md"] = &fstest.MapFile{Data: []byte("## One\na\n## Two\nb\n")}
+		files["exercises/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte(starter)}
+		files["exercises/"+name+"/solution/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n\nfunc F() int { return 1 }\n")}
 	}
 	c, err := course.Load(files)
 	if err != nil {
@@ -101,6 +103,43 @@ func TestSyncCreatesEveryExerciseAndUpdatesOnlyUneditedFiles(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(untouched); string(got) != v2 {
 		t.Errorf("unedited exercise.go = %q, want the course's new version", got)
+	}
+}
+
+func TestSyncMovesWorkWhenTheCourseIsReordered(t *testing.T) {
+	s := newSession(t)
+	if err := s.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	c := s.Course.Exercises[2] // "c", module two, number 3
+	if err := s.Complete(c); err != nil {
+		t.Fatal(err)
+	}
+	mine := filepath.Join(s.Dir(c), "exercise.go")
+	if err := os.WriteFile(mine, []byte("package x\n// my work\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A new exercise is inserted before c, so c moves from 003_c to 004_c.
+	reordered := loadCourse(t, `{"title":"t","modules":[
+		{"title":"m1","dir":"one","exercises":[{"name":"a","title":"A"},{"name":"b","title":"B"}]},
+		{"title":"m2","dir":"two","exercises":[{"name":"new","title":"New"},{"name":"c","title":"C"}]}]}`, starter)
+	moved, err := Open(s.Root, reordered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := moved.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	nc, _ := reordered.Find("c")
+	if got, _ := os.ReadFile(filepath.Join(moved.Dir(nc), "exercise.go")); string(got) != "package x\n// my work\n" {
+		t.Errorf("work at the new folder %s = %q, want the learner's file moved there", nc.Dir(), got)
+	}
+	if _, err := os.Stat(filepath.Join(moved.SolutionDir(nc), "exercise.go")); err != nil {
+		t.Errorf("solution not moved with the exercise: %v", err)
+	}
+	if _, err := os.Stat(mine); err == nil {
+		t.Errorf("old folder %s still exists after the move", c.Dir())
 	}
 }
 

@@ -3,62 +3,39 @@ package text
 import "testing"
 
 func TestRedact(t *testing.T) {
-	tests := []struct {
-		name   string
-		line   string
-		secret string
-		want   string
-	}{
-		{name: "one copy", line: "password=hunter2 user=bob", secret: "hunter2", want: "password=******* user=bob"},
-		{name: "two copies", line: "token=abc123 retry token=abc123", secret: "abc123", want: "token=****** retry token=******"},
+	if got := Redact("password=hunter2 user=bob", "hunter2"); got != "password=******* user=bob" {
+		t.Errorf(`Redact("password=hunter2 user=bob", "hunter2") = %q, want "password=******* user=bob"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := Redact(tt.line, tt.secret)
-			if got != tt.want {
-				t.Errorf("Redact(%q, %q) = %q, want %q", tt.line, tt.secret, got, tt.want)
-			}
-		})
+
+	if got := Redact("token=abc123 retry token=abc123", "abc123"); got != "token=****** retry token=******" {
+		t.Errorf(`Redact("token=abc123 retry token=abc123", "abc123") = %q, want "token=****** retry token=******"`, got)
 	}
 }
 
 func TestHostFromURL(t *testing.T) {
-	tests := []struct {
-		name string
-		url  string
-		want string
-	}{
-		{name: "scheme, slash and capitals", url: "https://API.Example.com/", want: "api.example.com"},
-		{name: "no trailing slash", url: "https://grafana.internal", want: "grafana.internal"},
-		{name: "no scheme", url: "vault.internal/", want: "vault.internal"},
+	if got := HostFromURL("https://API.Example.com/"); got != "api.example.com" {
+		t.Errorf(`HostFromURL("https://API.Example.com/") = %q, want "api.example.com"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := HostFromURL(tt.url)
-			if got != tt.want {
-				t.Errorf("HostFromURL(%q) = %q, want %q", tt.url, got, tt.want)
-			}
-		})
+
+	if got := HostFromURL("https://grafana.internal"); got != "grafana.internal" {
+		t.Errorf(`HostFromURL("https://grafana.internal") = %q, want "grafana.internal"`, got)
+	}
+
+	if got := HostFromURL("vault.internal/"); got != "vault.internal" {
+		t.Errorf(`HostFromURL("vault.internal/") = %q, want "vault.internal"`, got)
 	}
 }
 
 func TestEnvVarName(t *testing.T) {
-	tests := []struct {
-		name    string
-		service string
-		setting string
-		want    string
-	}{
-		{name: "dash and space", service: "checkout-api", setting: "db url", want: "CHECKOUT_API_DB_URL"},
-		{name: "dash in setting", service: "auth", setting: "log-level", want: "AUTH_LOG_LEVEL"},
-		{name: "several of each", service: "payment-gateway", setting: "max open conns", want: "PAYMENT_GATEWAY_MAX_OPEN_CONNS"},
+	if got := EnvVarName("checkout-api", "db url"); got != "CHECKOUT_API_DB_URL" {
+		t.Errorf(`EnvVarName("checkout-api", "db url") = %q, want "CHECKOUT_API_DB_URL"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := EnvVarName(tt.service, tt.setting)
-			if got != tt.want {
-				t.Errorf("EnvVarName(%q, %q) = %q, want %q", tt.service, tt.setting, got, tt.want)
-			}
-		})
+
+	if got := EnvVarName("auth", "log-level"); got != "AUTH_LOG_LEVEL" {
+		t.Errorf(`EnvVarName("auth", "log-level") = %q, want "AUTH_LOG_LEVEL"`, got)
+	}
+
+	if got := EnvVarName("payment-gateway", "max open conns"); got != "PAYMENT_GATEWAY_MAX_OPEN_CONNS" {
+		t.Errorf(`EnvVarName("payment-gateway", "max open conns") = %q, want "PAYMENT_GATEWAY_MAX_OPEN_CONNS"`, got)
 	}
 }

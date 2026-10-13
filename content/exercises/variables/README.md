@@ -84,10 +84,9 @@ Two rules the compiler enforces:
 
 ### Reading the tests
 
-From now on the tests check several inputs for each function. They keep the
-inputs and expected outputs in a list of *cases*, then run each case by name.
-You don't need to understand every line of the test file yet. Look for the
-case names and the `want` values.
+From now on the tests check several inputs for each function. Each check calls
+your function with some inputs and compares the result with the value it
+wants. Look for the call and the value after `!=` to see what is expected.
 
 ## Your task
 

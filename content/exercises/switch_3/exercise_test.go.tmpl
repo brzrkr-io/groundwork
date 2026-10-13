@@ -3,58 +3,76 @@ package switches
 import "testing"
 
 func TestPortService(t *testing.T) {
-	// Each line is one case: the input, then the answer we want.
-	tests := []struct {
-		port int
-		want string
-	}{
-		{22, "ssh"},
-		{80, "http"},
-		{8080, "http"},
-		{443, "https"},
-		{8443, "https"},
-		{5432, "postgres"},
-		{6379, "redis"},
-		{25, "system"},
-		{1023, "system"},
-		{1024, "unknown"},
-		{9000, "unknown"},
+	if got := PortService(22); got != "ssh" {
+		t.Errorf(`PortService(22) = %q, want "ssh"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			if got := PortService(tt.port); got != tt.want {
-				t.Errorf("PortService(%d) = %q, want %q", tt.port, got, tt.want)
-			}
-		})
+	if got := PortService(80); got != "http" {
+		t.Errorf(`PortService(80) = %q, want "http"`, got)
+	}
+	if got := PortService(8080); got != "http" {
+		t.Errorf(`PortService(8080) = %q, want "http"`, got)
+	}
+	if got := PortService(443); got != "https" {
+		t.Errorf(`PortService(443) = %q, want "https"`, got)
+	}
+	if got := PortService(8443); got != "https" {
+		t.Errorf(`PortService(8443) = %q, want "https"`, got)
+	}
+	if got := PortService(5432); got != "postgres" {
+		t.Errorf(`PortService(5432) = %q, want "postgres"`, got)
+	}
+	if got := PortService(6379); got != "redis" {
+		t.Errorf(`PortService(6379) = %q, want "redis"`, got)
+	}
+	if got := PortService(25); got != "system" {
+		t.Errorf(`PortService(25) = %q, want "system"`, got)
+	}
+	if got := PortService(1023); got != "system" {
+		t.Errorf(`PortService(1023) = %q, want "system"`, got)
+	}
+	if got := PortService(1024); got != "unknown" {
+		t.Errorf(`PortService(1024) = %q, want "unknown"`, got)
+	}
+	if got := PortService(9000); got != "unknown" {
+		t.Errorf(`PortService(9000) = %q, want "unknown"`, got)
 	}
 }
 
 func TestContainerAction(t *testing.T) {
-	// Each line is one case: the inputs, then the answer we want.
-	tests := []struct {
-		state    string
-		exitCode int
-		restarts int
-		want     string
-	}{
-		{"running", 0, 0, "none"},
-		{"running", 1, 7, "none"},
-		{"exited", 0, 0, "none"},
-		{"exited", 0, 9, "none"},
-		{"exited", 1, 2, "restart"},
-		{"exited", 137, 4, "restart"},
-		{"exited", 1, 5, "give up"},
-		{"exited", 2, 8, "give up"},
-		{"oomkilled", 137, 1, "add memory"},
-		{"oomkilled", 137, 6, "add memory"},
-		{"paused", 0, 0, "inspect"},
-		{"", 0, 0, "inspect"},
+	if got := ContainerAction("running", 0, 0); got != "none" {
+		t.Errorf(`ContainerAction("running", 0, 0) = %q, want "none"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.state, func(t *testing.T) {
-			if got := ContainerAction(tt.state, tt.exitCode, tt.restarts); got != tt.want {
-				t.Errorf("ContainerAction(%q, %d, %d) = %q, want %q", tt.state, tt.exitCode, tt.restarts, got, tt.want)
-			}
-		})
+	if got := ContainerAction("running", 1, 7); got != "none" {
+		t.Errorf(`ContainerAction("running", 1, 7) = %q, want "none"`, got)
+	}
+	if got := ContainerAction("exited", 0, 0); got != "none" {
+		t.Errorf(`ContainerAction("exited", 0, 0) = %q, want "none"`, got)
+	}
+	if got := ContainerAction("exited", 0, 9); got != "none" {
+		t.Errorf(`ContainerAction("exited", 0, 9) = %q, want "none"`, got)
+	}
+	if got := ContainerAction("exited", 1, 2); got != "restart" {
+		t.Errorf(`ContainerAction("exited", 1, 2) = %q, want "restart"`, got)
+	}
+	if got := ContainerAction("exited", 137, 4); got != "restart" {
+		t.Errorf(`ContainerAction("exited", 137, 4) = %q, want "restart"`, got)
+	}
+	if got := ContainerAction("exited", 1, 5); got != "give up" {
+		t.Errorf(`ContainerAction("exited", 1, 5) = %q, want "give up"`, got)
+	}
+	if got := ContainerAction("exited", 2, 8); got != "give up" {
+		t.Errorf(`ContainerAction("exited", 2, 8) = %q, want "give up"`, got)
+	}
+	if got := ContainerAction("oomkilled", 137, 1); got != "add memory" {
+		t.Errorf(`ContainerAction("oomkilled", 137, 1) = %q, want "add memory"`, got)
+	}
+	if got := ContainerAction("oomkilled", 137, 6); got != "add memory" {
+		t.Errorf(`ContainerAction("oomkilled", 137, 6) = %q, want "add memory"`, got)
+	}
+	if got := ContainerAction("paused", 0, 0); got != "inspect" {
+		t.Errorf(`ContainerAction("paused", 0, 0) = %q, want "inspect"`, got)
+	}
+	if got := ContainerAction("", 0, 0); got != "inspect" {
+		t.Errorf(`ContainerAction("", 0, 0) = %q, want "inspect"`, got)
 	}
 }

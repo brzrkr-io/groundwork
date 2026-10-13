@@ -3,62 +3,31 @@ package variables
 import "testing"
 
 func TestServiceLabel(t *testing.T) {
-	tests := []struct {
-		name    string
-		service string
-		env     string
-		want    string
-	}{
-		{name: "api in production", service: "api", env: "production", want: "production/api"},
-		{name: "worker in staging", service: "worker", env: "staging", want: "staging/worker"},
+	if got := ServiceLabel("api", "production"); got != "production/api" {
+		t.Errorf(`ServiceLabel("api", "production") = %q, want "production/api"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ServiceLabel(tt.service, tt.env)
-			if got != tt.want {
-				t.Errorf("ServiceLabel(%q, %q) = %q, want %q", tt.service, tt.env, got, tt.want)
-			}
-		})
+
+	if got := ServiceLabel("worker", "staging"); got != "staging/worker" {
+		t.Errorf(`ServiceLabel("worker", "staging") = %q, want "staging/worker"`, got)
 	}
 }
 
 func TestImageRef(t *testing.T) {
-	tests := []struct {
-		name     string
-		registry string
-		image    string
-		tag      string
-		want     string
-	}{
-		{name: "github registry", registry: "ghcr.io/acme", image: "api", tag: "v1.4.2", want: "ghcr.io/acme/api:v1.4.2"},
-		{name: "internal registry", registry: "registry.internal", image: "worker", tag: "latest", want: "registry.internal/worker:latest"},
+	if got := ImageRef("ghcr.io/acme", "api", "v1.4.2"); got != "ghcr.io/acme/api:v1.4.2" {
+		t.Errorf(`ImageRef("ghcr.io/acme", "api", "v1.4.2") = %q, want "ghcr.io/acme/api:v1.4.2"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ImageRef(tt.registry, tt.image, tt.tag)
-			if got != tt.want {
-				t.Errorf("ImageRef(%q, %q, %q) = %q, want %q", tt.registry, tt.image, tt.tag, got, tt.want)
-			}
-		})
+
+	if got := ImageRef("registry.internal", "worker", "latest"); got != "registry.internal/worker:latest" {
+		t.Errorf(`ImageRef("registry.internal", "worker", "latest") = %q, want "registry.internal/worker:latest"`, got)
 	}
 }
 
 func TestDeployPath(t *testing.T) {
-	tests := []struct {
-		name    string
-		env     string
-		service string
-		want    string
-	}{
-		{name: "api in production", env: "production", service: "api", want: "/v1/environments/production/services/api"},
-		{name: "billing in staging", env: "staging", service: "billing", want: "/v1/environments/staging/services/billing"},
+	if got := DeployPath("production", "api"); got != "/v1/environments/production/services/api" {
+		t.Errorf(`DeployPath("production", "api") = %q, want "/v1/environments/production/services/api"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := DeployPath(tt.env, tt.service)
-			if got != tt.want {
-				t.Errorf("DeployPath(%q, %q) = %q, want %q", tt.env, tt.service, got, tt.want)
-			}
-		})
+
+	if got := DeployPath("staging", "billing"); got != "/v1/environments/staging/services/billing" {
+		t.Errorf(`DeployPath("staging", "billing") = %q, want "/v1/environments/staging/services/billing"`, got)
 	}
 }

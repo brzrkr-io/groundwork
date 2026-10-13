@@ -13,16 +13,28 @@ import (
 
 const (
 	// Dir marks a course root; Load and Save use Dir/progress.json.
-	Dir     = ".gopherlings"
-	file    = "progress.json"
-	version = 3
+	Dir  = ".gopherlings"
+	file = "progress.json"
+
+	// version is bumped whenever the course folder's layout or this file
+	// changes in a way an older gopherlings would get wrong. Older binaries
+	// then refuse the folder instead of rebuilding it their way.
+	version = 4
 )
+
+// ErrNewer means the course folder was set up by a newer gopherlings.
+var ErrNewer = errors.New("this course folder was set up by a newer gopherlings")
 
 // State is keyed by exercise name, so reordering the course keeps progress.
 type State struct {
 	Version int                  `json:"version"`
 	Current string               `json:"current,omitempty"`
 	Done    map[string]time.Time `json:"done"`
+	// Revealed lists exercises whose solution was shown before they passed.
+	Revealed map[string]time.Time `json:"revealed,omitempty"`
+	// Folders records each exercise's folder (relative to exercises/), so a
+	// reordered course can move the learner's work instead of losing it.
+	Folders map[string]string `json:"folders,omitempty"`
 	// Starters records the SHA-256 of every starter file as last written,
 	// keyed "exercise/path". A file that still has that hash is untouched by
 	// the learner, so course updates may replace it.
@@ -31,7 +43,24 @@ type State struct {
 
 // New returns empty progress.
 func New() *State {
-	return &State{Version: version, Done: map[string]time.Time{}, Starters: map[string]string{}}
+	s := &State{Version: version}
+	s.init()
+	return s
+}
+
+func (s *State) init() {
+	if s.Done == nil {
+		s.Done = map[string]time.Time{}
+	}
+	if s.Revealed == nil {
+		s.Revealed = map[string]time.Time{}
+	}
+	if s.Folders == nil {
+		s.Folders = map[string]string{}
+	}
+	if s.Starters == nil {
+		s.Starters = map[string]string{}
+	}
 }
 
 // Path is the progress file of the course at root.
@@ -46,20 +75,18 @@ func Load(root string) (*State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read progress: %w", err)
 	}
-	s := New()
+	s := &State{}
 	if err := json.Unmarshal(raw, s); err != nil {
 		return nil, fmt.Errorf("decode %s: %w", filepath.Join(Dir, file), err)
 	}
-	if s.Version != version {
-		return nil, fmt.Errorf("%s has version %d, this gopherlings understands version %d; move it aside to start fresh",
-			filepath.Join(Dir, file), s.Version, version)
+	switch {
+	case s.Version > version:
+		return nil, fmt.Errorf("%w (format %d, this one reads %d); update it by running go install . in the gopherlings source folder", ErrNewer, s.Version, version)
+	case s.Version < 3:
+		return nil, fmt.Errorf("%s has an old format (%d) that this gopherlings can't read; move it aside to start fresh", filepath.Join(Dir, file), s.Version)
 	}
-	if s.Done == nil {
-		s.Done = map[string]time.Time{}
-	}
-	if s.Starters == nil {
-		s.Starters = map[string]string{}
-	}
+	s.Version = version // format 3 only lacks the newer, optional fields
+	s.init()
 	return s, nil
 }
 

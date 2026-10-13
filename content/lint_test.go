@@ -94,9 +94,6 @@ func TestLint(t *testing.T) {
 	for _, kind := range []string{"starter", "solution"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
-			if err := workspace.WriteGoMod(root, "gopherlings.local/exercises"); err != nil {
-				t.Fatal(err)
-			}
 			for _, e := range exercises {
 				pack, err := c.Pack(e)
 				if err != nil {

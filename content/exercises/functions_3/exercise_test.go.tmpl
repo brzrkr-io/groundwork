@@ -1,71 +1,48 @@
 package functions
 
 import (
-	"fmt"
+	"math"
 	"testing"
 )
 
+// The answers are float64 values. We print them with one decimal place (%.1f)
+// and accept any answer within 0.05 of the one we want.
+
 func TestAllowedDowntimeMinutes(t *testing.T) {
-	// Each line is one case: the inputs, then the answer we want, as %.1f text.
-	cases := []struct {
-		sla  float64
-		days int
-		want string
-	}{
-		{99.9, 30, "43.2"},
-		{99.0, 7, "100.8"},
-		{99.5, 1, "7.2"},
+	if got := AllowedDowntimeMinutes(99.9, 30); math.Abs(got-43.2) >= 0.05 {
+		t.Errorf("AllowedDowntimeMinutes(99.9, 30) = %.1f, want 43.2", got)
 	}
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("%v_over_%d_days", c.sla, c.days), func(t *testing.T) {
-			got := fmt.Sprintf("%.1f", AllowedDowntimeMinutes(c.sla, c.days))
-			if got != c.want {
-				t.Errorf("AllowedDowntimeMinutes(%v, %d) = %s, want %s", c.sla, c.days, got, c.want)
-			}
-		})
+	if got := AllowedDowntimeMinutes(99.0, 7); math.Abs(got-100.8) >= 0.05 {
+		t.Errorf("AllowedDowntimeMinutes(99.0, 7) = %.1f, want 100.8", got)
+	}
+	if got := AllowedDowntimeMinutes(99.5, 1); math.Abs(got-7.2) >= 0.05 {
+		t.Errorf("AllowedDowntimeMinutes(99.5, 1) = %.1f, want 7.2", got)
 	}
 }
 
 func TestRemainingBudget(t *testing.T) {
-	cases := []struct {
-		sla  float64
-		days int
-		used float64
-		want string
-	}{
-		{99.9, 30, 30, "13.2"},
-		{99.9, 30, 50, "-6.8"},
-		{99.0, 7, 0.8, "100.0"},
+	if got := RemainingBudget(99.9, 30, 30); math.Abs(got-13.2) >= 0.05 {
+		t.Errorf("RemainingBudget(99.9, 30, 30) = %.1f, want 13.2", got)
 	}
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("%v_used_%v", c.sla, c.used), func(t *testing.T) {
-			got := fmt.Sprintf("%.1f", RemainingBudget(c.sla, c.days, c.used))
-			if got != c.want {
-				t.Errorf("RemainingBudget(%v, %d, %v) = %s, want %s", c.sla, c.days, c.used, got, c.want)
-			}
-		})
+	if got := RemainingBudget(99.9, 30, 50); math.Abs(got-(-6.8)) >= 0.05 {
+		t.Errorf("RemainingBudget(99.9, 30, 50) = %.1f, want -6.8", got)
+	}
+	if got := RemainingBudget(99.0, 7, 0.8); math.Abs(got-100.0) >= 0.05 {
+		t.Errorf("RemainingBudget(99.0, 7, 0.8) = %.1f, want 100.0", got)
 	}
 }
 
 func TestBudgetReport(t *testing.T) {
-	cases := []struct {
-		service string
-		sla     float64
-		days    int
-		used    float64
-		want    string
-	}{
-		{"api", 99.9, 30, 30, "api: 13.2 of 43.2 minutes left"},
-		{"web", 99.0, 7, 0, "web: 100.8 of 100.8 minutes left"},
-		{"api", 99.9, 30, 50, "api: budget exceeded by 6.8 minutes"},
-		{"db", 99.5, 1, 10, "db: budget exceeded by 2.8 minutes"},
+	if got := BudgetReport("api", 99.9, 30, 30); got != "api: 13.2 of 43.2 minutes left" {
+		t.Errorf(`BudgetReport("api", 99.9, 30, 30) = %q, want "api: 13.2 of 43.2 minutes left"`, got)
 	}
-	for _, c := range cases {
-		t.Run(c.want, func(t *testing.T) {
-			got := BudgetReport(c.service, c.sla, c.days, c.used)
-			if got != c.want {
-				t.Errorf("BudgetReport(%q, %v, %d, %v) = %q, want %q", c.service, c.sla, c.days, c.used, got, c.want)
-			}
-		})
+	if got := BudgetReport("web", 99.0, 7, 0); got != "web: 100.8 of 100.8 minutes left" {
+		t.Errorf(`BudgetReport("web", 99.0, 7, 0) = %q, want "web: 100.8 of 100.8 minutes left"`, got)
+	}
+	if got := BudgetReport("api", 99.9, 30, 50); got != "api: budget exceeded by 6.8 minutes" {
+		t.Errorf(`BudgetReport("api", 99.9, 30, 50) = %q, want "api: budget exceeded by 6.8 minutes"`, got)
+	}
+	if got := BudgetReport("db", 99.5, 1, 10); got != "db: budget exceeded by 2.8 minutes" {
+		t.Errorf(`BudgetReport("db", 99.5, 1, 10) = %q, want "db: budget exceeded by 2.8 minutes"`, got)
 	}
 }

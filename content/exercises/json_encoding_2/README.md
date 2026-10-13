@@ -29,7 +29,7 @@ space-after-colon mistake, but not typos or lowercase fields.
 
 ### io.Writer
 
-In *Reading lines* you met `io.Reader`, something you can read bytes from.
+In *Reading input line by line* you met `io.Reader`, something you can read bytes from.
 Its partner is `io.Writer`, something you can write bytes to: a file, a
 network connection, or, in tests, a `strings.Builder`. The interface has one
 method:

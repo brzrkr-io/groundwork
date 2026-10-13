@@ -1,70 +1,96 @@
 package closures
 
-import (
-	"strconv"
-	"testing"
-)
+import "testing"
 
 func TestNewErrorCounter(t *testing.T) {
-	t.Run("counts up from 1", func(t *testing.T) {
-		count := NewErrorCounter()
-		for want := 1; want <= 4; want++ {
-			if got := count(); got != want {
-				t.Fatalf("call %d: counter() = %d, want %d", want, got, want)
-			}
-		}
-	})
-	t.Run("counters are independent", func(t *testing.T) {
-		db := NewErrorCounter()
-		cache := NewErrorCounter()
-		db()
-		db()
-		if got := cache(); got != 1 {
-			t.Errorf("first cache() after two db() calls = %d, want 1", got)
-		}
-	})
+	// A counter counts up from 1.
+	count := NewErrorCounter()
+	if got := count(); got != 1 {
+		t.Errorf("first count() = %d, want 1", got)
+	}
+	if got := count(); got != 2 {
+		t.Errorf("second count() = %d, want 2", got)
+	}
+	if got := count(); got != 3 {
+		t.Errorf("third count() = %d, want 3", got)
+	}
+	if got := count(); got != 4 {
+		t.Errorf("fourth count() = %d, want 4", got)
+	}
+
+	// Two counters don't share their count.
+	db := NewErrorCounter()
+	cache := NewErrorCounter()
+	db()
+	db()
+	if got := cache(); got != 1 {
+		t.Errorf("first cache() after two db() calls = %d, want 1", got)
+	}
 }
 
 func TestNewIDGenerator(t *testing.T) {
-	// Each line is one case: the prefix; we call the generator three times.
-	tests := []struct {
-		name   string
-		prefix string
-	}{
-		{"requests", "req"},
-		{"jobs", "job"},
+	req := NewIDGenerator("req")
+	if got := req(); got != "req-1" {
+		t.Errorf(`first call of NewIDGenerator("req")() = %q, want "req-1"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			next := NewIDGenerator(tt.prefix)
-			for n := 1; n <= 3; n++ {
-				want := tt.prefix + "-" + strconv.Itoa(n)
-				if got := next(); got != want {
-					t.Fatalf("call %d: NewIDGenerator(%q)() = %q, want %q", n, tt.prefix, got, want)
-				}
-			}
-		})
+	if got := req(); got != "req-2" {
+		t.Errorf(`second call of NewIDGenerator("req")() = %q, want "req-2"`, got)
+	}
+	if got := req(); got != "req-3" {
+		t.Errorf(`third call of NewIDGenerator("req")() = %q, want "req-3"`, got)
+	}
+
+	job := NewIDGenerator("job")
+	if got := job(); got != "job-1" {
+		t.Errorf(`first call of NewIDGenerator("job")() = %q, want "job-1"`, got)
+	}
+	if got := job(); got != "job-2" {
+		t.Errorf(`second call of NewIDGenerator("job")() = %q, want "job-2"`, got)
+	}
+	if got := job(); got != "job-3" {
+		t.Errorf(`third call of NewIDGenerator("job")() = %q, want "job-3"`, got)
 	}
 }
 
 func TestNewRateLimiter(t *testing.T) {
-	tests := []struct {
-		name  string
-		limit int
-	}{
-		{"limit 2", 2},
-		{"limit 3", 3},
-		{"limit 0", 0},
+	// With a limit of 2, the first 2 calls are allowed and the rest are not.
+	two := NewRateLimiter(2)
+	if !two() {
+		t.Errorf("call 1 of NewRateLimiter(2)() = false, want true")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			allow := NewRateLimiter(tt.limit)
-			for call := 1; call <= tt.limit+2; call++ {
-				want := call <= tt.limit
-				if got := allow(); got != want {
-					t.Fatalf("call %d: NewRateLimiter(%d)() = %t, want %t", call, tt.limit, got, want)
-				}
-			}
-		})
+	if !two() {
+		t.Errorf("call 2 of NewRateLimiter(2)() = false, want true")
+	}
+	if two() {
+		t.Errorf("call 3 of NewRateLimiter(2)() = true, want false")
+	}
+	if two() {
+		t.Errorf("call 4 of NewRateLimiter(2)() = true, want false")
+	}
+
+	three := NewRateLimiter(3)
+	if !three() {
+		t.Errorf("call 1 of NewRateLimiter(3)() = false, want true")
+	}
+	if !three() {
+		t.Errorf("call 2 of NewRateLimiter(3)() = false, want true")
+	}
+	if !three() {
+		t.Errorf("call 3 of NewRateLimiter(3)() = false, want true")
+	}
+	if three() {
+		t.Errorf("call 4 of NewRateLimiter(3)() = true, want false")
+	}
+	if three() {
+		t.Errorf("call 5 of NewRateLimiter(3)() = true, want false")
+	}
+
+	// With a limit of 0, nothing is allowed.
+	zero := NewRateLimiter(0)
+	if zero() {
+		t.Errorf("call 1 of NewRateLimiter(0)() = true, want false")
+	}
+	if zero() {
+		t.Errorf("call 2 of NewRateLimiter(0)() = true, want false")
 	}
 }

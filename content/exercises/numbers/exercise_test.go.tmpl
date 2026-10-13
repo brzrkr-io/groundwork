@@ -3,65 +3,47 @@ package numbers
 import "testing"
 
 func TestTotalMemoryMiB(t *testing.T) {
-	tests := []struct {
-		name          string
-		replicas      int
-		perReplicaMiB int
-		want          int
-	}{
-		{name: "three small replicas", replicas: 3, perReplicaMiB: 256, want: 768},
-		{name: "five bigger replicas", replicas: 5, perReplicaMiB: 512, want: 2560},
-		{name: "scaled to zero", replicas: 0, perReplicaMiB: 512, want: 0},
+	if got := TotalMemoryMiB(3, 256); got != 768 {
+		t.Errorf(`TotalMemoryMiB(3, 256) = %d, want 768`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := TotalMemoryMiB(tt.replicas, tt.perReplicaMiB)
-			if got != tt.want {
-				t.Errorf("TotalMemoryMiB(%d, %d) = %d, want %d", tt.replicas, tt.perReplicaMiB, got, tt.want)
-			}
-		})
+
+	if got := TotalMemoryMiB(5, 512); got != 2560 {
+		t.Errorf(`TotalMemoryMiB(5, 512) = %d, want 2560`, got)
+	}
+
+	if got := TotalMemoryMiB(0, 512); got != 0 {
+		t.Errorf(`TotalMemoryMiB(0, 512) = %d, want 0`, got)
 	}
 }
 
 func TestReplicasNeeded(t *testing.T) {
-	tests := []struct {
-		name           string
-		requestsPerSec int
-		perReplica     int
-		want           int
-	}{
-		{name: "needs rounding up", requestsPerSec: 1000, perReplica: 300, want: 4},
-		{name: "divides exactly", requestsPerSec: 900, perReplica: 300, want: 3},
-		{name: "tiny load", requestsPerSec: 1, perReplica: 300, want: 1},
-		{name: "no load", requestsPerSec: 0, perReplica: 300, want: 0},
+	if got := ReplicasNeeded(1000, 300); got != 4 {
+		t.Errorf(`ReplicasNeeded(1000, 300) = %d, want 4`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ReplicasNeeded(tt.requestsPerSec, tt.perReplica)
-			if got != tt.want {
-				t.Errorf("ReplicasNeeded(%d, %d) = %d, want %d", tt.requestsPerSec, tt.perReplica, got, tt.want)
-			}
-		})
+
+	if got := ReplicasNeeded(900, 300); got != 3 {
+		t.Errorf(`ReplicasNeeded(900, 300) = %d, want 3`, got)
+	}
+
+	if got := ReplicasNeeded(1, 300); got != 1 {
+		t.Errorf(`ReplicasNeeded(1, 300) = %d, want 1`, got)
+	}
+
+	if got := ReplicasNeeded(0, 300); got != 0 {
+		t.Errorf(`ReplicasNeeded(0, 300) = %d, want 0`, got)
 	}
 }
 
 func TestCPUPercent(t *testing.T) {
-	tests := []struct {
-		name  string
-		used  float64
-		limit float64
-		want  float64
-	}{
-		{name: "a quarter", used: 250, limit: 1000, want: 25},
-		{name: "fractional percent", used: 125, limit: 1000, want: 12.5},
-		{name: "over the limit", used: 1500, limit: 1000, want: 150},
+	if got := CPUPercent(250, 1000); got != 25 {
+		t.Errorf(`CPUPercent(250, 1000) = %v, want 25`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := CPUPercent(tt.used, tt.limit)
-			if got != tt.want {
-				t.Errorf("CPUPercent(%v, %v) = %v, want %v", tt.used, tt.limit, got, tt.want)
-			}
-		})
+
+	if got := CPUPercent(125, 1000); got != 12.5 {
+		t.Errorf(`CPUPercent(125, 1000) = %v, want 12.5`, got)
+	}
+
+	if got := CPUPercent(1500, 1000); got != 150 {
+		t.Errorf(`CPUPercent(1500, 1000) = %v, want 150`, got)
 	}
 }

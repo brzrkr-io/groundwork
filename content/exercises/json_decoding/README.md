@@ -61,7 +61,7 @@ type Deploy struct {
 
 ### Strict decoding with json.Decoder
 
-`json.NewDecoder(r)` reads JSON from any `io.Reader` (see *Reading lines*). A
+`json.NewDecoder(r)` reads JSON from any `io.Reader` (see *Reading input line by line*). A
 decoder has an option that `Unmarshal` lacks: `DisallowUnknownFields`. With it
 switched on, a key that matches no field is an **error** instead of being
 ignored. That catches typos such as `"replica": 3` in a config file, which

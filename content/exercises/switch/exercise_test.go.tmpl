@@ -3,73 +3,82 @@ package switches
 import "testing"
 
 func TestInstanceSize(t *testing.T) {
-	// Each line is one case: the input, then the answer we want.
-	tests := []struct {
-		env  string
-		want string
-	}{
-		{"production", "large"},
-		{"staging", "medium"},
-		{"dev", "small"},
-		{"test", "small"},
-		{"prod", "unknown"},
-		{"", "unknown"},
+	if got := InstanceSize("production"); got != "large" {
+		t.Errorf(`InstanceSize("production") = %q, want "large"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.env, func(t *testing.T) {
-			if got := InstanceSize(tt.env); got != tt.want {
-				t.Errorf("InstanceSize(%q) = %q, want %q", tt.env, got, tt.want)
-			}
-		})
+	if got := InstanceSize("staging"); got != "medium" {
+		t.Errorf(`InstanceSize("staging") = %q, want "medium"`, got)
+	}
+	if got := InstanceSize("dev"); got != "small" {
+		t.Errorf(`InstanceSize("dev") = %q, want "small"`, got)
+	}
+	if got := InstanceSize("test"); got != "small" {
+		t.Errorf(`InstanceSize("test") = %q, want "small"`, got)
+	}
+	if got := InstanceSize("prod"); got != "unknown" {
+		t.Errorf(`InstanceSize("prod") = %q, want "unknown"`, got)
+	}
+	if got := InstanceSize(""); got != "unknown" {
+		t.Errorf(`InstanceSize("") = %q, want "unknown"`, got)
 	}
 }
 
 func TestMethodKind(t *testing.T) {
-	// Each line is one case: the input, then the answer we want.
-	tests := []struct {
-		method string
-		want   string
-	}{
-		{"GET", "read"},
-		{"get", "read"},
-		{"Head", "read"},
-		{"OPTIONS", "read"},
-		{"POST", "write"},
-		{"put", "write"},
-		{"PATCH", "write"},
-		{"Delete", "write"},
-		{"TRACE", "unknown"},
-		{"", "unknown"},
+	if got := MethodKind("GET"); got != "read" {
+		t.Errorf(`MethodKind("GET") = %q, want "read"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.method, func(t *testing.T) {
-			if got := MethodKind(tt.method); got != tt.want {
-				t.Errorf("MethodKind(%q) = %q, want %q", tt.method, got, tt.want)
-			}
-		})
+	if got := MethodKind("get"); got != "read" {
+		t.Errorf(`MethodKind("get") = %q, want "read"`, got)
+	}
+	if got := MethodKind("Head"); got != "read" {
+		t.Errorf(`MethodKind("Head") = %q, want "read"`, got)
+	}
+	if got := MethodKind("OPTIONS"); got != "read" {
+		t.Errorf(`MethodKind("OPTIONS") = %q, want "read"`, got)
+	}
+	if got := MethodKind("POST"); got != "write" {
+		t.Errorf(`MethodKind("POST") = %q, want "write"`, got)
+	}
+	if got := MethodKind("put"); got != "write" {
+		t.Errorf(`MethodKind("put") = %q, want "write"`, got)
+	}
+	if got := MethodKind("PATCH"); got != "write" {
+		t.Errorf(`MethodKind("PATCH") = %q, want "write"`, got)
+	}
+	if got := MethodKind("Delete"); got != "write" {
+		t.Errorf(`MethodKind("Delete") = %q, want "write"`, got)
+	}
+	if got := MethodKind("TRACE"); got != "unknown" {
+		t.Errorf(`MethodKind("TRACE") = %q, want "unknown"`, got)
+	}
+	if got := MethodKind(""); got != "unknown" {
+		t.Errorf(`MethodKind("") = %q, want "unknown"`, got)
 	}
 }
 
 func TestLatencyRating(t *testing.T) {
-	// Each line is one case: the input, then the answer we want.
-	tests := []struct {
-		ms   int
-		want string
-	}{
-		{0, "fast"},
-		{99, "fast"},
-		{100, "ok"},
-		{499, "ok"},
-		{500, "slow"},
-		{1999, "slow"},
-		{2000, "critical"},
-		{30000, "critical"},
+	if got := LatencyRating(0); got != "fast" {
+		t.Errorf(`LatencyRating(0) = %q, want "fast"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			if got := LatencyRating(tt.ms); got != tt.want {
-				t.Errorf("LatencyRating(%d) = %q, want %q", tt.ms, got, tt.want)
-			}
-		})
+	if got := LatencyRating(99); got != "fast" {
+		t.Errorf(`LatencyRating(99) = %q, want "fast"`, got)
+	}
+	if got := LatencyRating(100); got != "ok" {
+		t.Errorf(`LatencyRating(100) = %q, want "ok"`, got)
+	}
+	if got := LatencyRating(499); got != "ok" {
+		t.Errorf(`LatencyRating(499) = %q, want "ok"`, got)
+	}
+	if got := LatencyRating(500); got != "slow" {
+		t.Errorf(`LatencyRating(500) = %q, want "slow"`, got)
+	}
+	if got := LatencyRating(1999); got != "slow" {
+		t.Errorf(`LatencyRating(1999) = %q, want "slow"`, got)
+	}
+	if got := LatencyRating(2000); got != "critical" {
+		t.Errorf(`LatencyRating(2000) = %q, want "critical"`, got)
+	}
+	if got := LatencyRating(30000); got != "critical" {
+		t.Errorf(`LatencyRating(30000) = %q, want "critical"`, got)
 	}
 }

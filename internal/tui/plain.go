@@ -60,6 +60,8 @@ func CourseList(s *session.Session, all bool) string {
 			switch {
 			case s.Done(e):
 				icon = okStyle.Render("✓")
+			case s.Revealed(e):
+				icon = warn.Render("◐")
 			case e == current:
 				icon = keyCap.Render("▸")
 			}
@@ -70,8 +72,9 @@ func CourseList(s *session.Session, all bool) string {
 			b.WriteString("        " + icon + "  " + label + "\n")
 		}
 	}
+	b.WriteString("\n" + dim.Render("✓ done   ◐ solution seen before passing   ▸ current") + "\n")
 	if !all {
-		b.WriteString("\n" + dim.Render("gopherlings list --all shows every exercise.") + "\n")
+		b.WriteString(dim.Render("gopherlings list --all shows every exercise.") + "\n")
 	}
 	return b.String()
 }

@@ -24,7 +24,7 @@ strings.Fields("10.0.1.15:8080\n10.0.1.16:8080\n")
 ```
 
 Second, the function writes a file, so it needs a folder to write into. As in
-*Subtests and helpers (2)*, `t.TempDir()` gives each test a fresh, empty
+*Subtests and helpers: files and t.TempDir*, `t.TempDir()` gives each test a fresh, empty
 directory and deletes it when the test ends. Your test never leaves junk
 behind, and it never writes into `testdata/` unless you pass `-update`.
 

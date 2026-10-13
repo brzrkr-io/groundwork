@@ -1,6 +1,9 @@
 # Gopherlings lesson plan
 
-284 exercises in 14 modules, about 120 hours of hands-on work. The course takes a complete beginner to the Go that DevOps and platform engineers write every day: CLIs, log and config processing, HTTP services, concurrency, Kubernetes controllers and AWS automation.
+<!-- begin summary -->
+284 exercises in 14 modules, about 120 hours of hands-on work.
+<!-- end summary -->
+The course takes a complete beginner to the Go that DevOps and platform engineers write every day: CLIs, log and config processing, HTTP services, concurrency, Kubernetes controllers and AWS automation.
 
 ## How the course is built
 
@@ -12,7 +15,7 @@ Each **concept** has a short run of exercises, so one lesson is never your only 
 
 Every module ends with a **practice** exercise that combines its concepts. Each phase ends with a multi-file **project**, where tests unlock task by task.
 
-After you pass an exercise, compare your code with the reference solution in `solutions/`. Reading a second way to solve the same problem is one of the fastest ways to learn.
+After you pass an exercise, press `s` to compare your code with the reference solution (also saved in `solutions/`). Reading a second way to solve the same problem is one of the fastest ways to learn.
 
 ## Suggested schedule
 
@@ -26,15 +29,19 @@ Habits that make it stick:
 
 - **Read the README first** (`i`). Each one teaches everything its tests check.
 - **Use hints in order** (`h`). The first hint is a nudge and the last is close to the answer. Try for 5–10 minutes before each one.
+- **Stuck after the last hint?** Press `s` for the solution, read it, then `gopherlings reset` the exercise the next day and solve it without looking. The list marks it ◐ until you do.
 - **Space the repetitions.** Do a concept's introduction, then come back to its follow-ups the next day, before you've fully forgotten it.
 - **Redo practice exercises cold.** After finishing a module, `gopherlings reset <practice>` and solve it again without hints.
 - **Explain it out loud.** After each module, say in two or three sentences what each concept is for. If you can't, revisit its introduction.
 
+<!-- Generated from content/course.json; regenerate with:
+     go test ./content -run TestLessonPlan -args -update -->
+<!-- begin modules -->
 ## Phase: Go foundations (about 41 hours)
 
 ### Module 1: Basics
 
-*About 5.3 hours.* Functions, variables, constants, numbers, strings and fmt: the vocabulary every Go program is written in.
+*About 5.3 hours, in `exercises/01_basics/`.* Functions, variables, constants, numbers, strings and fmt: the vocabulary every Go program is written in.
 
 **After this module you can:** Read and write small Go functions: variables, constants, int/float64 maths, the strings package, fmt verbs and type conversion.
 
@@ -63,7 +70,7 @@ Habits that make it stick:
 
 ### Module 2: Control flow and functions
 
-*About 7.5 hours.* Decisions, loops and functions: how a program chooses what to do and repeats work.
+*About 7.5 hours, in `exercises/02_control_flow/`.* Decisions, loops and functions: how a program chooses what to do and repeats work.
 
 **After this module you can:** Make decisions and repeat work: booleans, if/else, switch, for loops, helper functions, (value, error) returns and closures. Parse a "host:port" safely.
 
@@ -97,7 +104,7 @@ Habits that make it stick:
 
 ### Module 3: Collections
 
-*About 9.3 hours.* Arrays, slices, maps and strings as data: storing many values and working through them.
+*About 9.3 hours, in `exercises/03_collections/`.* Arrays, slices, maps and strings as data: storing many values and working through them.
 
 **After this module you can:** Store and process many values with arrays, slices, maps and sorting, avoid the shared-memory slice traps, and handle UTF-8 text correctly.
 
@@ -137,7 +144,7 @@ Habits that make it stick:
 
 ### Module 4: Types and methods
 
-*About 11.8 hours.* Structs, pointers, methods and interfaces: modelling real things like servers, deployments and alerts.
+*About 11.8 hours, in `exercises/04_types/`.* Structs, pointers, methods and interfaces: modelling real things like servers, deployments and alerts.
 
 **After this module you can:** Model real things (deployments, hosts, alerts) with structs, pointers, methods, enums, interfaces, embedding and generics.
 
@@ -177,7 +184,7 @@ Habits that make it stick:
 
 ### Module 5: Errors
 
-*About 7.4 hours.* Go treats errors as ordinary values. Learn to create, wrap, inspect and combine them the way production code does.
+*About 7.4 hours, in `exercises/05_errors/`.* Go treats errors as ordinary values. Learn to create, wrap, inspect and combine them the way production code does.
 
 **After this module you can:** Handle failure the Go way: create, wrap, inspect and join errors, clean up with defer, and contain panics.
 
@@ -203,11 +210,11 @@ Habits that make it stick:
 | 125 | panic and recover: protect the status API | concept | 30 |
 | 126 | Practice: config validator | **practice** | 40 |
 
-## Phase: Practical Go (about 18 hours)
+## Phase: Practical Go (about 19 hours)
 
 ### Module 6: Text and data
 
-*About 8.2 hours.* Reading lines, regular expressions, time, JSON, CSV and templates: the daily bread of ops tooling.
+*About 8.2 hours, in `exercises/06_text_and_data/`.* Reading lines, regular expressions, time, JSON, CSV and templates: the daily bread of ops tooling.
 
 **After this module you can:** Parse logs and configs: bufio scanning, regular expressions, time, JSON, CSV and text/template. The project produces an access-log report.
 
@@ -232,7 +239,7 @@ Habits that make it stick:
 
 ### Module 7: Testing
 
-*About 6 hours.* Now you write the tests. Table tests, subtests, golden files, fakes, benchmarks and fuzzing.
+*About 6.0 hours, in `exercises/07_testing/`.* Now you write the tests. Table tests, subtests, golden files, fakes, benchmarks and fuzzing.
 
 **After this module you can:** Write your own tests: table tests, subtests, golden files, fakes, benchmarks and fuzzing. Your tests are graded by whether they catch real bugs.
 
@@ -256,7 +263,7 @@ Habits that make it stick:
 
 ### Module 8: Packages and project layout
 
-*About 4.2 hours.* Split code into packages, control what is exported, embed files and stamp version info into binaries.
+*About 4.2 hours, in `exercises/08_packages/`.* Split code into packages, control what is exported, embed files and stamp version info into binaries.
 
 **After this module you can:** Split a program into packages, control your public API, use internal/, embed files and stamp version info into binaries.
 
@@ -278,7 +285,7 @@ Habits that make it stick:
 
 ### Module 9: CLI tools and the OS
 
-*About 12.1 hours.* Arguments, flags, files, environment, subprocesses and signals: build the kind of tool you would put in a pipeline.
+*About 12.1 hours, in `exercises/09_cli/`.* Arguments, flags, files, environment, subprocesses and signals: build the kind of tool you would put in a pipeline.
 
 **After this module you can:** Build pipeline-ready CLIs: args, flags, subcommands, streams and exit codes, safe file writes, directory walks, config precedence, subprocesses, signals, checksums and archives.
 
@@ -310,7 +317,7 @@ Habits that make it stick:
 
 ### Module 10: Networking and HTTP
 
-*About 9.1 hours.* IP addresses, TCP, HTTP clients and servers, JSON APIs, middleware and TLS.
+*About 9.1 hours, in `exercises/10_networking/`.* IP addresses, TCP, HTTP clients and servers, JSON APIs, middleware and TLS.
 
 **After this module you can:** Work with IPs and CIDRs, TCP, port checks, HTTP clients and servers, JSON APIs, middleware and TLS, all tested with httptest.
 
@@ -338,7 +345,7 @@ Habits that make it stick:
 
 ### Module 11: Concurrency
 
-*About 10.5 hours.* Goroutines, channels, select, sync and context. Every check runs with the race detector.
+*About 10.5 hours, in `exercises/11_concurrency/`.* Goroutines, channels, select, sync and context. Every check runs with the race detector.
 
 **After this module you can:** Use goroutines, channels, select, WaitGroups, mutexes and context; read race reports; build worker pools and pipelines; collect errors concurrently.
 
@@ -368,7 +375,7 @@ Habits that make it stick:
 
 ### Module 12: Production services
 
-*About 10.8 hours.* Logging, metrics, health checks, graceful shutdown, retries, rate limits and caches: what keeps a service up at 3am.
+*About 10.8 hours, in `exercises/12_production/`.* Logging, metrics, health checks, graceful shutdown, retries, rate limits and caches: what keeps a service up at 3am.
 
 **After this module you can:** Add what on-call needs: slog logging, Prometheus metrics, health checks, graceful shutdown, retries, rate limits, circuit breakers, caches and idempotency.
 
@@ -398,7 +405,7 @@ Habits that make it stick:
 
 ### Module 13: Kubernetes with client-go
 
-*About 10.9 hours.* Kubernetes objects, manifests, kubeconfig, clientsets, informers, workqueues and reconcile loops using the real client-go.
+*About 10.9 hours, in `exercises/13_kubernetes/`.* Kubernetes objects, manifests, kubeconfig, clientsets, informers, workqueues and reconcile loops using the real client-go.
 
 **After this module you can:** Build and validate Kubernetes objects, read manifests and kubeconfigs, use the clientset, selectors, watches, informers and workqueues, and write a controller.
 
@@ -426,7 +433,7 @@ Habits that make it stick:
 
 ### Module 14: Cloud automation with the AWS SDK
 
-*About 6.4 hours.* aws-sdk-go-v2 configuration, testable clients, paginators, API errors, S3 and tag compliance, all tested offline.
+*About 6.4 hours, in `exercises/14_aws/`.* aws-sdk-go-v2 configuration, testable clients, paginators, API errors, S3 and tag compliance, all tested offline.
 
 **After this module you can:** Configure aws-sdk-go-v2 safely, write testable SDK code, paginate, handle API errors, manage S3 objects, audit tags and detect drift.
 
@@ -447,6 +454,8 @@ Habits that make it stick:
 | 282 | Drift detection: a tiny terraform plan | concept | 35 |
 | 283 | Drift detection: ignore AWS-managed tags | concept | 20 |
 | 284 | Practice: cloud inventory report | **practice** · race | 45 |
+
+<!-- end modules -->
 
 ## After the course
 

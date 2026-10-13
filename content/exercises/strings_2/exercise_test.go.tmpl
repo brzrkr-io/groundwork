@@ -3,62 +3,47 @@ package text
 import "testing"
 
 func TestIsProdHost(t *testing.T) {
-	tests := []struct {
-		name string
-		host string
-		want bool
-	}{
-		{name: "prod web host", host: "web-01.prod.example.com", want: true},
-		{name: "prod db host", host: "db-02.prod.example.com", want: true},
-		{name: "staging host", host: "web-01.staging.example.com", want: false},
+	if got := IsProdHost("web-01.prod.example.com"); got != true {
+		t.Errorf(`IsProdHost("web-01.prod.example.com") = %t, want true`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := IsProdHost(tt.host)
-			if got != tt.want {
-				t.Errorf("IsProdHost(%q) = %t, want %t", tt.host, got, tt.want)
-			}
-		})
+
+	if got := IsProdHost("db-02.prod.example.com"); got != true {
+		t.Errorf(`IsProdHost("db-02.prod.example.com") = %t, want true`, got)
+	}
+
+	if got := IsProdHost("web-01.staging.example.com"); got != false {
+		t.Errorf(`IsProdHost("web-01.staging.example.com") = %t, want false`, got)
 	}
 }
 
 func TestMetricName(t *testing.T) {
-	tests := []struct {
-		name    string
-		service string
-		want    string
-	}{
-		{name: "one dash", service: "checkout-api", want: "checkout_api_requests_total"},
-		{name: "two dashes", service: "payment-gateway-v2", want: "payment_gateway_v2_requests_total"},
-		{name: "no dashes", service: "auth", want: "auth_requests_total"},
+	if got := MetricName("checkout-api"); got != "checkout_api_requests_total" {
+		t.Errorf(`MetricName("checkout-api") = %q, want "checkout_api_requests_total"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := MetricName(tt.service)
-			if got != tt.want {
-				t.Errorf("MetricName(%q) = %q, want %q", tt.service, got, tt.want)
-			}
-		})
+
+	if got := MetricName("payment-gateway-v2"); got != "payment_gateway_v2_requests_total" {
+		t.Errorf(`MetricName("payment-gateway-v2") = %q, want "payment_gateway_v2_requests_total"`, got)
+	}
+
+	if got := MetricName("auth"); got != "auth_requests_total" {
+		t.Errorf(`MetricName("auth") = %q, want "auth_requests_total"`, got)
 	}
 }
 
 func TestMentionsTimeout(t *testing.T) {
-	tests := []struct {
-		name string
-		line string
-		want bool
-	}{
-		{name: "lowercase", line: "upstream timeout after 30s", want: true},
-		{name: "capitalised", line: "ERROR: Timeout waiting for db", want: true},
-		{name: "all capitals", line: "CONNECTION TIMEOUT", want: true},
-		{name: "no timeout", line: "request ok in 20ms", want: false},
+	if got := MentionsTimeout("upstream timeout after 30s"); got != true {
+		t.Errorf(`MentionsTimeout("upstream timeout after 30s") = %t, want true`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := MentionsTimeout(tt.line)
-			if got != tt.want {
-				t.Errorf("MentionsTimeout(%q) = %t, want %t", tt.line, got, tt.want)
-			}
-		})
+
+	if got := MentionsTimeout("ERROR: Timeout waiting for db"); got != true {
+		t.Errorf(`MentionsTimeout("ERROR: Timeout waiting for db") = %t, want true`, got)
+	}
+
+	if got := MentionsTimeout("CONNECTION TIMEOUT"); got != true {
+		t.Errorf(`MentionsTimeout("CONNECTION TIMEOUT") = %t, want true`, got)
+	}
+
+	if got := MentionsTimeout("request ok in 20ms"); got != false {
+		t.Errorf(`MentionsTimeout("request ok in 20ms") = %t, want false`, got)
 	}
 }

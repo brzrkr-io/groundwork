@@ -37,8 +37,9 @@ gopherlings           # opens your current exercise and watches for saves
 Open this folder in your editor in a second window (VS Code, GoLand,
 Neovim…). Gopherlings shows which file to edit. Failing tests come first,
 each with its exact failure message. Save the file and the checks run again.
-When every test passes, the reference solution unlocks, and **n** takes you to
-the next exercise.
+When every test passes, press **s** to compare your code with the reference
+solution, and **n** to move to the next exercise. Truly stuck? After the last
+hint, **s** shows the solution early (you confirm first).
 
 ```text
 gopherlings  ·  module 1 of 14: Basics                     ━━━━━━━━━━━━━━━━━━━━  1/284 done
@@ -46,7 +47,7 @@ gopherlings  ·  module 1 of 14: Basics                     ━━━━━━�
 002  Variables                                                         ✗ 2 of 3 failing
 edit  exercises/01_basics/002_variables/exercise.go
 
- Results   Instructions i   Hints 0/3 h   All exercises l   Keys ?
+ Results   Instructions i   Hints 0/3 h   Solution s   All exercises l   Keys ?
 ─────────────────────────────────────────────────────────────────────────────────────────
 ✗ 2 of 3 tests failing
 
@@ -76,8 +77,9 @@ The tab row shows which view you're looking at. The results always come first.
 | save a file | re-run the tests |
 | `i` | instructions (the exercise README, rendered) |
 | `h` | hint; press again for a stronger one |
+| `s` | the solution: once you pass, or after the last hint |
 | `l` | all exercises; `enter` opens one |
-| `?` | every key |
+| `?` | every key, plus a guide to reading failures and compiler errors |
 | `esc` | back to the results |
 | `n` | next unfinished exercise |
 | `←` / `→` | previous / next exercise |
@@ -109,7 +111,6 @@ gopherlings/
 ├── LESSON_PLAN.md                the syllabus
 ├── .gopherlings/progress.json    what you've finished
 ├── exercises/
-│   ├── go.mod                    one module for the standard-library exercises
 │   ├── 01_basics/                one folder per module
 │   │   ├── 001_hello_go/
 │   │   ├── 002_variables/        a concept's introduction...
@@ -117,22 +118,28 @@ gopherlings/
 │   │   ├── 004_variables/
 │   │   │   ├── README.md         instructions
 │   │   │   ├── exercise.go       you edit this
-│   │   │   └── exercise_test.go  the tests (read them!)
+│   │   │   ├── exercise_test.go  the tests (read them!)
+│   │   │   └── go.mod            every exercise is its own little Go module
 │   │   └── …
 │   ├── 02_control_flow/
 │   └── …                         14 modules, 284 exercises, numbered in order
 └── solutions/                    reference solutions, same layout, unlocked when you pass
 ```
 
-Each exercise is its own folder because each is its own Go package with its
-own tests. The number gives the order. The Kubernetes and AWS exercises have
-their own `go.mod` for their dependencies. `exercises/` and `solutions/` each
-have their own `go.mod`, so your exercise code never mixes with the tool's
-code.
+Each exercise is its own folder and its own Go module, with its own tests.
+Your editor only ever sees one exercise at a time, so the deliberate bugs in
+exercises you haven't reached never show up in a workspace-wide problems
+list. The number gives the order.
 
 Every exercise folder exists from the start. When the course is updated, any
 file you haven't edited is refreshed automatically. Files you've changed are
-never touched. `gopherlings reset EX` restores the starter code.
+never touched. If a course update reorders exercises, your folders move with
+them. `gopherlings reset EX` restores the starter code.
+
+Gopherlings records the format of the course folder in
+`.gopherlings/progress.json`. An older `gopherlings` binary refuses to touch
+a folder set up by a newer one and tells you to reinstall, so it can't undo
+changes. If the Go toolchain is older than 1.26, it says so up front.
 
 Checks run `go test` (with `-race` in the concurrency modules), then
 `go vet`. Unformatted code earns a gentle reminder, not a failure. The

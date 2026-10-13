@@ -26,10 +26,16 @@ exercises/variables/
   Other files (`go.sum`, `.json`, `.txt`, `.golden`) need no suffix.
 - `solution/` mirrors the pack layout. Its files are written over the starter
   files. Include only the files that change.
-- Most packs are a single package inside the shared learner module
-  `gopherlings.local/exercises`. If a pack has **subpackages** or
-  **third-party dependencies**, it ships its own `go.mod.tmpl` (module path
-  `gopherlings.local/<name>`, `go 1.26`) and, with dependencies, a `go.sum`.
+- Every exercise is its own Go module in the learner's folder. Packs without a
+  `go.mod.tmpl` get a generated one (`module gopherlings.local/<folder>`,
+  `go 1.26`). Packs with **third-party dependencies** or **subpackages**
+  ship their own `go.mod.tmpl` (module path `gopherlings.local/<name>`,
+  `go 1.26`) and, with dependencies, a `go.sum`.
+- Learner folders are `exercises/<NN>_<module dir>/<NNN>_<topic>`, where the
+  topic is the pack name without a `_2`/`_3` suffix. Numbers come from the
+  pack's position in `course.json`; each module there has a `dir` and an
+  `outcome` (shown in LESSON_PLAN.md). After changing course.json, run
+  `go test ./content -run TestLessonPlan -args -update`.
 - File and directory names must not start with `.` or `_`, because `go:embed`
   skips them.
 
@@ -115,7 +121,9 @@ The tests are reading material for a beginner. Keep them simple.
 
 - Write one `TestXxx` function per task, in task order, named after the
   behaviour (`TestServiceLabel`). The TUI lists them as a ✓/✗ checklist.
-- Prefer table-driven cases with `t.Run(name, …)`.
+- Modules 1–2 tests use plain sequential `if` checks, one per case (no
+  tables, loops or `t.Run`). Table-driven tests with `t.Run(name, …)` start
+  in Module 3.
 - Failure messages follow `Func(args) = got, want want`, using `%q` for
   strings.
 - Give each behaviour at least two cases, so hard-coding an answer fails.

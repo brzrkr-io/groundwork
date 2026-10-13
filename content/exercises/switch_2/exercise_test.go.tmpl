@@ -3,49 +3,55 @@ package switches
 import "testing"
 
 func TestLevelNumber(t *testing.T) {
-	// Each line is one case: the input, then the answer we want.
-	tests := []struct {
-		level string
-		want  int
-	}{
-		{"debug", 0},
-		{"info", 1},
-		{"warn", 2},
-		{"warning", 2},
-		{"error", 3},
-		{"fatal", 4},
-		{"panic", 4},
-		{"trace", -1},
-		{"", -1},
+	if got := LevelNumber("debug"); got != 0 {
+		t.Errorf(`LevelNumber("debug") = %d, want 0`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.level, func(t *testing.T) {
-			if got := LevelNumber(tt.level); got != tt.want {
-				t.Errorf("LevelNumber(%q) = %d, want %d", tt.level, got, tt.want)
-			}
-		})
+	if got := LevelNumber("info"); got != 1 {
+		t.Errorf(`LevelNumber("info") = %d, want 1`, got)
+	}
+	if got := LevelNumber("warn"); got != 2 {
+		t.Errorf(`LevelNumber("warn") = %d, want 2`, got)
+	}
+	if got := LevelNumber("warning"); got != 2 {
+		t.Errorf(`LevelNumber("warning") = %d, want 2`, got)
+	}
+	if got := LevelNumber("error"); got != 3 {
+		t.Errorf(`LevelNumber("error") = %d, want 3`, got)
+	}
+	if got := LevelNumber("fatal"); got != 4 {
+		t.Errorf(`LevelNumber("fatal") = %d, want 4`, got)
+	}
+	if got := LevelNumber("panic"); got != 4 {
+		t.Errorf(`LevelNumber("panic") = %d, want 4`, got)
+	}
+	if got := LevelNumber("trace"); got != -1 {
+		t.Errorf(`LevelNumber("trace") = %d, want -1`, got)
+	}
+	if got := LevelNumber(""); got != -1 {
+		t.Errorf(`LevelNumber("") = %d, want -1`, got)
 	}
 }
 
 func TestRegionArea(t *testing.T) {
-	// Each line is one case: the input, then the answer we want.
-	tests := []struct {
-		region string
-		want   string
-	}{
-		{"us-east-1", "North America"},
-		{"us-west-2", "North America"},
-		{"eu-west-1", "Europe"},
-		{"eu-central-1", "Europe"},
-		{"ap-southeast-2", "Asia Pacific"},
-		{"sa-east-1", "other"},
-		{"europe", "other"},
+	if got := RegionArea("us-east-1"); got != "North America" {
+		t.Errorf(`RegionArea("us-east-1") = %q, want "North America"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.region, func(t *testing.T) {
-			if got := RegionArea(tt.region); got != tt.want {
-				t.Errorf("RegionArea(%q) = %q, want %q", tt.region, got, tt.want)
-			}
-		})
+	if got := RegionArea("us-west-2"); got != "North America" {
+		t.Errorf(`RegionArea("us-west-2") = %q, want "North America"`, got)
+	}
+	if got := RegionArea("eu-west-1"); got != "Europe" {
+		t.Errorf(`RegionArea("eu-west-1") = %q, want "Europe"`, got)
+	}
+	if got := RegionArea("eu-central-1"); got != "Europe" {
+		t.Errorf(`RegionArea("eu-central-1") = %q, want "Europe"`, got)
+	}
+	if got := RegionArea("ap-southeast-2"); got != "Asia Pacific" {
+		t.Errorf(`RegionArea("ap-southeast-2") = %q, want "Asia Pacific"`, got)
+	}
+	if got := RegionArea("sa-east-1"); got != "other" {
+		t.Errorf(`RegionArea("sa-east-1") = %q, want "other"`, got)
+	}
+	if got := RegionArea("europe"); got != "other" {
+		t.Errorf(`RegionArea("europe") = %q, want "other"`, got)
 	}
 }

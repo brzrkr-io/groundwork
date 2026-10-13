@@ -1,64 +1,48 @@
 package loops
 
-import (
-	"fmt"
-	"testing"
-)
+import "testing"
 
 func TestHostNames(t *testing.T) {
-	// Each line is one case: the inputs, then the answer we want.
-	cases := []struct {
-		prefix string
-		count  int
-		want   string
-	}{
-		{"web", 3, "web-1,web-2,web-3"},
-		{"db", 1, "db-1"},
-		{"cache", 2, "cache-1,cache-2"},
-		{"web", 0, ""},
+	if got := HostNames("web", 3); got != "web-1,web-2,web-3" {
+		t.Errorf(`HostNames("web", 3) = %q, want "web-1,web-2,web-3"`, got)
 	}
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("%s_%d", c.prefix, c.count), func(t *testing.T) {
-			if got := HostNames(c.prefix, c.count); got != c.want {
-				t.Errorf("HostNames(%q, %d) = %q, want %q", c.prefix, c.count, got, c.want)
-			}
-		})
+	if got := HostNames("db", 1); got != "db-1" {
+		t.Errorf(`HostNames("db", 1) = %q, want "db-1"`, got)
+	}
+	if got := HostNames("cache", 2); got != "cache-1,cache-2" {
+		t.Errorf(`HostNames("cache", 2) = %q, want "cache-1,cache-2"`, got)
+	}
+	if got := HostNames("web", 0); got != "" {
+		t.Errorf(`HostNames("web", 0) = %q, want ""`, got)
 	}
 }
 
 func TestPortList(t *testing.T) {
-	cases := []struct {
-		first, last, reserved int
-		want                  string
-	}{
-		{8000, 8003, 8002, "8000,8001,8003"},
-		{9000, 9002, 7000, "9000,9001,9002"},
-		{80, 82, 81, "80,82"},
-		{5000, 5000, 1, "5000"},
+	if got := PortList(8000, 8003, 8002); got != "8000,8001,8003" {
+		t.Errorf(`PortList(8000, 8003, 8002) = %q, want "8000,8001,8003"`, got)
 	}
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("%d_to_%d_skip_%d", c.first, c.last, c.reserved), func(t *testing.T) {
-			if got := PortList(c.first, c.last, c.reserved); got != c.want {
-				t.Errorf("PortList(%d, %d, %d) = %q, want %q", c.first, c.last, c.reserved, got, c.want)
-			}
-		})
+	if got := PortList(9000, 9002, 7000); got != "9000,9001,9002" {
+		t.Errorf(`PortList(9000, 9002, 7000) = %q, want "9000,9001,9002"`, got)
+	}
+	if got := PortList(80, 82, 81); got != "80,82" {
+		t.Errorf(`PortList(80, 82, 81) = %q, want "80,82"`, got)
+	}
+	if got := PortList(5000, 5000, 1); got != "5000" {
+		t.Errorf(`PortList(5000, 5000, 1) = %q, want "5000"`, got)
 	}
 }
 
 func TestBatchCount(t *testing.T) {
-	cases := []struct {
-		total, size, want int
-	}{
-		{10, 3, 4},
-		{9, 3, 3},
-		{2, 5, 1},
-		{0, 3, 0},
+	if got := BatchCount(10, 3); got != 4 {
+		t.Errorf("BatchCount(10, 3) = %d, want 4", got)
 	}
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("%d_by_%d", c.total, c.size), func(t *testing.T) {
-			if got := BatchCount(c.total, c.size); got != c.want {
-				t.Errorf("BatchCount(%d, %d) = %d, want %d", c.total, c.size, got, c.want)
-			}
-		})
+	if got := BatchCount(9, 3); got != 3 {
+		t.Errorf("BatchCount(9, 3) = %d, want 3", got)
+	}
+	if got := BatchCount(2, 5); got != 1 {
+		t.Errorf("BatchCount(2, 5) = %d, want 1", got)
+	}
+	if got := BatchCount(0, 3); got != 0 {
+		t.Errorf("BatchCount(0, 3) = %d, want 0", got)
 	}
 }

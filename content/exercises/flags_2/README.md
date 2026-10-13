@@ -41,7 +41,7 @@ fs.Func("level", "log level", func(s string) error {
 })
 ```
 
-The function is a *closure*, as in *Closures*: it updates `level`, a variable
+The function is a *closure*, as in *Functions as values*: it updates `level`, a variable
 outside it. The variable's starting value is the default. On
 `-level trace`, `flag` prints this, then the usage text:
 

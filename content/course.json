@@ -6,6 +6,7 @@
       "dir": "basics",
       "phase": "Go foundations",
       "summary": "Functions, variables, constants, numbers, strings and fmt: the vocabulary every Go program is written in.",
+      "outcome": "Read and write small Go functions: variables, constants, int/float64 maths, the strings package, fmt verbs and type conversion.",
       "exercises": [
         { "name": "hello_go", "title": "Hello, Go", "minutes": 10 },
         { "name": "variables", "title": "Variables", "minutes": 15 },
@@ -34,6 +35,7 @@
       "dir": "control_flow",
       "phase": "Go foundations",
       "summary": "Decisions, loops and functions: how a program chooses what to do and repeats work.",
+      "outcome": "Make decisions and repeat work: booleans, if/else, switch, for loops, helper functions, (value, error) returns and closures. Parse a \"host:port\" safely.",
       "exercises": [
         { "name": "booleans", "title": "Booleans", "minutes": 15 },
         { "name": "booleans_2", "title": "Booleans: fix the alert rules", "minutes": 10 },
@@ -67,6 +69,7 @@
       "dir": "collections",
       "phase": "Go foundations",
       "summary": "Arrays, slices, maps and strings as data: storing many values and working through them.",
+      "outcome": "Store and process many values with arrays, slices, maps and sorting, avoid the shared-memory slice traps, and handle UTF-8 text correctly.",
       "exercises": [
         { "name": "arrays", "title": "Arrays", "minutes": 15 },
         { "name": "arrays_2", "title": "Arrays: fix the hourly histogram", "minutes": 15 },
@@ -106,6 +109,7 @@
       "dir": "types",
       "phase": "Go foundations",
       "summary": "Structs, pointers, methods and interfaces: modelling real things like servers, deployments and alerts.",
+      "outcome": "Model real things (deployments, hosts, alerts) with structs, pointers, methods, enums, interfaces, embedding and generics.",
       "exercises": [
         { "name": "structs", "title": "Structs", "minutes": 25 },
         { "name": "structs_2", "title": "Structs: changes that vanish", "minutes": 15 },
@@ -145,6 +149,7 @@
       "dir": "errors",
       "phase": "Go foundations",
       "summary": "Go treats errors as ordinary values. Learn to create, wrap, inspect and combine them the way production code does.",
+      "outcome": "Handle failure the Go way: create, wrap, inspect and join errors, clean up with defer, and contain panics.",
       "exercises": [
         { "name": "errors", "title": "Errors are values", "minutes": 20 },
         { "name": "errors_2", "title": "Errors are values: fix the replica scaler", "minutes": 15 },
@@ -172,6 +177,7 @@
       "dir": "text_and_data",
       "phase": "Practical Go",
       "summary": "Reading lines, regular expressions, time, JSON, CSV and templates: the daily bread of ops tooling.",
+      "outcome": "Parse logs and configs: bufio scanning, regular expressions, time, JSON, CSV and text/template. The project produces an access-log report.",
       "exercises": [
         { "name": "reading_lines", "title": "Reading input line by line: a hosts list", "minutes": 25 },
         { "name": "reading_lines_2", "title": "Reading input line by line: scanning logs", "minutes": 20 },
@@ -196,6 +202,7 @@
       "dir": "testing",
       "phase": "Practical Go",
       "summary": "Now you write the tests. Table tests, subtests, golden files, fakes, benchmarks and fuzzing.",
+      "outcome": "Write your own tests: table tests, subtests, golden files, fakes, benchmarks and fuzzing. Your tests are graded by whether they catch real bugs.",
       "exercises": [
         { "name": "first_test", "title": "Your first test", "minutes": 20 },
         { "name": "first_test_2", "title": "Your first test: fix a broken test", "minutes": 20 },
@@ -219,6 +226,7 @@
       "dir": "packages",
       "phase": "Practical Go",
       "summary": "Split code into packages, control what is exported, embed files and stamp version info into binaries.",
+      "outcome": "Split a program into packages, control your public API, use internal/, embed files and stamp version info into binaries.",
       "exercises": [
         { "name": "packages", "title": "Packages and imports", "minutes": 25 },
         { "name": "packages_2", "title": "Packages: two packages, one name", "minutes": 20 },
@@ -238,6 +246,7 @@
       "dir": "cli",
       "phase": "Building tools and services",
       "summary": "Arguments, flags, files, environment, subprocesses and signals: build the kind of tool you would put in a pipeline.",
+      "outcome": "Build pipeline-ready CLIs: args, flags, subcommands, streams and exit codes, safe file writes, directory walks, config precedence, subprocesses, signals, checksums and archives.",
       "exercises": [
         { "name": "command_line_args", "title": "Command-line arguments: os.Args and usage errors", "minutes": 20 },
         { "name": "command_line_args_2", "title": "Command-line arguments: fix the port waiter", "minutes": 20 },
@@ -269,6 +278,7 @@
       "dir": "networking",
       "phase": "Building tools and services",
       "summary": "IP addresses, TCP, HTTP clients and servers, JSON APIs, middleware and TLS.",
+      "outcome": "Work with IPs and CIDRs, TCP, port checks, HTTP clients and servers, JSON APIs, middleware and TLS, all tested with httptest.",
       "exercises": [
         { "name": "ip_addresses", "title": "IP addresses: classify, allowlist, overlap", "minutes": 25 },
         { "name": "ip_addresses_2", "title": "CIDRs: normalize and audit subnet rules", "minutes": 20 },
@@ -296,6 +306,7 @@
       "dir": "concurrency",
       "phase": "Building tools and services",
       "summary": "Goroutines, channels, select, sync and context. Every check runs with the race detector.",
+      "outcome": "Use goroutines, channels, select, WaitGroups, mutexes and context; read race reports; build worker pools and pipelines; collect errors concurrently.",
       "exercises": [
         { "name": "goroutines", "title": "Goroutines", "minutes": 20, "race": true },
         { "name": "goroutines_2", "title": "Goroutines: fix the maintenance script", "minutes": 15, "race": true },
@@ -325,6 +336,7 @@
       "dir": "production",
       "phase": "Building tools and services",
       "summary": "Logging, metrics, health checks, graceful shutdown, retries, rate limits and caches: what keeps a service up at 3am.",
+      "outcome": "Add what on-call needs: slog logging, Prometheus metrics, health checks, graceful shutdown, retries, rate limits, circuit breakers, caches and idempotency.",
       "exercises": [
         { "name": "structured_logging", "title": "Structured logging with slog", "minutes": 25, "race": true },
         { "name": "structured_logging_2", "title": "Structured logging: access logs", "minutes": 20, "race": true },
@@ -352,6 +364,7 @@
       "dir": "kubernetes",
       "phase": "Platform engineering",
       "summary": "Kubernetes objects, manifests, kubeconfig, clientsets, informers, workqueues and reconcile loops using the real client-go.",
+      "outcome": "Build and validate Kubernetes objects, read manifests and kubeconfigs, use the clientset, selectors, watches, informers and workqueues, and write a controller.",
       "exercises": [
         { "name": "k8s_objects", "title": "Kubernetes objects: building a Deployment", "minutes": 30 },
         { "name": "k8s_objects_2", "title": "Kubernetes objects: Services and selectors", "minutes": 25 },
@@ -379,6 +392,7 @@
       "dir": "aws",
       "phase": "Platform engineering",
       "summary": "aws-sdk-go-v2 configuration, testable clients, paginators, API errors, S3 and tag compliance, all tested offline.",
+      "outcome": "Configure aws-sdk-go-v2 safely, write testable SDK code, paginate, handle API errors, manage S3 objects, audit tags and detect drift.",
       "exercises": [
         { "name": "aws_config", "title": "AWS SDK configuration: regions, profiles and credentials", "minutes": 25 },
         { "name": "aws_config_2", "title": "AWS SDK configuration: many regions, no leaked keys", "minutes": 20 },

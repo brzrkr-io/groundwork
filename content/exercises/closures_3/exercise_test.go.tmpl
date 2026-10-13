@@ -1,84 +1,140 @@
 package closures
 
-import (
-	"strconv"
-	"testing"
-)
+import "testing"
 
 func TestRetryWithBackoff(t *testing.T) {
-	// Each line is one case: the inputs, then the answers we want.
-	// succeedsOn is the attempt where op returns true (0 means never).
-	// wantSleeps lists every sleep call, separated by spaces.
-	tests := []struct {
-		name        string
-		attempts    int
-		baseSeconds int
-		succeedsOn  int
-		want        bool
-		wantSleeps  string
-	}{
-		{"first try", 5, 1, 1, true, ""},
-		{"fourth try", 5, 1, 4, true, "1 2 4"},
-		{"last try", 3, 2, 3, true, "2 4"},
-		{"never", 3, 2, 0, false, "2 4"},
-		{"one attempt", 1, 5, 0, false, ""},
+	// op counts its calls and returns true on attempt number succeedsOn
+	// (0 means it never succeeds).
+	// sleep remembers how often it was called, the total seconds slept,
+	// and the last number of seconds it was given.
+	// Before each check we reset everything and pick a new succeedsOn.
+	calls := 0
+	succeedsOn := 0
+	op := func(attempt int) bool {
+		calls++
+		if attempt != calls {
+			t.Errorf("call %d got attempt %d, want %d", calls, attempt, calls)
+		}
+		return attempt == succeedsOn
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			calls := 0
-			op := func(attempt int) bool {
-				calls++
-				if attempt != calls {
-					t.Errorf("call %d got attempt %d, want %d", calls, attempt, calls)
-				}
-				return attempt == tt.succeedsOn
-			}
-			sleeps := ""
-			sleep := func(seconds int) {
-				if sleeps != "" {
-					sleeps += " "
-				}
-				sleeps += strconv.Itoa(seconds)
-			}
-			got := RetryWithBackoff(tt.attempts, tt.baseSeconds, op, sleep)
-			if got != tt.want {
-				t.Errorf("RetryWithBackoff(%d, %d, succeeds on %d) = %t, want %t",
-					tt.attempts, tt.baseSeconds, tt.succeedsOn, got, tt.want)
-			}
-			if sleeps != tt.wantSleeps {
-				t.Errorf("RetryWithBackoff(%d, %d, succeeds on %d) slept %q, want %q",
-					tt.attempts, tt.baseSeconds, tt.succeedsOn, sleeps, tt.wantSleeps)
-			}
-		})
+	sleeps, total, last := 0, 0, 0
+	sleep := func(seconds int) {
+		sleeps++
+		total += seconds
+		last = seconds
+	}
+
+	// Succeeds straight away: no sleeping.
+	calls, sleeps, total, last = 0, 0, 0, 0
+	succeedsOn = 1
+	if !RetryWithBackoff(5, 1, op, sleep) {
+		t.Errorf("RetryWithBackoff(5, 1, succeeds on 1) = false, want true")
+	}
+	if sleeps != 0 {
+		t.Errorf("RetryWithBackoff(5, 1, succeeds on 1) slept %d times, want 0", sleeps)
+	}
+
+	// Succeeds on attempt 4: sleeps 1, 2, then 4 seconds.
+	calls, sleeps, total, last = 0, 0, 0, 0
+	succeedsOn = 4
+	if !RetryWithBackoff(5, 1, op, sleep) {
+		t.Errorf("RetryWithBackoff(5, 1, succeeds on 4) = false, want true")
+	}
+	if sleeps != 3 || total != 7 || last != 4 {
+		t.Errorf("RetryWithBackoff(5, 1, succeeds on 4) slept %d times, %d seconds in total, last %d; want 3 times, 7 seconds, last 4", sleeps, total, last)
+	}
+
+	// Succeeds on the last attempt: sleeps 2, then 4 seconds.
+	calls, sleeps, total, last = 0, 0, 0, 0
+	succeedsOn = 3
+	if !RetryWithBackoff(3, 2, op, sleep) {
+		t.Errorf("RetryWithBackoff(3, 2, succeeds on 3) = false, want true")
+	}
+	if sleeps != 2 || total != 6 || last != 4 {
+		t.Errorf("RetryWithBackoff(3, 2, succeeds on 3) slept %d times, %d seconds in total, last %d; want 2 times, 6 seconds, last 4", sleeps, total, last)
+	}
+
+	// Never succeeds: sleeps between attempts, but not after the last one.
+	calls, sleeps, total, last = 0, 0, 0, 0
+	succeedsOn = 0
+	if RetryWithBackoff(3, 2, op, sleep) {
+		t.Errorf("RetryWithBackoff(3, 2, never succeeds) = true, want false")
+	}
+	if sleeps != 2 || total != 6 || last != 4 {
+		t.Errorf("RetryWithBackoff(3, 2, never succeeds) slept %d times, %d seconds in total, last %d; want 2 times, 6 seconds, last 4", sleeps, total, last)
+	}
+
+	calls, sleeps, total, last = 0, 0, 0, 0
+	succeedsOn = 0
+	if RetryWithBackoff(1, 5, op, sleep) {
+		t.Errorf("RetryWithBackoff(1, 5, never succeeds) = true, want false")
+	}
+	if sleeps != 0 {
+		t.Errorf("RetryWithBackoff(1, 5, never succeeds) slept %d times, want 0", sleeps)
 	}
 }
 
 func TestNewCircuitBreaker(t *testing.T) {
-	// results lists calls to record: "F" is record(false), "S" is record(true).
-	tests := []struct {
-		name      string
-		threshold int
-		results   string
-		wantOpen  bool
-	}{
-		{"new breaker", 3, "", false},
-		{"two failures", 3, "FF", false},
-		{"three failures", 3, "FFF", true},
-		{"more failures", 3, "FFFFF", true},
-		{"success resets", 3, "FFFS", false},
-		{"not in a row", 3, "FFSFF", false},
-		{"threshold 1", 1, "SF", true},
+	// A new breaker is closed.
+	_, isOpen := NewCircuitBreaker(3)
+	if isOpen() {
+		t.Errorf("NewCircuitBreaker(3) with no calls: isOpen() = true, want false")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			record, isOpen := NewCircuitBreaker(tt.threshold)
-			for _, r := range tt.results {
-				record(r == 'S')
-			}
-			if got := isOpen(); got != tt.wantOpen {
-				t.Errorf("NewCircuitBreaker(%d) after %q: isOpen() = %t, want %t",
-					tt.threshold, tt.results, got, tt.wantOpen)
-			}
-		})
+
+	// Two failures are not enough to open it.
+	record, isOpen := NewCircuitBreaker(3)
+	record(false)
+	record(false)
+	if isOpen() {
+		t.Errorf("NewCircuitBreaker(3) after fail, fail: isOpen() = true, want false")
+	}
+
+	// Three failures in a row open it.
+	record, isOpen = NewCircuitBreaker(3)
+	record(false)
+	record(false)
+	record(false)
+	if !isOpen() {
+		t.Errorf("NewCircuitBreaker(3) after fail, fail, fail: isOpen() = false, want true")
+	}
+
+	// More failures keep it open.
+	record, isOpen = NewCircuitBreaker(3)
+	record(false)
+	record(false)
+	record(false)
+	record(false)
+	record(false)
+	if !isOpen() {
+		t.Errorf("NewCircuitBreaker(3) after 5 fails: isOpen() = false, want true")
+	}
+
+	// A success resets the count.
+	record, isOpen = NewCircuitBreaker(3)
+	record(false)
+	record(false)
+	record(false)
+	record(true)
+	if isOpen() {
+		t.Errorf("NewCircuitBreaker(3) after fail, fail, fail, success: isOpen() = true, want false")
+	}
+
+	// The failures must come in a row.
+	record, isOpen = NewCircuitBreaker(3)
+	record(false)
+	record(false)
+	record(true)
+	record(false)
+	record(false)
+	if isOpen() {
+		t.Errorf("NewCircuitBreaker(3) after fail, fail, success, fail, fail: isOpen() = true, want false")
+	}
+
+	// With a threshold of 1, one failure opens it.
+	record, isOpen = NewCircuitBreaker(1)
+	record(true)
+	record(false)
+	if !isOpen() {
+		t.Errorf("NewCircuitBreaker(1) after success, fail: isOpen() = false, want true")
 	}
 }

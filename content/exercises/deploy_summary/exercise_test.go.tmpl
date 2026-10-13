@@ -3,97 +3,53 @@ package deploy
 import "testing"
 
 func TestRelease(t *testing.T) {
-	tests := []struct {
-		name    string
-		service string
-		version string
-		want    string
-	}{
-		{name: "spaces and capitals", service: " API ", version: "v1.4.2", want: "api v1.4.2"},
-		{name: "capital letter", service: "Billing", version: "v2.0.0", want: "billing v2.0.0"},
-		{name: "already clean", service: "worker", version: "v0.9.1", want: "worker v0.9.1"},
+	if got := Release(" API ", "v1.4.2"); got != "api v1.4.2" {
+		t.Errorf(`Release(" API ", "v1.4.2") = %q, want "api v1.4.2"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := Release(tt.service, tt.version)
-			if got != tt.want {
-				t.Errorf("Release(%q, %q) = %q, want %q", tt.service, tt.version, got, tt.want)
-			}
-		})
+
+	if got := Release("Billing", "v2.0.0"); got != "billing v2.0.0" {
+		t.Errorf(`Release("Billing", "v2.0.0") = %q, want "billing v2.0.0"`, got)
+	}
+
+	if got := Release("worker", "v0.9.1"); got != "worker v0.9.1" {
+		t.Errorf(`Release("worker", "v0.9.1") = %q, want "worker v0.9.1"`, got)
 	}
 }
 
 func TestReplicasNeeded(t *testing.T) {
-	tests := []struct {
-		name          string
-		peakRPS       int
-		rpsPerReplica int
-		want          int
-	}{
-		{name: "rounds up", peakRPS: 1000, rpsPerReplica: 300, want: 4},
-		{name: "exact fit", peakRPS: 900, rpsPerReplica: 300, want: 3},
-		{name: "light load", peakRPS: 50, rpsPerReplica: 300, want: 1},
+	if got := ReplicasNeeded(1000, 300); got != 4 {
+		t.Errorf(`ReplicasNeeded(1000, 300) = %d, want 4`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ReplicasNeeded(tt.peakRPS, tt.rpsPerReplica)
-			if got != tt.want {
-				t.Errorf("ReplicasNeeded(%d, %d) = %d, want %d", tt.peakRPS, tt.rpsPerReplica, got, tt.want)
-			}
-		})
+
+	if got := ReplicasNeeded(900, 300); got != 3 {
+		t.Errorf(`ReplicasNeeded(900, 300) = %d, want 3`, got)
+	}
+
+	if got := ReplicasNeeded(50, 300); got != 1 {
+		t.Errorf(`ReplicasNeeded(50, 300) = %d, want 1`, got)
 	}
 }
 
 func TestSummary(t *testing.T) {
-	tests := []struct {
-		name      string
-		service   string
-		version   string
-		env       string
-		replicas  int
-		memoryMiB int
-		want      string
-	}{
-		{
-			name: "api to production", service: "api", version: "v1.4.2", env: "production",
-			replicas: 3, memoryMiB: 256,
-			want: "api v1.4.2 -> production: 3 replicas x 256 MiB = 768 MiB",
-		},
-		{
-			name: "worker to staging", service: " Worker ", version: "v0.9.1", env: "staging",
-			replicas: 2, memoryMiB: 512,
-			want: "worker v0.9.1 -> staging: 2 replicas x 512 MiB = 1024 MiB",
-		},
+	if got := Summary("api", "v1.4.2", "production", 3, 256); got != "api v1.4.2 -> production: 3 replicas x 256 MiB = 768 MiB" {
+		t.Errorf(`Summary("api", "v1.4.2", "production", 3, 256) = %q, want "api v1.4.2 -> production: 3 replicas x 256 MiB = 768 MiB"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := Summary(tt.service, tt.version, tt.env, tt.replicas, tt.memoryMiB)
-			if got != tt.want {
-				t.Errorf("Summary(%q, %q, %q, %d, %d) = %q, want %q",
-					tt.service, tt.version, tt.env, tt.replicas, tt.memoryMiB, got, tt.want)
-			}
-		})
+
+	if got := Summary(" Worker ", "v0.9.1", "staging", 2, 512); got != "worker v0.9.1 -> staging: 2 replicas x 512 MiB = 1024 MiB" {
+		t.Errorf(`Summary(" Worker ", "v0.9.1", "staging", 2, 512) = %q, want "worker v0.9.1 -> staging: 2 replicas x 512 MiB = 1024 MiB"`, got)
 	}
 }
 
 func TestMonthlyCost(t *testing.T) {
-	tests := []struct {
-		name          string
-		replicas      int
-		memoryMiB     int
-		dollarsPerGiB float64
-		want          string
-	}{
-		{name: "one and a half GiB", replicas: 3, memoryMiB: 512, dollarsPerGiB: 4, want: "$6.00/month"},
-		{name: "one GiB", replicas: 4, memoryMiB: 256, dollarsPerGiB: 3.5, want: "$3.50/month"},
-		{name: "seven and a half GiB", replicas: 10, memoryMiB: 768, dollarsPerGiB: 2.2, want: "$16.50/month"},
+	if got := MonthlyCost(3, 512, 4); got != "$6.00/month" {
+		t.Errorf(`MonthlyCost(3, 512, 4) = %q, want "$6.00/month"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := MonthlyCost(tt.replicas, tt.memoryMiB, tt.dollarsPerGiB)
-			if got != tt.want {
-				t.Errorf("MonthlyCost(%d, %d, %v) = %q, want %q", tt.replicas, tt.memoryMiB, tt.dollarsPerGiB, got, tt.want)
-			}
-		})
+
+	if got := MonthlyCost(4, 256, 3.5); got != "$3.50/month" {
+		t.Errorf(`MonthlyCost(4, 256, 3.5) = %q, want "$3.50/month"`, got)
+	}
+
+	if got := MonthlyCost(10, 768, 2.2); got != "$16.50/month" {
+		t.Errorf(`MonthlyCost(10, 768, 2.2) = %q, want "$16.50/month"`, got)
 	}
 }

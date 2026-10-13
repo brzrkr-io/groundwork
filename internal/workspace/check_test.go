@@ -12,7 +12,7 @@ import (
 func writeModule(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
-	if err := WriteGoMod(dir, "example.com/check"); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/check\n\ngo "+GoVersion+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for name, body := range files {

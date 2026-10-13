@@ -3,57 +3,55 @@ package ifelse
 import "testing"
 
 func TestInDeployWindow(t *testing.T) {
-	// Each line is one case: a name, the inputs, then the answer we want.
-	tests := []struct {
-		name string
-		env  string
-		hour int
-		want bool
-	}{
-		{"staging at night", "staging", 3, true},
-		{"dev late", "dev", 23, true},
-		{"production opens", "production", 10, true},
-		{"production last hour", "production", 15, true},
-		{"production closed at 16", "production", 16, false},
-		{"production too early", "production", 9, false},
-		{"production at night", "production", 2, false},
+	if !InDeployWindow("staging", 3) {
+		t.Errorf(`InDeployWindow("staging", 3) = false, want true`)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := InDeployWindow(tt.env, tt.hour); got != tt.want {
-				t.Errorf("InDeployWindow(%q, %d) = %t, want %t", tt.env, tt.hour, got, tt.want)
-			}
-		})
+	if !InDeployWindow("dev", 23) {
+		t.Errorf(`InDeployWindow("dev", 23) = false, want true`)
+	}
+	if !InDeployWindow("production", 10) {
+		t.Errorf(`InDeployWindow("production", 10) = false, want true`)
+	}
+	if !InDeployWindow("production", 15) {
+		t.Errorf(`InDeployWindow("production", 15) = false, want true`)
+	}
+	if InDeployWindow("production", 16) {
+		t.Errorf(`InDeployWindow("production", 16) = true, want false`)
+	}
+	if InDeployWindow("production", 9) {
+		t.Errorf(`InDeployWindow("production", 9) = true, want false`)
+	}
+	if InDeployWindow("production", 2) {
+		t.Errorf(`InDeployWindow("production", 2) = true, want false`)
 	}
 }
 
 func TestDeployGate(t *testing.T) {
-	// Each line is one case: a name, the inputs, then the answer we want.
-	tests := []struct {
-		name          string
-		env           string
-		hour          int
-		testsPassed   bool
-		failingChecks int
-		want          string
-	}{
-		{"tests fail first", "production", 11, false, 2, "blocked: tests failing"},
-		{"tests fail outside window", "production", 20, false, 0, "blocked: tests failing"},
-		{"one check", "production", 11, true, 1, "blocked: 1 check failing"},
-		{"several checks", "staging", 3, true, 4, "blocked: 4 checks failing"},
-		{"checks before window", "production", 20, true, 2, "blocked: 2 checks failing"},
-		{"outside window", "production", 20, true, 0, "blocked: outside deploy window"},
-		{"too early", "production", 9, true, 0, "blocked: outside deploy window"},
-		{"production in window", "production", 11, true, 0, "go"},
-		{"staging at night", "staging", 20, true, 0, "go"},
+	if got := DeployGate("production", 11, false, 2); got != "blocked: tests failing" {
+		t.Errorf(`DeployGate("production", 11, false, 2) = %q, want "blocked: tests failing"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := DeployGate(tt.env, tt.hour, tt.testsPassed, tt.failingChecks)
-			if got != tt.want {
-				t.Errorf("DeployGate(%q, %d, %t, %d) = %q, want %q",
-					tt.env, tt.hour, tt.testsPassed, tt.failingChecks, got, tt.want)
-			}
-		})
+	if got := DeployGate("production", 20, false, 0); got != "blocked: tests failing" {
+		t.Errorf(`DeployGate("production", 20, false, 0) = %q, want "blocked: tests failing"`, got)
+	}
+	if got := DeployGate("production", 11, true, 1); got != "blocked: 1 check failing" {
+		t.Errorf(`DeployGate("production", 11, true, 1) = %q, want "blocked: 1 check failing"`, got)
+	}
+	if got := DeployGate("staging", 3, true, 4); got != "blocked: 4 checks failing" {
+		t.Errorf(`DeployGate("staging", 3, true, 4) = %q, want "blocked: 4 checks failing"`, got)
+	}
+	if got := DeployGate("production", 20, true, 2); got != "blocked: 2 checks failing" {
+		t.Errorf(`DeployGate("production", 20, true, 2) = %q, want "blocked: 2 checks failing"`, got)
+	}
+	if got := DeployGate("production", 20, true, 0); got != "blocked: outside deploy window" {
+		t.Errorf(`DeployGate("production", 20, true, 0) = %q, want "blocked: outside deploy window"`, got)
+	}
+	if got := DeployGate("production", 9, true, 0); got != "blocked: outside deploy window" {
+		t.Errorf(`DeployGate("production", 9, true, 0) = %q, want "blocked: outside deploy window"`, got)
+	}
+	if got := DeployGate("production", 11, true, 0); got != "go" {
+		t.Errorf(`DeployGate("production", 11, true, 0) = %q, want "go"`, got)
+	}
+	if got := DeployGate("staging", 20, true, 0); got != "go" {
+		t.Errorf(`DeployGate("staging", 20, true, 0) = %q, want "go"`, got)
 	}
 }

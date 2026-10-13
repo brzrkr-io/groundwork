@@ -3,58 +3,31 @@ package constants
 import "testing"
 
 func TestRunInstancesCommand(t *testing.T) {
-	tests := []struct {
-		name    string
-		imageID string
-		want    string
-	}{
-		{name: "first image", imageID: "ami-0abc1234", want: "aws ec2 run-instances --region eu-west-1 --instance-type t3.small --image-id ami-0abc1234"},
-		{name: "second image", imageID: "ami-09f8e7d6", want: "aws ec2 run-instances --region eu-west-1 --instance-type t3.small --image-id ami-09f8e7d6"},
+	if got := RunInstancesCommand("ami-0abc1234"); got != "aws ec2 run-instances --region eu-west-1 --instance-type t3.small --image-id ami-0abc1234" {
+		t.Errorf(`RunInstancesCommand("ami-0abc1234") = %q, want "aws ec2 run-instances --region eu-west-1 --instance-type t3.small --image-id ami-0abc1234"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := RunInstancesCommand(tt.imageID)
-			if got != tt.want {
-				t.Errorf("RunInstancesCommand(%q) = %q, want %q", tt.imageID, got, tt.want)
-			}
-		})
+
+	if got := RunInstancesCommand("ami-09f8e7d6"); got != "aws ec2 run-instances --region eu-west-1 --instance-type t3.small --image-id ami-09f8e7d6" {
+		t.Errorf(`RunInstancesCommand("ami-09f8e7d6") = %q, want "aws ec2 run-instances --region eu-west-1 --instance-type t3.small --image-id ami-09f8e7d6"`, got)
 	}
 }
 
 func TestTerminateCommand(t *testing.T) {
-	tests := []struct {
-		name       string
-		instanceID string
-		want       string
-	}{
-		{name: "first instance", instanceID: "i-0abc1234", want: "aws ec2 terminate-instances --region eu-west-1 --instance-ids i-0abc1234"},
-		{name: "second instance", instanceID: "i-0fedcba9", want: "aws ec2 terminate-instances --region eu-west-1 --instance-ids i-0fedcba9"},
+	if got := TerminateCommand("i-0abc1234"); got != "aws ec2 terminate-instances --region eu-west-1 --instance-ids i-0abc1234" {
+		t.Errorf(`TerminateCommand("i-0abc1234") = %q, want "aws ec2 terminate-instances --region eu-west-1 --instance-ids i-0abc1234"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := TerminateCommand(tt.instanceID)
-			if got != tt.want {
-				t.Errorf("TerminateCommand(%q) = %q, want %q", tt.instanceID, got, tt.want)
-			}
-		})
+
+	if got := TerminateCommand("i-0fedcba9"); got != "aws ec2 terminate-instances --region eu-west-1 --instance-ids i-0fedcba9" {
+		t.Errorf(`TerminateCommand("i-0fedcba9") = %q, want "aws ec2 terminate-instances --region eu-west-1 --instance-ids i-0fedcba9"`, got)
 	}
 }
 
 func TestConsoleURL(t *testing.T) {
-	tests := []struct {
-		name       string
-		instanceID string
-		want       string
-	}{
-		{name: "first instance", instanceID: "i-0abc1234", want: "https://eu-west-1.console.aws.amazon.com/ec2/home?region=eu-west-1#InstanceDetails:instanceId=i-0abc1234"},
-		{name: "second instance", instanceID: "i-0fedcba9", want: "https://eu-west-1.console.aws.amazon.com/ec2/home?region=eu-west-1#InstanceDetails:instanceId=i-0fedcba9"},
+	if got := ConsoleURL("i-0abc1234"); got != "https://eu-west-1.console.aws.amazon.com/ec2/home?region=eu-west-1#InstanceDetails:instanceId=i-0abc1234" {
+		t.Errorf(`ConsoleURL("i-0abc1234") = %q, want "https://eu-west-1.console.aws.amazon.com/ec2/home?region=eu-west-1#InstanceDetails:instanceId=i-0abc1234"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ConsoleURL(tt.instanceID)
-			if got != tt.want {
-				t.Errorf("ConsoleURL(%q) = %q, want %q", tt.instanceID, got, tt.want)
-			}
-		})
+
+	if got := ConsoleURL("i-0fedcba9"); got != "https://eu-west-1.console.aws.amazon.com/ec2/home?region=eu-west-1#InstanceDetails:instanceId=i-0fedcba9" {
+		t.Errorf(`ConsoleURL("i-0fedcba9") = %q, want "https://eu-west-1.console.aws.amazon.com/ec2/home?region=eu-west-1#InstanceDetails:instanceId=i-0fedcba9"`, got)
 	}
 }

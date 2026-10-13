@@ -3,114 +3,160 @@ package triage
 import "testing"
 
 func TestStatusClass(t *testing.T) {
-	// Each line is one case: the input, then the answer we want.
-	tests := []struct {
-		code int
-		want string
-	}{
-		{100, "informational"},
-		{199, "informational"},
-		{200, "success"},
-		{204, "success"},
-		{299, "success"},
-		{301, "redirect"},
-		{399, "redirect"},
-		{400, "client error"},
-		{404, "client error"},
-		{499, "client error"},
-		{500, "server error"},
-		{503, "server error"},
-		{599, "server error"},
-		{99, "unknown"},
-		{600, "unknown"},
-		{0, "unknown"},
+	if got := StatusClass(100); got != "informational" {
+		t.Errorf(`StatusClass(100) = %q, want "informational"`, got)
 	}
-	for _, tt := range tests {
-		if got := StatusClass(tt.code); got != tt.want {
-			t.Errorf("StatusClass(%d) = %q, want %q", tt.code, got, tt.want)
-		}
+	if got := StatusClass(199); got != "informational" {
+		t.Errorf(`StatusClass(199) = %q, want "informational"`, got)
+	}
+	if got := StatusClass(200); got != "success" {
+		t.Errorf(`StatusClass(200) = %q, want "success"`, got)
+	}
+	if got := StatusClass(204); got != "success" {
+		t.Errorf(`StatusClass(204) = %q, want "success"`, got)
+	}
+	if got := StatusClass(299); got != "success" {
+		t.Errorf(`StatusClass(299) = %q, want "success"`, got)
+	}
+	if got := StatusClass(301); got != "redirect" {
+		t.Errorf(`StatusClass(301) = %q, want "redirect"`, got)
+	}
+	if got := StatusClass(399); got != "redirect" {
+		t.Errorf(`StatusClass(399) = %q, want "redirect"`, got)
+	}
+	if got := StatusClass(400); got != "client error" {
+		t.Errorf(`StatusClass(400) = %q, want "client error"`, got)
+	}
+	if got := StatusClass(404); got != "client error" {
+		t.Errorf(`StatusClass(404) = %q, want "client error"`, got)
+	}
+	if got := StatusClass(499); got != "client error" {
+		t.Errorf(`StatusClass(499) = %q, want "client error"`, got)
+	}
+	if got := StatusClass(500); got != "server error" {
+		t.Errorf(`StatusClass(500) = %q, want "server error"`, got)
+	}
+	if got := StatusClass(503); got != "server error" {
+		t.Errorf(`StatusClass(503) = %q, want "server error"`, got)
+	}
+	if got := StatusClass(599); got != "server error" {
+		t.Errorf(`StatusClass(599) = %q, want "server error"`, got)
+	}
+	if got := StatusClass(99); got != "unknown" {
+		t.Errorf(`StatusClass(99) = %q, want "unknown"`, got)
+	}
+	if got := StatusClass(600); got != "unknown" {
+		t.Errorf(`StatusClass(600) = %q, want "unknown"`, got)
+	}
+	if got := StatusClass(0); got != "unknown" {
+		t.Errorf(`StatusClass(0) = %q, want "unknown"`, got)
 	}
 }
 
 func TestShouldRetry(t *testing.T) {
-	tests := []struct {
-		code int
-		want bool
-	}{
-		{429, true},
-		{502, true},
-		{503, true},
-		{504, true},
-		{200, false},
-		{404, false},
-		{500, false},
-		{501, false},
-		{505, false},
+	if !ShouldRetry(429) {
+		t.Errorf("ShouldRetry(429) = false, want true")
 	}
-	for _, tt := range tests {
-		if got := ShouldRetry(tt.code); got != tt.want {
-			t.Errorf("ShouldRetry(%d) = %t, want %t", tt.code, got, tt.want)
-		}
+	if !ShouldRetry(502) {
+		t.Errorf("ShouldRetry(502) = false, want true")
+	}
+	if !ShouldRetry(503) {
+		t.Errorf("ShouldRetry(503) = false, want true")
+	}
+	if !ShouldRetry(504) {
+		t.Errorf("ShouldRetry(504) = false, want true")
+	}
+	if ShouldRetry(200) {
+		t.Errorf("ShouldRetry(200) = true, want false")
+	}
+	if ShouldRetry(404) {
+		t.Errorf("ShouldRetry(404) = true, want false")
+	}
+	if ShouldRetry(500) {
+		t.Errorf("ShouldRetry(500) = true, want false")
+	}
+	if ShouldRetry(501) {
+		t.Errorf("ShouldRetry(501) = true, want false")
+	}
+	if ShouldRetry(505) {
+		t.Errorf("ShouldRetry(505) = true, want false")
 	}
 }
 
 func TestParseStatus(t *testing.T) {
-	valid := []struct {
-		text string
-		want int
-	}{
-		{"503", 503},
-		{"200", 200},
-		{" 404 ", 404},
-		{"100", 100},
-		{"599", 599},
+	got, err := ParseStatus("503")
+	if got != 503 || err != nil {
+		t.Errorf(`ParseStatus("503") = %d, %v, want 503, nil`, got, err)
 	}
-	for _, tt := range valid {
-		t.Run(tt.text, func(t *testing.T) {
-			got, err := ParseStatus(tt.text)
-			if err != nil {
-				t.Fatalf("ParseStatus(%q) returned error %v, want nil", tt.text, err)
-			}
-			if got != tt.want {
-				t.Errorf("ParseStatus(%q) = %d, want %d", tt.text, got, tt.want)
-			}
-		})
+	got, err = ParseStatus("200")
+	if got != 200 || err != nil {
+		t.Errorf(`ParseStatus("200") = %d, %v, want 200, nil`, got, err)
 	}
-
-	invalid := []string{"abc", "", "42", "99", "600", "5o3", "-200"}
-	for _, text := range invalid {
-		t.Run(text, func(t *testing.T) {
-			got, err := ParseStatus(text)
-			if err == nil {
-				t.Fatalf("ParseStatus(%q) returned a nil error, want an error", text)
-			}
-			if got != 0 {
-				t.Errorf("ParseStatus(%q) = %d with an error, want 0", text, got)
-			}
-		})
+	got, err = ParseStatus(" 404 ")
+	if got != 404 || err != nil {
+		t.Errorf(`ParseStatus(" 404 ") = %d, %v, want 404, nil`, got, err)
+	}
+	got, err = ParseStatus("100")
+	if got != 100 || err != nil {
+		t.Errorf(`ParseStatus("100") = %d, %v, want 100, nil`, got, err)
+	}
+	got, err = ParseStatus("599")
+	if got != 599 || err != nil {
+		t.Errorf(`ParseStatus("599") = %d, %v, want 599, nil`, got, err)
+	}
+	got, err = ParseStatus("abc")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseStatus("abc") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseStatus("")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseStatus("") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseStatus("42")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseStatus("42") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseStatus("99")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseStatus("99") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseStatus("600")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseStatus("600") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseStatus("5o3")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseStatus("5o3") = %d, %v, want 0 and an error`, got, err)
+	}
+	got, err = ParseStatus("-200")
+	if got != 0 || err == nil {
+		t.Errorf(`ParseStatus("-200") = %d, %v, want 0 and an error`, got, err)
 	}
 }
 
 func TestTriage(t *testing.T) {
-	tests := []struct {
-		service, statusText string
-		want                string
-	}{
-		{"checkout", "503", "checkout: 503 server error, retry"},
-		{"gateway", "429", "gateway: 429 client error, retry"},
-		{"search", "404", "search: 404 client error, no retry"},
-		{"api", "200", "api: 200 success, no retry"},
-		{"payments", "500", "payments: 500 server error, no retry"},
-		{"web", " 301", "web: 301 redirect, no retry"},
-		{"billing", "oops", `billing: invalid status "oops"`},
-		{"auth", "700", `auth: invalid status "700"`},
+	if got := Triage("checkout", "503"); got != "checkout: 503 server error, retry" {
+		t.Errorf(`Triage("checkout", "503") = %q, want "checkout: 503 server error, retry"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.service, func(t *testing.T) {
-			got := Triage(tt.service, tt.statusText)
-			if got != tt.want {
-				t.Errorf("Triage(%q, %q) = %q, want %q", tt.service, tt.statusText, got, tt.want)
-			}
-		})
+	if got := Triage("gateway", "429"); got != "gateway: 429 client error, retry" {
+		t.Errorf(`Triage("gateway", "429") = %q, want "gateway: 429 client error, retry"`, got)
+	}
+	if got := Triage("search", "404"); got != "search: 404 client error, no retry" {
+		t.Errorf(`Triage("search", "404") = %q, want "search: 404 client error, no retry"`, got)
+	}
+	if got := Triage("api", "200"); got != "api: 200 success, no retry" {
+		t.Errorf(`Triage("api", "200") = %q, want "api: 200 success, no retry"`, got)
+	}
+	if got := Triage("payments", "500"); got != "payments: 500 server error, no retry" {
+		t.Errorf(`Triage("payments", "500") = %q, want "payments: 500 server error, no retry"`, got)
+	}
+	if got := Triage("web", " 301"); got != "web: 301 redirect, no retry" {
+		t.Errorf(`Triage("web", " 301") = %q, want "web: 301 redirect, no retry"`, got)
+	}
+	if got := Triage("billing", "oops"); got != `billing: invalid status "oops"` {
+		t.Errorf(`Triage("billing", "oops") = %q, want "billing: invalid status \"oops\""`, got)
+	}
+	if got := Triage("auth", "700"); got != `auth: invalid status "700"` {
+		t.Errorf(`Triage("auth", "700") = %q, want "auth: invalid status \"700\""`, got)
 	}
 }

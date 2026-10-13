@@ -125,13 +125,7 @@ func packagesWithoutDoc(t *testing.T, dir string) []string {
 
 func materialize(t *testing.T, e *course.Exercise, pack fs.FS, solution bool) string {
 	t.Helper()
-	root := t.TempDir()
-	dir := filepath.Join(root, filepath.FromSlash(e.Dir()))
-	if !workspace.OwnModule(pack) {
-		if err := workspace.WriteGoMod(root, "gopherlings.local/exercises"); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dir := filepath.Join(t.TempDir(), filepath.FromSlash(e.Dir()))
 	if err := workspace.Materialize(pack, dir, solution); err != nil {
 		t.Fatal(err)
 	}

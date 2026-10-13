@@ -3,55 +3,37 @@ package functions
 import "testing"
 
 func TestUsageLine(t *testing.T) {
-	// Each line is one case: the inputs, then the answer we want.
-	cases := []struct {
-		service     string
-		used, total float64
-		want        string
-	}{
-		{"api", 3, 8, "api: 37.5% CPU"},
-		{"worker", 1, 4, "worker: 25.0% CPU"},
-		{"db", 2, 2, "db: 100.0% CPU"},
+	if got := UsageLine("api", 3, 8); got != "api: 37.5% CPU" {
+		t.Errorf(`UsageLine("api", 3, 8) = %q, want "api: 37.5%% CPU"`, got)
 	}
-	for _, c := range cases {
-		t.Run(c.service, func(t *testing.T) {
-			if got := UsageLine(c.service, c.used, c.total); got != c.want {
-				t.Errorf("UsageLine(%q, %v, %v) = %q, want %q", c.service, c.used, c.total, got, c.want)
-			}
-		})
+	if got := UsageLine("worker", 1, 4); got != "worker: 25.0% CPU" {
+		t.Errorf(`UsageLine("worker", 1, 4) = %q, want "worker: 25.0%% CPU"`, got)
+	}
+	if got := UsageLine("db", 2, 2); got != "db: 100.0% CPU" {
+		t.Errorf(`UsageLine("db", 2, 2) = %q, want "db: 100.0%% CPU"`, got)
 	}
 }
 
 func TestTagOrLatest(t *testing.T) {
-	cases := []struct {
-		tag, want string
-	}{
-		{"1.4.2", "1.4.2"},
-		{"stable", "stable"},
-		{"", "latest"},
+	if got := TagOrLatest("1.4.2"); got != "1.4.2" {
+		t.Errorf(`TagOrLatest("1.4.2") = %q, want "1.4.2"`, got)
 	}
-	for _, c := range cases {
-		t.Run(c.want, func(t *testing.T) {
-			if got := TagOrLatest(c.tag); got != c.want {
-				t.Errorf("TagOrLatest(%q) = %q, want %q", c.tag, got, c.want)
-			}
-		})
+	if got := TagOrLatest("stable"); got != "stable" {
+		t.Errorf(`TagOrLatest("stable") = %q, want "stable"`, got)
+	}
+	if got := TagOrLatest(""); got != "latest" {
+		t.Errorf(`TagOrLatest("") = %q, want "latest"`, got)
 	}
 }
 
 func TestImageRef(t *testing.T) {
-	cases := []struct {
-		registry, name, tag, want string
-	}{
-		{"ghcr.io/acme", "api", "1.4.2", "ghcr.io/acme/api:1.4.2"},
-		{"docker.io", "nginx", "", "docker.io/nginx:latest"},
-		{"registry.local", "worker", "v2", "registry.local/worker:v2"},
+	if got := ImageRef("ghcr.io/acme", "api", "1.4.2"); got != "ghcr.io/acme/api:1.4.2" {
+		t.Errorf(`ImageRef("ghcr.io/acme", "api", "1.4.2") = %q, want "ghcr.io/acme/api:1.4.2"`, got)
 	}
-	for _, c := range cases {
-		t.Run(c.want, func(t *testing.T) {
-			if got := ImageRef(c.registry, c.name, c.tag); got != c.want {
-				t.Errorf("ImageRef(%q, %q, %q) = %q, want %q", c.registry, c.name, c.tag, got, c.want)
-			}
-		})
+	if got := ImageRef("docker.io", "nginx", ""); got != "docker.io/nginx:latest" {
+		t.Errorf(`ImageRef("docker.io", "nginx", "") = %q, want "docker.io/nginx:latest"`, got)
+	}
+	if got := ImageRef("registry.local", "worker", "v2"); got != "registry.local/worker:v2" {
+		t.Errorf(`ImageRef("registry.local", "worker", "v2") = %q, want "registry.local/worker:v2"`, got)
 	}
 }

@@ -3,82 +3,70 @@ package returns
 import "testing"
 
 func TestSplitUptime(t *testing.T) {
-	// Each line is one case: the input, then the two answers we want.
-	tests := []struct {
-		name         string
-		totalMinutes int
-		wantHours    int
-		wantMinutes  int
-	}{
-		{"two and a quarter hours", 135, 2, 15},
-		{"under an hour", 59, 0, 59},
-		{"exact hours", 120, 2, 0},
-		{"a full day", 1441, 24, 1},
+	hours, minutes := SplitUptime(135)
+	if hours != 2 || minutes != 15 {
+		t.Errorf("SplitUptime(135) = %d, %d, want 2, 15", hours, minutes)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			hours, minutes := SplitUptime(tt.totalMinutes)
-			if hours != tt.wantHours || minutes != tt.wantMinutes {
-				t.Errorf("SplitUptime(%d) = %d, %d, want %d, %d",
-					tt.totalMinutes, hours, minutes, tt.wantHours, tt.wantMinutes)
-			}
-		})
+	hours, minutes = SplitUptime(59)
+	if hours != 0 || minutes != 59 {
+		t.Errorf("SplitUptime(59) = %d, %d, want 0, 59", hours, minutes)
+	}
+	hours, minutes = SplitUptime(120)
+	if hours != 2 || minutes != 0 {
+		t.Errorf("SplitUptime(120) = %d, %d, want 2, 0", hours, minutes)
+	}
+	hours, minutes = SplitUptime(1441)
+	if hours != 24 || minutes != 1 {
+		t.Errorf("SplitUptime(1441) = %d, %d, want 24, 1", hours, minutes)
 	}
 }
 
 func TestSplitHostPort(t *testing.T) {
-	tests := []struct {
-		name     string
-		addr     string
-		wantHost string
-		wantPort string
-		wantOK   bool
-	}{
-		{"database", "db.internal:5432", "db.internal", "5432", true},
-		{"web", "Web-1:80", "Web-1", "80", true},
-		{"no colon", "localhost", "", "", false},
-		{"empty", "", "", "", false},
+	host, port, ok := SplitHostPort("db.internal:5432")
+	if host != "db.internal" || port != "5432" || !ok {
+		t.Errorf(`SplitHostPort("db.internal:5432") = %q, %q, %v, want "db.internal", "5432", true`, host, port, ok)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			host, port, ok := SplitHostPort(tt.addr)
-			if host != tt.wantHost || port != tt.wantPort || ok != tt.wantOK {
-				t.Errorf("SplitHostPort(%q) = %q, %q, %t, want %q, %q, %t",
-					tt.addr, host, port, ok, tt.wantHost, tt.wantPort, tt.wantOK)
-			}
-		})
+	host, port, ok = SplitHostPort("Web-1:80")
+	if host != "Web-1" || port != "80" || !ok {
+		t.Errorf(`SplitHostPort("Web-1:80") = %q, %q, %v, want "Web-1", "80", true`, host, port, ok)
+	}
+	host, port, ok = SplitHostPort("localhost")
+	if host != "" || port != "" || ok {
+		t.Errorf(`SplitHostPort("localhost") = %q, %q, %v, want "", "", false`, host, port, ok)
+	}
+	host, port, ok = SplitHostPort("")
+	if host != "" || port != "" || ok {
+		t.Errorf(`SplitHostPort("") = %q, %q, %v, want "", "", false`, host, port, ok)
 	}
 }
 
 func TestParseAddress(t *testing.T) {
-	tests := []struct {
-		name     string
-		addr     string
-		wantHost string
-		wantPort int
-		wantErr  bool
-	}{
-		{"api", "api.internal:8080", "api.internal", 8080, false},
-		{"ssh", "bastion:22", "bastion", 22, false},
-		{"highest port", "cache:65535", "cache", 65535, false},
-		{"no colon", "api.internal", "", 0, true},
-		{"port is a word", "api.internal:http", "", 0, true},
-		{"port zero", "api.internal:0", "", 0, true},
-		{"port too big", "api.internal:65536", "", 0, true},
+	host, port, err := ParseAddress("api.internal:8080")
+	if host != "api.internal" || port != 8080 || err != nil {
+		t.Errorf(`ParseAddress("api.internal:8080") = %q, %d, %v, want "api.internal", 8080, nil`, host, port, err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			host, port, err := ParseAddress(tt.addr)
-			if tt.wantErr && err == nil {
-				t.Fatalf("ParseAddress(%q) returned a nil error, want an error", tt.addr)
-			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("ParseAddress(%q) returned error %v, want nil", tt.addr, err)
-			}
-			if host != tt.wantHost || port != tt.wantPort {
-				t.Errorf("ParseAddress(%q) = %q, %d, want %q, %d",
-					tt.addr, host, port, tt.wantHost, tt.wantPort)
-			}
-		})
+	host, port, err = ParseAddress("bastion:22")
+	if host != "bastion" || port != 22 || err != nil {
+		t.Errorf(`ParseAddress("bastion:22") = %q, %d, %v, want "bastion", 22, nil`, host, port, err)
+	}
+	host, port, err = ParseAddress("cache:65535")
+	if host != "cache" || port != 65535 || err != nil {
+		t.Errorf(`ParseAddress("cache:65535") = %q, %d, %v, want "cache", 65535, nil`, host, port, err)
+	}
+	host, port, err = ParseAddress("api.internal")
+	if host != "" || port != 0 || err == nil {
+		t.Errorf(`ParseAddress("api.internal") = %q, %d, %v, want "", 0 and an error`, host, port, err)
+	}
+	host, port, err = ParseAddress("api.internal:http")
+	if host != "" || port != 0 || err == nil {
+		t.Errorf(`ParseAddress("api.internal:http") = %q, %d, %v, want "", 0 and an error`, host, port, err)
+	}
+	host, port, err = ParseAddress("api.internal:0")
+	if host != "" || port != 0 || err == nil {
+		t.Errorf(`ParseAddress("api.internal:0") = %q, %d, %v, want "", 0 and an error`, host, port, err)
+	}
+	host, port, err = ParseAddress("api.internal:65536")
+	if host != "" || port != 0 || err == nil {
+		t.Errorf(`ParseAddress("api.internal:65536") = %q, %d, %v, want "", 0 and an error`, host, port, err)
 	}
 }

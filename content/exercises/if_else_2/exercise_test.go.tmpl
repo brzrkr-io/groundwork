@@ -3,73 +3,70 @@ package ifelse
 import "testing"
 
 func TestBackupAgeLabel(t *testing.T) {
-	// Each line is one case: a name, the input, then the answer we want.
-	tests := []struct {
-		name     string
-		ageHours int
-		want     string
-	}{
-		{"brand new", 0, "fresh"},
-		{"a few hours", 5, "fresh"},
-		{"almost a day", 23, "fresh"},
-		{"exactly a day", 24, "1d old"},
-		{"two days", 50, "2d old"},
-		{"a week", 168, "7d old"},
+	if got := BackupAgeLabel(0); got != "fresh" {
+		t.Errorf(`BackupAgeLabel(0) = %q, want "fresh"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := BackupAgeLabel(tt.ageHours); got != tt.want {
-				t.Errorf("BackupAgeLabel(%d) = %q, want %q", tt.ageHours, got, tt.want)
-			}
-		})
+	if got := BackupAgeLabel(5); got != "fresh" {
+		t.Errorf(`BackupAgeLabel(5) = %q, want "fresh"`, got)
+	}
+	if got := BackupAgeLabel(23); got != "fresh" {
+		t.Errorf(`BackupAgeLabel(23) = %q, want "fresh"`, got)
+	}
+	if got := BackupAgeLabel(24); got != "1d old" {
+		t.Errorf(`BackupAgeLabel(24) = %q, want "1d old"`, got)
+	}
+	if got := BackupAgeLabel(50); got != "2d old" {
+		t.Errorf(`BackupAgeLabel(50) = %q, want "2d old"`, got)
+	}
+	if got := BackupAgeLabel(168); got != "7d old" {
+		t.Errorf(`BackupAgeLabel(168) = %q, want "7d old"`, got)
 	}
 }
 
 func TestCertStatus(t *testing.T) {
-	// Each line is one case: a name, the input, then the answer we want.
-	tests := []struct {
-		name     string
-		daysLeft int
-		want     string
-	}{
-		{"long expired", -30, "expired"},
-		{"expired yesterday", -1, "expired"},
-		{"expires today", 0, "renew now"},
-		{"a few days", 3, "renew now"},
-		{"six days", 6, "renew now"},
-		{"a week", 7, "renew soon"},
-		{"a few weeks", 29, "renew soon"},
-		{"a month", 30, "valid"},
-		{"plenty", 90, "valid"},
+	if got := CertStatus(-30); got != "expired" {
+		t.Errorf(`CertStatus(-30) = %q, want "expired"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := CertStatus(tt.daysLeft); got != tt.want {
-				t.Errorf("CertStatus(%d) = %q, want %q", tt.daysLeft, got, tt.want)
-			}
-		})
+	if got := CertStatus(-1); got != "expired" {
+		t.Errorf(`CertStatus(-1) = %q, want "expired"`, got)
+	}
+	if got := CertStatus(0); got != "renew now" {
+		t.Errorf(`CertStatus(0) = %q, want "renew now"`, got)
+	}
+	if got := CertStatus(3); got != "renew now" {
+		t.Errorf(`CertStatus(3) = %q, want "renew now"`, got)
+	}
+	if got := CertStatus(6); got != "renew now" {
+		t.Errorf(`CertStatus(6) = %q, want "renew now"`, got)
+	}
+	if got := CertStatus(7); got != "renew soon" {
+		t.Errorf(`CertStatus(7) = %q, want "renew soon"`, got)
+	}
+	if got := CertStatus(29); got != "renew soon" {
+		t.Errorf(`CertStatus(29) = %q, want "renew soon"`, got)
+	}
+	if got := CertStatus(30); got != "valid" {
+		t.Errorf(`CertStatus(30) = %q, want "valid"`, got)
+	}
+	if got := CertStatus(90); got != "valid" {
+		t.Errorf(`CertStatus(90) = %q, want "valid"`, got)
 	}
 }
 
 func TestLogLevelFor(t *testing.T) {
-	// Each line is one case: a name, the inputs, then the answer we want.
-	tests := []struct {
-		name  string
-		env   string
-		debug bool
-		want  string
-	}{
-		{"debug wins in production", "production", true, "debug"},
-		{"debug in staging", "staging", true, "debug"},
-		{"production", "production", false, "warn"},
-		{"staging", "staging", false, "info"},
-		{"dev", "dev", false, "info"},
+	if got := LogLevelFor("production", true); got != "debug" {
+		t.Errorf(`LogLevelFor("production", true) = %q, want "debug"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := LogLevelFor(tt.env, tt.debug); got != tt.want {
-				t.Errorf("LogLevelFor(%q, %t) = %q, want %q", tt.env, tt.debug, got, tt.want)
-			}
-		})
+	if got := LogLevelFor("staging", true); got != "debug" {
+		t.Errorf(`LogLevelFor("staging", true) = %q, want "debug"`, got)
+	}
+	if got := LogLevelFor("production", false); got != "warn" {
+		t.Errorf(`LogLevelFor("production", false) = %q, want "warn"`, got)
+	}
+	if got := LogLevelFor("staging", false); got != "info" {
+		t.Errorf(`LogLevelFor("staging", false) = %q, want "info"`, got)
+	}
+	if got := LogLevelFor("dev", false); got != "info" {
+		t.Errorf(`LogLevelFor("dev", false) = %q, want "info"`, got)
 	}
 }

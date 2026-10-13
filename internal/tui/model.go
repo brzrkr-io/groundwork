@@ -32,6 +32,7 @@ const (
 	paneHints
 	paneList
 	paneHelp
+	paneSolution
 )
 
 // Model is the Bubble Tea model for watch mode.
@@ -242,8 +243,19 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.confirm != "" {
 		pending := m.confirm
 		m.confirm = ""
-		if k == "x" && pending == "reset" {
+		switch {
+		case k == "x" && pending == "reset":
 			return m, m.reset()
+		case k == "s" && pending == "reveal":
+			m.flash = ""
+			if err := m.s.Reveal(m.ex); err != nil {
+				m.flash = "Couldn't write the solution: " + err.Error()
+			} else {
+				m.pane = paneSolution
+			}
+			m.refresh()
+			m.body.GotoTop()
+			return m, nil
 		}
 		m.flash = ""
 	}
@@ -314,6 +326,17 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		return m, m.edit()
+	case "s":
+		switch {
+		case m.s.Done(m.ex) || m.s.Revealed(m.ex):
+			m.toggle(paneSolution)
+			m.body.GotoTop()
+		case m.hintsShown < len(m.hints):
+			m.flash = fmt.Sprintf("Try the hints first: press h (%d of %d seen). The solution unlocks after the last one.", m.hintsShown, len(m.hints))
+		default:
+			m.confirm = "reveal"
+			m.flash = "Press s again to see the solution. Any other key cancels. Tip: type it out yourself rather than copying it."
+		}
 	case "x":
 		m.confirm = "reset"
 		m.flash = "Press x again to reset this exercise to its starter code. Any other key cancels."
@@ -386,7 +409,9 @@ func (m *Model) refresh() {
 	case paneList:
 		content = m.listView(w)
 	case paneHelp:
-		content = helpView()
+		content = m.helpView(w)
+	case paneSolution:
+		content = m.solutionView(w)
 	default:
 		content = m.resultView(w)
 	}
@@ -466,7 +491,7 @@ func (m *Model) resultView(width int) string {
 func (m *Model) successView() string {
 	var b strings.Builder
 	b.WriteString(okBold.Render("★ Exercise complete!") + "\n\n")
-	b.WriteString("  Compare your code with the reference solution in\n  " + bold.Render(relative(m.s.SolutionDir(m.ex))) + "\n\n")
+	b.WriteString("  Press " + keyCap.Render("s") + " to compare your code with the reference solution\n  (also saved in " + bold.Render(relative(m.s.SolutionDir(m.ex))) + ").\n\n")
 	if next := m.s.NextPending(m.ex); next != nil {
 		b.WriteString("  When you're ready, press " + keyCap.Render("n") + " for " + bold.Render(fmt.Sprintf("%03d %s", next.Number, next.Title)) + ".")
 	} else {
@@ -488,7 +513,7 @@ func (m *Model) hintsView(width int) string {
 	if m.hintsShown < len(m.hints) {
 		b.WriteString(dim.Render("Press ") + keyCap.Render("h") + dim.Render(" for a stronger hint."))
 	} else {
-		b.WriteString(dim.Render("That's every hint. The solution unlocks once your tests pass."))
+		b.WriteString(dim.Render("That's every hint. Still stuck? Press ") + keyCap.Render("s") + dim.Render(" to see the solution."))
 	}
 	return b.String()
 }
@@ -514,6 +539,8 @@ func (m *Model) listView(width int) string {
 			switch {
 			case m.s.Done(e):
 				icon = okStyle.Render("✓")
+			case m.s.Revealed(e):
+				icon = warn.Render("◐")
 			case e == m.ex:
 				icon = keyCap.Render("●")
 			}
@@ -532,11 +559,12 @@ func (m *Model) listView(width int) string {
 	return strings.Join(lines, "\n")
 }
 
-func helpView() string {
+func (m *Model) helpView(width int) string {
 	rows := [][2]string{
 		{"save a file", "re-run the tests"},
 		{"i", "instructions (the exercise README)"},
 		{"h", "show a hint (press again for a stronger one)"},
+		{"s", "the solution: once you pass, or after every hint"},
 		{"l", "list every exercise; enter to open one"},
 		{"n", "next unfinished exercise"},
 		{"← →", "previous / next exercise"},
@@ -552,7 +580,60 @@ func helpView() string {
 	for _, r := range rows {
 		b.WriteString(fmt.Sprintf("  %s  %s\n", keyCap.Render(fmt.Sprintf("%-14s", r[0])), r[1]))
 	}
+	b.WriteString("\n" + m.markdown(failureGuide, width))
 	return b.String()
+}
+
+// failureGuide teaches how to read what the Results tab shows.
+const failureGuide = `## Reading a failure
+
+**A failing test** looks like this:
+
+    exercise_test.go:19: ServiceLabel("api", "production") = "api", want "production/api"
+
+Read it left to right: the file and line of the check, the call the test
+made, what your code returned (after ` + "`=`" + `), and what it should have
+returned (after ` + "`want`" + `).
+
+**A compiler error** means the code can't run yet, so no test ran:
+
+    exercise.go:24:9: invalid operation: path + service (mismatched types string and func(...) string)
+
+` + "`exercise.go:24:9`" + ` is the file, line and column. Fix the **first** error
+first; the rest are often caused by it. Common ones:
+
+| Message says | Usually means |
+|---|---|
+| ` + "`undefined: x`" + ` | a typo, or a name from another function |
+| ` + "`mismatched types A and B`" + ` | you combined two different kinds of value |
+| ` + "`declared and not used`" + ` | a variable you made but never read |
+| ` + "`no new variables on left side of :=`" + ` | use ` + "`=`" + ` to change an existing variable |
+| ` + "`missing return`" + ` | some path through the function returns nothing |
+
+**Names:** inside a function you can use its parameters (the names in its
+` + "`( )`" + `) and the variables you declare in it. A name like ` + "`ServiceLabel`" + `
+is a whole function, not a value; call it with ` + "`ServiceLabel(...)`" + `.`
+
+// solutionView shows the files the reference solution adds or changes.
+func (m *Model) solutionView(width int) string {
+	if !m.s.Done(m.ex) && !m.s.Revealed(m.ex) {
+		return dim.Render("The solution unlocks when your tests pass, or after you've read every hint.")
+	}
+	files, err := m.s.SolutionFiles(m.ex)
+	if err != nil {
+		return badBold.Render("✗ ") + err.Error()
+	}
+	var b strings.Builder
+	b.WriteString(dim.Render(" Also saved in "+relative(m.s.SolutionDir(m.ex))+". Compare it with yours; there's often more than one good answer.") + "\n\n")
+	for _, f := range files {
+		lang := "go"
+		if !strings.HasSuffix(f.Path, ".go") {
+			lang = ""
+		}
+		b.WriteString(keyCap.Render(" "+f.Path) + "\n")
+		b.WriteString(m.markdown("```"+lang+"\n"+strings.TrimRight(f.Content, "\n")+"\n```", width) + "\n\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // View renders header, scrollable body and footer.
@@ -626,6 +707,7 @@ func (m *Model) tabs() string {
 		{paneResult, "Results", "esc"},
 		{paneInstructions, "Instructions", "i"},
 		{paneHints, hints, "h"},
+		{paneSolution, "Solution", "s"},
 		{paneList, "All exercises", "l"},
 		{paneHelp, "Keys", "?"},
 	}
@@ -648,7 +730,7 @@ func (m *Model) footer() string {
 		status = warn.Render(m.flash)
 	case m.checking && m.result == nil:
 		status = dim.Render("Compiling and running the tests. The first run of an exercise takes a moment.")
-	case m.pane == paneInstructions || m.pane == paneHints || m.pane == paneHelp:
+	case m.pane == paneInstructions || m.pane == paneHints || m.pane == paneHelp || m.pane == paneSolution:
 		status = dim.Render("↑/↓ scroll · esc back to the results")
 	case m.pane == paneList:
 		status = dim.Render("↑/↓ move · enter open · esc back to the results")

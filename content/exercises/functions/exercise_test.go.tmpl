@@ -1,63 +1,48 @@
 package functions
 
-import (
-	"fmt"
-	"testing"
-)
+import "testing"
 
 func TestMiBToBytes(t *testing.T) {
-	// Each line is one case: the inputs, then the answer we want.
-	cases := []struct {
-		mib, want int
-	}{
-		{1, 1048576},
-		{512, 536870912},
-		{0, 0},
+	if got := MiBToBytes(1); got != 1048576 {
+		t.Errorf("MiBToBytes(1) = %d, want 1048576", got)
 	}
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("%d_MiB", c.mib), func(t *testing.T) {
-			if got := MiBToBytes(c.mib); got != c.want {
-				t.Errorf("MiBToBytes(%d) = %d, want %d", c.mib, got, c.want)
-			}
-		})
+	if got := MiBToBytes(512); got != 536870912 {
+		t.Errorf("MiBToBytes(512) = %d, want 536870912", got)
+	}
+	if got := MiBToBytes(0); got != 0 {
+		t.Errorf("MiBToBytes(0) = %d, want 0", got)
 	}
 }
 
 func TestFormatUnit(t *testing.T) {
-	cases := []struct {
-		bytes, unitSize int
-		unit, want      string
-	}{
-		{1536, KiB, "KiB", "1.5 KiB"},
-		{3 * MiB, MiB, "MiB", "3.0 MiB"},
-		{5 * GiB / 2, GiB, "GiB", "2.5 GiB"},
+	if got := FormatUnit(1536, KiB, "KiB"); got != "1.5 KiB" {
+		t.Errorf(`FormatUnit(1536, KiB, "KiB") = %q, want "1.5 KiB"`, got)
 	}
-	for _, c := range cases {
-		t.Run(c.want, func(t *testing.T) {
-			if got := FormatUnit(c.bytes, c.unitSize, c.unit); got != c.want {
-				t.Errorf("FormatUnit(%d, %d, %q) = %q, want %q", c.bytes, c.unitSize, c.unit, got, c.want)
-			}
-		})
+	if got := FormatUnit(3*MiB, MiB, "MiB"); got != "3.0 MiB" {
+		t.Errorf(`FormatUnit(3 * MiB, MiB, "MiB") = %q, want "3.0 MiB"`, got)
+	}
+	if got := FormatUnit(5*GiB/2, GiB, "GiB"); got != "2.5 GiB" {
+		t.Errorf(`FormatUnit(5 * GiB / 2, GiB, "GiB") = %q, want "2.5 GiB"`, got)
 	}
 }
 
 func TestHumanBytes(t *testing.T) {
-	cases := []struct {
-		bytes int
-		want  string
-	}{
-		{500, "500 B"},
-		{0, "0 B"},
-		{1024, "1.0 KiB"},
-		{2560, "2.5 KiB"},
-		{MiBToBytes(512), "512.0 MiB"},
-		{3 * GiB / 2, "1.5 GiB"},
+	if got := HumanBytes(500); got != "500 B" {
+		t.Errorf(`HumanBytes(500) = %q, want "500 B"`, got)
 	}
-	for _, c := range cases {
-		t.Run(c.want, func(t *testing.T) {
-			if got := HumanBytes(c.bytes); got != c.want {
-				t.Errorf("HumanBytes(%d) = %q, want %q", c.bytes, got, c.want)
-			}
-		})
+	if got := HumanBytes(0); got != "0 B" {
+		t.Errorf(`HumanBytes(0) = %q, want "0 B"`, got)
+	}
+	if got := HumanBytes(1024); got != "1.0 KiB" {
+		t.Errorf(`HumanBytes(1024) = %q, want "1.0 KiB"`, got)
+	}
+	if got := HumanBytes(2560); got != "2.5 KiB" {
+		t.Errorf(`HumanBytes(2560) = %q, want "2.5 KiB"`, got)
+	}
+	if got := HumanBytes(MiBToBytes(512)); got != "512.0 MiB" {
+		t.Errorf(`HumanBytes(MiBToBytes(512)) = %q, want "512.0 MiB"`, got)
+	}
+	if got := HumanBytes(3 * GiB / 2); got != "1.5 GiB" {
+		t.Errorf(`HumanBytes(3 * GiB / 2) = %q, want "1.5 GiB"`, got)
 	}
 }

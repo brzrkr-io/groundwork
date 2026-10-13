@@ -12,7 +12,31 @@ Parameters are a function's inputs. Join strings with `+` and add every
 separator yourself. Create a variable with `:=` when a value is used more than
 once or a line gets long, and change it with `=` or `+=`.
 
-Nothing new this time. Each function starts as `return ""`.
+Each function starts as `return ""`.
+
+### From an example to code
+
+Building a string from an example takes two steps. First split the example
+into pieces. Then decide for each piece whether it comes from a parameter or
+is fixed text:
+
+- **Fixed text goes inside quotes**, exactly as it appears, spaces included:
+  `"-"`, `"@"`, `"kubectl -n "`.
+- **Parameters go outside quotes.** Go swaps in their values: `deployment`,
+  `hash`.
+
+Take `api-v2` built from `ServiceTag("api", "v2")`:
+
+| piece | comes from | Go code |
+|---|---|---|
+| `api` | the `name` parameter | `name` |
+| `-` | fixed text | `"-"` |
+| `v2` | the `version` parameter | `version` |
+
+Join the pieces with `+`: `return name + "-" + version`.
+
+A common mistake is to put a parameter's name inside the quotes, as in
+`"name-"`. That's just the letters n-a-m-e, not the value of `name`.
 
 ## Your task
 

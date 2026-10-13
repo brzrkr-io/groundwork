@@ -3,61 +3,40 @@ package zerovalues
 import "testing"
 
 func TestLogPath(t *testing.T) {
-	// Each line is one case: the input, then the answer we want.
-	tests := []struct {
-		path string
-		want string
-	}{
-		{"", "/var/log/app.log"},
-		{"/var/log/api.log", "/var/log/api.log"},
-		{"/tmp/debug.log", "/tmp/debug.log"},
+	if got := LogPath(""); got != "/var/log/app.log" {
+		t.Errorf(`LogPath("") = %q, want "/var/log/app.log"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			if got := LogPath(tt.path); got != tt.want {
-				t.Errorf("LogPath(%q) = %q, want %q", tt.path, got, tt.want)
-			}
-		})
+	if got := LogPath("/var/log/api.log"); got != "/var/log/api.log" {
+		t.Errorf(`LogPath("/var/log/api.log") = %q, want "/var/log/api.log"`, got)
+	}
+	if got := LogPath("/tmp/debug.log"); got != "/tmp/debug.log" {
+		t.Errorf(`LogPath("/tmp/debug.log") = %q, want "/tmp/debug.log"`, got)
 	}
 }
 
 func TestSampleRate(t *testing.T) {
-	// Each line is one case: the input, then the answer we want.
-	tests := []struct {
-		rate float64
-		want float64
-	}{
-		{0, 0.1},
-		{0.5, 0.5},
-		{1, 1},
+	if got := SampleRate(0); got != 0.1 {
+		t.Errorf("SampleRate(0) = %v, want 0.1", got)
 	}
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			if got := SampleRate(tt.rate); got != tt.want {
-				t.Errorf("SampleRate(%v) = %v, want %v", tt.rate, got, tt.want)
-			}
-		})
+	if got := SampleRate(0.5); got != 0.5 {
+		t.Errorf("SampleRate(0.5) = %v, want 0.5", got)
+	}
+	if got := SampleRate(1); got != 1 {
+		t.Errorf("SampleRate(1) = %v, want 1", got)
 	}
 }
 
 func TestRotationSummary(t *testing.T) {
-	// Each line is one case: the inputs, then the answer we want.
-	tests := []struct {
-		path       string
-		maxSizeMiB int
-		keepFiles  int
-		want       string
-	}{
-		{"", 0, 0, "rotate /var/log/app.log at 100MiB, keep 5"},
-		{"/var/log/api.log", 50, 10, "rotate /var/log/api.log at 50MiB, keep 10"},
-		{"", 20, 0, "rotate /var/log/app.log at 20MiB, keep 5"},
-		{"/var/log/db.log", 0, 3, "rotate /var/log/db.log at 100MiB, keep 3"},
+	if got := RotationSummary("", 0, 0); got != "rotate /var/log/app.log at 100MiB, keep 5" {
+		t.Errorf(`RotationSummary("", 0, 0) = %q, want "rotate /var/log/app.log at 100MiB, keep 5"`, got)
 	}
-	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
-			if got := RotationSummary(tt.path, tt.maxSizeMiB, tt.keepFiles); got != tt.want {
-				t.Errorf("RotationSummary(%q, %d, %d) = %q, want %q", tt.path, tt.maxSizeMiB, tt.keepFiles, got, tt.want)
-			}
-		})
+	if got := RotationSummary("/var/log/api.log", 50, 10); got != "rotate /var/log/api.log at 50MiB, keep 10" {
+		t.Errorf(`RotationSummary("/var/log/api.log", 50, 10) = %q, want "rotate /var/log/api.log at 50MiB, keep 10"`, got)
+	}
+	if got := RotationSummary("", 20, 0); got != "rotate /var/log/app.log at 20MiB, keep 5" {
+		t.Errorf(`RotationSummary("", 20, 0) = %q, want "rotate /var/log/app.log at 20MiB, keep 5"`, got)
+	}
+	if got := RotationSummary("/var/log/db.log", 0, 3); got != "rotate /var/log/db.log at 100MiB, keep 3" {
+		t.Errorf(`RotationSummary("/var/log/db.log", 0, 3) = %q, want "rotate /var/log/db.log at 100MiB, keep 3"`, got)
 	}
 }

@@ -1,11 +1,12 @@
 package workspace
 
 import (
-	"errors"
-	"fmt"
 	"io/fs"
+	"maps"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -14,6 +15,7 @@ import (
 //	README.md            instructions, copied to the workspace
 //	hints.md             hints, shown only inside gopherlings
 //	*.tmpl               starter files; the suffix keeps Go tooling away from them
+//	go.mod.tmpl          optional; packs without one get a generated go.mod
 //	solution/...         files that replace or add to the starter
 const (
 	hintsFile   = "hints.md"
@@ -21,22 +23,65 @@ const (
 	tmplSuffix  = ".tmpl"
 )
 
-// Materialize writes the starter files of pack into dst, overwriting files
-// with the same name. With solution set, the solution overlay is applied on
-// top so dst holds a complete, passing program.
-func Materialize(pack fs.FS, dst string, solution bool) error {
-	if err := copyTree(pack, ".", dst, func(p string) bool {
-		return p == hintsFile || p == solutionDir || strings.HasPrefix(p, solutionDir+"/")
-	}); err != nil {
+// GoVersion is the go directive for generated exercise modules. The
+// client-go and AWS SDK packs need at least this version too.
+const GoVersion = "1.26"
+
+// Starter returns the files of a fresh exercise folder, keyed by
+// slash-separated path (".tmpl" stripped). Every exercise is its own Go
+// module, so editors and tools only ever see one exercise at a time; packs
+// without a go.mod get one for module.
+func Starter(pack fs.FS, module string) (map[string][]byte, error) {
+	files := map[string][]byte{}
+	err := fs.WalkDir(pack, ".", func(p string, entry fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case p == solutionDir:
+			return fs.SkipDir
+		case entry.IsDir() || p == hintsFile:
+			return nil
+		}
+		data, err := fs.ReadFile(pack, p)
+		files[strings.TrimSuffix(p, tmplSuffix)] = data
 		return err
+	})
+	if _, ok := files["go.mod"]; !ok && err == nil {
+		files["go.mod"] = []byte("module " + module + "\n\ngo " + GoVersion + "\n")
 	}
-	if !solution {
-		return nil
+	return files, err
+}
+
+// Solution returns the reference solution's files: the starter with the
+// pack's solution/ overlay applied.
+func Solution(pack fs.FS, module string) (map[string][]byte, error) {
+	files, err := Starter(pack, module)
+	if err != nil {
+		return nil, err
 	}
-	if _, err := fs.Stat(pack, solutionDir); err != nil {
-		return fmt.Errorf("pack has no solution: %w", err)
-	}
-	return copyTree(pack, solutionDir, dst, nil)
+	err = fs.WalkDir(pack, solutionDir, func(p string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		data, err := fs.ReadFile(pack, p)
+		files[strings.TrimSuffix(strings.TrimPrefix(p, solutionDir+"/"), tmplSuffix)] = data
+		return err
+	})
+	return files, err
+}
+
+// SolutionChanges lists the files the solution adds or rewrites, which are
+// the ones worth reading.
+func SolutionChanges(pack fs.FS) ([]string, error) {
+	var changed []string
+	err := fs.WalkDir(pack, solutionDir, func(p string, entry fs.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			changed = append(changed, strings.TrimSuffix(strings.TrimPrefix(p, solutionDir+"/"), tmplSuffix))
+		}
+		return err
+	})
+	slices.Sort(changed)
+	return changed, err
 }
 
 // OwnModule reports whether the pack ships its own go.mod (multi-package
@@ -46,75 +91,31 @@ func OwnModule(pack fs.FS) bool {
 	return err == nil
 }
 
-func copyTree(src fs.FS, root, dst string, skip func(string) bool) error {
-	return fs.WalkDir(src, root, func(p string, entry fs.DirEntry, err error) error {
-		if err != nil {
+// Write creates files under dir, replacing any that exist.
+func Write(dir string, files map[string][]byte) error {
+	for _, rel := range slices.Sorted(maps.Keys(files)) {
+		target := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
-		rel := strings.TrimPrefix(strings.TrimPrefix(p, root), "/")
-		if root == "." {
-			rel = p
-		}
-		if rel == "." || rel == "" {
-			return os.MkdirAll(dst, 0o755)
-		}
-		if skip != nil && skip(rel) {
-			if entry.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		target := filepath.Join(dst, filepath.FromSlash(strings.TrimSuffix(rel, tmplSuffix)))
-		if entry.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		data, err := fs.ReadFile(src, p)
-		if err != nil {
+		if err := os.WriteFile(target, files[rel], 0o644); err != nil {
 			return err
 		}
-		return os.WriteFile(target, data, 0o644)
-	})
+	}
+	return nil
 }
 
-// Starter returns the files a fresh exercise folder holds, keyed by
-// slash-separated path relative to the folder (".tmpl" already stripped).
-func Starter(pack fs.FS) (map[string][]byte, error) {
-	files := map[string][]byte{}
-	err := fs.WalkDir(pack, ".", func(p string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if p == solutionDir {
-			return fs.SkipDir
-		}
-		if entry.IsDir() || p == hintsFile {
-			return nil
-		}
-		data, err := fs.ReadFile(pack, p)
-		if err != nil {
-			return err
-		}
-		files[strings.TrimSuffix(p, tmplSuffix)] = data
-		return nil
-	})
-	return files, err
-}
-
-// Exists reports whether path exists.
-func Exists(p string) bool {
-	_, err := os.Stat(p)
-	return !errors.Is(err, fs.ErrNotExist)
-}
-
-// GoVersion is the go directive for learner modules. client-go and the AWS
-// SDK packs need at least this version too.
-const GoVersion = "1.26"
-
-// WriteGoMod creates dir/go.mod for a module holding stdlib-only exercises.
-func WriteGoMod(dir, module string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+// Materialize writes a complete starter (or, with solution, solved) exercise
+// into dir, as module "gopherlings.local/<base of dir>".
+func Materialize(pack fs.FS, dir string, solution bool) error {
+	module := "gopherlings.local/" + path.Base(filepath.ToSlash(dir))
+	assemble := Starter
+	if solution {
+		assemble = Solution
+	}
+	files, err := assemble(pack, module)
+	if err != nil {
 		return err
 	}
-	contents := "module " + module + "\n\ngo " + GoVersion + "\n"
-	return os.WriteFile(filepath.Join(dir, "go.mod"), []byte(contents), 0o644)
+	return Write(dir, files)
 }

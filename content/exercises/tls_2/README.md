@@ -16,7 +16,7 @@ guarantee. A certificate is valid until `cert.NotAfter`.
 
 ### PEM files
 
-CA certificates usually arrive as a `ca.crt` file in *PEM* format: base64 text
+CA certificates usually arrive as a `ca.crt` file using the *PEM* format: base64 text
 between marker lines.
 
 ```text

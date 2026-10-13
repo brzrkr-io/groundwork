@@ -92,6 +92,30 @@ func TestHintsRevealOneAtATime(t *testing.T) {
 	}
 }
 
+func TestSolutionUnlocksOnlyAfterEveryHintAndConfirmation(t *testing.T) {
+	m, s := newModel(t)
+	a := s.Course.Exercises[0]
+	press(m, "s")
+	if m.pane == paneSolution || s.Revealed(a) {
+		t.Fatal("s showed the solution before any hint was read")
+	}
+	press(m, "h")
+	press(m, "h") // both hints seen
+	press(m, "s")
+	press(m, "i") // anything but s cancels
+	if s.Revealed(a) {
+		t.Fatal("the solution was revealed without confirming")
+	}
+	press(m, "s")
+	press(m, "s")
+	if m.pane != paneSolution || !s.Revealed(a) || s.Done(a) {
+		t.Fatalf("after s s: pane %v, revealed %v, done %v; want the solution shown, revealed, not done", m.pane, s.Revealed(a), s.Done(a))
+	}
+	if _, err := os.Stat(filepath.Join(s.SolutionDir(a), "exercise.go")); err != nil {
+		t.Fatalf("revealed solution not written: %v", err)
+	}
+}
+
 func TestResetNeedsConfirmation(t *testing.T) {
 	m, s := newModel(t)
 	src := filepath.Join(s.Dir(m.ex), "exercise.go")

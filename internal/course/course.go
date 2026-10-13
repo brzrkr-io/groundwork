@@ -60,6 +60,7 @@ type Module struct {
 	Folder    string      `json:"dir"`
 	Phase     string      `json:"phase"`
 	Summary   string      `json:"summary"`
+	Outcome   string      `json:"outcome"` // "After this module you can: ..."
 	Exercises []*Exercise `json:"exercises"`
 
 	Number int `json:"-"`

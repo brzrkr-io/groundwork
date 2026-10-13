@@ -3,10 +3,9 @@
 //
 // A course directory looks like this:
 //
-//	.gopherlings/progress.json   progress
-//	exercises/go.mod             one module for all stdlib-only exercises
-//	exercises/001_hello_go/      every exercise, created up front
-//	solutions/001_hello_go/      reference solution, written once finished
+//	.gopherlings/progress.json         progress
+//	exercises/01_basics/001_hello_go/  every exercise, each its own Go module
+//	solutions/01_basics/001_hello_go/  reference solution, written once unlocked
 package session
 
 import (
@@ -38,7 +37,7 @@ type Session struct {
 	State  *progress.State
 }
 
-// FindRoot walks up from start to the nearest directory holding .gopherlings/.
+// FindRoot walks up from start to the nearest directory holding a course.
 func FindRoot(start string) (string, error) {
 	dir, err := filepath.Abs(start)
 	if err != nil {
@@ -63,9 +62,6 @@ func Init(dir string) error {
 	if _, err := os.Stat(progress.Path(dir)); err == nil {
 		return fmt.Errorf("%s already contains a course", dir)
 	}
-	if err := workspace.WriteGoMod(filepath.Join(dir, "exercises"), "gopherlings.local/exercises"); err != nil {
-		return err
-	}
 	return progress.Save(dir, progress.New())
 }
 
@@ -83,7 +79,7 @@ func (s *Session) Dir(e *course.Exercise) string {
 	return filepath.Join(s.Root, "exercises", filepath.FromSlash(e.Dir()))
 }
 
-// SolutionDir is where the reference solution is written once e is done.
+// SolutionDir is where the reference solution is written once unlocked.
 func (s *Session) SolutionDir(e *course.Exercise) string {
 	return filepath.Join(s.Root, "solutions", filepath.FromSlash(e.Dir()))
 }
@@ -91,6 +87,12 @@ func (s *Session) SolutionDir(e *course.Exercise) string {
 // Done reports whether e has passed.
 func (s *Session) Done(e *course.Exercise) bool {
 	_, ok := s.State.Done[e.Name]
+	return ok
+}
+
+// Revealed reports whether the learner looked at e's solution before passing.
+func (s *Session) Revealed(e *course.Exercise) bool {
+	_, ok := s.State.Revealed[e.Name]
 	return ok
 }
 
@@ -134,20 +136,53 @@ func (s *Session) NextPending(after *course.Exercise) *course.Exercise {
 	return nil
 }
 
-// Sync creates every missing exercise folder and brings untouched files up
-// to date with the course: a file the learner never edited is replaced when
-// the course's version changes; an edited file is never touched.
+// Sync makes the course folder match the course:
+//   - an exercise whose folder moved (the course was reordered) is moved,
+//     with the learner's work and solution;
+//   - missing exercise folders are created;
+//   - files the learner never edited are refreshed when the course changes.
+//
+// Edited files are never touched.
 func (s *Session) Sync() error {
-	if err := workspace.WriteGoMod(filepath.Join(s.Root, "exercises"), "gopherlings.local/exercises"); err != nil {
-		return err
-	}
 	for _, e := range s.Course.Exercises {
+		if err := s.move(e); err != nil {
+			return fmt.Errorf("move %s: %w", e.Dir(), err)
+		}
 		if _, err := s.sync(e, false); err != nil {
 			return fmt.Errorf("update %s: %w", e.Dir(), err)
 		}
 	}
 	return progress.Save(s.Root, s.State)
 }
+
+// move relocates e's folders if the course moved them since the last Sync.
+func (s *Session) move(e *course.Exercise) error {
+	previous := s.State.Folders[e.Name]
+	s.State.Folders[e.Name] = e.Dir()
+	if previous == "" || previous == e.Dir() {
+		return nil
+	}
+	for _, top := range []string{"exercises", "solutions"} {
+		from := filepath.Join(s.Root, top, filepath.FromSlash(previous))
+		to := filepath.Join(s.Root, top, filepath.FromSlash(e.Dir()))
+		if _, err := os.Stat(from); err != nil {
+			continue
+		}
+		if _, err := os.Stat(to); err == nil {
+			continue // never overwrite; the old folder stays for the learner to merge
+		}
+		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+			return err
+		}
+		if err := os.Rename(from, to); err != nil {
+			return err
+		}
+		os.Remove(filepath.Dir(from)) // drop the old module folder once empty
+	}
+	return nil
+}
+
+func module(e *course.Exercise) string { return "gopherlings.local/" + e.Leaf() }
 
 // sync writes e's starter files that are missing, unedited and out of date,
 // or all of them with force. It returns the paths it wrote.
@@ -156,7 +191,7 @@ func (s *Session) sync(e *course.Exercise, force bool) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	files, err := workspace.Starter(pack)
+	files, err := workspace.Starter(pack, module(e))
 	if err != nil {
 		return nil, err
 	}
@@ -175,10 +210,7 @@ func (s *Session) sync(e *course.Exercise, force bool) ([]string, error) {
 		case force, missing,
 			rel == "README.md", // instructions, never the learner's work
 			s.State.Starters[key] == digest(have):
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return nil, err
-			}
-			if err := os.WriteFile(target, want, 0o644); err != nil {
+			if err := workspace.Write(s.Dir(e), map[string][]byte{rel: want}); err != nil {
 				return nil, err
 			}
 			written = append(written, rel)
@@ -213,20 +245,60 @@ func (s *Session) Check(ctx context.Context, e *course.Exercise) (*workspace.Res
 func (s *Session) Complete(e *course.Exercise) error {
 	if !s.Done(e) {
 		s.State.Done[e.Name] = time.Now().UTC()
-		if err := progress.Save(s.Root, s.State); err != nil {
-			return err
-		}
+	}
+	return s.writeSolution(e)
+}
+
+// Reveal writes e's reference solution before the learner has passed, and
+// remembers that they looked.
+func (s *Session) Reveal(e *course.Exercise) error {
+	if !s.Revealed(e) && !s.Done(e) {
+		s.State.Revealed[e.Name] = time.Now().UTC()
+	}
+	return s.writeSolution(e)
+}
+
+func (s *Session) writeSolution(e *course.Exercise) error {
+	if err := progress.Save(s.Root, s.State); err != nil {
+		return err
 	}
 	pack, err := s.Course.Pack(e)
 	if err != nil {
 		return err
 	}
-	if !workspace.OwnModule(pack) {
-		if err := workspace.WriteGoMod(filepath.Join(s.Root, "solutions"), "gopherlings.local/solutions"); err != nil {
-			return err
-		}
+	files, err := workspace.Solution(pack, module(e))
+	if err != nil {
+		return err
 	}
-	return workspace.Materialize(pack, s.SolutionDir(e), true)
+	return workspace.Write(s.SolutionDir(e), files)
+}
+
+// File is one file of a reference solution.
+type File struct {
+	Path    string // relative to the exercise folder
+	Content string
+}
+
+// SolutionFiles returns the files the reference solution adds or changes,
+// the ones worth reading next to your own code.
+func (s *Session) SolutionFiles(e *course.Exercise) ([]File, error) {
+	pack, err := s.Course.Pack(e)
+	if err != nil {
+		return nil, err
+	}
+	changed, err := workspace.SolutionChanges(pack)
+	if err != nil {
+		return nil, err
+	}
+	files, err := workspace.Solution(pack, module(e))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]File, 0, len(changed))
+	for _, p := range changed {
+		out = append(out, File{Path: p, Content: string(files[p])})
+	}
+	return out, nil
 }
 
 // Reset overwrites e's starter files with fresh copies and returns their

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/version"
 	"io"
 	"os"
 	"os/exec"
@@ -61,7 +62,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprint(stdout, usage)
 		return nil
 	case "version", "--version":
-		fmt.Fprintln(stdout, "gopherlings", version())
+		fmt.Fprintln(stdout, "gopherlings", toolVersion())
 		return nil
 	}
 
@@ -129,11 +130,28 @@ func openSession(c *course.Course) (*session.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkGo(); err != nil {
+		return nil, err
+	}
 	s, err := session.Open(root, c)
 	if err != nil {
 		return nil, err
 	}
 	return s, s.Sync()
+}
+
+// checkGo makes sure the go command exists and is new enough for the
+// exercises (generics, range-over-int, testing/synctest, new(expr)...).
+func checkGo() error {
+	out, err := exec.Command("go", "env", "GOVERSION").Output()
+	if err != nil {
+		return errors.New("Gopherlings needs the Go toolchain. Install it from https://go.dev/dl/ and try again")
+	}
+	have := strings.TrimSpace(string(out))
+	if version.Compare(have, "go"+workspace.GoVersion) < 0 {
+		return fmt.Errorf("the exercises need Go %s or newer, but go is %s. Update from https://go.dev/dl/", workspace.GoVersion, strings.TrimPrefix(have, "go"))
+	}
+	return nil
 }
 
 func find(c *course.Course, query string) (*course.Exercise, error) {
@@ -152,8 +170,8 @@ func initCourse(c *course.Course, args []string, stdout io.Writer) error {
 	if len(args) == 1 {
 		dir = args[0]
 	}
-	if _, err := exec.LookPath("go"); err != nil {
-		return errors.New("Gopherlings needs the Go toolchain. Install it from https://go.dev/dl/ and try again")
+	if err := checkGo(); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -216,7 +234,7 @@ func check(s *session.Session, e *course.Exercise, stdout io.Writer) error {
 	return nil
 }
 
-func version() string {
+func toolVersion() string {
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
 		return info.Main.Version
 	}

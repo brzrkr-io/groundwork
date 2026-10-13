@@ -3,79 +3,64 @@ package booleans
 import "testing"
 
 func TestShouldScaleUp(t *testing.T) {
-	// Each line is one case: a name, the inputs, then the answer we want.
-	tests := []struct {
-		name                         string
-		cpuPercent, replicas, maxRep int
-		cooldown                     bool
-		want                         bool
-	}{
-		{"busy with room", 90, 3, 10, false, true},
-		{"just above 75", 76, 9, 10, false, true},
-		{"exactly 75", 75, 3, 10, false, false},
-		{"quiet", 40, 3, 10, false, false},
-		{"at maximum", 90, 10, 10, false, false},
-		{"cooldown", 90, 3, 10, true, false},
+	if !ShouldScaleUp(90, 3, 10, false) {
+		t.Errorf("ShouldScaleUp(90, 3, 10, false) = false, want true")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ShouldScaleUp(tt.cpuPercent, tt.replicas, tt.maxRep, tt.cooldown)
-			if got != tt.want {
-				t.Errorf("ShouldScaleUp(%d, %d, %d, %t) = %t, want %t",
-					tt.cpuPercent, tt.replicas, tt.maxRep, tt.cooldown, got, tt.want)
-			}
-		})
+	if !ShouldScaleUp(76, 9, 10, false) {
+		t.Errorf("ShouldScaleUp(76, 9, 10, false) = false, want true")
+	}
+	if ShouldScaleUp(75, 3, 10, false) {
+		t.Errorf("ShouldScaleUp(75, 3, 10, false) = true, want false")
+	}
+	if ShouldScaleUp(40, 3, 10, false) {
+		t.Errorf("ShouldScaleUp(40, 3, 10, false) = true, want false")
+	}
+	if ShouldScaleUp(90, 10, 10, false) {
+		t.Errorf("ShouldScaleUp(90, 10, 10, false) = true, want false")
+	}
+	if ShouldScaleUp(90, 3, 10, true) {
+		t.Errorf("ShouldScaleUp(90, 3, 10, true) = true, want false")
 	}
 }
 
 func TestShouldScaleDown(t *testing.T) {
-	// Each line is one case: a name, the inputs, then the answer we want.
-	tests := []struct {
-		name                         string
-		cpuPercent, replicas, minRep int
-		cooldown                     bool
-		want                         bool
-	}{
-		{"quiet with spare replicas", 10, 5, 2, false, true},
-		{"just below 25", 24, 3, 2, false, true},
-		{"exactly 25", 25, 5, 2, false, false},
-		{"busy", 80, 5, 2, false, false},
-		{"at minimum", 10, 2, 2, false, false},
-		{"cooldown", 10, 5, 2, true, false},
+	if !ShouldScaleDown(10, 5, 2, false) {
+		t.Errorf("ShouldScaleDown(10, 5, 2, false) = false, want true")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ShouldScaleDown(tt.cpuPercent, tt.replicas, tt.minRep, tt.cooldown)
-			if got != tt.want {
-				t.Errorf("ShouldScaleDown(%d, %d, %d, %t) = %t, want %t",
-					tt.cpuPercent, tt.replicas, tt.minRep, tt.cooldown, got, tt.want)
-			}
-		})
+	if !ShouldScaleDown(24, 3, 2, false) {
+		t.Errorf("ShouldScaleDown(24, 3, 2, false) = false, want true")
+	}
+	if ShouldScaleDown(25, 5, 2, false) {
+		t.Errorf("ShouldScaleDown(25, 5, 2, false) = true, want false")
+	}
+	if ShouldScaleDown(80, 5, 2, false) {
+		t.Errorf("ShouldScaleDown(80, 5, 2, false) = true, want false")
+	}
+	if ShouldScaleDown(10, 2, 2, false) {
+		t.Errorf("ShouldScaleDown(10, 2, 2, false) = true, want false")
+	}
+	if ShouldScaleDown(10, 5, 2, true) {
+		t.Errorf("ShouldScaleDown(10, 5, 2, true) = true, want false")
 	}
 }
 
 func TestIsStable(t *testing.T) {
-	// Each line is one case: a name, the inputs, then the answer we want.
-	tests := []struct {
-		name                                 string
-		cpuPercent, replicas, minRep, maxRep int
-		cooldown                             bool
-		want                                 bool
-	}{
-		{"cpu is fine", 50, 3, 2, 10, false, true},
-		{"would scale up", 90, 3, 2, 10, false, false},
-		{"would scale down", 10, 5, 2, 10, false, false},
-		{"busy but at maximum", 90, 10, 2, 10, false, true},
-		{"quiet but at minimum", 10, 2, 2, 10, false, true},
-		{"cooldown", 90, 3, 2, 10, true, true},
+	if !IsStable(50, 3, 2, 10, false) {
+		t.Errorf("IsStable(50, 3, 2, 10, false) = false, want true")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := IsStable(tt.cpuPercent, tt.replicas, tt.minRep, tt.maxRep, tt.cooldown)
-			if got != tt.want {
-				t.Errorf("IsStable(%d, %d, %d, %d, %t) = %t, want %t",
-					tt.cpuPercent, tt.replicas, tt.minRep, tt.maxRep, tt.cooldown, got, tt.want)
-			}
-		})
+	if IsStable(90, 3, 2, 10, false) {
+		t.Errorf("IsStable(90, 3, 2, 10, false) = true, want false")
+	}
+	if IsStable(10, 5, 2, 10, false) {
+		t.Errorf("IsStable(10, 5, 2, 10, false) = true, want false")
+	}
+	if !IsStable(90, 10, 2, 10, false) {
+		t.Errorf("IsStable(90, 10, 2, 10, false) = false, want true")
+	}
+	if !IsStable(10, 2, 2, 10, false) {
+		t.Errorf("IsStable(10, 2, 2, 10, false) = false, want true")
+	}
+	if !IsStable(90, 3, 2, 10, true) {
+		t.Errorf("IsStable(90, 3, 2, 10, true) = false, want true")
 	}
 }
