@@ -23,6 +23,9 @@ func (e *DeployError) Error() string {
 }
 
 // TODO(1): Add an Unwrap method so DeployError joins the error chain.
+// Write your code directly under the "// Unwrap ..." comment below.
+
+// Unwrap returns the stage's error, so errors.Is and errors.AsType can see it.
 
 // Stage is one step of a deploy pipeline, such as "build" or "rollout".
 type Stage struct {

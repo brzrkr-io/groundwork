@@ -1,6 +1,7 @@
 package content_test
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -58,6 +60,10 @@ func TestPacks(t *testing.T) {
 				for _, p := range packagesWithoutDoc(t, dir) {
 					t.Errorf("package %s has no package comment; editors flag this on every file", p)
 				}
+			}
+			for _, name := range missingDocComments(t, e.Name, starter, solved) {
+				t.Errorf("the solution adds exported %s, but the starter has no ready-made \"// %s ...\" comment where it goes; "+
+					"learners type under the TODO and their editor flags the TODO as a wrong doc comment", name, name)
 			}
 			if workspace.OwnModule(pack) && testing.Short() {
 				t.Skip("pack has its own module; run without -short")
@@ -175,4 +181,117 @@ func run(dir, name string, args ...string) (string, error) {
 	cmd.Env = append(os.Environ(), "GOWORK=off")
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
+}
+
+// renamedByLearner lists declarations the learner creates by renaming an
+// existing one. Their doc comment is already there, under the old name, and
+// the task text says to rename it too.
+var renamedByLearner = map[string][]string{
+	"exported_names":    {"NewCredential", "Credential.Masked"},
+	"exported_names_2":  {"New"},
+	"interfaces_2":      {"HTTPCheck.Check"},
+	"internal_packages": {"Make"},
+}
+
+// missingDocComments lists exported declarations the learner must add (in
+// the solution, not in the starter) whose doc comment the starter doesn't
+// already provide. Go expects a declaration's comment to start with its
+// name. Without one ready, the TODO above becomes the doc comment and the
+// editor warns about it.
+func missingDocComments(t *testing.T, pack, starter, solved string) []string {
+	t.Helper()
+	starterNames, ready := exportedDecls(t, starter)
+	solvedNames, _ := exportedDecls(t, solved)
+	var missing []string
+	for name, ownDoc := range solvedNames {
+		short := name[strings.LastIndex(name, ".")+1:]
+		if ownDoc && !starterNames[name] && !ready[short] && !slices.Contains(renamedByLearner[pack], name) {
+			missing = append(missing, name)
+		}
+	}
+	slices.Sort(missing)
+	return missing
+}
+
+// exportedDecls returns the exported top-level names and methods
+// ("Type.Method") in the non-test Go files under dir (true when it needs its
+// own doc comment, false inside a parenthesised block), and the first words of
+// top-level comments not attached to any declaration: ready-made doc
+// comments waiting for the learner's code.
+func exportedDecls(t *testing.T, dir string) (names, ready map[string]bool) {
+	t.Helper()
+	names, ready = map[string]bool{}, map[string]bool{}
+	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), path, src, parser.SkipObjectResolution|parser.ParseComments)
+		if err != nil {
+			return nil // the starter may not compile on purpose
+		}
+		attached := map[*ast.CommentGroup]bool{f.Doc: true}
+		for _, d := range f.Decls {
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				attached[d.Doc] = true
+				if !d.Name.IsExported() {
+					continue
+				}
+				name := d.Name.Name
+				if d.Recv != nil && len(d.Recv.List) > 0 {
+					name = receiverName(d.Recv.List[0].Type) + "." + name
+				}
+				names[name] = true
+			case *ast.GenDecl:
+				grouped := d.Lparen.IsValid()
+				attached[d.Doc] = true
+				for _, s := range d.Specs {
+					switch s := s.(type) {
+					case *ast.TypeSpec:
+						attached[s.Doc] = true
+						if s.Name.IsExported() {
+							names[s.Name.Name] = !grouped
+						}
+					case *ast.ValueSpec:
+						attached[s.Doc] = true
+						for _, n := range s.Names {
+							if n.IsExported() {
+								names[n.Name] = !grouped
+							}
+						}
+					}
+				}
+			}
+		}
+		for _, g := range f.Comments {
+			if !attached[g] {
+				if words := strings.Fields(g.Text()); len(words) > 0 {
+					ready[words[0]] = true
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return names, ready
+}
+
+func receiverName(e ast.Expr) string {
+	switch e := e.(type) {
+	case *ast.StarExpr:
+		return receiverName(e.X)
+	case *ast.IndexExpr:
+		return receiverName(e.X)
+	case *ast.IndexListExpr:
+		return receiverName(e.X)
+	case *ast.Ident:
+		return e.Name
+	}
+	return ""
 }

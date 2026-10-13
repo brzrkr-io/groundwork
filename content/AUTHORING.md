@@ -160,6 +160,20 @@ return deployment + "-" + hash + "-" + suffix
   the solution needs an import the starter doesn't use, the TODO or README
   tells the learner to add it.
 - Every exported identifier has a doc comment. Code is gofmt-clean.
+- When the learner adds a new exported declaration, the starter provides its
+  doc comment ready, after the TODO and a blank line:
+
+  ```go
+  // TODO(1): Write a function named Shout. ...
+  // Write your code directly under the "// Shout ..." comment below.
+
+  // Shout returns word followed by an exclamation mark.
+  ```
+
+  Otherwise the learner types under the TODO, and the editor flags "comment on
+  exported function Shout should be of the form "Shout ..."". If the learner
+  renames something instead, the TODO says to rename it in the comment too.
+  TestPacks enforces this.
 - Every non-test package (starter and solution) has a package comment, such as
   `// Package variables is the Gopherlings exercise "Variables".` Otherwise
   editors warn on every file. TestPacks enforces this.

@@ -30,6 +30,10 @@ type statusRecorder struct {
 
 // TODO(2): Give statusRecorder a WriteHeader method that remembers the
 // code and passes it on to the real ResponseWriter.
+// Write your code directly under the "// WriteHeader ..." comment below.
+
+// WriteHeader remembers code, then sends it through the real
+// ResponseWriter.
 
 // AccessLog returns middleware that writes "METHOD PATH STATUS" and a
 // newline to out after each request.

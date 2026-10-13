@@ -40,7 +40,7 @@ func (h HTTPCheck) Name() string {
 // Checked reports whether the last request returned 200.
 func (h HTTPCheck) Checked() bool {
 	// TODO(1): HTTPCheck does not satisfy HealthChecker. Compare this method
-	// with the interface and fix it.
+	// with the interface and fix it (and the name in its comment).
 	return h.StatusCode == 200
 }
 

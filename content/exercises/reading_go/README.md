@@ -33,7 +33,7 @@ declarations.
 | `package hello` as the first code line | **Required** | The name is your choice. By convention it's short and lowercase. |
 | `import` right after `package` | **Required** (if you use other packages) | gofmt sorts the import lines for you. |
 | Only declarations (`const`, `var`, `func`) at the top level | **Required** | Statements like `return` or `x := 1` only work *inside* a function. |
-| A `//` comment above each function | Convention | Go doesn't need it, but every Go project does it. It starts with the function's name. |
+| A `//` comment above each function | Convention | Go doesn't need it, but every Go project does it. It starts with the function's name, and editors warn when it doesn't. |
 | Tabs for indentation | Convention | gofmt (your editor's format-on-save) does it for you. |
 
 > **Why is it written like this?** Go keeps one fixed layout so every Go file

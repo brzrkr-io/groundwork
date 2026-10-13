@@ -34,6 +34,9 @@ type Replicas struct {
 }
 
 // TODO(1): Add a String method to Replicas that returns "3/5".
+// Write your code directly under the "// String ..." comment below.
+
+// String returns the counts as "ready/desired", such as "3/5".
 
 // Deployment is one service rolled out in one namespace.
 type Deployment struct {
@@ -45,6 +48,9 @@ type Deployment struct {
 
 // TODO(2): Add a String method to Deployment that returns
 // "prod/api 1/3 Degraded".
+// Write your code directly under the "// String ..." comment below.
+
+// String returns the deployment as one line, such as "prod/api 1/3 Degraded".
 
 // Report returns a summary line and then one line per deployment.
 func Report(deps []Deployment) string {
