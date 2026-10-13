@@ -332,10 +332,10 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.toggle(paneSolution)
 			m.body.GotoTop()
 		case m.hintsShown < len(m.hints):
-			m.flash = fmt.Sprintf("Try the hints first: press h (%d of %d seen). The solution unlocks after the last one.", m.hintsShown, len(m.hints))
+			m.flash = fmt.Sprintf("Try the hints first: h (%d of %d seen). The solution unlocks after the last.", m.hintsShown, len(m.hints))
 		default:
 			m.confirm = "reveal"
-			m.flash = "Press s again to see the solution. Any other key cancels. Tip: type it out yourself rather than copying it."
+			m.flash = "Press s again to see the solution. Any other key cancels."
 		}
 	case "x":
 		m.confirm = "reset"
@@ -624,7 +624,7 @@ func (m *Model) solutionView(width int) string {
 		return badBold.Render("✗ ") + err.Error()
 	}
 	var b strings.Builder
-	b.WriteString(dim.Render(" Also saved in "+relative(m.s.SolutionDir(m.ex))+". Compare it with yours; there's often more than one good answer.") + "\n\n")
+	b.WriteString(wrapIndent(dim.Render("Also saved in "+relative(m.s.SolutionDir(m.ex))+". Compare it with yours; there's often more than one good answer. Typing it out yourself sticks better than copying."), 1, width) + "\n\n")
 	for _, f := range files {
 		lang := "go"
 		if !strings.HasSuffix(f.Path, ".go") {
