@@ -15,6 +15,8 @@ Each **concept** has a short run of exercises, so one lesson is never your only 
 
 Every module ends with a **practice** exercise that combines its concepts. Each phase ends with a multi-file **project**, where tests unlock task by task.
 
+**Guides** teach the computer science underneath the exercises: one idea each, from *How a program runs* to *Concurrency* and *Declarative systems and control loops*. Each module lists its guides below. Read a module's guides before or alongside its exercises: press `g` in the watcher, run `gopherlings guides`, or open `guides/` in your course folder. Every guide ends with *Check yourself* questions; answer them out loud before reading the answers.
+
 After you pass an exercise, press `s` to compare your code with the reference solution (also saved in `solutions/`). Reading a second way to solve the same problem is one of the fastest ways to learn.
 
 ## Suggested schedule
@@ -32,6 +34,7 @@ Habits that make it stick:
 - **Stuck after the last hint?** Press `s` for the solution, read it, then `gopherlings reset` the exercise the next day and solve it without looking. The list marks it ◐ until you do.
 - **Space the repetitions.** Do a concept's introduction, then come back to its follow-ups the next day, before you've fully forgotten it.
 - **Redo practice exercises cold.** After finishing a module, `gopherlings reset <practice>` and solve it again without hints.
+- **Pair a guide with practice.** Read one section of a guide, then do an exercise. Short reading, then doing, beats a long reading session.
 - **Explain it out loud.** After each module, say in two or three sentences what each concept is for. If you can't, revisit its introduction.
 
 <!-- Generated from content/course.json; regenerate with:
@@ -44,6 +47,8 @@ Habits that make it stick:
 *About 6.0 hours, in `exercises/01_basics/`.* Functions, variables, constants, numbers, strings and fmt: the vocabulary every Go program is written in.
 
 **After this module you can:** Read and write small Go functions: variables, constants, int/float64 maths, the strings package, fmt verbs and type conversion.
+
+**Guides:** [How a program runs](content/guides/how_programs_run.md) · [Values and types](content/guides/values_and_types.md) · [Solving problems you haven't seen before](content/guides/problem_solving.md)
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
@@ -75,6 +80,8 @@ Habits that make it stick:
 *About 7.5 hours, in `exercises/02_control_flow/`.* Decisions, loops and functions: how a program chooses what to do and repeats work.
 
 **After this module you can:** Make decisions and repeat work: booleans, if/else, switch, for loops, helper functions, (value, error) returns and closures. Parse a "host:port" safely.
+
+**Guides:** [State and tracing code by hand](content/guides/tracing_state.md) · [Functions and decomposition](content/guides/functions_decomposition.md) · [Debugging with a method](content/guides/debugging.md)
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
@@ -109,6 +116,8 @@ Habits that make it stick:
 *About 9.3 hours, in `exercises/03_collections/`.* Arrays, slices, maps and strings as data: storing many values and working through them.
 
 **After this module you can:** Store and process many values with arrays, slices, maps and sorting, avoid the shared-memory slice traps, and handle UTF-8 text correctly.
+
+**Guides:** [Data structures](content/guides/data_structures.md) · [Algorithms and Big-O](content/guides/algorithms_big_o.md)
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
@@ -150,6 +159,8 @@ Habits that make it stick:
 
 **After this module you can:** Model real things (deployments, hosts, alerts) with structs, pointers, methods, enums, interfaces, embedding and generics.
 
+**Guides:** [Memory, pointers and sharing](content/guides/memory_pointers.md) · [Abstraction](content/guides/abstraction.md)
+
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
 | 079 | Structs | concept | 25 |
@@ -190,6 +201,8 @@ Habits that make it stick:
 
 **After this module you can:** Handle failure the Go way: create, wrap, inspect and join errors, clean up with defer, and contain panics.
 
+**Guides:** [Errors and failure](content/guides/errors_failure.md)
+
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
 | 110 | Errors are values | concept | 20 |
@@ -220,6 +233,8 @@ Habits that make it stick:
 
 **After this module you can:** Parse logs and configs: bufio scanning, regular expressions, time, JSON, CSV and text/template. The project produces an access-log report.
 
+**Guides:** [Data formats and parsing](content/guides/data_formats.md)
+
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
 | 129 | Reading input line by line: a hosts list | concept | 25 |
@@ -245,6 +260,8 @@ Habits that make it stick:
 
 **After this module you can:** Write your own tests: table tests, subtests, golden files, fakes, benchmarks and fuzzing. Your tests are graded by whether they catch real bugs.
 
+**Guides:** [Testing and correctness](content/guides/testing_correctness.md)
+
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
 | 145 | Your first test | concept | 20 |
@@ -269,6 +286,8 @@ Habits that make it stick:
 
 **After this module you can:** Split a program into packages, control your public API, use internal/, embed files and stamp version info into binaries.
 
+**Guides:** [Modularity and dependencies](content/guides/modularity.md)
+
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
 | 160 | Packages and imports | concept | 25 |
@@ -290,6 +309,8 @@ Habits that make it stick:
 *About 12.1 hours, in `exercises/09_cli/`.* Arguments, flags, files, environment, subprocesses and signals: build the kind of tool you would put in a pipeline.
 
 **After this module you can:** Build pipeline-ready CLIs: args, flags, subcommands, streams and exit codes, safe file writes, directory walks, config precedence, subprocesses, signals, checksums and archives.
+
+**Guides:** [The operating system for programmers](content/guides/operating_systems.md)
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
@@ -323,6 +344,8 @@ Habits that make it stick:
 
 **After this module you can:** Work with IPs and CIDRs, TCP, port checks, HTTP clients and servers, JSON APIs, middleware and TLS, all tested with httptest.
 
+**Guides:** [Networking from the ground up](content/guides/networking.md)
+
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
 | 194 | IP addresses: classify, allowlist, overlap | concept | 25 |
@@ -350,6 +373,8 @@ Habits that make it stick:
 *About 10.5 hours, in `exercises/11_concurrency/`.* Goroutines, channels, select, sync and context. Every check runs with the race detector.
 
 **After this module you can:** Use goroutines, channels, select, WaitGroups, mutexes and context; read race reports; build worker pools and pipelines; collect errors concurrently.
+
+**Guides:** [Concurrency](content/guides/concurrency.md)
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
@@ -381,6 +406,8 @@ Habits that make it stick:
 
 **After this module you can:** Add what on-call needs: slog logging, Prometheus metrics, health checks, graceful shutdown, retries, rate limits, circuit breakers, caches and idempotency.
 
+**Guides:** [Distributed systems basics](content/guides/distributed_systems.md)
+
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
 | 234 | Structured logging with slog | concept · race | 25 |
@@ -411,6 +438,8 @@ Habits that make it stick:
 
 **After this module you can:** Build and validate Kubernetes objects, read manifests and kubeconfigs, use the clientset, selectors, watches, informers and workqueues, and write a controller.
 
+**Guides:** [Declarative systems and control loops](content/guides/control_loops.md)
+
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
 | 253 | Kubernetes objects: building a Deployment | concept | 30 |
@@ -438,6 +467,8 @@ Habits that make it stick:
 *About 6.4 hours, in `exercises/14_aws/`.* aws-sdk-go-v2 configuration, testable clients, paginators, API errors, S3 and tag compliance, all tested offline.
 
 **After this module you can:** Configure aws-sdk-go-v2 safely, write testable SDK code, paginate, handle API errors, manage S3 objects, audit tags and detect drift.
+
+**Guides:** [Security basics for automation](content/guides/security.md)
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|

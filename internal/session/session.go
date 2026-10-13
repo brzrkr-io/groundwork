@@ -6,6 +6,7 @@
 //	.gopherlings/progress.json         progress
 //	exercises/01_basics/001_hello_go/  every exercise, each its own Go module
 //	solutions/01_basics/001_hello_go/  reference solution, written once unlocked
+//	guides/01_how_programs_run.md      the guides, kept in step with the course
 package session
 
 import (
@@ -18,6 +19,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -142,12 +144,16 @@ func (s *Session) NextPending(after *course.Exercise) *course.Exercise {
 //   - missing exercise folders are created;
 //   - files the learner never edited are refreshed when the course changes;
 //   - unlocked solutions are rewritten from the course (they're never the
-//     learner's work).
+//     learner's work);
+//   - guides/ is rewritten to match the course's guides.
 //
 // Edited exercise files are never touched.
 func (s *Session) Sync() error {
 	if err := s.moveFolders(); err != nil {
 		return err
+	}
+	if err := s.writeGuides(); err != nil {
+		return fmt.Errorf("update guides/: %w", err)
 	}
 	for _, e := range s.Course.Exercises {
 		if _, err := s.sync(e, false); err != nil {
@@ -209,6 +215,75 @@ func (s *Session) moveFolders() error {
 		os.Remove(filepath.Dir(m.from)) // drop an old module folder once empty
 	}
 	return nil
+}
+
+// GuidePath is where the learner can read g in their editor.
+func (s *Session) GuidePath(g *course.Guide) string {
+	return filepath.Join(s.Root, "guides", g.File())
+}
+
+// guideFile matches the files writeGuides owns: "07_data_structures.md".
+var guideFile = regexp.MustCompile(`^\d{2}_[a-z0-9_]+\.md$`)
+
+// writeGuides makes guides/ hold every guide plus a README.md index. Guide
+// files the course no longer has (renamed or renumbered) are removed; other
+// files the learner put there are left alone.
+func (s *Session) writeGuides() error {
+	dir := filepath.Join(s.Root, "guides")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	want := map[string][]byte{"README.md": []byte(GuideIndex(s.Course))}
+	for _, g := range s.Course.Guides {
+		text, err := s.Course.GuideText(g)
+		if err != nil {
+			return err
+		}
+		want[g.File()] = []byte(text)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if _, keep := want[entry.Name()]; !keep && guideFile.MatchString(entry.Name()) {
+			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	for name, text := range want {
+		path := filepath.Join(dir, name)
+		if have, err := os.ReadFile(path); err == nil && string(have) == string(text) {
+			continue
+		}
+		if err := os.WriteFile(path, text, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GuideIndex is guides/README.md: every guide with its one-sentence summary,
+// grouped by the module it goes with.
+func GuideIndex(c *course.Course) string {
+	var b strings.Builder
+	b.WriteString("# Guides\n\n" +
+		"The computer science underneath the exercises, one idea per guide. Read\n" +
+		"each one alongside its module, or whenever an idea feels shaky. In the\n" +
+		"watcher, press `g`; from a shell, run `gopherlings guides`.\n\n" +
+		"Gopherlings rewrites the numbered files here whenever the course changes,\n" +
+		"so keep your own notes in another file.\n")
+	for _, m := range c.Modules {
+		if len(m.Guides) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "\n## Module %d: %s\n\n", m.Number, m.Title)
+		for _, g := range m.Guides {
+			fmt.Fprintf(&b, "- **[%s](%s)**: %s\n", g.Title, g.File(), g.Summary)
+		}
+	}
+	return b.String()
 }
 
 func module(e *course.Exercise) string { return "gopherlings.local/" + e.Leaf() }

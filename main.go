@@ -34,9 +34,11 @@ Usage:
   gopherlings list [--all]  show your progress through the course
   gopherlings check [EX]    run one exercise's tests once (default: current)
   gopherlings reset EX      restore an exercise's starter code
+  gopherlings guides [G]    list the guides, or read guide G
   gopherlings version       print the version
 
 EX is an exercise number (12) or folder name (012_variables).
+G is a guide number (10) or name (abstraction).
 Inside the watcher, press ? for keys.
 `
 
@@ -70,8 +72,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("the embedded course is broken: %w", err)
 	}
-	if cmd == "init" {
+	switch cmd {
+	case "init":
 		return initCourse(c, rest, stdout)
+	case "guides", "guide":
+		return guides(c, rest, stdout)
 	}
 	s, err := openSession(c)
 	if err != nil {
@@ -232,6 +237,67 @@ func check(s *session.Session, e *course.Exercise, stdout io.Writer) error {
 		return errSilent
 	}
 	return nil
+}
+
+// guides lists the guides, or shows one through a pager. It works outside a
+// course too; inside one it also refreshes the course's guides/ folder and
+// highlights the learner's current module.
+func guides(c *course.Course, args []string, stdout io.Writer) error {
+	if len(args) > 1 {
+		return errors.New("usage: gopherlings guides [GUIDE]")
+	}
+	var current *course.Module
+	root, err := session.FindRoot(".")
+	switch {
+	case err == nil:
+		s, err := session.Open(root, c)
+		if err != nil {
+			return err
+		}
+		if err := s.Sync(); err != nil {
+			return err
+		}
+		current = s.Current().Module
+	case !errors.Is(err, session.ErrNoCourse):
+		return err
+	}
+	if len(args) == 0 {
+		fmt.Fprint(stdout, tui.GuideList(c, current))
+		return nil
+	}
+	g, ok := c.FindGuide(args[0])
+	if !ok {
+		return fmt.Errorf("no guide %q; gopherlings guides lists them", args[0])
+	}
+	text, err := c.GuideText(g)
+	if err != nil {
+		return err
+	}
+	if f, ok := stdout.(*os.File); !ok || !isatty.IsTerminal(f.Fd()) {
+		_, err := io.WriteString(stdout, text) // plain Markdown for pipes and files
+		return err
+	}
+	return page(tui.Guide(text), stdout)
+}
+
+// page shows text through $PAGER (default less), like git does, or prints it
+// when no pager is installed.
+func page(text string, stdout io.Writer) error {
+	pager := strings.Fields(os.Getenv("PAGER"))
+	if len(pager) == 0 {
+		pager = []string{"less"}
+	}
+	if _, err := exec.LookPath(pager[0]); err != nil {
+		_, err := io.WriteString(stdout, text)
+		return err
+	}
+	cmd := exec.Command(pager[0], pager[1:]...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = strings.NewReader(text), stdout, os.Stderr
+	if os.Getenv("LESS") == "" {
+		// Keep colours, quit at once if it fits, don't clear the screen.
+		cmd.Env = append(os.Environ(), "LESS=FRX")
+	}
+	return cmd.Run()
 }
 
 func toolVersion() string {

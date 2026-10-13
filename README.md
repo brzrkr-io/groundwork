@@ -12,6 +12,14 @@ examples, and tests you can read. Each concept gets **several exercises**: an
 introduction, a "fix the bug" round, and a small realistic task. Every module
 ends with a practice exercise, and every phase ends with a multi-file project.
 
+Alongside the exercises, **20 guides** teach the computer science underneath
+them: how a program runs, state, functions, debugging, data structures,
+Big-O, memory, abstraction, errors, testing, the operating system,
+networking, concurrency, distributed systems and more. Each module points to
+its guides. Read them in the watcher (`g`), with `gopherlings guides`, or in
+your editor ([content/guides/](content/guides/), or `guides/` in your course
+folder).
+
 See [LESSON_PLAN.md](LESSON_PLAN.md) for the full syllabus and a suggested
 schedule.
 
@@ -47,7 +55,7 @@ gopherlings  ·  module 1 of 14: Basics                     ━━━━━━�
 002  Variables                                                         ✗ 2 of 3 failing
 edit  exercises/01_basics/002_variables/exercise.go
 
- Results   Instructions i   Hints 0/3 h   Solution s   All exercises l   Keys ?
+ Results   Instructions i   Hints h   Solution s   Exercises l   Guides g   Keys ?
 ─────────────────────────────────────────────────────────────────────────────────────────
 ✗ 2 of 3 tests failing
 
@@ -79,8 +87,9 @@ The tab row shows which view you're looking at. The results always come first.
 | `h` | hint; press again for a stronger one |
 | `s` | the solution: once you pass, or after the last hint |
 | `l` | all exercises; `enter` opens one |
+| `g` | guides: the computer science behind the exercises; `enter` reads one |
 | `?` | every key, plus a guide to reading failures and compiler errors |
-| `esc` | back to the results |
+| `esc` | back to the results (from a guide: back to the guide list) |
 | `n` | next unfinished exercise |
 | `←` / `→` | previous / next exercise |
 | `↑` `↓` `pgup` `pgdn` | scroll |
@@ -97,11 +106,13 @@ gopherlings init [DIR]    start a new course in DIR (default: this directory)
 gopherlings list [--all]  show your progress through the course
 gopherlings check [EX]    run one exercise's tests once (handy outside a terminal UI)
 gopherlings reset EX      restore an exercise's starter code
+gopherlings guides [G]    list the guides, or read one (gopherlings guides concurrency)
 ```
 
 `EX` is usually just the exercise number (`12`). A folder name such as
-`012_variables` works too. Commands work from anywhere inside the course
-folder.
+`012_variables` works too. A guide is its number (`17`) or name
+(`concurrency`). Commands work from anywhere inside the course folder;
+`gopherlings guides` works anywhere.
 
 ## What's in this folder
 
@@ -110,6 +121,8 @@ gopherlings/
 ├── main.go, internal/, content/  the tool and the course content (you don't edit these)
 ├── LESSON_PLAN.md                the syllabus
 ├── .gopherlings/progress.json    what you've finished
+├── guides/                       the guides as Markdown, numbered (rewritten on updates;
+│                                 keep your notes in your own files)
 ├── exercises/
 │   ├── 01_basics/                one folder per module
 │   │   ├── 001_hello_go/

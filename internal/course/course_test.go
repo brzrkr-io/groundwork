@@ -1,6 +1,7 @@
 package course
 
 import (
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -32,6 +33,57 @@ func TestFindAcceptsNumberNameAndFolder(t *testing.T) {
 	}
 	if e, _ := c.Find("vars"); e.Kind != Concept {
 		t.Errorf("default kind = %q, want concept", e.Kind)
+	}
+}
+
+func TestGuidesAreNumberedInModuleOrder(t *testing.T) {
+	files := fstest.MapFS{
+		"course.json": {Data: []byte(`{"modules":[
+			{"dir":"one","guides":["state","debugging"],"exercises":[{"name":"a"}]},
+			{"dir":"two","exercises":[{"name":"b"}]},
+			{"dir":"three","guides":["concurrency"],"exercises":[{"name":"c"}]}]}`)},
+		"guides/state.md":       {Data: []byte("# State\n\n**In one sentence:** state is what\nchanges.\n\n**Why it matters:** ...\n")},
+		"guides/debugging.md":   {Data: []byte("# Debugging\n")},
+		"guides/concurrency.md": {Data: []byte("# Concurrency\n")},
+	}
+	c, err := Load(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, g := range c.Guides {
+		got = append(got, g.File()+" "+g.Module.Folder)
+	}
+	if want := "01_state.md one|02_debugging.md one|03_concurrency.md three"; strings.Join(got, "|") != want {
+		t.Errorf("guides = %q, want %q", strings.Join(got, "|"), want)
+	}
+	if g := c.Guides[0]; g.Title != "State" || g.Summary != "state is what changes." {
+		t.Errorf("title %q, summary %q", g.Title, g.Summary)
+	}
+	if len(c.Modules[1].Guides) != 0 || len(c.Modules[2].Guides) != 1 {
+		t.Errorf("module guides = %d, %d; want 0, 1", len(c.Modules[1].Guides), len(c.Modules[2].Guides))
+	}
+	for _, query := range []string{"3", "03", "concurrency", "03_concurrency", "guides/03_concurrency.md", " Concurrency "} {
+		if g, ok := c.FindGuide(query); !ok || g.Name != "concurrency" {
+			t.Errorf("FindGuide(%q) = %v, %v; want concurrency", query, g, ok)
+		}
+	}
+	for _, query := range []string{"0", "4", "02_state", "nope"} {
+		if g, ok := c.FindGuide(query); ok {
+			t.Errorf("FindGuide(%q) = %s, want no match", query, g.Name)
+		}
+	}
+}
+
+func TestLoadRejectsMissingDuplicateOrUntitledGuides(t *testing.T) {
+	for name, files := range map[string]fstest.MapFS{
+		"missing":   {"course.json": {Data: []byte(`{"modules":[{"dir":"m","guides":["gone"],"exercises":[{"name":"a"}]}]}`)}},
+		"duplicate": {"course.json": {Data: []byte(`{"modules":[{"dir":"m","guides":["g"],"exercises":[{"name":"a"}]},{"dir":"n","guides":["g"],"exercises":[{"name":"b"}]}]}`)}, "guides/g.md": {Data: []byte("# G\n")}},
+		"untitled":  {"course.json": {Data: []byte(`{"modules":[{"dir":"m","guides":["g"],"exercises":[{"name":"a"}]}]}`)}, "guides/g.md": {Data: []byte("G\n")}},
+	} {
+		if _, err := Load(files); err == nil {
+			t.Errorf("%s guide: Load accepted it", name)
+		}
 	}
 }
 

@@ -86,6 +86,13 @@ func planModules(c *course.Course) string {
 		fmt.Fprintf(&b, "### Module %d: %s\n\n", m.Number, m.Title)
 		fmt.Fprintf(&b, "*About %.1f hours, in `exercises/%s/`.* %s\n\n", float64(minutes(m.Exercises))/60, m.Dir(), m.Summary)
 		fmt.Fprintf(&b, "**After this module you can:** %s\n\n", m.Outcome)
+		if len(m.Guides) > 0 {
+			var links []string
+			for _, g := range m.Guides {
+				links = append(links, fmt.Sprintf("[%s](content/guides/%s.md)", g.Title, g.Name))
+			}
+			fmt.Fprintf(&b, "**Guides:** %s\n\n", strings.Join(links, " · "))
+		}
 		b.WriteString("| # | Exercise | Kind | Min |\n|---:|---|---|---:|\n")
 		for _, e := range m.Exercises {
 			kind := string(e.Kind)
@@ -102,10 +109,10 @@ func planModules(c *course.Course) string {
 	return b.String()
 }
 
-// TestCrossReferences checks that READMEs and hints which point to another
-// exercise ("as in *Slices*", "from *Wrapping errors*") name one that
-// exists, by its title, its concept (the part before ":") or its module, or
-// name a section heading of the exercise's own README.
+// TestCrossReferences checks that READMEs, hints and guides which point to
+// another exercise ("as in *Slices*", "from *Wrapping errors*") name one that
+// exists, by its title, its concept (the part before ":"), its module or a
+// guide's title, or name a section heading of the file's own README or guide.
 func TestCrossReferences(t *testing.T) {
 	c, err := course.Load(content.Files)
 	if err != nil {
@@ -119,6 +126,9 @@ func TestCrossReferences(t *testing.T) {
 		known[e.Title] = true
 		concept, _, _ := strings.Cut(e.Title, ":")
 		known[concept] = true
+	}
+	for _, g := range c.Guides {
+		known[g.Title] = true
 	}
 	codeBlock := regexp.MustCompile("(?s)```.*?```")
 	reference := regexp.MustCompile(`\b(?:in|from|see|See|like|to|after|since|of|In|From|Like|After)\s+\*([A-Z][^*\n]{1,80}?)\*`)
@@ -137,8 +147,24 @@ func TestCrossReferences(t *testing.T) {
 			text := codeBlock.ReplaceAllString(string(raw), "")
 			for _, m := range reference.FindAllStringSubmatch(text, -1) {
 				if !known[m[1]] && !sections[m[1]] {
-					t.Errorf("%s/%s refers to *%s*, which is no exercise, concept, module or README section", e.Name, file, m[1])
+					t.Errorf("%s/%s refers to *%s*, which is no exercise, concept, module, guide or README section", e.Name, file, m[1])
 				}
+			}
+		}
+	}
+	for _, g := range c.Guides {
+		raw, err := c.GuideText(g)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := codeBlock.ReplaceAllString(raw, "")
+		sections := map[string]bool{}
+		for _, h := range heading.FindAllStringSubmatch(text, -1) {
+			sections[strings.TrimSpace(h[1])] = true
+		}
+		for _, m := range reference.FindAllStringSubmatch(text, -1) {
+			if !known[m[1]] && !sections[m[1]] {
+				t.Errorf("guides/%s.md refers to *%s*, which is no exercise, concept, module, guide or section of the guide", g.Name, m[1])
 			}
 		}
 	}

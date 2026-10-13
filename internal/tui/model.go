@@ -33,6 +33,8 @@ const (
 	paneList
 	paneHelp
 	paneSolution
+	paneGuides // the list of guides
+	paneGuide  // reading one guide
 )
 
 // Model is the Bubble Tea model for watch mode.
@@ -61,7 +63,10 @@ type Model struct {
 	todoFiles  []string    // files in the exercise that still contain TODO markers
 	listLine   int         // line of the list cursor, to keep it scrolled into view
 	listCursor int
-	confirm    string // pending confirmation, e.g. "reset"
+	guideLine  int           // line of the guide cursor, like listLine
+	guideIdx   int           // index into Course.Guides of the guide cursor
+	guide      *course.Guide // the guide open in paneGuide
+	confirm    string        // pending confirmation, e.g. "reset"
 	flash      string
 	fatal      error
 
@@ -286,9 +291,17 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.pane == paneGuides || m.pane == paneGuide {
+		if handled, cmd := m.guideKey(msg); handled {
+			return m, cmd
+		}
+	}
+
 	switch k {
 	case "esc":
 		m.pane = paneResult
+	case "g":
+		m.openGuides()
 	case "i":
 		m.toggle(paneInstructions)
 		m.body.GotoTop()
@@ -363,6 +376,67 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// openGuides shows the guide list with the cursor on the current module's
+// first guide (or the nearest earlier one).
+func (m *Model) openGuides() {
+	m.pane = paneGuides
+	m.guideIdx = 0
+	for i, g := range m.s.Course.Guides {
+		if g.Module.Number <= m.ex.Module.Number {
+			m.guideIdx = i
+		}
+		if g.Module == m.ex.Module {
+			m.guideIdx = i
+			break
+		}
+	}
+}
+
+// guideKey handles keys in the guide list and the guide reader. It reports
+// false for keys the main handler should take (q, l, ?, n, ...).
+func (m *Model) guideKey(msg tea.KeyMsg) (bool, tea.Cmd) {
+	k, last := msg.String(), len(m.s.Course.Guides)-1
+	if m.pane == paneGuide {
+		switch k {
+		case "esc", "backspace", "left":
+			m.pane = paneGuides
+		case "g":
+			m.pane = paneResult
+		case "home":
+			m.body.GotoTop()
+			return true, nil
+		case "end", "G":
+			m.body.GotoBottom()
+			return true, nil
+		default:
+			return false, nil
+		}
+		m.refresh()
+		return true, nil
+	}
+	switch k {
+	case "up", "k":
+		m.guideIdx = max(0, m.guideIdx-1)
+	case "down", "j":
+		m.guideIdx = min(last, m.guideIdx+1)
+	case "home":
+		m.guideIdx = 0
+	case "end", "G":
+		m.guideIdx = last
+	case "enter", "right":
+		m.guide, m.pane = m.s.Course.Guides[m.guideIdx], paneGuide
+		m.refresh()
+		m.body.GotoTop()
+		return true, nil
+	case "esc", "g", "left":
+		m.pane = paneResult
+	default:
+		return false, nil
+	}
+	m.refresh()
+	return true, nil
+}
+
 func (m *Model) toggle(p pane) {
 	if m.pane == p {
 		m.pane = paneResult
@@ -417,7 +491,15 @@ func (m *Model) refresh() {
 	case paneInstructions:
 		readme, _ := m.s.Course.README(m.ex)
 		where := relative(filepath.Join(m.s.Dir(m.ex), "README.md"))
-		content = dim.Render(" Same text as "+where+", if you'd rather read it in your editor.") + "\n\n" + m.markdown(dropTitle(readme), w)
+		content = wrapIndent(dim.Render("Same text as "+where+", if you'd rather read it in your editor."), 1, w) + "\n"
+		if guides := m.ex.Module.Guides; len(guides) > 0 {
+			var titles []string
+			for _, g := range guides {
+				titles = append(titles, bold.Render(g.Title))
+			}
+			content += wrapIndent(dim.Render("Background for this module: ")+strings.Join(titles, dim.Render(", "))+dim.Render(". Press ")+keyCap.Render("g")+dim.Render(" for the guides."), 1, w) + "\n"
+		}
+		content += "\n" + m.markdown(dropTitle(readme), w)
 	case paneHints:
 		content = m.hintsView(w)
 	case paneList:
@@ -426,16 +508,28 @@ func (m *Model) refresh() {
 		content = m.helpView(w)
 	case paneSolution:
 		content = m.solutionView(w)
+	case paneGuides:
+		content = m.guidesView(w)
+	case paneGuide:
+		content = m.guideView(w)
 	default:
 		content = m.resultView(w)
 	}
 	m.body.SetContent(content)
-	if m.pane == paneList {
-		if m.listLine < m.body.YOffset+2 {
-			m.body.SetYOffset(max(0, m.listLine-2))
-		} else if m.listLine > m.body.YOffset+m.body.Height-3 {
-			m.body.SetYOffset(m.listLine - m.body.Height + 3)
-		}
+	switch m.pane {
+	case paneList:
+		m.scrollTo(m.listLine)
+	case paneGuides:
+		m.scrollTo(m.guideLine)
+	}
+}
+
+// scrollTo keeps a cursor line, with a little context, inside the viewport.
+func (m *Model) scrollTo(line int) {
+	if line < m.body.YOffset+2 {
+		m.body.SetYOffset(max(0, line-2))
+	} else if line > m.body.YOffset+m.body.Height-4 {
+		m.body.SetYOffset(line - m.body.Height + 4)
 	}
 }
 
@@ -447,12 +541,7 @@ const readingWidth = 84
 func (m *Model) markdown(src string, width int) string {
 	width = min(width, readingWidth)
 	if m.md == nil || m.mdWidth != width {
-		r, err := glamour.NewTermRenderer(
-			glamour.WithStyles(markdownStyle()),
-			glamour.WithChromaFormatter("terminal16"), // code in the terminal's palette
-			glamour.WithWordWrap(width-2),
-			glamour.WithEmoji(),
-		)
+		r, err := newMarkdown(width)
 		if err != nil {
 			return src
 		}
@@ -463,6 +552,16 @@ func (m *Model) markdown(src string, width int) string {
 		return src
 	}
 	return strings.Trim(out, "\n")
+}
+
+// newMarkdown returns a renderer for Markdown prose wrapped at width.
+func newMarkdown(width int) (*glamour.TermRenderer, error) {
+	return glamour.NewTermRenderer(
+		glamour.WithStyles(markdownStyle()),
+		glamour.WithChromaFormatter("terminal16"), // code in the terminal's palette
+		glamour.WithWordWrap(width-2),
+		glamour.WithEmoji(),
+	)
 }
 
 // dropTitle removes the README's "# Title" line; the header already shows it.
@@ -624,6 +723,52 @@ func (m *Model) listView(width int) string {
 	return strings.Join(lines, "\n")
 }
 
+// guidesView lists the guides by module. The row under the cursor shows the
+// guide's one-sentence summary.
+func (m *Model) guidesView(width int) string {
+	lines := []string{
+		wrapIndent(dim.Render("The computer science underneath the exercises, one idea per guide. Each module has its own, but any guide is worth reading whenever an idea feels shaky. They're also in "+relative(filepath.Join(m.s.Root, "guides"))+string(filepath.Separator)+", for your editor."), 1, width),
+		"",
+	}
+	var mod *course.Module
+	for i, g := range m.s.Course.Guides {
+		if g.Module != mod {
+			mod = g.Module
+			if i > 0 {
+				lines = append(lines, "")
+			}
+			head := bold.Render(fmt.Sprintf("%2d  %s", mod.Number, mod.Title))
+			if mod == m.ex.Module {
+				head += dim.Render("  · your module")
+			}
+			lines = append(lines, head)
+		}
+		label := fmt.Sprintf("%02d  %s", g.Number, g.Title)
+		if i != m.guideIdx {
+			lines = append(lines, "    "+label)
+			continue
+		}
+		m.guideLine = len(lines)
+		lines = append(lines, keyCap.Render("  ▸ ")+bold.Render(label))
+		if g.Summary != "" {
+			lines = append(lines, wrapIndent(dim.Render(g.Summary), 8, width))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// guideView renders the open guide.
+func (m *Model) guideView(width int) string {
+	g := m.guide
+	text, err := m.s.Course.GuideText(g)
+	if err != nil {
+		return badBold.Render("✗ ") + err.Error()
+	}
+	where := relative(m.s.GuidePath(g))
+	intro := wrapIndent(dim.Render(fmt.Sprintf("Guide %d of %d, for module %d: %s. Also in %s.", g.Number, len(m.s.Course.Guides), g.Module.Number, g.Module.Title, where)), 1, width)
+	return intro + "\n\n" + m.markdown(text, width)
+}
+
 func (m *Model) helpView(width int) string {
 	rows := [][2]string{
 		{"save a file", "re-run the tests"},
@@ -631,6 +776,7 @@ func (m *Model) helpView(width int) string {
 		{"h", "show a hint (press again for a stronger one)"},
 		{"s", "the solution: once you pass, or after every hint"},
 		{"l", "list every exercise; enter to open one"},
+		{"g", "guides: the computer science behind the exercises"},
 		{"n", "next unfinished exercise"},
 		{"← →", "previous / next exercise"},
 		{"↑ ↓ pgup pgdn", "scroll"},
@@ -758,27 +904,37 @@ func (m *Model) statusBadge() string {
 	return badBold.Render(fmt.Sprintf("✗ %d of %d failing", failed, passed+failed))
 }
 
-// tabs shows which view the body holds and the key that opens each one.
+// tabs shows which view the body holds and the key that opens each one. On a
+// narrow terminal the labels get shorter rather than wrapping.
 func (m *Model) tabs() string {
 	hints := "Hints"
 	if len(m.tasks) > 1 {
 		hints = fmt.Sprintf("Hints · task %d", m.tasks[m.hintTask].Number)
 	}
+	row := m.tabRow("Instructions", hints)
+	if lipgloss.Width(row) > m.contentWidth() {
+		row = m.tabRow("README", "Hints")
+	}
+	return row
+}
+
+func (m *Model) tabRow(instructions, hints string) string {
 	views := []struct {
 		p     pane
 		label string
 		key   string
 	}{
 		{paneResult, "Results", "esc"},
-		{paneInstructions, "Instructions", "i"},
+		{paneInstructions, instructions, "i"},
 		{paneHints, hints, "h"},
 		{paneSolution, "Solution", "s"},
-		{paneList, "All exercises", "l"},
+		{paneList, "Exercises", "l"},
+		{paneGuides, "Guides", "g"},
 		{paneHelp, "Keys", "?"},
 	}
 	var parts []string
 	for _, v := range views {
-		if v.p == m.pane {
+		if v.p == m.pane || v.p == paneGuides && m.pane == paneGuide {
 			parts = append(parts, tabActive.Render(v.label))
 		} else {
 			parts = append(parts, tabInactive.Render(v.label+" "+keyCap.Render(v.key)))
@@ -799,6 +955,10 @@ func (m *Model) footer() string {
 		status = dim.Render("↑/↓ scroll · esc back to the results")
 	case m.pane == paneList:
 		status = dim.Render("↑/↓ move · enter open · esc back to the results")
+	case m.pane == paneGuides:
+		status = dim.Render("↑/↓ move · enter read · esc back to the results")
+	case m.pane == paneGuide:
+		status = dim.Render("↑/↓ scroll · space next page · esc back to the guides")
 	case m.result != nil && m.result.Duration > 0:
 		status = dim.Render(fmt.Sprintf("Checked in %.1fs. Save any file to re-run.", m.result.Duration.Seconds()))
 	}

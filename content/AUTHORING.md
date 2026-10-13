@@ -235,6 +235,56 @@ into a scratch directory and run `go mod tidy`. Then copy `go.mod` back as
 `go.mod.tmpl` and copy `go.sum` back as `go.sum`. Tests never touch the
 network: use fake clientsets, fake API clients, or `httptest` servers.
 
+## Guides
+
+Exercises teach Go. **Guides** teach the computer science underneath it:
+how a program runs, state, abstraction, data structures, concurrency, and so
+on. Each guide is one Markdown file, `guides/<name>.md`. A module lists the
+guides to read with it under `"guides"` in `course.json`, and the order there
+numbers them. The learner reads them in the watcher (`g`), with
+`gopherlings guides`, or in their course folder's `guides/`.
+
+A guide teaches **ideas**, not syntax. Its Go examples use only what the
+course has taught by the end of its module; for anything later, use plain
+words or a diagram. It connects every idea to ops work (deploys, logs,
+servers, pipelines, incidents).
+
+```markdown
+# Concurrency
+
+**In one sentence:** concurrency is structuring a program as several tasks
+that make progress independently, so waiting on one doesn't stall the rest.
+
+**Why it matters:** a health checker that probes 500 hosts one by one takes
+minutes; probing them concurrently takes about as long as the slowest one.
+
+**You'll learn:** (3–6 bullets, the takeaways)
+
+## (teaching sections: one idea each, short, ### subsections allowed)
+
+## Common mistakes
+## Check yourself      (numbered questions, at least three)
+## Answers             (numbered, one per question, with the reasoning)
+## Key terms           (a table: Term | Meaning)
+## Go deeper           (2–5 links, each with one line on why it's worth it)
+```
+
+- **Short pieces.** The learner has ADHD: paragraphs of 1–4 sentences, one
+  idea per section, a bold lead-in where a skim reader needs one. Tables and
+  `text` diagrams beat long prose. 1,500–3,000 words.
+- **Concrete first.** Start each idea from an example the learner can picture
+  (a deploy queue, a log file, a Kubernetes pod), then name it. Introduce a
+  new term in *italics* with a plain definition, and list it in Key terms.
+- **Show, then trace.** Code examples are small and complete, and compile.
+  After an example, say what happens step by step.
+- **Refer by title.** Name an exercise, module or another guide by its exact
+  title in italics: "see the *Abstraction* guide", "as in *Slices*". Never by
+  number. TestCrossReferences checks these.
+- **Links** must be real pages you have opened: go.dev, pkg.go.dev,
+  kubernetes.io, docs.aws.amazon.com, Wikipedia, well-known books and talks.
+
+TestGuides enforces the layout.
+
 ## Verify
 
 ```bash

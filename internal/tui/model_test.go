@@ -25,6 +25,12 @@ func newModel(t *testing.T) (*Model, *session.Session) {
 		files["exercises/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n\n// TODO(1): fix\n")}
 		files["exercises/"+name+"/solution/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n")}
 	}
+	return modelFor(t, files)
+}
+
+// modelFor opens a model on a fresh course directory for the course in files.
+func modelFor(t *testing.T, files fstest.MapFS) (*Model, *session.Session) {
+	t.Helper()
 	c, err := course.Load(files)
 	if err != nil {
 		t.Fatal(err)
@@ -147,5 +153,52 @@ func TestResetNeedsConfirmation(t *testing.T) {
 	press(m, "x")
 	if got, _ := os.ReadFile(src); strings.Contains(string(got), "edited") {
 		t.Fatal("x x did not reset the exercise")
+	}
+}
+
+func TestGuidesOpenOnTheCurrentModuleAndEscGoesBackOneLevel(t *testing.T) {
+	files := fstest.MapFS{
+		"course.json": {Data: []byte(`{"modules":[
+			{"title":"One","dir":"one","guides":["state","debugging"],"exercises":[{"name":"a","title":"A"}]},
+			{"title":"Two","dir":"two","guides":["concurrency"],"exercises":[{"name":"b","title":"B"}]}]}`)},
+		"guides/state.md":       {Data: []byte("# State\n\n**In one sentence:** state is what changes.\n")},
+		"guides/debugging.md":   {Data: []byte("# Debugging\n\n**In one sentence:** a method, not luck.\n")},
+		"guides/concurrency.md": {Data: []byte("# Concurrency\n\n**In one sentence:** many tasks making progress.\n\nGoroutines are cheap.\n")},
+	}
+	for _, name := range []string{"a", "b"} {
+		files["exercises/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n\n## Your task\n")}
+		files["exercises/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n")}
+		files["exercises/"+name+"/solution/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n")}
+	}
+	m, s := modelFor(t, files)
+	m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if m.ex != s.Course.Exercises[1] {
+		t.Fatalf("on %s, want b (module Two)", m.ex.Name)
+	}
+
+	press(m, "i")
+	if view := m.View(); !strings.Contains(view, "Background for this module") || !strings.Contains(view, "Concurrency") {
+		t.Errorf("instructions don't point to the module's guide:\n%s", view)
+	}
+
+	press(m, "g")
+	if m.pane != paneGuides || s.Course.Guides[m.guideIdx].Name != "concurrency" {
+		t.Fatalf("g: pane %v, cursor on %s; want the guide list on module Two's guide", m.pane, s.Course.Guides[m.guideIdx].Name)
+	}
+	if view := m.View(); !strings.Contains(view, "many tasks making progress") || strings.Contains(view, "a method, not luck") {
+		t.Errorf("only the guide under the cursor shows its summary:\n%s", view)
+	}
+	press(m, "k")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.pane != paneGuide || m.guide.Name != "debugging" {
+		t.Fatalf("k, enter: pane %v, guide %v; want the Debugging guide open", m.pane, m.guide)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.pane != paneGuides {
+		t.Fatalf("esc in a guide: pane %v, want back to the guide list", m.pane)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.pane != paneResult {
+		t.Fatalf("esc in the guide list: pane %v, want the results", m.pane)
 	}
 }

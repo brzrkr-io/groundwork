@@ -1,8 +1,8 @@
-// Package content embeds the curriculum: course.json plus one pack per
-// exercise under exercises/<name>/. See AUTHORING.md for the pack format.
+// Package content embeds the curriculum: course.json, one pack per exercise
+// under exercises/<name>/, and the guides under guides/. See AUTHORING.md.
 package content
 
 import "embed"
 
-//go:embed course.json exercises
+//go:embed course.json exercises guides
 var Files embed.FS

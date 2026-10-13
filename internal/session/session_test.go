@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -258,5 +259,55 @@ func TestFindRootWalksUpFromExerciseFolders(t *testing.T) {
 	}
 	if _, err := FindRoot(stray); err != ErrNoCourse {
 		t.Fatalf("FindRoot(dir with an empty .gopherlings) error = %v, want ErrNoCourse", err)
+	}
+}
+
+func TestSyncWritesGuidesAndDropsStaleOnes(t *testing.T) {
+	files := fstest.MapFS{
+		"course.json":                           {Data: []byte(`{"modules":[{"title":"M","dir":"m","guides":["state"],"exercises":[{"name":"a","title":"A"}]}]}`)},
+		"exercises/a/README.md":                 {Data: []byte("# A\n")},
+		"exercises/a/exercise.go.tmpl":          {Data: []byte(starter)},
+		"exercises/a/solution/exercise.go.tmpl": {Data: []byte(starter)},
+		"guides/state.md":                       {Data: []byte("# State\n\n**In one sentence:** state changes.\n")},
+	}
+	c, err := course.Load(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := Init(root); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "guides")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{
+		"01_state.md": "# State\n\nan edit the course replaces\n",
+		"02_old.md":   "# A guide the course dropped\n",
+		"my-notes.md": "mine\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := Open(root, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(s.GuidePath(c.Guides[0])); string(got) != "# State\n\n**In one sentence:** state changes.\n" {
+		t.Errorf("01_state.md = %q, want the course's text", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "02_old.md")); err == nil {
+		t.Error("a guide the course no longer has was left behind")
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "my-notes.md")); string(got) != "mine\n" {
+		t.Error("the learner's own file in guides/ was touched")
+	}
+	if index, _ := os.ReadFile(filepath.Join(dir, "README.md")); !strings.Contains(string(index), "- **[State](01_state.md)**: state changes.") {
+		t.Errorf("README.md index lacks the guide:\n%s", index)
 	}
 }

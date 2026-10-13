@@ -1,5 +1,6 @@
-// Package course loads the embedded curriculum: modules, exercises and the
-// per-exercise packs (starter files, README, hints and reference solution).
+// Package course loads the embedded curriculum: modules, exercises, the
+// per-exercise packs (starter files, README, hints and reference solution)
+// and the guides that teach the computer science behind each module.
 package course
 
 import (
@@ -64,9 +65,28 @@ type Module struct {
 	Summary   string      `json:"summary"`
 	Outcome   string      `json:"outcome"` // "After this module you can: ..."
 	Exercises []*Exercise `json:"exercises"`
+	// GuideNames lists the guides to read alongside this module, by file
+	// name under guides/ without ".md".
+	GuideNames []string `json:"guides"`
 
-	Number int `json:"-"`
+	Number int      `json:"-"`
+	Guides []*Guide `json:"-"`
 }
+
+// Guide is a background reading on one computer-science idea, such as
+// abstraction or concurrency. Number and Module come from the first module
+// in course.json that lists it.
+type Guide struct {
+	Name    string // file name under guides/, without ".md"
+	Title   string // the guide's "# Title" line
+	Summary string // its "**In one sentence:** ..." line, without the label
+	Number  int
+	Module  *Module
+}
+
+// File is the guide's name in the learner's guides/ folder, for example
+// "17_concurrency.md".
+func (g *Guide) File() string { return fmt.Sprintf("%02d_%s.md", g.Number, g.Name) }
 
 // Dir is the module's folder, for example "01_basics".
 func (m *Module) Dir() string { return fmt.Sprintf("%02d_%s", m.Number, m.Folder) }
@@ -82,8 +102,10 @@ type Course struct {
 	Title     string    `json:"title"`
 	Modules   []*Module `json:"modules"`
 	Exercises []*Exercise
+	Guides    []*Guide
 
-	packs fs.FS
+	packs  fs.FS
+	guides fs.FS
 }
 
 // Load reads course.json from files and validates every referenced pack.
@@ -99,7 +121,11 @@ func Load(files fs.FS) (*Course, error) {
 	if c.packs, err = fs.Sub(files, "exercises"); err != nil {
 		return nil, err
 	}
+	if c.guides, err = fs.Sub(files, "guides"); err != nil {
+		return nil, err
+	}
 	seen := map[string]bool{}
+	guides := map[string]*Guide{}
 	var problems []error
 	for mi, m := range c.Modules {
 		m.Number = mi + 1
@@ -118,6 +144,29 @@ func Load(files fs.FS) (*Course, error) {
 			}
 			seen[e.Name] = true
 		}
+		for _, name := range m.GuideNames {
+			if g := guides[name]; g != nil {
+				problems = append(problems, fmt.Errorf("guide %q is listed by module %d and module %d", name, g.Module.Number, m.Number))
+				continue
+			}
+			g := &Guide{Name: name, Number: len(c.Guides) + 1, Module: m}
+			raw, err := fs.ReadFile(c.guides, name+".md")
+			if err != nil {
+				problems = append(problems, fmt.Errorf("guide %q: %w", name, err))
+				continue
+			}
+			title, _, _ := strings.Cut(string(raw), "\n")
+			if _, after, ok := strings.Cut(string(raw), "\n**In one sentence:** "); ok {
+				g.Summary, _, _ = strings.Cut(after, "\n\n")
+				g.Summary = strings.Join(strings.Fields(g.Summary), " ")
+			}
+			if g.Title = strings.TrimSpace(strings.TrimPrefix(title, "# ")); g.Title == "" || !strings.HasPrefix(title, "# ") {
+				problems = append(problems, fmt.Errorf("guide %q doesn't start with a \"# Title\" line", name))
+			}
+			guides[name] = g
+			m.Guides = append(m.Guides, g)
+			c.Guides = append(c.Guides, g)
+		}
 	}
 	if len(c.Exercises) == 0 {
 		problems = append(problems, errors.New("course has no exercises"))
@@ -132,6 +181,30 @@ func (c *Course) Pack(e *Exercise) (fs.FS, error) { return fs.Sub(c.packs, e.Nam
 func (c *Course) README(e *Exercise) (string, error) {
 	raw, err := fs.ReadFile(c.packs, path.Join(e.Name, "README.md"))
 	return string(raw), err
+}
+
+// GuideText returns the guide's Markdown.
+func (c *Course) GuideText(g *Guide) (string, error) {
+	raw, err := fs.ReadFile(c.guides, g.Name+".md")
+	return string(raw), err
+}
+
+// FindGuide resolves a guide number ("17"), name ("concurrency") or file
+// name ("17_concurrency.md", with or without a leading "guides/").
+func (c *Course) FindGuide(query string) (*Guide, bool) {
+	query = strings.TrimSuffix(strings.TrimPrefix(strings.ToLower(strings.TrimSpace(query)), "guides/"), ".md")
+	if n, err := strconv.Atoi(query); err == nil {
+		if n >= 1 && n <= len(c.Guides) {
+			return c.Guides[n-1], true
+		}
+		return nil, false
+	}
+	for _, g := range c.Guides {
+		if g.Name == query || strings.TrimSuffix(g.File(), ".md") == query {
+			return g, true
+		}
+	}
+	return nil, false
 }
 
 // Task is one numbered task of an exercise with its hints, gentlest first.

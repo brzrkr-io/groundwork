@@ -79,6 +79,49 @@ func CourseList(s *session.Session, all bool) string {
 	return b.String()
 }
 
+// GuideList renders `gopherlings guides`: every guide by module, with the
+// summaries of the guides for current (the learner's module; nil outside a
+// course).
+func GuideList(c *course.Course, current *course.Module) string {
+	var b strings.Builder
+	b.WriteString(brand.Render("gopherlings guides") + dim.Render("  ·  the computer science underneath the exercises") + "\n")
+	var mod *course.Module
+	for _, g := range c.Guides {
+		if g.Module != mod {
+			mod = g.Module
+			head := "  " + dim.Render(fmt.Sprintf("%2d  %s", mod.Number, mod.Title))
+			if mod == current {
+				head = keyCap.Render("● ") + bold.Render(fmt.Sprintf("%2d  %s", mod.Number, mod.Title)) + dim.Render("  · your module")
+			}
+			b.WriteString("\n" + head + "\n")
+		}
+		label := fmt.Sprintf("        %2d  %s", g.Number, g.Title)
+		if mod != current {
+			b.WriteString(label + "\n")
+			continue
+		}
+		b.WriteString(bold.Render(label) + "\n")
+		if g.Summary != "" {
+			b.WriteString(wrapIndent(dim.Render(g.Summary), 12, plainWidth) + "\n")
+		}
+	}
+	b.WriteString("\n" + keyCap.Render("gopherlings guides 10") + dim.Render(" reads guide 10 · in the watcher, press ") + keyCap.Render("g") + "\n")
+	return b.String()
+}
+
+// Guide renders one guide's Markdown for the terminal.
+func Guide(text string) string {
+	r, err := newMarkdown(readingWidth)
+	if err != nil {
+		return text
+	}
+	out, err := r.Render(text)
+	if err != nil {
+		return text
+	}
+	return out
+}
+
 // Notice styles a short informational line for the CLI.
 func Notice(icon, text string) string {
 	switch icon {
