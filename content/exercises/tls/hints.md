@@ -1,30 +1,31 @@
-## Task 1: divide durations
+## Task 1: Count the days until expiry
 
-`cert.NotAfter.Sub(now)` gives a `time.Duration`. Divide it by
-`24 * time.Hour` and convert the result with `int(...)`.
+Subtracting two times gives a `time.Duration`. Dividing a duration by the
+length of one day gives whole days, with the remainder dropped.
 
-## Task 2: pool, config, transport
+### Closer
 
-Build it from the inside out: an `x509.NewCertPool()` with `pool.AddCert(ca)`,
-then a `&tls.Config{RootCAs: ..., MinVersion: ...}`, then an
-`&http.Transport{TLSClientConfig: ...}` set as the client's `Transport`.
+`cert.NotAfter.Sub(now)` is the time left. Divide it by `(24 * time.Hour)` and
+convert the result with `int(...)`.
 
-## Task 3: resp.TLS
+### Answer
 
 ```go
-resp, err := client.Get(url)
-if err != nil {
-	return nil, err
-}
-defer resp.Body.Close()
-if resp.TLS == nil {
-	return nil, fmt.Errorf("%s is not using TLS", url)
-}
+return int(cert.NotAfter.Sub(now) / (24 * time.Hour))
 ```
 
-Then return `resp.TLS.PeerCertificates[0]` with a `nil` error.
+## Task 2: Build a client that trusts your CA
 
-## Task 2: almost the answer
+Build it from the inside out: a pool holding `ca`, a TLS config using that
+pool, a transport using that config, and the client using that transport.
+
+### Closer
+
+`pool := x509.NewCertPool()` then `pool.AddCert(ca)`. The config is
+`&tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}`, and it goes in
+`&http.Transport{TLSClientConfig: ...}`. Add the `"crypto/tls"` import.
+
+### Answer
 
 ```go
 pool := x509.NewCertPool()
@@ -38,4 +39,29 @@ return &http.Client{
 		},
 	},
 }
+```
+
+## Task 3: Fetch the server's certificate
+
+Send the request, handle its error, and close the body. Then `resp.TLS` tells
+you about the TLS connection, or is `nil` for plain `http://`.
+
+### Closer
+
+After `client.Get(url)` and `defer resp.Body.Close()`, check
+`if resp.TLS == nil` and return a `fmt.Errorf("%s is not using TLS", url)`.
+The server's own certificate is `resp.TLS.PeerCertificates[0]`.
+
+### Answer
+
+```go
+resp, err := client.Get(url)
+if err != nil {
+	return nil, err
+}
+defer resp.Body.Close()
+if resp.TLS == nil {
+	return nil, fmt.Errorf("%s is not using TLS", url)
+}
+return resp.TLS.PeerCertificates[0], nil
 ```

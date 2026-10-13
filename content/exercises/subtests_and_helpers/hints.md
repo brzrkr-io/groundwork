@@ -1,10 +1,12 @@
-## Task 1: an if and an Errorf
+## Task 1: Finish the helper
 
-The helper is a normal check, as in *Your first test*: compare, and call
-`t.Errorf` if the values differ. The only new parts are `t.Helper()` and
-`slices.Equal`.
+The helper is a normal check, like in *Your first test*: compare `got` with `want`, and call `t.Errorf` if they differ. The new parts are `t.Helper()` and `slices.Equal`.
 
-## Task 1, nearly done
+### Closer
+
+You can't compare slices with `!=`. Use `!slices.Equal(got, want)` instead, and add `"slices"` to the imports. Put `t.Helper()` on the first line, so failures point at the caller.
+
+### Answer
 
 ```go
 import (
@@ -20,12 +22,15 @@ func assertHosts(t *testing.T, got, want []string) {
 }
 ```
 
-## Task 2: copy the example row
+## Task 2: Add the cases
 
-Each new case is a row like the `"one host per line"` row. You don't need to
-touch the loop: it runs every row as a subtest.
+Each new case is a row like the `"one host per line"` row. You don't need to touch the loop, because it already runs every row as a subtest.
 
-## Task 2, nearly done
+### Closer
+
+Copy the example row, with its `name:`, `text:` and `want:` fields, and fill in the values from the README table.
+
+### Answer
 
 ```go
 {
@@ -33,7 +38,14 @@ touch the loop: it runs every row as a subtest.
 	text: "# web tier\nweb-1\n# database\ndb-1",
 	want: []string{"web-1", "db-1"},
 },
+{
+	name: "skips blank lines",
+	text: "web-1\n\nweb-2\n\n",
+	want: []string{"web-1", "web-2"},
+},
+{
+	name: "trims spaces",
+	text: "  web-1  \n\tdb-1",
+	want: []string{"web-1", "db-1"},
+},
 ```
-
-Add `"skips blank lines"` and `"trims spaces"` the same way, with the values
-from the README table.

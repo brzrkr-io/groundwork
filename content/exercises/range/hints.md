@@ -1,21 +1,34 @@
-## Task 1: element only
+## Task 1: Add up the latencies
 
-You need the values, not the positions. Use `for _, v := range ms` and add `v`
-to `total`.
+You need the values in `ms`, not their positions. Range over the slice and add
+each value to `total`.
 
-## Task 2: index and element
+### Closer
 
-Use `for i, host := range hosts`. The latency for `host` is `ms[i]`. Replace
-`slowest` and `worst` when this is the first host (`i == 0`) or when `ms[i]` is
-strictly greater than `worst`. "Strictly greater" keeps the first host on a
-tie.
+Put `_` where the index would go, so you only get the element:
+`for _, v := range ms { ... }`.
 
-## Task 3: filter in order
+### Answer
 
-Range over `healthy` with `for i, ok := range healthy`. When `ok` is `false`
-(`!ok`), append `hosts[i]` to `down`.
+```go
+for _, v := range ms {
+	total += v
+}
+return total
+```
 
-## Almost the answer
+## Task 2: Find the slowest host
+
+Range over `hosts` with both the index and the host. The latency for that host
+is `ms[i]`. Remember the slowest one you've seen so far.
+
+### Closer
+
+Use `for i, host := range hosts`. Replace `slowest` and `worst` when this is
+the first host (`i == 0`) or when `ms[i]` is strictly greater (`>`) than
+`worst`.
+
+### Answer
 
 ```go
 for i, host := range hosts {
@@ -23,4 +36,29 @@ for i, host := range hosts {
 		slowest, worst = host, ms[i]
 	}
 }
+return slowest, worst
+```
+
+`>` (not `>=`) keeps the first host on a tie, and `i == 0` makes sure a host is
+picked even when every latency is 0.
+
+## Task 3: List the unhealthy hosts
+
+Range over `healthy`. When a check is `false`, the host at the same index
+failed, so add it to `down`.
+
+### Closer
+
+Use `for i, ok := range healthy`. Check `!ok`, then
+`down = append(down, ...)` with the host at index `i`.
+
+### Answer
+
+```go
+for i, ok := range healthy {
+	if !ok {
+		down = append(down, hosts[i])
+	}
+}
+return down
 ```

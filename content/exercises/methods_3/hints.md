@@ -1,21 +1,59 @@
-## Loop over the receiver's slice
+## Task 1: Count healthy hosts
 
-Every method starts the same way: `for _, h := range inv.Hosts { ... }`.
-Inside the loop, `h` is one host, so you can check `h.Healthy`, `h.Region` and
-`h.Name`.
+Loop over `inv.Hosts` and keep a running count. Inside the loop, each host's
+`Healthy` field tells you whether to count it.
 
-## Task 1 and 2: count and collect
+### Closer
 
-For `HealthyCount`, start a counter at 0 and add 1 for every healthy host.
-For `InRegion`, start with `var hosts []Host` and `append` each matching
-host. Return the counter or the slice after the loop.
+Start with `count := 0`, loop with `for _, h := range inv.Hosts { ... }`, and
+inside use `if h.Healthy { count++ }`. Return `count` after the loop.
 
-## Task 3: return early
+### Answer
 
-Compare names with `strings.EqualFold(h.Name, name)` and return as soon as one
-matches. Only return `Host{}, false` after the loop has checked every host.
+```go
+count := 0
+for _, h := range inv.Hosts {
+	if h.Healthy {
+		count++
+	}
+}
+return count
+```
 
-## Almost the answer
+## Task 2: Filter by region
+
+Same loop as Task 1, but instead of counting you collect the matching hosts
+into a new slice.
+
+### Closer
+
+Start with `var hosts []Host` (a nil slice is fine when nothing matches), and
+inside the loop use `hosts = append(hosts, h)` when `h.Region == region`.
+
+### Answer
+
+```go
+var hosts []Host
+for _, h := range inv.Hosts {
+	if h.Region == region {
+		hosts = append(hosts, h)
+	}
+}
+return hosts
+```
+
+## Task 3: Find a host by name
+
+Loop over the hosts and stop as soon as one has a matching name. Only after
+the loop has checked every host do you know there's no match.
+
+### Closer
+
+Compare with `strings.EqualFold(h.Name, name)` (add `"strings"` to the
+imports) and `return h, true` inside the loop. Put `return Host{}, false`
+after the loop.
+
+### Answer
 
 ```go
 for _, h := range inv.Hosts {

@@ -1,16 +1,43 @@
-## Task 1: copy the pattern
+## Task 1: Write HTTPError's message
 
-`TimeoutError`'s `Error` method right below shows the shape. Use
-`fmt.Sprintf` with `%s` for the URL and `%d` for the status code:
-`"GET %s: status %d"`.
+`TimeoutError`'s `Error` method just below shows the shape: build a string from the receiver's fields with `fmt.Sprintf`.
 
-## Task 2: healthy first
+### Closer
 
-Check the healthy range with `status >= 200 && status <= 299` and
-`return nil`. After that `if`, every other code is a failure, so return
-`&HTTPError{URL: url, StatusCode: status}`.
+Use `%s` for `e.URL` and `%d` for `e.StatusCode`, with the fixed text `GET `, `: status ` around them.
 
-## Task 3: the switch
+### Answer
+
+```go
+return fmt.Sprintf("GET %s: status %d", e.URL, e.StatusCode)
+```
+
+## Task 2: Turn a status code into an error
+
+Handle the healthy range first and return early. After that, every remaining code is a failure.
+
+### Closer
+
+The healthy check is `status >= 200 && status <= 299`. For failures, return a pointer: `&HTTPError{...}`.
+
+### Answer
+
+```go
+if status >= 200 && status <= 299 {
+	return nil
+}
+return &HTTPError{URL: url, StatusCode: status}
+```
+
+## Task 3: Decide what to retry
+
+A type switch tells you which error type `err` holds. Timeouts are always worth retrying; HTTP errors only for some status codes; everything else, including `nil`, is not.
+
+### Closer
+
+Write `switch e := err.(type) { ... }`. Inside `case *HTTPError:`, `e` is the `*HTTPError`, so you can read `e.StatusCode`. `default` also covers `nil`.
+
+### Answer
 
 ```go
 switch e := err.(type) {
@@ -22,5 +49,3 @@ default:
 	return false
 }
 ```
-
-`default` also covers `nil`.

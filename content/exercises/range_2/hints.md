@@ -1,25 +1,32 @@
-## Which variable is which?
+## Task 1: Fix the downtime total
 
-With one loop variable, `range` gives you the index. With two, the second one
-is a copy of the element.
+With only one loop variable, `range` gives you the index, not the element.
+For `[]int{30, 5, 12}` the loop adds 0 + 1 + 2.
 
-## Task 1: you're adding positions
+### Closer
 
-`for minutes := range outages` makes `minutes` 0, 1, 2, …, the indexes. Put
-`_, ` in front so `minutes` is the element instead.
+Put `_, ` in front of `minutes` so the index is thrown away and `minutes` is
+the element: `for _, minutes := range ...`.
 
-## Task 2: write through the index
-
-`v = limit` only changes the copy. Keep the index (`for i, v := range ms`) and
-assign `ms[i] = limit`.
-
-## Almost the answer
+### Answer
 
 ```go
 for _, minutes := range outages {
 	total += minutes
 }
 ```
+
+## Task 2: Fix the latency cap
+
+`v` is a copy of the element, so `v = limit` changes only the copy. To change
+the slice, you need the index.
+
+### Closer
+
+Keep the index: `for i, v := range ms`. Then assign through it:
+`ms[i] = limit`.
+
+### Answer
 
 ```go
 for i, v := range ms {
@@ -28,3 +35,5 @@ for i, v := range ms {
 	}
 }
 ```
+
+Writing to `ms[i]` changes the element the caller sees too.

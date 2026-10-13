@@ -1,21 +1,59 @@
-## Task 1: treat the first host differently
+## Task 1: Fix the alert format
 
-Return early when `len(hosts) == 0`. Otherwise start the message with the
-first host, `hosts[0]`, and put `", "` in front of every host after it. The
-slice `hosts[1:]` holds "every host after the first".
+The trailing `", "` comes from writing a separator after every host. Treat the first host differently from the rest, and handle "no hosts" before anything else.
 
-## Task 2: spread the slice
+### Closer
 
-`Alert` accepts any number of hosts, and `down` is already a slice of them.
-Put `...` after `down` in the call. An empty or `nil` slice spreads into zero
-hosts, so you don't need the `if` any more.
+Return `severity + ": no hosts"` when `len(hosts) == 0`. Otherwise write `hosts[0]`, then loop over `hosts[1:]` and write `", "` *before* each of those hosts.
 
-## Task 3: one slice, then spread it
+### Answer
 
-Build a new slice that starts with `canary` and continues with `others`, then
-spread it into `Alert`:
+```go
+if len(hosts) == 0 {
+	return severity + ": no hosts"
+}
+var b strings.Builder
+b.WriteString(severity)
+b.WriteString(": ")
+b.WriteString(hosts[0])
+for _, h := range hosts[1:] {
+	b.WriteString(", ")
+	b.WriteString(h)
+}
+return b.String()
+```
+
+Putting the separator before every host except the first means none is left over at the end.
+
+## Task 2: Page about every host
+
+`Alert` accepts any number of hosts, and `down` is already a slice of hosts. You only need one call that passes the whole slice.
+
+### Closer
+
+Put `...` after a slice to spread it into a variadic parameter: `Alert("critical", down...)`. An empty or `nil` slice spreads into zero hosts, so the `if` isn't needed.
+
+### Answer
+
+```go
+return Alert("critical", down...)
+```
+
+With `nil`, `Alert` gets no hosts and returns `"critical: no hosts"` on its own.
+
+## Task 3: Put the canary first
+
+You can't mix one single value and a spread slice in the same call, so `Alert("warning", canary, others...)` won't compile. Build one slice first.
+
+### Closer
+
+`append([]string{canary}, others...)` makes a slice with `canary` first and then every host in `others`. Then spread that slice into `Alert`.
+
+### Answer
 
 ```go
 hosts := append([]string{canary}, others...)
 return Alert("warning", hosts...)
 ```
+
+The new slice holds all hosts in the right order, and `hosts...` passes them to `Alert`.

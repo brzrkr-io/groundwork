@@ -1,29 +1,50 @@
-## Task 1: don't change the constant
+## Task 1: Fix the compile error in SidecarPort
 
-You can't store a new value in `DefaultPort`. You don't need to: the answer is
-just `DefaultPort` plus `n`. Delete the assignment line and return that sum.
+You can't store a new value in the constant `DefaultPort`. You don't need to:
+the port you want is just `DefaultPort` with `n` added.
 
-## Task 2: constants join like strings
+### Closer
 
-`ServiceName` and `Namespace` are strings, so join them with `+`. You need
-dots between the parts and `".svc."` before the cluster domain.
+Delete the line that assigns to `DefaultPort`, and return the sum directly:
+`return DefaultPort + ...`.
 
-## Task 3: subtract
-
-The spare replicas are the limit minus the ones already running.
-
-## Almost the answer
+### Answer
 
 ```go
 func SidecarPort(n int) int {
 	return DefaultPort + n
 }
+```
 
-func DNSName(clusterDomain string) string {
-	return ServiceName + "." + Namespace + ".svc." + clusterDomain
-}
+## Task 2: Build the in-cluster DNS name
 
-func SpareReplicas(running int) int {
-	return MaxReplicas - running
-}
+`ServiceName` and `Namespace` are string constants, so you join them with `+`
+just like variables. You need dots between the parts and `svc` before the
+cluster domain.
+
+### Closer
+
+Fixed text goes inside quotes (`"."` and `".svc."`); constants and parameters
+(`ServiceName`, `Namespace`, `clusterDomain`) don't:
+`ServiceName + "." + ...`.
+
+### Answer
+
+```go
+return ServiceName + "." + Namespace + ".svc." + clusterDomain
+```
+
+## Task 3: Count the spare replicas
+
+The spare replicas are the limit minus the ones already running. Which
+constant holds the limit?
+
+### Closer
+
+`-` subtracts: take `MaxReplicas` and subtract the `running` parameter.
+
+### Answer
+
+```go
+return MaxReplicas - running
 ```

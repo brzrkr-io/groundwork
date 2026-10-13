@@ -1,13 +1,26 @@
-## Task 1: one folder, one name
+## Task 1: Fix the package clause
 
-Every `.go` file in the `inventory` folder must start with the same
-`package` line. Look at the first line of `inventory/inventory_test.go` and
-make `inventory/inventory.go` match it.
+Every `.go` file in one folder must start with the same `package` line. Compare the first line of `inventory/inventory.go` with the first line of `inventory/inventory_test.go`.
 
-## Task 2: module path plus folder
+### Closer
 
-Open `go.mod` and copy the module path. Add `/inventory` to the end. That is
-the import path:
+The folder is called `inventory` and its test file says `package inventory`. Change only the first line of `inventory/inventory.go`.
+
+### Answer
+
+```go
+package inventory
+```
+
+## Task 2: Fix the import path
+
+An import path for your own package is the module path from `go.mod`, then the folder name.
+
+### Closer
+
+`go.mod` says `module gopherlings.local/packages`. Add `/inventory` to the end and use that in the import in `deploy/deploy.go`.
+
+### Answer
 
 ```go
 import (
@@ -17,19 +30,37 @@ import (
 )
 ```
 
-## Task 3: move the function and its import
+`strings` is still used until Task 3.
 
-After the move, `inventory/inventory.go` needs both imports:
+## Task 3: Move NormalizeHost into inventory
+
+Move the whole function, with its doc comment, from `deploy/deploy.go` to the end of `inventory/inventory.go`. Then fix the imports in both files and the call in `deploy`.
+
+### Closer
+
+`inventory/inventory.go` now needs `"fmt"` and `"strings"`. In `deploy/deploy.go`, the call becomes `inventory.NormalizeHost(host)`, and the only import left is the inventory one.
+
+### Answer
+
+In `inventory/inventory.go`:
 
 ```go
 import (
 	"fmt"
 	"strings"
 )
+
+// NormalizeHost trims spaces from both ends of a host name and lower-cases it.
+func NormalizeHost(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
 ```
 
-`deploy/deploy.go` keeps only the inventory import, and the loop becomes:
+In `deploy/deploy.go`:
 
 ```go
+import "gopherlings.local/packages/inventory"
+
+// in the loop in Targets:
 targets = append(targets, inventory.Address(inventory.NormalizeHost(host), port))
 ```

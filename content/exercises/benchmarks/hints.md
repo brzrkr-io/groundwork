@@ -1,10 +1,12 @@
-## Task 1: two lines of setup
+## Task 1: Write BenchmarkFormatTags
 
-Inside `BenchmarkFormatTags`, call `b.ReportAllocs()` first. Then write a
-`for b.Loop()` loop whose body calls `FormatTags(sampleTags)`. You can ignore
-the result.
+A benchmark repeats the same call many times and measures it. You need two things: ask it to count allocations, and put the call inside the benchmark loop.
 
-## Task 1, nearly done
+### Closer
+
+Call `b.ReportAllocs()` first. Then use `for b.Loop() { ... }` with `FormatTags(sampleTags)` inside. You can ignore the result.
+
+### Answer
 
 ```go
 func BenchmarkFormatTags(b *testing.B) {
@@ -15,33 +17,35 @@ func BenchmarkFormatTags(b *testing.B) {
 }
 ```
 
-## Task 2: count, then grow
+## Task 2: Allocate once
 
-First add up the size in one loop:
+Every `+=` on a string makes a brand new string. If you work out the final size first, a `strings.Builder` can reserve that space once and fill it in.
 
-```go
-n := 0
-for _, t := range tags {
-	n += len(t.Key) + 1 + len(t.Value) + 1
-}
-```
+### Closer
 
-Then make a `var b strings.Builder`, call `b.Grow(n)`, and write the tags in
-a second loop. Don't build pieces with `+` inside the loop, because every `+`
-makes a new string.
+First add up the size: `n += len(t.Key) + 1 + len(t.Value) + 1` for each tag. Then `var b strings.Builder`, `b.Grow(n)`, and write each piece with `b.WriteString`. Write `","` only when `i > 0`.
 
-## Task 2, nearly done
+### Answer
 
 ```go
-var b strings.Builder
-b.Grow(n)
-for i, t := range tags {
-	if i > 0 {
-		b.WriteString(",")
+func realFormatTags(tags []Tag) string {
+	n := 0
+	for _, t := range tags {
+		n += len(t.Key) + 1 + len(t.Value) + 1
 	}
-	b.WriteString(t.Key)
-	b.WriteString("=")
-	b.WriteString(t.Value)
+
+	var b strings.Builder
+	b.Grow(n)
+	for i, t := range tags {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(t.Key)
+		b.WriteString("=")
+		b.WriteString(t.Value)
+	}
+	return b.String()
 }
-return b.String()
 ```
+
+Remember to add `"strings"` to the imports.

@@ -1,21 +1,36 @@
-## Task 1: one character per method
+## Task 1: Make the counter count
 
-The bodies of `Inc` and `Reset` are fine. The receiver `(c Counter)` hands
-them a copy. Add a `*` so it reads `(c *Counter)`, and do it for both
-methods. Nothing else changes: `c.Count++` still works through the pointer.
+The bodies of `Inc` and `Reset` are fine. Look at the receiver `(c Counter)`:
+it hands each method a copy of the counter.
 
-## Task 2: refuse first, then count
+### Closer
 
-Change the receiver to `(s *Server)`. Then check `s.Draining` first: if it's
-`true`, return `false` straight away. After that `if`, add one to
-`s.Connections` and return `true`.
+Add a `*` in front of the type in the receiver, `(c *Counter)`, for both
+methods. `c.Count++` still works through the pointer.
 
-## Task 3: remember before you reset
+### Answer
 
-Once you set `s.Connections = 0`, the old number is gone. Save it in a
-variable first, then change the fields, then return the saved value.
+```go
+func (c *Counter) Inc() {
+	c.Count++
+}
 
-## Almost the answer
+func (c *Counter) Reset() {
+	c.Count = 0
+}
+```
+
+## Task 2: Accept a connection
+
+First change the receiver to `(s *Server)` so the new connection sticks. Then
+handle the draining case before counting anything.
+
+### Closer
+
+Check `if s.Draining { return false }` first. After that `if`, add one with
+`s.Connections++` and return `true`.
+
+### Answer
 
 ```go
 func (s *Server) Accept() bool {
@@ -25,11 +40,23 @@ func (s *Server) Accept() bool {
 	s.Connections++
 	return true
 }
+```
 
-func (s *Server) Drain() int {
-	closed := s.Connections
-	s.Draining = true
-	s.Connections = 0
-	return closed
-}
+## Task 3: Drain the server
+
+Once you set `s.Connections = 0`, the old number is gone. You need to
+remember it before you change anything.
+
+### Closer
+
+Save it first with `closed := s.Connections`, then set `s.Draining` and
+`s.Connections`, then return `closed`.
+
+### Answer
+
+```go
+closed := s.Connections
+s.Draining = true
+s.Connections = 0
+return closed
 ```

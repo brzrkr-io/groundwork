@@ -1,20 +1,31 @@
-## Which flags does a log need?
+## Task 1: Stop wiping the log
 
-Look at the flags table in the README. A log should be write-only, created on
-first use, and every write should land at the end of the file. Combine those
-three flags with `|`.
+`os.Create` truncates the file every time. Look at the flags table in the README: a log should be write-only, created on first use, and every write should land at the end.
 
-## Task 1: the OpenFile call
+### Closer
+
+Call `os.OpenFile(name, flags, 0o644)` and combine the three flags with `|`: `os.O_APPEND|os.O_CREATE|...`. At the end, replace `f.Close()` and `return nil` with a single `return f.Close()`.
+
+### Answer
 
 ```go
 f, err := os.OpenFile(filepath.Join(dir, LogName), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+if err != nil {
+	return err
+}
+// ... Fprintln as before ...
+return f.Close()
 ```
 
-At the end, replace `f.Close()` and `return nil` with `return f.Close()`.
+## Task 2: Create the log directory
 
-## Tasks 2 and 3: MkdirAll and ErrNotExist
+Before opening the log, the directory has to exist, including every missing parent. One function in `os` creates the whole chain and does nothing if it already exists.
 
-At the top of `AppendAudit`:
+### Closer
+
+Call `os.MkdirAll(dir, 0o755)` at the top of `AppendAudit` and return its error if it fails.
+
+### Answer
 
 ```go
 if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -22,6 +33,22 @@ if err := os.MkdirAll(dir, 0o755); err != nil {
 }
 ```
 
-In `ReadAudit`, check `errors.Is(err, fs.ErrNotExist)` before returning the
-error, and return `[]string{}, nil` in that case. Add `"errors"` and
-`"io/fs"` to the imports.
+## Task 3: Read a log that doesn't exist yet
+
+When `os.Open` fails because the file (or its directory) is missing, that just means "no entries yet". Tell that case apart from real errors.
+
+### Closer
+
+Check `errors.Is(err, fs.ErrNotExist)` before the `err != nil` check and return `[]string{}, nil` there. Add `"errors"` and `"io/fs"` to the imports.
+
+### Answer
+
+```go
+f, err := os.Open(filepath.Join(dir, LogName))
+if errors.Is(err, fs.ErrNotExist) {
+	return []string{}, nil
+}
+if err != nil {
+	return nil, err
+}
+```

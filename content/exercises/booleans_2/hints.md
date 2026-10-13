@@ -1,22 +1,49 @@
-## Read each line out loud
+## Task 1: Page only for unacknowledged critical alerts
 
-Say the code in words and compare it with the rule in the README. Where do
-they differ: an "and" that reads as "or", or a "not" that is missing?
+Read the code out loud and compare it with the rule in the README. The rule
+says "and" and "not acknowledged". Does the code say the same?
 
-## Task 1: two problems in one rule
+### Closer
 
-The rule says "and", so use `&&`. It also says "not acknowledged", which is
-`!acknowledged`.
+Two fixes: swap `||` for `&&`, and put `!` in front of `acknowledged` so it
+means "not acknowledged".
 
-## Task 2 and 3: one operator each
-
-"At most 500" is `<= 500`. For the window, an hour can never be both 22 or
-more and below 2, so swap `&&` for `||`.
-
-## Almost the answer
+### Answer
 
 ```go
 return severity == "critical" && !acknowledged
+```
+
+## Task 2: Fix the health check
+
+The error rate part is fine. Look at the latency part: should exactly 500 be
+healthy? Does `<` allow 500?
+
+### Closer
+
+"At most 500" means "less than or equal to 500". Change one operator in
+`latencyMs < 500`.
+
+### Answer
+
+```go
 return errorRate < 0.01 && latencyMs <= 500
+```
+
+## Task 3: Fix the maintenance window
+
+Can any hour be both 22 or more **and** below 2? The window is late at night
+**or** early in the morning.
+
+### Closer
+
+Keep both comparisons, but swap `&&` for `||`.
+
+### Answer
+
+```go
 return hour >= 22 || hour < 2
 ```
+
+The window wraps past midnight, so an hour is in it when it is late or early,
+never both.

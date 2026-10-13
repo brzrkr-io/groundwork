@@ -1,26 +1,46 @@
-## Find the byte operations
+## Task 1: Fix the avatar letter
 
-Look for `name[0]`, `len(secret)` and `secret[...]`. Each one works on bytes.
-Replace them with operations on runes.
+`name[0]` is the first **byte**, and `é` takes two bytes. You need the first
+**character** instead.
 
-## Convert once, then work on runes
+### Closer
 
-`[]rune(s)` gives one element per character. After that, `len`, indexing and
-slicing all count characters:
+`[]rune(name)` gives one element per character, so `[]rune(name)[0]` is the
+first character. Turn it back into a string with `string(...)` before calling
+`strings.ToUpper`.
 
-```go
-runes := []rune(secret)
-len(runes)          // number of characters
-string(runes[2:])   // characters from position 2 to the end
-```
-
-## Almost the answer
+### Answer
 
 ```go
+if name == "" {
+	return "?"
+}
 first := []rune(name)[0]
 return strings.ToUpper(string(first))
 ```
 
-For `MaskSecret`, use `len(runes)` everywhere the starter uses `len(secret)`,
-and `string(runes[hidden:])` instead of `secret[len(secret)-4:]`, where
-`hidden := len(runes) - 4`.
+The empty check stays first, because an empty rune slice has no element `[0]`.
+
+## Task 2: Fix the secret mask
+
+Every `len(secret)` and `secret[...]` in the starter counts bytes. Convert the
+secret once, then do the counting and cutting on characters.
+
+### Closer
+
+After `runes := []rune(secret)`, use `len(runes)` wherever the starter uses
+`len(secret)`. The number of hidden characters is `hidden := len(runes) - 4`,
+and `string(runes[hidden:])` is the last 4 characters.
+
+### Answer
+
+```go
+runes := []rune(secret)
+if len(runes) <= 4 {
+	return strings.Repeat("*", len(runes))
+}
+hidden := len(runes) - 4
+return strings.Repeat("*", hidden) + string(runes[hidden:])
+```
+
+Now the number of `*` matches the number of hidden characters, not bytes.

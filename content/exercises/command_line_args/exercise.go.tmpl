@@ -13,11 +13,11 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	// TODO(1): If len(args) is not 3, print "usage: PROG SERVICE REPLICAS"
 	// to stderr (PROG is args[0]) and return 2.
 
-	// TODO(3): Convert args[2] with strconv.Atoi (add "strconv" to the
+	// TODO(2): Convert args[2] with strconv.Atoi (add "strconv" to the
 	// imports). If that fails or the number is negative, print the
 	// "replicas must be a whole number" line to stderr and return 2.
 
-	// TODO(2): Print "scaling SERVICE to REPLICAS replicas" to stdout and
+	// TODO(3): Print "scaling SERVICE to REPLICAS replicas" to stdout and
 	// return 0.
 	fmt.Fprintln(stderr, "not implemented yet")
 	return 1

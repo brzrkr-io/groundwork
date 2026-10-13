@@ -140,9 +140,11 @@ func (s *Session) NextPending(after *course.Exercise) *course.Exercise {
 //   - an exercise whose folder moved (the course was reordered) is moved,
 //     with the learner's work and solution;
 //   - missing exercise folders are created;
-//   - files the learner never edited are refreshed when the course changes.
+//   - files the learner never edited are refreshed when the course changes;
+//   - unlocked solutions are rewritten from the course (they're never the
+//     learner's work).
 //
-// Edited files are never touched.
+// Edited exercise files are never touched.
 func (s *Session) Sync() error {
 	for _, e := range s.Course.Exercises {
 		if err := s.move(e); err != nil {
@@ -150,6 +152,11 @@ func (s *Session) Sync() error {
 		}
 		if _, err := s.sync(e, false); err != nil {
 			return fmt.Errorf("update %s: %w", e.Dir(), err)
+		}
+		if s.Done(e) || s.Revealed(e) {
+			if err := s.writeSolutionFiles(e); err != nil {
+				return fmt.Errorf("update the solution of %s: %w", e.Dir(), err)
+			}
 		}
 	}
 	return progress.Save(s.Root, s.State)
@@ -262,6 +269,10 @@ func (s *Session) writeSolution(e *course.Exercise) error {
 	if err := progress.Save(s.Root, s.State); err != nil {
 		return err
 	}
+	return s.writeSolutionFiles(e)
+}
+
+func (s *Session) writeSolutionFiles(e *course.Exercise) error {
 	pack, err := s.Course.Pack(e)
 	if err != nil {
 		return err

@@ -1,21 +1,32 @@
-## Headers first, body last
+## Task 1: Answer health checks
 
-Every handler follows the same order: set headers with `w.Header().Set`,
-optionally set a status with `w.WriteHeader` (or `http.Error`), then write the
-body with `fmt.Fprint` or `fmt.Fprintf`. Headers set after the body are lost.
+Set the header first, then write the body; headers set after the body are
+lost. `w` is an `io.Writer`, so the `fmt` printing functions can write to it.
 
-## Task 1: the health check
+### Closer
+
+Use `w.Header().Set("Content-Type", ...)`, then `fmt.Fprint(w, ...)`. Add
+`"fmt"` to the imports.
+
+### Answer
 
 ```go
 w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 fmt.Fprint(w, "ok\n")
 ```
 
-Remember to add `"fmt"` to the imports.
+## Task 2: Look up a service
 
-## Task 2: the map lookup
+Read the name from the path, then look it up in the map with the comma-ok
+form. Handle the missing case first and return.
 
-Use the comma-ok form, as with any map:
+### Closer
+
+`name := r.PathValue("name")` and `version, ok := c[name]`. For a missing
+name, call `http.Error(w, "unknown service: "+name, http.StatusNotFound)` and
+`return`. Otherwise set `X-Service-Version` and write with `fmt.Fprintf`.
+
+### Answer
 
 ```go
 name := r.PathValue("name")
@@ -24,16 +35,24 @@ if !ok {
 	http.Error(w, "unknown service: "+name, http.StatusNotFound)
 	return
 }
+w.Header().Set("X-Service-Version", version)
+fmt.Fprintf(w, "%s %s\n", name, version)
 ```
 
-Then set `X-Service-Version` and write the body with
-`fmt.Fprintf(w, "%s %s\n", name, version)`.
+## Task 3: Wire up the routes
 
-## Task 3: register the patterns
+Register one pattern per handler on the mux. The mux produces the 404 and 405
+answers on its own.
+
+### Closer
+
+Call `mux.HandleFunc(pattern, handler)` twice. The method goes in front of
+the path in the pattern, and a method value like `c.ServeService` works as a
+handler.
+
+### Answer
 
 ```go
 mux.HandleFunc("GET /healthz", Healthz)
 mux.HandleFunc("GET /services/{name}", c.ServeService)
 ```
-
-The mux produces the 404 and 405 answers on its own.

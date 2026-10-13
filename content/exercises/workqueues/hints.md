@@ -1,9 +1,34 @@
-## Task 1: loop, key, add
+## Task 1: Enqueue a batch of events
 
-Range over `objs`. For each one, call `KeyFor`. On an error, return it. On
-success, `q.Add(key)`. The queue does the deduplication for you.
+Loop over `objs` and get each object's key with `KeyFor`. Stop at the first
+error; otherwise add the key to the queue, which removes duplicates for you.
 
-## Task 2: the shape of ProcessNextItem
+### Closer
+
+Use `for _, obj := range objs`, then `key, err := KeyFor(obj)`. On an error,
+`return err`; on success, `q.Add(key)`. Return `nil` after the loop.
+
+### Answer
+
+```go
+for _, obj := range objs {
+	key, err := KeyFor(obj)
+	if err != nil {
+		return err
+	}
+	q.Add(key)
+}
+return nil
+```
+
+## Task 2: Process one key
+
+Follow the four steps in the README in order. Every key you take with `Get`
+must be marked `Done`, however the function returns.
+
+### Closer
+
+Start with the shutdown check, then the `defer`:
 
 ```go
 key, shutdown := q.Get()
@@ -13,12 +38,17 @@ if shutdown {
 defer q.Done(key)
 ```
 
-Put the `defer` before anything that can return early, so the key is always
-marked done.
+Then `namespace, name, err := cache.SplitMetaNamespaceKey(key)`.
 
-## Task 2: almost the answer
+### Answer
 
 ```go
+key, shutdown := q.Get()
+if shutdown {
+	return false
+}
+defer q.Done(key)
+
 namespace, name, err := cache.SplitMetaNamespaceKey(key)
 if err != nil {
 	return true
@@ -26,3 +56,6 @@ if err != nil {
 handle(namespace, name)
 return true
 ```
+
+The `defer` sits before any early return, so the key is always marked done
+and can be added again.

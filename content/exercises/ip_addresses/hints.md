@@ -1,10 +1,17 @@
-## Task 1: ask the address
+## Task 1: Classify an address
 
-`addr` already holds the parsed address. Its methods `IsLoopback()` and
-`IsPrivate()` answer the questions for you. Check loopback first, because it
-wins over private.
+`addr` already holds the parsed address, and its methods answer the questions
+for you. Check loopback first, because it wins over private.
+
+### Closer
+
+`addr.IsLoopback()` and `addr.IsPrivate()` return a `bool`. Use an
+`if` / `else if` that changes `kind`, which starts as `"public"`.
+
+### Answer
 
 ```go
+kind := "public"
 if addr.IsLoopback() {
 	kind = "loopback"
 } else if addr.IsPrivate() {
@@ -12,23 +19,18 @@ if addr.IsLoopback() {
 }
 ```
 
-## Task 2: parse, then loop
+## Task 2: Check an allowlist
 
-Start like `Classify`: `netip.ParseAddr(ip)`, and return the error if there
-is one. Then loop over `allowlist`, turning each string into a prefix with
-`netip.ParsePrefix(cidr)`. Return `true, nil` as soon as
-`prefix.Contains(addr)` is true. After the loop, return `false, nil`.
+Parse `ip` first, as `Classify` does. Then go through the allowlist one CIDR
+at a time and stop as soon as one contains the address.
 
-## Task 3: two prefixes
+### Closer
 
-Parse `a` and `b` with `netip.ParsePrefix`, checking the error after each
-one. Then:
+`netip.ParsePrefix(cidr)` turns each string into a prefix, and
+`prefix.Contains(addr)` checks the address. Return `true, nil` inside the loop
+and `false, nil` after it.
 
-```go
-return pa.Overlaps(pb), nil
-```
-
-## Almost the answer for task 2
+### Answer
 
 ```go
 addr, err := netip.ParseAddr(ip)
@@ -45,4 +47,27 @@ for _, cidr := range allowlist {
 	}
 }
 return false, nil
+```
+
+## Task 3: Check two VPC ranges for overlap
+
+Parse both CIDRs, checking the error after each one. Then one method call
+answers the question.
+
+### Closer
+
+`netip.ParsePrefix(a)` and `netip.ParsePrefix(b)`, then `pa.Overlaps(pb)`.
+
+### Answer
+
+```go
+pa, err := netip.ParsePrefix(a)
+if err != nil {
+	return false, err
+}
+pb, err := netip.ParsePrefix(b)
+if err != nil {
+	return false, err
+}
+return pa.Overlaps(pb), nil
 ```

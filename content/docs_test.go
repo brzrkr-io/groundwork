@@ -104,7 +104,8 @@ func planModules(c *course.Course) string {
 
 // TestCrossReferences checks that READMEs and hints which point to another
 // exercise ("as in *Slices*", "from *Wrapping errors*") name one that
-// exists, by its title, its concept (the part before ":") or its module.
+// exists, by its title, its concept (the part before ":") or its module, or
+// name a section heading of the exercise's own README.
 func TestCrossReferences(t *testing.T) {
 	c, err := course.Load(content.Files)
 	if err != nil {
@@ -121,7 +122,13 @@ func TestCrossReferences(t *testing.T) {
 	}
 	codeBlock := regexp.MustCompile("(?s)```.*?```")
 	reference := regexp.MustCompile(`\b(?:in|from|see|See|like|to|after|since|of|In|From|Like|After)\s+\*([A-Z][^*\n]{1,80}?)\*`)
+	heading := regexp.MustCompile(`(?m)^#{2,4} (.+)$`)
 	for _, e := range c.Exercises {
+		readme, _ := content.Files.ReadFile("exercises/" + e.Name + "/README.md")
+		sections := map[string]bool{}
+		for _, h := range heading.FindAllStringSubmatch(string(readme), -1) {
+			sections[strings.TrimSpace(h[1])] = true
+		}
 		for _, file := range []string{"README.md", "hints.md"} {
 			raw, err := content.Files.ReadFile("exercises/" + e.Name + "/" + file)
 			if err != nil {
@@ -129,8 +136,8 @@ func TestCrossReferences(t *testing.T) {
 			}
 			text := codeBlock.ReplaceAllString(string(raw), "")
 			for _, m := range reference.FindAllStringSubmatch(text, -1) {
-				if !known[m[1]] {
-					t.Errorf("%s/%s refers to *%s*, which is no exercise, concept or module title", e.Name, file, m[1])
+				if !known[m[1]] && !sections[m[1]] {
+					t.Errorf("%s/%s refers to *%s*, which is no exercise, concept, module or README section", e.Name, file, m[1])
 				}
 			}
 		}

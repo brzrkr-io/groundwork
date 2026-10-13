@@ -1,24 +1,59 @@
-## Task 1: two loops, one result
+## Task 1: Build the deploy plan
 
-Start with `var plan []string`. Loop over `canaries` by index and append each
-name that isn't `""`. Then do the same for `hosts`.
+Start with an empty result and two loops: first over `canaries`, then over
+`hosts`. Only keep names that aren't blank.
 
-## Task 2: step by size
+### Closer
 
-Guard against `size < 1` first, or the loop never ends. Then loop with
-`for start := 0; start < len(hosts); start += size`. Each batch is
-`hosts[start:end]` where `end` is `start + size`, but no more than `len(hosts)`:
-`end := min(start+size, len(hosts))`.
-
-## Task 2: copy each batch
-
-`hosts[start:end]` shares its elements with `hosts`. Wrap it in
-`slices.Clone(...)` (and add `import "slices"`) before appending it to
-`batches`.
-
-## Almost the answer
+Start with `var plan []string`. Inside each loop, check `canaries[i] != ""`
+before you `append` it. A `nil` slice is fine when nothing is left.
 
 ```go
+for i := range len(canaries) {
+	if canaries[i] != "" {
+		plan = append(plan, ...)
+	}
+}
+```
+
+### Answer
+
+```go
+var plan []string
+for i := range len(canaries) {
+	if canaries[i] != "" {
+		plan = append(plan, canaries[i])
+	}
+}
+for i := range len(hosts) {
+	if hosts[i] != "" {
+		plan = append(plan, hosts[i])
+	}
+}
+return plan
+```
+
+Canaries are appended first, so they come first in the plan.
+
+## Task 2: Split it into batches
+
+Walk `hosts` in steps of `size`, and take one slice of hosts per step. Check
+`size` first: if it's less than 1, the loop would never move forward.
+
+### Closer
+
+Return `nil` when `size < 1`. Loop with
+`for start := 0; start < len(hosts); start += size`, and cut each batch with
+`hosts[start:end]`, where `end := min(start+size, len(hosts))`. That slice
+shares elements with `hosts`, so copy it with `slices.Clone(...)` (add
+`import "slices"`) before you append it.
+
+### Answer
+
+```go
+if size < 1 {
+	return nil
+}
 var batches [][]string
 for start := 0; start < len(hosts); start += size {
 	end := min(start+size, len(hosts))
@@ -26,3 +61,6 @@ for start := 0; start < len(hosts); start += size {
 }
 return batches
 ```
+
+`min` keeps the last batch from running past the end, and `slices.Clone`
+makes each batch its own copy.

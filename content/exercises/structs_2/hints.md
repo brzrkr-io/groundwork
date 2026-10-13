@@ -1,30 +1,59 @@
-## Find the copy
+## Task 1: Mark every host unhealthy
 
-In each function, look for a variable that holds a `Host`: `h` in the
-`range` loop, `h := hosts[i]`, and the `h` parameter of `reset`. Each one is
-a copy. Changing it never touches `hosts`.
+In `for _, h := range hosts`, `h` is a copy of each host, so changing it never touches `hosts`. You need to change the element inside the slice instead.
 
-## Tasks 1 and 2: go through the index
+### Closer
 
-Loop with `for i := range hosts` and change the element in place:
+Loop with `for i := range hosts` to get only the index, then change the element in place with `hosts[i].Healthy = ...`.
+
+### Answer
 
 ```go
-hosts[i].Healthy = false
+for i := range hosts {
+	hosts[i].Healthy = false
+}
 ```
 
-In task 2, either change `hosts[i].Failures` directly, or keep the copy and
-write it back with `hosts[i] = h` before `return`.
+## Task 2: Record a failed check
 
-## Task 3: return the copy
+`h := hosts[i]` copies the host, so `h.Failures++` changes the copy and the change is lost. Make the changes reach `hosts[i]` itself.
 
-Give `reset` a return type and return the changed copy:
+### Closer
+
+Drop `h` and write `hosts[i].Failures++` and `hosts[i].Healthy = false` directly. (Keeping the copy and writing it back with `hosts[i] = h` before `return` also works.)
+
+### Answer
 
 ```go
+if hosts[i].Name == name {
+	hosts[i].Failures++
+	if hosts[i].Failures >= 3 {
+		hosts[i].Healthy = false
+	}
+	return
+}
+```
+
+## Task 3: Reset every host
+
+`reset` gets a copy of the host, so its changes vanish when it returns. Have it hand back the changed copy, and store that back in the slice.
+
+### Closer
+
+Give `reset` a return type, `func reset(h Host) Host`, and end it with `return h`. In `ResetAll`, assign the result: `hosts[i] = reset(...)`.
+
+### Answer
+
+```go
+func ResetAll(hosts []Host) {
+	for i := range hosts {
+		hosts[i] = reset(hosts[i])
+	}
+}
+
 func reset(h Host) Host {
 	h.Failures = 0
 	h.Healthy = true
 	return h
 }
 ```
-
-Then store the result in `ResetAll`: `hosts[i] = reset(hosts[i])`.

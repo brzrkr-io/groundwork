@@ -1,22 +1,66 @@
-## Task 1: two small methods
+## Task 1: Make DeployError a link in the chain
 
-`Error` is one `fmt.Sprintf` call with three values. `Unwrap` is a new method
-with the signature `func (e *DeployError) Unwrap() error`, and its body is one
-line.
+`Error` needs three values in one formatted string: the service, the stage
+and the message of `Err`. `Unwrap` is a brand-new method that hands back the
+error stored inside.
 
-## Task 2: loop and return early
+### Closer
 
-Range over `stages`. Call `stage.Run()` and check its error. The first time it
-is not `nil`, return `&DeployError{...}` straight away. After the loop, return
-`nil`.
+Use `fmt.Sprintf("deploy %s: stage %s: %v", ...)`. The new method has the
+signature `func (e *DeployError) Unwrap() error`, and its body is one line.
+
+### Answer
 
 ```go
-if err := stage.Run(); err != nil {
-	return &DeployError{Service: service, Stage: stage.Name, Err: err}
+func (e *DeployError) Error() string {
+	return fmt.Sprintf("deploy %s: stage %s: %v", e.Service, e.Stage, e.Err)
+}
+
+// Unwrap returns the stage's error, so errors.Is and errors.AsType can see it.
+func (e *DeployError) Unwrap() error {
+	return e.Err
 }
 ```
 
-## Task 3: two checks
+`errors.Is` and `errors.AsType` call `Unwrap` to step from your error to the
+one inside it.
+
+## Task 2: Run the pipeline
+
+Loop over `stages` and call each stage's `Run`. The first time it returns an
+error, return straight away so later stages never run.
+
+### Closer
+
+`if err := stage.Run(); err != nil { ... }` inside a `for _, stage := range
+stages` loop. Build the result with `&DeployError{Service: ..., Stage: ...,
+Err: ...}`, and return `nil` after the loop.
+
+### Answer
+
+```go
+for _, stage := range stages {
+	if err := stage.Run(); err != nil {
+		return &DeployError{Service: service, Stage: stage.Name, Err: err}
+	}
+}
+return nil
+```
+
+Returning a plain `nil` (not a nil `*DeployError`) avoids the typed-nil gotcha.
+
+## Task 3: Decide whether to roll back
+
+There are two separate rules. One looks for a sentinel value in the chain,
+the other looks for a type and then checks one of its fields.
+
+### Closer
+
+Use `errors.Is(err, ErrUnhealthy)` for the first rule. For the second,
+`derr, ok := errors.AsType[*DeployError](err)` and then check `derr.Stage`.
+Both return `false` for `nil`.
+
+### Answer
 
 ```go
 if errors.Is(err, ErrUnhealthy) {
@@ -25,3 +69,6 @@ if errors.Is(err, ErrUnhealthy) {
 derr, ok := errors.AsType[*DeployError](err)
 return ok && derr.Stage == "rollout"
 ```
+
+Your `Unwrap` from task 1 lets `errors.Is` find `ErrUnhealthy` inside a
+`DeployError`.

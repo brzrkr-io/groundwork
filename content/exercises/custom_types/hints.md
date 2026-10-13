@@ -1,18 +1,28 @@
-## Task 1: compare with the constants
+## Task 1: Validate an environment
 
-Inside `IsValid`, `e` is an `Environment`. Compare it with `==` against
-`Dev`, `Staging` and `Production`, and join the three checks with `||`
-("or").
+`IsValid` should be `true` only when `e` equals one of the three constants. Compare `e` against each constant and combine the results.
+
+### Closer
+
+Use `==` for each comparison and join them with `||` ("or"): `e == Dev || ...`.
+
+### Answer
 
 ```go
 return e == Dev || e == Staging || e == Production
 ```
 
-## Task 2: one severity at a time
+`Environment("prod")` matches none of the constants, so the whole expression is `false`.
 
-A `switch` on `s` keeps the rules readable. `Critical` always returns
-`true`. For `Error`, the answer depends on the environment, so return the
-result of a comparison:
+## Task 2: Decide whether to page
+
+Go through the table row by row. Only `Critical` and `Error` can ever page, and only `Error` cares about the environment.
+
+### Closer
+
+A `switch s` with a `case Critical:` and a `case Error:` keeps it readable. For `Error`, return the comparison itself: `return env == Production`.
+
+### Answer
 
 ```go
 switch s {
@@ -20,17 +30,30 @@ case Critical:
 	return true
 case Error:
 	return env == Production
+default:
+	return false
 }
-return false
 ```
 
-## Task 3: lower-case first
+Every other severity falls into `default` and never pages.
 
-Call `strings.ToLower(s)` once, then switch on the result. That way
-`"WARNING"`, `"Warning"` and `"warning"` all become `"warning"`. Don't
-forget `import "strings"` under the `package` line.
+## Task 3: Parse a severity
 
-## Task 3: almost the answer
+Lower-case the text first, so `"WARNING"`, `"Warning"` and `"warning"` all look the same. Then match the five names. Remember to add `import "strings"` under the `package` line.
+
+### Closer
+
+Switch on `strings.ToLower(s)` and return a pair from each case:
+
+```go
+switch strings.ToLower(s) {
+case "debug":
+	return Debug, true
+// ... info, warning, error, critical
+}
+```
+
+### Answer
 
 ```go
 switch strings.ToLower(s) {
@@ -38,8 +61,15 @@ case "debug":
 	return Debug, true
 case "info":
 	return Info, true
-// ... warning, error and critical the same way
+case "warning":
+	return Warning, true
+case "error":
+	return Error, true
+case "critical":
+	return Critical, true
 default:
 	return Debug, false
 }
 ```
+
+`default` catches unknown names like `"fatal"` and returns the zero value with `false`.

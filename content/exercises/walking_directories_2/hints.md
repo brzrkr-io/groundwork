@@ -1,7 +1,12 @@
-## Task 1: err comes first
+## Task 1: Don't crash on a missing root
 
-When the root is missing, the callback is called with `d == nil` and a
-non-nil `err`. Put the usual check at the very top of the callback:
+When the root is missing, the callback is called with a non-nil `err` and `d == nil`. The callback uses `d` before it ever looks at `err`.
+
+### Closer
+
+Put the usual error check at the very top of the callback, before `d.IsDir()`, and return the error so `filepath.WalkDir` passes it back.
+
+### Answer
 
 ```go
 if err != nil {
@@ -9,40 +14,61 @@ if err != nil {
 }
 ```
 
-## Task 2: nil versus SkipDir
+## Task 2: Really skip pinned folders
 
-Returning `nil` for a directory means "fine, keep going", so the walk still
-goes inside it. The return value that means "don't go in here" is
-`fs.SkipDir`.
+The callback spots `pinned`, but returning `nil` for a directory means "fine, keep going", so the walk still goes inside it.
 
-## Task 3: find the top-level folder
+### Closer
 
-Skip directories, then turn `p` into a path relative to `root`. The part
-before the first `/` is the top-level folder. When there is no `/`, the file
-sits directly in `root`:
+The return value that means "don't go into this directory" is `fs.SkipDir`. Use it in the `d.Name() == "pinned"` branch.
+
+### Answer
 
 ```go
-rel, err := filepath.Rel(root, p)
-if err != nil {
-	return err
-}
-top, _, found := strings.Cut(filepath.ToSlash(rel), "/")
-if !found {
-	top = "."
+if d.IsDir() {
+	if d.Name() == "pinned" {
+		return fs.SkipDir
+	}
+	return nil
 }
 ```
 
-## Task 3: adding up
+## Task 3: Total the size of each folder
 
-Create the map with `make(map[string]int64)` before the walk, so you can
-write to it. Inside the callback, after finding `top`, add the size:
+Walk `root` with a callback like `StaleFiles`'s, but add each file's size to a map. The key is the first part of the file's path relative to `root`, or `"."` when the file sits directly in `root`.
+
+### Closer
+
+Create the map with `make(map[string]int64)` before the walk. For each file, `filepath.Rel(root, p)` then `strings.Cut(filepath.ToSlash(rel), "/")` gives the top-level folder; `found` is false when there is no `/`. Add `info.Size()` with `sizes[top] +=`.
+
+### Answer
 
 ```go
-info, err := d.Info()
+sizes := make(map[string]int64)
+err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	if err != nil {
+		return err
+	}
+	if d.IsDir() {
+		return nil
+	}
+	info, err := d.Info()
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(root, p)
+	if err != nil {
+		return err
+	}
+	top, _, found := strings.Cut(filepath.ToSlash(rel), "/")
+	if !found {
+		top = "."
+	}
+	sizes[top] += info.Size()
+	return nil
+})
 if err != nil {
-	return err
+	return nil, err
 }
-sizes[top] += info.Size()
+return sizes, nil
 ```
-
-Return the map after `filepath.WalkDir` finishes without an error.

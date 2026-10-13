@@ -1,7 +1,16 @@
-## Task 1: a closer goroutine
+## Task 1: Fix the hang
 
-After starting the workers, start one more goroutine. It waits for the
-WaitGroup and then closes `results`:
+The collector's `for p := range results` only ends when `results` is closed.
+Something has to close it after every worker is done, but without blocking the
+collector loop that comes after it.
+
+### Closer
+
+Start one more goroutine after the workers. It calls `wg.Wait()`, then
+`close(results)`. It must be a goroutine: calling `wg.Wait()` directly would
+block before the collector starts, and the workers would be stuck sending.
+
+### Answer
 
 ```go
 go func() {
@@ -10,10 +19,26 @@ go func() {
 }()
 ```
 
-It has to be a goroutine. Calling `wg.Wait()` directly would block before
-the collector loop starts, and the workers would be stuck sending.
+The closer runs alongside the collector, so the workers can keep sending until they finish.
 
-## Task 2: a slice with one slot per image
+## Task 2: Keep the input order
 
-Replace `var out []Result` with `out := make([]Result, len(images))`, and
-replace the `append` with `out[p.index] = p.result`.
+`append` adds results in the order they arrive, which is finish order. Each
+`pulled` value already carries `index`, the image's position in `images`.
+
+### Closer
+
+Make the slice full-size up front with `make([]Result, len(images))`, then
+write into a slot instead of appending: `out[...] = p.result`.
+
+### Answer
+
+```go
+out := make([]Result, len(images))
+for p := range results {
+	out[p.index] = p.result
+}
+return out
+```
+
+Each result lands in its image's slot, whatever order the pulls finish in.

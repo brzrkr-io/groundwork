@@ -1,20 +1,48 @@
-## Use the receiver like a parameter
+## Task 1: Build the address
 
-Inside `func (h Host) Address() string`, the host is called `h`. Read its
-fields with `h.IP` and `h.Port`, the same way you would with any struct.
-Remember to add `"fmt"` and `"strings"` to the imports.
+Inside `func (h Host) Address() string`, the host is called `h`, so read its
+fields with `h.IP` and `h.Port`. `Port` is an `int`, so you can't join it to a
+string with `+`.
 
-## Task 1: format a string and an int
+### Closer
 
-`Port` is an `int`, so you can't add it to a string with `+`. `fmt.Sprintf`
-with `%s` for the IP and `%d` for the port builds the whole address in one go.
+`fmt.Sprintf` builds a string from a pattern: `%s` stands for a string and
+`%d` for an int, like `fmt.Sprintf("%s:%d", ...)`. Remember to add `"fmt"` and
+`"strings"` to the imports.
 
-## Task 2: call the other method
+### Answer
 
-`h.Address()` already gives you `"10.0.0.5:8080"`. Put `"http://"` in front
-and `path` after it with `+`.
+```go
+return fmt.Sprintf("%s:%d", h.IP, h.Port)
+```
 
-## Task 3: almost the answer
+## Task 2: Build a URL
+
+`h.Address()` already gives you `"10.0.0.5:8080"`. You only need to put text
+before and after it.
+
+### Closer
+
+Join three pieces with `+`: the fixed text `"http://"`, the result of
+`h.Address()`, and `path`.
+
+### Answer
+
+```go
+return "http://" + h.Address() + path
+```
+
+## Task 3: Read the image tag
+
+Split `d.Image` around the colon and keep the part after it. If there was no
+colon at all, the answer is `"latest"`.
+
+### Closer
+
+`strings.Cut(d.Image, ":")` returns before, after and a `found` bool. You
+don't need the part before, so use `_` for it: `_, tag, found := ...`.
+
+### Answer
 
 ```go
 _, tag, found := strings.Cut(d.Image, ":")

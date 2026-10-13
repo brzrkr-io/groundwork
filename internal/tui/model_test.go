@@ -18,8 +18,10 @@ func newModel(t *testing.T) (*Model, *session.Session) {
 	t.Helper()
 	files := fstest.MapFS{"course.json": {Data: []byte(`{"modules":[{"title":"m","dir":"one","exercises":[{"name":"a","title":"A"},{"name":"b","title":"B"}]}]}`)}}
 	for _, name := range []string{"a", "b"} {
-		files["exercises/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n\n## Your task\n")}
-		files["exercises/"+name+"/hints.md"] = &fstest.MapFile{Data: []byte("## First\none\n## Second\ntwo\n")}
+		files["exercises/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n\n## Your task\n\n### 1. First\n\n### 2. Second\n")}
+		files["exercises/"+name+"/hints.md"] = &fstest.MapFile{Data: []byte(
+			"## Task 1: First\nnudge one\n### Closer\ncloser one\n### Answer\nanswer one\n" +
+				"## Task 2: Second\nnudge two\n### Closer\ncloser two\n### Answer\nanswer two\n")}
 		files["exercises/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n\n// TODO(1): fix\n")}
 		files["exercises/"+name+"/solution/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n")}
 	}
@@ -79,20 +81,29 @@ func TestStaleCheckResultsAreIgnored(t *testing.T) {
 	}
 }
 
-func TestHintsRevealOneAtATime(t *testing.T) {
+func TestHintsOpenOnTheFailingTaskAndGetCloserOneLevelAtATime(t *testing.T) {
 	m, _ := newModel(t)
+	// Task 1's test passes and task 2's fails, so h starts at task 2.
+	m.Update(checkedMsg{seq: m.checkSeq, result: &workspace.Result{Status: workspace.Failed, Tests: []*workspace.Test{
+		{Name: "TestFirst", Passed: true}, {Name: "TestSecond"},
+	}}})
 	press(m, "h")
-	if m.pane != paneHints || m.hintsShown != 1 {
-		t.Fatalf("after h: pane %v, %d hints shown; want hints pane with 1", m.pane, m.hintsShown)
+	if m.pane != paneHints || m.hintTask != 1 || m.hintLevels[1] != 1 {
+		t.Fatalf("after h: pane %v, task %d, level %d; want hints for task 2 at level 1", m.pane, m.hintTask+1, m.hintLevels[1])
 	}
 	press(m, "h")
 	press(m, "h")
-	if m.hintsShown != 2 {
-		t.Fatalf("hints shown = %d, want it capped at the 2 available", m.hintsShown)
+	press(m, "h")
+	if m.hintLevels[1] != 3 {
+		t.Fatalf("task 2 level = %d, want it capped at Nudge, Closer, Answer (3)", m.hintLevels[1])
+	}
+	press(m, "1")
+	if m.hintTask != 0 || m.hintLevels[0] != 1 {
+		t.Fatalf("after 1: task %d level %d, want task 1 at its first level", m.hintTask+1, m.hintLevels[0])
 	}
 }
 
-func TestSolutionUnlocksOnlyAfterEveryHintAndConfirmation(t *testing.T) {
+func TestSolutionUnlocksOnlyAfterAnAnswerHintAndConfirmation(t *testing.T) {
 	m, s := newModel(t)
 	a := s.Course.Exercises[0]
 	press(m, "s")
@@ -100,7 +111,12 @@ func TestSolutionUnlocksOnlyAfterEveryHintAndConfirmation(t *testing.T) {
 		t.Fatal("s showed the solution before any hint was read")
 	}
 	press(m, "h")
-	press(m, "h") // both hints seen
+	press(m, "h")
+	press(m, "s")
+	if s.Revealed(a) || m.confirm != "" {
+		t.Fatal("s offered the solution before the task's Answer hint")
+	}
+	press(m, "h") // the Answer
 	press(m, "s")
 	press(m, "i") // anything but s cancels
 	if s.Revealed(a) {

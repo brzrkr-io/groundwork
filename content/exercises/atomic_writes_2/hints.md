@@ -1,25 +1,50 @@
-## Task 1: loop, replace, or append
+## Task 1: Update the lines in memory
 
-Range over `lines` with an index. When `strings.HasPrefix(line, key+"=")`,
-set `lines[i]` and return. If the loop ends without a match, return
-`append(lines, key+"="+value)`.
+Look through `lines` for the one that belongs to `key`. If you find it, replace it in place; only append when no line matched.
 
-## Task 2: replace the empty data with a real read
+### Closer
 
-Swap `var data []byte` for a read that tolerates a missing file:
+Range with an index: `for i, line := range lines`. A line belongs to `key` when `strings.HasPrefix(line, key+"=")`. Set `lines[i]` and return early; after the loop, append.
+
+### Answer
+
+```go
+for i, line := range lines {
+	if strings.HasPrefix(line, key+"=") {
+		lines[i] = key + "=" + value
+		return lines
+	}
+}
+return append(lines, key+"="+value)
+```
+
+## Task 2: Read, modify, write
+
+`SetKey` starts from empty `data`. Replace that with a real read of the file, treating a missing file as empty.
+
+### Closer
+
+Use `os.ReadFile(path)`. Only return the error when it is not a "not exist" error: `err != nil && !errors.Is(err, fs.ErrNotExist)`. Add `"errors"` and `"io/fs"` to the imports.
+
+### Answer
 
 ```go
 data, err := os.ReadFile(path)
 if err != nil && !errors.Is(err, fs.ErrNotExist) {
 	return err
 }
+lines := setLine(splitLines(string(data)), key, value)
 ```
 
-The two lines after it stay as they are.
+## Task 3: Fix the leaking helper
 
-## Task 3: a defer with a success flag
+Every `return err` after `CreateTemp` in `writeFileAtomic` leaves the temp file behind. Register the cleanup once, and switch it off only after the rename succeeds.
 
-Right after `CreateTemp` succeeds:
+### Closer
+
+Right after `CreateTemp`, set `ok := false` and `defer` a function that closes and removes `tmp.Name()` when `!ok`. Then check the `Rename` error instead of returning it directly, and set `ok = true` before `return nil`.
+
+### Answer
 
 ```go
 ok := false
@@ -29,7 +54,11 @@ defer func() {
 		os.Remove(tmp.Name())
 	}
 }()
-```
 
-Then check the `Rename` error instead of returning it directly, and set
-`ok = true` just before `return nil`.
+// ... Write, Chmod, Sync, Close as before ...
+if err := os.Rename(tmp.Name(), path); err != nil {
+	return err
+}
+ok = true
+return nil
+```

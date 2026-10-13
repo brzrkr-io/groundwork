@@ -1,23 +1,46 @@
-## Task 1: remainder
+## Task 1: Pick a shard
 
-The shard number is the remainder, which is what `%` gives you:
-`userID % shards`.
+The shard number is the remainder of the user ID divided by the shard count.
+Which operator gives you a remainder?
 
-## Task 2: multiply first
+### Closer
 
-`errors / requests` is 0 whenever errors is smaller than requests, and
-multiplying 0 by 100 is still 0. Multiply `errors` by 100 **before** you
-divide.
+`%` gives the remainder: `17 % 5` is 2. Use it with `userID` and `shards`.
 
-## Task 3: add parentheses
+### Answer
 
-Right now `usedGiB / totalGiB * 100` runs first, and the result is subtracted
-from `totalGiB`. Put parentheses around the subtraction so it happens first.
+```go
+return userID % shards
+```
 
-## Almost the answer
+## Task 2: Fix the error rate
+
+`errors / requests` is 0 whenever `errors` is smaller than `requests`, and 0
+times 100 is still 0. Try changing the order of the operations.
+
+### Closer
+
+Multiply `errors` by 100 **before** you divide by `requests`:
+`errors * 100 / ...`. Operators at the same level run left to right.
+
+### Answer
 
 ```go
 return errors * 100 / requests
+```
 
+## Task 3: Fix the free disk percentage
+
+Right now `usedGiB/totalGiB*100` runs first, and the result is subtracted from
+`totalGiB`. The free space (total minus used) has to be worked out first.
+
+### Closer
+
+Put parentheses around the subtraction so it happens first:
+`(totalGiB - usedGiB) / ...`.
+
+### Answer
+
+```go
 return (totalGiB - usedGiB) / totalGiB * 100
 ```

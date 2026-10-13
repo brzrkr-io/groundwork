@@ -1,19 +1,42 @@
-## Which method fails a test?
+## Task 1: Make the check able to fail
 
-Only `t.Errorf` and `t.Fatalf` (and their cousins `t.Error`, `t.Fatal`)
-mark a test as failed. `t.Logf` just prints.
+Look at the method the check calls when `got != want`. Does it mark the test as failed, or does it only print?
 
-## Read the new failure
+### Closer
 
-After task 1, `TestGrader` shows your test's output, something like:
+`t.Logf` only prints. `t.Errorf` prints and marks the test failed. Keep the same message and change only the method name.
 
-```text
-ShortSHA("9f86d081884c7d659a2feaa0c55ad015") = "9f86d08", want "9f86d081"
+### Answer
+
+```go
+if got != want {
+	t.Errorf("ShortSHA(%q) = %q, want %q", sha, got, want)
+}
 ```
 
-The code returned 7 characters. Count the characters in `want`.
+## Task 2: Fix the expected value
 
-## Task 3, nearly done
+Read the new failure message. `ShortSHA` keeps the first 7 characters. Count the characters in `want`.
+
+### Closer
+
+The message looks like `... = "9f86d08", want "9f86d081"`. The `want` has one character too many.
+
+### Answer
+
+```go
+want := "9f86d08"
+```
+
+## Task 3: Check a short commit ID
+
+An ID with 7 characters or fewer comes back unchanged. Add a second check with the got/want pattern you already have.
+
+### Closer
+
+You can call the function and compare in one line: `if got := ShortSHA("a1b2c"); got != "a1b2c" { ... }`.
+
+### Answer
 
 ```go
 if got := ShortSHA("a1b2c"); got != "a1b2c" {

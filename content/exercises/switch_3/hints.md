@@ -1,6 +1,13 @@
-## Task 1: default can hold an if
+## Task 1: Name the service on a port
 
-List the known ports with commas, then handle "below 1024" inside `default`:
+Use `switch port` with one case per named port, using commas for rows with
+two ports. The "any other port below `1024`" row isn't a single value, so
+think about where that check could go.
+
+### Closer
+
+A `default` can hold any code, including an `if`. Put the "below 1024" check
+there:
 
 ```go
 default:
@@ -10,14 +17,45 @@ default:
 	return "unknown"
 ```
 
-## Task 2: switch on state
-
-Start with `switch state {` and add a case for each state. The `"exited"`
-case needs more checks.
-
-## Task 2: the exited case
+### Answer
 
 ```go
+switch port {
+case 22:
+	return "ssh"
+case 80, 8080:
+	return "http"
+case 443, 8443:
+	return "https"
+case 5432:
+	return "postgres"
+case 6379:
+	return "redis"
+default:
+	if port < 1024 {
+		return "system"
+	}
+	return "unknown"
+}
+```
+
+## Task 2: Decide what to do with a container
+
+Start with `switch state {` and add one case per state from the table. Most
+cases just return. The `"exited"` case needs to look at `exitCode` and
+`restarts` too.
+
+### Closer
+
+Inside `case "exited":`, put a tagless `switch {` that checks the rows in
+order: `exitCode == 0` first, then `restarts >= 5`, then `default`.
+
+### Answer
+
+```go
+switch state {
+case "running":
+	return "none"
 case "exited":
 	switch {
 	case exitCode == 0:
@@ -27,4 +65,9 @@ case "exited":
 	default:
 		return "restart"
 	}
+case "oomkilled":
+	return "add memory"
+default:
+	return "inspect"
+}
 ```

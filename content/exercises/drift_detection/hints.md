@@ -1,21 +1,42 @@
-## Task 1: read, then decode
+## Task 1: Load the desired state
 
-`os.ReadFile(path)` returns the file's bytes. Pass them to
-`json.Unmarshal(data, &rs)`, where `rs` is a `[]Resource` variable. Both calls
-can fail, and both errors get the same prefix:
+Two steps: read the file's bytes, then decode the JSON into a `[]Resource`.
+Both can fail, and both errors get the same `load desired state: ` prefix.
+
+### Closer
+
+`os.ReadFile(path)` returns the bytes. `json.Unmarshal(data, &rs)` fills a
+`var rs []Resource`. Wrap each error with
+`fmt.Errorf("load desired state: %w", err)`, and add `"encoding/json"`,
+`"fmt"` and `"os"` to the imports.
+
+### Answer
 
 ```go
 data, err := os.ReadFile(path)
 if err != nil {
 	return nil, fmt.Errorf("load desired state: %w", err)
 }
+var rs []Resource
+if err := json.Unmarshal(data, &rs); err != nil {
+	return nil, fmt.Errorf("load desired state: %w", err)
+}
+return rs, nil
 ```
 
-## Task 2: two more loops over the maps
+## Task 2: Find the differences
 
-Creates: loop over `want` and look each ID up in `got`. Deletes: loop over
-`got` and look each ID up in `want`. The update loop shows how to look an ID
-up. Leave the sort at the end alone: it runs after your loops.
+You need two more loops over the maps. A "create" is an ID in `want` that is
+missing from `got`; a "delete" is the other way round. The update loop shows
+how to look an ID up.
+
+### Closer
+
+Use the two-value lookup `if _, ok := got[id]; !ok { ... }` inside
+`for id := range want`. Leave the sort at the end alone: it runs after your
+loops.
+
+### Answer
 
 ```go
 for id := range want {
@@ -23,15 +44,40 @@ for id := range want {
 		changes = append(changes, Change{Action: "create", ID: id})
 	}
 }
+
+// ... the update loop stays here ...
+
+for id := range got {
+	if _, ok := want[id]; !ok {
+		changes = append(changes, Change{Action: "delete", ID: id})
+	}
+}
 ```
 
-## Task 3: count while you write
+## Task 3: Render the plan
 
-In the `if err != nil` block after `Actual`, return the same thing as the
-block after `LoadDesired`.
-Then keep three counters and use a `switch c.Action` to pick the line format:
+The error case after `Actual` returns the same thing as the one after
+`LoadDesired`. For the report, write one line per change and count each kind
+as you go, so you can print the summary line at the end.
+
+### Closer
+
+Build the text in a `strings.Builder` with `fmt.Fprintf(&b, ...)`. Keep three
+counters and use `switch c.Action` to pick the line format: `"+ %s\n"`,
+`"~ %s (tags: %s)\n"` with `strings.Join(c.Keys, ", ")`, and `"- %s\n"`.
+
+### Answer
 
 ```go
+if err != nil {
+	return "Error: " + err.Error() + "\n", 1
+}
+
+changes := Diff(desired, actual)
+if len(changes) == 0 {
+	return "No changes. AWS matches the desired state.\n", 0
+}
+
 var b strings.Builder
 add, change, destroy := 0, 0, 0
 for _, c := range changes {
@@ -39,10 +85,16 @@ for _, c := range changes {
 	case "create":
 		add++
 		fmt.Fprintf(&b, "+ %s\n", c.ID)
-	// case "update": "~ %s (tags: %s)\n" with strings.Join(c.Keys, ", ")
-	// case "delete": "- %s\n"
+	case "update":
+		change++
+		fmt.Fprintf(&b, "~ %s (tags: %s)\n", c.ID, strings.Join(c.Keys, ", "))
+	case "delete":
+		destroy++
+		fmt.Fprintf(&b, "- %s\n", c.ID)
 	}
 }
 fmt.Fprintf(&b, "Plan: %d to add, %d to change, %d to destroy.\n", add, change, destroy)
 return b.String(), 2
 ```
+
+Exit code 2 tells a CI job "there is drift", just like `terraform plan -detailed-exitcode`.

@@ -1,17 +1,39 @@
-## Task 1: swap the types
+## Task 1: Make the stats lock-free
 
-Change the fields to `total atomic.Int64` and `failed atomic.Int64`, and add
-`"sync/atomic"` to the imports. Then `s.total++` becomes `s.total.Add(1)`,
-and `return s.total` becomes `return s.total.Load()`.
+`s.total++` on a plain `int64` is a data race when many goroutines call it. The `sync/atomic` package has a number type whose operations are safe from many goroutines.
 
-## Task 2: two short critical sections
+### Closer
 
-Don't use `defer` for the first unlock, because you want to release the lock
-in the middle of the function. Lock, read the map, unlock. If it was a hit,
-return. Otherwise call `lookup` with no lock held, then lock again to store
-the result.
+Change the fields to `total atomic.Int64` and `failed atomic.Int64`, and add `"sync/atomic"` to the imports. Then `s.total++` becomes `s.total.Add(1)`, and reads use `.Load()`.
 
-## Task 2: almost the answer
+### Answer
+
+```go
+type DeployStats struct {
+	total  atomic.Int64
+	failed atomic.Int64
+}
+
+func (s *DeployStats) Record(ok bool) {
+	s.total.Add(1)
+	if !ok {
+		s.failed.Add(1)
+	}
+}
+
+func (s *DeployStats) Total() int64  { return s.total.Load() }
+func (s *DeployStats) Failed() int64 { return s.failed.Load() }
+```
+
+## Task 2: Stop holding the lock during lookups
+
+`defer c.mu.Unlock()` keeps the lock until `Get` returns, including during the slow `lookup`. You need two short locked sections: one to check the map, one to store the result, with `lookup` in between.
+
+### Closer
+
+Drop the first `defer`. Lock, read `id, ok := c.ids[region]`, then `c.mu.Unlock()`. If `ok`, return. Otherwise call `lookup` with no lock held, then lock again to store.
+
+### Answer
 
 ```go
 c.mu.Lock()
@@ -28,3 +50,5 @@ defer c.mu.Unlock()
 c.ids[region] = id
 return id
 ```
+
+The lock only covers the map access, so lookups for different regions run at the same time.

@@ -1,17 +1,26 @@
-## Task 1: one rune at a time
+## Task 1: Slugify a display name
 
-Loop with `for _, r := range name`. For each rune, decide: keep it (ASCII
-letter or digit) or treat it as a separator. Turn `A`–`Z` into lower case
-first: `r += 'a' - 'A'` moves an upper-case letter to its lower-case partner.
+Loop over the name rune by rune and decide for each one: keep it (ASCII letter
+or digit) or treat it as a separator. Don't write `-` the moment you see a
+separator; remember that you saw one instead.
 
-## Task 1: remember the gap
+### Closer
 
-Don't write `-` the moment you see a separator. Instead, set a `gap := true`
-flag. When you next keep a character, write `-` first, but only if the flag is
-set **and** the builder already has something in it (`b.Len() > 0`). Then
-clear the flag. This handles runs of separators and both ends at once.
+Turn `A`–`Z` into lower case with `r += 'a' - 'A'`. Keep a `gap` flag: set it
+to `true` on a separator. When you next keep a character, write `-` first only
+if `gap` is set **and** `b.Len() > 0`, then clear the flag. Add `"strings"` to
+the imports.
 
-## Almost the answer for task 1
+```go
+var b strings.Builder
+gap := false
+for _, r := range name {
+	// lower-case, then keep or set gap
+}
+return b.String()
+```
+
+### Answer
 
 ```go
 var b strings.Builder
@@ -33,10 +42,32 @@ for _, r := range name {
 return b.String()
 ```
 
-Add `"strings"` to the imports.
+Writing the `-` only before a kept character handles runs of separators and
+both ends at once.
 
-## Task 2: cut, trim, fall back
+## Task 2: Make a valid DNS label
 
-A slug is pure ASCII, so `label[:63]` cuts exactly 63 characters. Then
-`strings.TrimSuffix(label, "-")` removes a trailing dash if there is one.
-Finally, return `"unnamed"` if `label == ""`.
+Start from `Slug(name)` and apply the three rules in order: cut, drop a
+trailing `-`, fall back to `"unnamed"`. A slug is pure ASCII, so cutting bytes
+is safe here.
+
+### Closer
+
+`label[:63]` keeps the first 63 characters. `strings.TrimSuffix(label, "-")`
+removes a trailing dash if there is one and does nothing otherwise.
+
+### Answer
+
+```go
+label := Slug(name)
+if len(label) > 63 {
+	label = label[:63]
+}
+label = strings.TrimSuffix(label, "-")
+if label == "" {
+	return "unnamed"
+}
+return label
+```
+
+Trimming after the cut catches the case where the 63rd character is a `-`.

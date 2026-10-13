@@ -1,18 +1,66 @@
-## Task 1: don't throw the error away
+## Task 1: Fix ParseReplicas
 
-Replace `_` with `err`, then add `if err != nil { return 0, err }`. Add a
-second `if` for `n < 0` that returns `errors.New(...)`.
+The `_` throws away the error from `strconv.Atoi`. Give that error a name and
+check it, then add a second check for negative numbers.
 
-## Task 2: check, then trim
+### Closer
+
+Write `n, err := strconv.Atoi(s)` and then `if err != nil { return 0, err }`.
+Add `if n < 0` that returns `0` and an error made with `errors.New(...)`. Add
+`errors` to the imports.
+
+### Answer
+
+```go
+n, err := strconv.Atoi(s)
+if err != nil {
+	return 0, err
+}
+if n < 0 {
+	return 0, errors.New("replicas cannot be negative")
+}
+return n, nil
+```
+
+## Task 2: Finish ParseLabel
+
+`strings.Cut` already split the label for you. Trim the spaces from the key
+first, then decide whether the label is bad: no `=`, or an empty key.
+
+### Closer
+
+`k = strings.TrimSpace(k)`. Then `if !found || k == ""` return `"", "", false`.
+Otherwise return the key, the trimmed value `strings.TrimSpace(v)`, and `true`.
+
+### Answer
 
 ```go
 k, v, found := strings.Cut(label, "=")
 k = strings.TrimSpace(k)
+if !found || k == "" {
+	return "", "", false
+}
+return k, strings.TrimSpace(v), true
 ```
 
-Return `"", "", false` if `!found` or `k == ""`.
+## Task 3: Write ParseMemoryMiB
 
-## Task 3: one suffix at a time
+Try one ending at a time. `strings.CutSuffix` tells you whether the size ends
+in `Mi`; if not, try `Gi`. If neither matches, that's an error.
+
+### Closer
+
+```go
+if num, found := strings.CutSuffix(size, "Mi"); found {
+	n, err := strconv.Atoi(num)
+	// check err, then return n, nil
+}
+```
+
+Do the same for `"Gi"`, but return `n * 1024`. At the very end, return `0` and
+an error from `fmt.Errorf`. Add `fmt` to the imports.
+
+### Answer
 
 ```go
 if num, found := strings.CutSuffix(size, "Mi"); found {
@@ -22,16 +70,6 @@ if num, found := strings.CutSuffix(size, "Mi"); found {
 	}
 	return n, nil
 }
-```
-
-Do the same for `Gi`, multiplying by 1024 after checking the error.
-Anything left over at the end of the function is an error.
-
-## Almost the answer for task 3
-
-The `Gi` branch and the final error:
-
-```go
 if num, found := strings.CutSuffix(size, "Gi"); found {
 	n, err := strconv.Atoi(num)
 	if err != nil {

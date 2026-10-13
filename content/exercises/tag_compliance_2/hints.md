@@ -1,18 +1,39 @@
-## Task 1: check the code before wrapping
+## Task 1: Fix the untagged-bucket bug
 
-Inside `if err != nil`, look for the `NoSuchTagSet` code **before** the
-existing `return`. If it matches, return `map[string]string{}, nil`. If it
-doesn't match, fall through to the wrapped error.
+Inside `if err != nil`, check for the `NoSuchTagSet` error code **before** the
+existing `return`. If it matches, the bucket simply has no tags; anything else
+is still a real error.
+
+### Closer
+
+Get the API error with `errors.AsType[smithy.APIError](err)` and compare
+`apiErr.ErrorCode()` with `"NoSuchTagSet"`. On a match, return an empty map
+(`map[string]string{}`) and `nil`. Add `"errors"` and
+`"github.com/aws/smithy-go"` to the imports.
+
+### Answer
 
 ```go
-if apiErr, ok := errors.AsType[smithy.APIError](err); ok && apiErr.ErrorCode() == "NoSuchTagSet" {
-	return map[string]string{}, nil
+if err != nil {
+	if apiErr, ok := errors.AsType[smithy.APIError](err); ok && apiErr.ErrorCode() == "NoSuchTagSet" {
+		return map[string]string{}, nil
+	}
+	return nil, fmt.Errorf("get tags for bucket %q: %w", bucket, err)
 }
 ```
 
-## Task 2: one if, two conditions
+## Task 2: Check the Env value
 
-Read the value once, then require both "is set" and "is not allowed":
+Read `tags["Env"]` once. You only add a line when it is set (an empty one was
+already reported as missing) **and** not in `AllowedEnvs`.
+
+### Closer
+
+`slices.Contains(AllowedEnvs, env)` tells you whether the value is allowed.
+Combine both conditions with `&&`, and use `%q` in `fmt.Sprintf` to put quotes
+around the value. Add `"slices"` to the imports.
+
+### Answer
 
 ```go
 if env := tags["Env"]; env != "" && !slices.Contains(AllowedEnvs, env) {
@@ -20,7 +41,19 @@ if env := tags["Env"]; env != "" && !slices.Contains(AllowedEnvs, env) {
 }
 ```
 
-## Task 3: one line
+## Task 3: Sort the report
 
-`slices.Sort(lines)` sorts strings alphabetically, in place. Put it just
-before `return lines, nil`.
+The lines are plain strings, so the standard alphabetical sort is all you
+need, just before returning.
+
+### Closer
+
+The `slices` package has a function that sorts a slice in place; it needs no
+compare function for strings.
+
+### Answer
+
+```go
+slices.Sort(lines)
+return lines, nil
+```

@@ -1,10 +1,16 @@
-## Task 1: refill, then take
+## Task 1: Build the bucket
 
-In `NewBucket`, add `tokens: float64(burst)` and `last: now()` to the struct
-literal. In `Allow`, copy the refill code from the README, then check
-`b.tokens < 1`.
+A new bucket starts full, so `NewBucket` needs two more fields. In `Allow`,
+refill first using the time since `last`, then decide whether there's a whole
+token to take.
 
-## Task 1: almost the answer
+### Closer
+
+In the struct literal add `tokens: float64(burst)` and `last: now()`. The
+refill code is in the README: `b.tokens = min(b.burst, b.tokens+elapsed*b.rate)`,
+then `b.last = now`. After that, check `b.tokens < 1`.
+
+### Answer
 
 ```go
 now := b.now()
@@ -17,7 +23,18 @@ b.tokens--
 return true
 ```
 
-## Task 2: a middleware
+## Task 2: Reject requests with 429
+
+Return a new handler that asks the bucket first. If the answer is no, reply
+with a 429 and stop; otherwise hand the request to `next`.
+
+### Closer
+
+Wrap a function with `http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { ... })`.
+Set the header before writing the status:
+`w.Header().Set("Retry-After", "1")`, then `http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)`.
+
+### Answer
 
 ```go
 return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +47,18 @@ return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 })
 ```
 
-## Task 3: find or create
+## Task 3: Give every client its own bucket
+
+Key the map by IP only, not the port. Look the bucket up under the lock, and
+create and store one if it's missing.
+
+### Closer
+
+`ip, _, _ := net.SplitHostPort(r.RemoteAddr)` (add `"net"` to the imports).
+Use the comma-ok form `b, ok := p.buckets[ip]` between `p.mu.Lock()` and
+`p.mu.Unlock()`.
+
+### Answer
 
 ```go
 ip, _, _ := net.SplitHostPort(r.RemoteAddr)
@@ -43,3 +71,6 @@ if !ok {
 p.mu.Unlock()
 return b.Allow()
 ```
+
+The bucket has its own lock, so `p.mu` can be released before calling
+`Allow`.

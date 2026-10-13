@@ -1,14 +1,36 @@
-## Task 1: one check, one panic
+## Task 1: Panic on an invalid built-in port
 
-Call `strconv.Atoi(s)`. You can test all three problems in one `if`: the error
-is not `nil`, the port is below 1, or the port is above 65535. Build the
-message with `fmt.Sprintf("invalid port %q", s)` and pass it to `panic`.
+Parse the string with `strconv.Atoi`. Three things make a port bad: it isn't a
+number, it is below 1, or it is above 65535. You can test all three in one
+`if`.
 
-## Task 2: recover lives in a deferred function
+### Closer
+
+`port, err := strconv.Atoi(s)`, then
+`if err != nil || port < 1 || port > 65535 { ... }`. Build the message with
+`fmt.Sprintf("invalid port %q", s)` and pass it to `panic`.
+
+### Answer
+
+```go
+port, err := strconv.Atoi(s)
+if err != nil || port < 1 || port > 65535 {
+	panic(fmt.Sprintf("invalid port %q", s))
+}
+return port
+```
+
+`%q` adds the double quotes around `s` for you.
+
+## Task 2: Turn a panic into an error
 
 `recover()` only stops a panic when it is called inside a function that you
-`defer`. Put the `defer` before `return job()`. Because `err` is a named
-result, the deferred function can still change it after the panic.
+`defer`. `err` is already a named result, so a deferred function can still
+change it after the panic.
+
+### Closer
+
+Put this before `return job()`:
 
 ```go
 defer func() {
@@ -18,13 +40,32 @@ defer func() {
 }()
 ```
 
-## Task 3: let SafeRun do the work
+### Answer
 
-Loop over the jobs and call `SafeRun(job.Run)` for each one. Because
-`SafeRun` never panics, the loop always reaches the next job. Use
-`err.Error()` to get the message text.
+```go
+defer func() {
+	if r := recover(); r != nil {
+		err = fmt.Errorf("%w: %v", ErrPanic, r)
+	}
+}()
+return job()
+```
 
-## Almost the answer
+`%w` keeps `ErrPanic` findable with `errors.Is`, and `%v` prints the panic
+value whatever its type.
+
+## Task 3: Run every job, even after a panic
+
+Let `SafeRun` do the hard part. Because `SafeRun` never lets a panic escape,
+a plain loop always reaches the next job.
+
+### Closer
+
+Loop with `for _, job := range jobs` and call `SafeRun(job.Run)`. Append
+`job.Name + ": ok"` when the error is `nil`, otherwise
+`job.Name + ": " + err.Error()`.
+
+### Answer
 
 ```go
 var report []string
@@ -37,6 +78,3 @@ for _, job := range jobs {
 }
 return report
 ```
-
-For task 2, the line inside the `if` is
-`err = fmt.Errorf("%w: %v", ErrPanic, r)`.

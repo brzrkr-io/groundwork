@@ -1,28 +1,44 @@
-## Task 1: ask first, start second
+## Task 1: Fix StartLister
 
-`Lister()` registers the Deployment informer with the factory.
-`StartWithContext` only starts informers that are already registered. Move
-the `Lister()` call to the top, keep it in a variable, and return that
-variable at the end.
+Asking for `Lister()` also tells the factory you want the Deployment informer.
+The factory only starts informers it knows about when `StartWithContext` runs.
+Which step has to come first?
 
-## Task 2: selector, list, sum
+### Closer
 
-Build the selector with `labels.SelectorFromSet(labels.Set{"team": team})`.
-Pass it to `lister.Deployments(namespace).List`. Loop over the result. When
-`d.Spec.Replicas` is `nil` add 1, otherwise add `*d.Spec.Replicas`.
-
-## Task 3: copy before you edit
+Move the `Lister()` call to the top of the function, keep it in a variable,
+and return that variable at the end:
 
 ```go
-cached, err := lister.Deployments(namespace).Get(name)
-if err != nil {
-	return err
-}
-d := cached.DeepCopy()
-d.Spec.Paused = true
+lister := factory.Apps().V1().Deployments().Lister()
+factory.StartWithContext(ctx)
+// ... wait for sync ...
 ```
 
-## Task 2: almost the answer
+### Answer
+
+```go
+lister := factory.Apps().V1().Deployments().Lister()
+factory.StartWithContext(ctx)
+if err := factory.WaitForCacheSyncWithContext(ctx).AsError(); err != nil {
+	return nil, err
+}
+return lister, nil
+```
+
+## Task 2: Finish TeamReplicas
+
+Build a label selector for `team=<team>`, list the matching Deployments in
+`namespace` from the lister, and add up their replicas. Remember that
+`Spec.Replicas` is a pointer and may be `nil`.
+
+### Closer
+
+The selector is `labels.SelectorFromSet(labels.Set{"team": team})`, and the
+list call is `lister.Deployments(namespace).List(selector)`. In the loop, add
+`1` when `d.Spec.Replicas == nil`, otherwise add `*d.Spec.Replicas`.
+
+### Answer
 
 ```go
 selector := labels.SelectorFromSet(labels.Set{"team": team})
@@ -40,3 +56,30 @@ for _, d := range deployments {
 }
 return total, nil
 ```
+
+Add the import `"k8s.io/apimachinery/pkg/labels"`.
+
+## Task 3: Fix Pause
+
+The object from `Get` lives inside the shared cache, so changing it changes
+what everyone else sees. Make a copy and change the copy instead.
+
+### Closer
+
+Rename the value from `Get` to `cached`, then `d := cached.DeepCopy()` before
+setting `d.Spec.Paused`.
+
+### Answer
+
+```go
+cached, err := lister.Deployments(namespace).Get(name)
+if err != nil {
+	return err
+}
+d := cached.DeepCopy()
+d.Spec.Paused = true
+_, err = cs.AppsV1().Deployments(namespace).Update(ctx, d, metav1.UpdateOptions{})
+return err
+```
+
+`DeepCopy` copies every nested field, so the cached object stays untouched.

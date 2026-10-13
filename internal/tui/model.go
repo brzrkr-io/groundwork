@@ -55,10 +55,11 @@ type Model struct {
 	checkErr  error
 	completed bool // passed during this visit
 
-	hints      []course.Hint
-	todoFiles  []string // files in the exercise that still contain TODO markers
-	listLine   int      // line of the list cursor, to keep it scrolled into view
-	hintsShown int
+	tasks      []course.Task
+	hintTask   int         // index into tasks of the task whose hints are shown
+	hintLevels map[int]int // per task index: how many levels have been revealed
+	todoFiles  []string    // files in the exercise that still contain TODO markers
+	listLine   int         // line of the list cursor, to keep it scrolled into view
 	listCursor int
 	confirm    string // pending confirmation, e.g. "reset"
 	flash      string
@@ -119,8 +120,8 @@ func (m *Model) open(e *course.Exercise) tea.Cmd {
 	m.Close()
 	m.ex = e
 	m.result, m.checkErr, m.completed = nil, nil, false
-	m.hintsShown, m.confirm, m.flash = 0, "", ""
-	m.hints, _ = m.s.Course.Hints(e)
+	m.hintTask, m.hintLevels, m.confirm, m.flash = 0, map[int]int{}, "", ""
+	m.tasks, _ = m.s.Course.Tasks(e)
 	m.pane = paneResult
 
 	err := m.s.Prepare(e)
@@ -292,15 +293,28 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.toggle(paneInstructions)
 		m.body.GotoTop()
 	case "h":
+		if len(m.tasks) == 0 {
+			m.flash = "This exercise has no hints."
+			break
+		}
 		if m.pane != paneHints {
 			m.pane = paneHints
-			m.hintsShown = max(m.hintsShown, 1)
-		} else if m.hintsShown < len(m.hints) {
-			m.hintsShown++
+			m.hintTask = m.stuckTask()
+			m.hintLevels[m.hintTask] = max(m.hintLevels[m.hintTask], 1)
+		} else if m.hintLevels[m.hintTask] < len(m.tasks[m.hintTask].Hints) {
+			m.hintLevels[m.hintTask]++
 		}
 		m.refresh()
 		m.body.GotoBottom()
 		return m, nil
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		if n := int(k[0] - '0'); m.pane == paneHints && n <= len(m.tasks) {
+			m.hintTask = n - 1
+			m.hintLevels[m.hintTask] = max(m.hintLevels[m.hintTask], 1)
+			m.refresh()
+			m.body.GotoBottom()
+			return m, nil
+		}
 	case "l":
 		m.pane = paneList
 		m.listCursor = m.ex.Number - 1
@@ -331,8 +345,8 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case m.s.Done(m.ex) || m.s.Revealed(m.ex):
 			m.toggle(paneSolution)
 			m.body.GotoTop()
-		case m.hintsShown < len(m.hints):
-			m.flash = fmt.Sprintf("Try the hints first: h (%d of %d seen). The solution unlocks after the last.", m.hintsShown, len(m.hints))
+		case !m.sawAnswer():
+			m.flash = "Try the hints first: h shows them, and the solution unlocks after a task's Answer hint."
 		default:
 			m.confirm = "reveal"
 			m.flash = "Press s again to see the solution. Any other key cancels."
@@ -500,20 +514,71 @@ func (m *Model) successView() string {
 	return b.String()
 }
 
+// stuckTask guesses which task the learner is on: the task of the first
+// failing test, when each test matches one task (the usual layout), else the
+// task whose hints are already open.
+func (m *Model) stuckTask() int {
+	if m.result == nil {
+		return m.hintTask
+	}
+	var tests []*workspace.Test
+	for _, t := range m.result.Tests {
+		if !strings.HasSuffix(t.Name, "TestGrader") {
+			tests = append(tests, t)
+		}
+	}
+	if len(tests) != len(m.tasks) {
+		return m.hintTask
+	}
+	for i, t := range tests {
+		if !t.Passed && !t.Skipped {
+			return i
+		}
+	}
+	return m.hintTask
+}
+
+// sawAnswer reports whether the learner has read any task's Answer hint.
+func (m *Model) sawAnswer() bool {
+	for i, t := range m.tasks {
+		if m.hintLevels[i] >= len(t.Hints) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Model) hintsView(width int) string {
-	if len(m.hints) == 0 {
+	if len(m.tasks) == 0 {
 		return dim.Render("This exercise has no hints.")
 	}
+	t := m.tasks[m.hintTask]
+	shown := m.hintLevels[m.hintTask]
 	var b strings.Builder
-	for i := range m.hintsShown {
-		h := m.hints[i]
-		b.WriteString(keyCap.Render(fmt.Sprintf("Hint %d of %d", i+1, len(m.hints))) + dim.Render(" · ") + bold.Render(h.Title) + "\n")
+	b.WriteString(bold.Render(fmt.Sprintf("Task %d of %d · %s", t.Number, len(m.tasks), t.Title)) + "\n\n")
+	for i := range shown {
+		h := t.Hints[i]
+		b.WriteString(keyCap.Render(h.Title) + dim.Render(fmt.Sprintf("  (%d of %d)", i+1, len(t.Hints))) + "\n")
 		b.WriteString(m.markdown(h.Body, width) + "\n\n")
 	}
-	if m.hintsShown < len(m.hints) {
-		b.WriteString(dim.Render("Press ") + keyCap.Render("h") + dim.Render(" for a stronger hint."))
-	} else {
-		b.WriteString(dim.Render("That's every hint. Still stuck? Press ") + keyCap.Render("s") + dim.Render(" to see the solution."))
+	switch {
+	case shown < len(t.Hints)-1:
+		b.WriteString(dim.Render("Press ") + keyCap.Render("h") + dim.Render(" for a closer hint."))
+	case shown < len(t.Hints):
+		b.WriteString(dim.Render("Press ") + keyCap.Render("h") + dim.Render(" for the answer to this task."))
+	default:
+		b.WriteString(dim.Render("That's the answer for this task. Want the whole solution? Press ") + keyCap.Render("s") + dim.Render("."))
+	}
+	if len(m.tasks) > 1 {
+		var others []string
+		for i, o := range m.tasks {
+			label := keyCap.Render(fmt.Sprint(o.Number)) + dim.Render(" "+o.Title)
+			if i == m.hintTask {
+				label = bold.Render(fmt.Sprintf("%d %s", o.Number, o.Title))
+			}
+			others = append(others, "  "+label)
+		}
+		b.WriteString("\n\n" + dim.Render("Hints for another task: press its number") + "\n" + strings.Join(others, "\n"))
 	}
 	return b.String()
 }
@@ -696,8 +761,8 @@ func (m *Model) statusBadge() string {
 // tabs shows which view the body holds and the key that opens each one.
 func (m *Model) tabs() string {
 	hints := "Hints"
-	if len(m.hints) > 0 {
-		hints = fmt.Sprintf("Hints %d/%d", m.hintsShown, len(m.hints))
+	if len(m.tasks) > 1 {
+		hints = fmt.Sprintf("Hints · task %d", m.tasks[m.hintTask].Number)
 	}
 	views := []struct {
 		p     pane

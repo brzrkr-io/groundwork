@@ -42,19 +42,19 @@ func TestUsage(t *testing.T) {
 	})
 }
 
-func TestScale(t *testing.T) {
-	checkRun(t, []runCase{
-		{"api to 3", []string{"scale", "api", "3"}, 0, "scaling api to 3 replicas\n", ""},
-		{"worker to 12", []string{"./scale", "worker", "12"}, 0, "scaling worker to 12 replicas\n", ""},
-		{"cron to 0", []string{"scale", "cron", "0"}, 0, "scaling cron to 0 replicas\n", ""},
-	})
-}
-
 func TestBadReplicas(t *testing.T) {
 	checkRun(t, []runCase{
 		{"word", []string{"scale", "api", "abc"}, 2, "", "scale: replicas must be a whole number >= 0, got \"abc\"\n"},
 		{"negative", []string{"./scale", "api", "-1"}, 2, "", "./scale: replicas must be a whole number >= 0, got \"-1\"\n"},
 		{"decimal", []string{"scale", "web", "2.5"}, 2, "", "scale: replicas must be a whole number >= 0, got \"2.5\"\n"},
 		{"empty", []string{"scale", "web", ""}, 2, "", "scale: replicas must be a whole number >= 0, got \"\"\n"},
+	})
+}
+
+func TestScale(t *testing.T) {
+	checkRun(t, []runCase{
+		{"api to 3", []string{"scale", "api", "3"}, 0, "scaling api to 3 replicas\n", ""},
+		{"worker to 12", []string{"./scale", "worker", "12"}, 0, "scaling worker to 12 replicas\n", ""},
+		{"cron to 0", []string{"scale", "cron", "0"}, 0, "scaling cron to 0 replicas\n", ""},
 	})
 }

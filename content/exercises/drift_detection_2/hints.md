@@ -1,12 +1,25 @@
-## Task 1: skip before you compare
+## Task 1: Ignore AWS-managed tags
 
-`ChangedKeys` has two loops, one over `want` and one over `got`. At the top
-of each loop body, skip the key when it is AWS-managed. `continue` jumps to
-the next key.
+`ChangedKeys` has two loops, one over `want` and one over `got`. Before you
+compare a key in either loop, decide whether it belongs to AWS and should be
+skipped.
 
-## Task 1: the check
+### Closer
+
+At the top of each loop body, test the key with `strings.HasPrefix(k, "aws:")`
+and use `continue` to jump to the next key. Add `"strings"` to the imports.
+
+### Answer
 
 ```go
+for k, v := range want {
+	if strings.HasPrefix(k, "aws:") {
+		continue
+	}
+	if gv, ok := got[k]; !ok || gv != v {
+		keys = append(keys, k)
+	}
+}
 for k := range got {
 	if strings.HasPrefix(k, "aws:") {
 		continue
@@ -17,14 +30,25 @@ for k := range got {
 }
 ```
 
-Do the same in the loop over `want`.
+Skipping on both sides means an `aws:` key is never counted, whichever map has it.
 
-## Task 2: sort by ID
+## Task 2: Make the report order stable
 
-Add this just before `return changes`, and add the `cmp` import:
+Map order is random, so `changes` comes out in a different order each run.
+Sort the slice once, just before `Diff` returns it.
+
+### Closer
+
+Use `slices.SortFunc` with a compare function that compares the `ID` fields
+with `cmp.Compare`. Add the `"cmp"` import.
+
+### Answer
 
 ```go
 slices.SortFunc(changes, func(a, b Change) int {
 	return cmp.Compare(a.ID, b.ID)
 })
+return changes
 ```
+
+Sorting by `ID` gives the same report every night, whatever order the maps used.

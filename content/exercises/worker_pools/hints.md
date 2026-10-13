@@ -1,4 +1,14 @@
-## Task 1: range over jobs
+## Task 1: Write the worker
+
+The worker keeps taking jobs until `jobs` is closed. Which loop over a
+channel stops by itself when the channel is closed?
+
+### Closer
+
+Use `for job := range jobs { ... }` and send one `Result{Index: ..., Host:
+..., Up: ...}` on `results` per job. Don't close `results`.
+
+### Answer
 
 ```go
 for job := range jobs {
@@ -6,14 +16,19 @@ for job := range jobs {
 }
 ```
 
-## Task 2: n workers plus a closer
+## Task 2: Close results when the workers are done
 
-Start the `n` workers with a `sync.WaitGroup` instead of a bare `go`
-(`for range n { wg.Go(...) }`). Then start one more goroutine that calls
-`wg.Wait()` and then `close(results)`. Return `results`. Add `"sync"` to the
-imports.
+Someone has to close `results` after the last worker returns. A
+`sync.WaitGroup` tracks the workers, and one extra goroutine can wait on it
+so `startWorkers` still returns straight away.
 
-## Task 2: almost the answer
+### Closer
+
+Start the workers with `wg.Go(func() { worker(jobs, results, check) })`
+instead of `go`. Then `go func() { wg.Wait(); close(results) }()`. Add
+`"sync"` to the imports.
+
+### Answer
 
 ```go
 results := make(chan Result)
@@ -30,8 +45,24 @@ go func() {
 return results
 ```
 
-## Task 3: place by index
+Calling `wg.Wait()` directly would deadlock, because nobody would be receiving yet.
 
-Make `out` with length `n` instead of capacity `n`:
-`out := make([]Result, n)`. Then, inside the loop, replace the `append` with
-`out[r.Index] = r`.
+## Task 3: Collect in order
+
+`append` keeps arrival order. Each result already carries its `Index`, so
+put it straight into the right place.
+
+### Closer
+
+Make `out` with length `n`, not just capacity: `make([]Result, n)`. In the
+loop, assign to `out[r.Index]` instead of appending.
+
+### Answer
+
+```go
+out := make([]Result, n)
+for r := range results {
+	out[r.Index] = r
+}
+return out
+```

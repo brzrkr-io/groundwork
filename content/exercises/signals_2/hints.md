@@ -1,21 +1,38 @@
-## Task 1: a switch on the signal
+## Task 1: Exit with 128 + n
+
+Compare the signal with each stop signal you know. `SIGINT` (`os.Interrupt`)
+is signal 2 and `SIGTERM` is signal 15.
+
+### Closer
 
 `switch sig { case os.Interrupt: ... }` compares the signal with each case.
-`SIGINT` is signal 2 and `SIGTERM` is signal 15, so the codes are `128 + 2` and
-`128 + 15`. Add `"syscall"` to the imports.
+The codes are `128 + 2` and `128 + 15`. Add `"syscall"` to the imports.
 
-## Task 2: only some signals return
+### Answer
 
-The bug is that the loop body always reaches `return`. Wrap it in a `switch`:
-the `syscall.SIGHUP` case reloads and lets the loop carry on, and the
-`default` case keeps the existing log line and `return`.
+```go
+switch sig {
+case os.Interrupt:
+	return 128 + 2
+case syscall.SIGTERM:
+	return 128 + 15
+default:
+	return 1
+}
+```
 
-## Task 2: two outcomes of a reload
+## Task 2: Reload on SIGHUP instead of quitting
 
-`if err := reload(); err != nil { ... } else { ... }` lets you log
-`reload failed: %v; keeping old config` or `reloaded config`.
+The bug is that the loop body always reaches `return`. Only some signals
+should return; `SIGHUP` should reload and let the loop carry on.
 
-## Almost the answer
+### Closer
+
+Wrap the body in `switch sig`: a `case syscall.SIGHUP:` that reloads, and a
+`default:` that keeps the existing log line and `return`. For the reload, use
+`if err := reload(); err != nil { ... } else { ... }`.
+
+### Answer
 
 ```go
 for sig := range sigs {

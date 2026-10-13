@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -69,7 +71,7 @@ type Module struct {
 // Dir is the module's folder, for example "01_basics".
 func (m *Module) Dir() string { return fmt.Sprintf("%02d_%s", m.Number, m.Folder) }
 
-// Hint is one progressively stronger hint from hints.md.
+// Hint is one level of a task's hints: Nudge, Closer or Answer.
 type Hint struct {
 	Title string
 	Body  string
@@ -132,31 +134,111 @@ func (c *Course) README(e *Exercise) (string, error) {
 	return string(raw), err
 }
 
-// Hints parses hints.md: every "## " heading starts a new hint.
-func (c *Course) Hints(e *Exercise) ([]Hint, error) {
+// Task is one numbered task of an exercise with its hints, gentlest first.
+type Task struct {
+	Number int
+	Title  string
+	Hints  []Hint // Nudge, Closer, Answer
+}
+
+// HintLevels names the three hints every task has, in reveal order.
+var HintLevels = []string{"Nudge", "Closer", "Answer"}
+
+var (
+	readmeTask = regexp.MustCompile(`(?m)^### (\d+)\. (.+)$`)
+	hintTask   = regexp.MustCompile(`^## Task (\d+): (.+)$`)
+)
+
+// Tasks returns e's tasks: titles from the README's "### N. Title" headings,
+// hints from hints.md. See ParseHints for the format.
+func (c *Course) Tasks(e *Exercise) ([]Task, error) {
+	readme, err := c.README(e)
+	if err != nil {
+		return nil, err
+	}
 	raw, err := fs.ReadFile(c.packs, path.Join(e.Name, "hints.md"))
 	if err != nil {
 		return nil, err
 	}
-	return ParseHints(string(raw)), nil
+	return ParseHints(readme, string(raw))
 }
 
-// ParseHints splits markdown into hints at each level-two heading.
-func ParseHints(markdown string) []Hint {
-	var hints []Hint
-	for _, line := range strings.Split(markdown, "\n") {
-		if title, ok := strings.CutPrefix(line, "## "); ok {
-			hints = append(hints, Hint{Title: strings.TrimSpace(title)})
+// ParseHints matches hints.md to the README's tasks. hints.md has one
+// section per task, in order, each with exactly three levels:
+//
+//	## Task 1: <same title as the README's "### 1. ...">
+//	<nudge: what to look at, no code answer>
+//	### Closer
+//	<the syntax or API to use, a partial snippet>
+//	### Answer
+//	<near-complete code for this task>
+func ParseHints(readme, hints string) ([]Task, error) {
+	var tasks []Task
+	for _, m := range readmeTask.FindAllStringSubmatch(readme, -1) {
+		n, _ := strconv.Atoi(m[1])
+		tasks = append(tasks, Task{Number: n, Title: strings.TrimSpace(m[2])})
+	}
+	var problems []error
+	var cur *Task
+	var level *Hint
+	inCode := false
+	for _, line := range strings.Split(hints, "\n") {
+		if strings.HasPrefix(line, "```") {
+			inCode = !inCode
+		}
+		if inCode || strings.HasPrefix(line, "```") {
+			if level != nil {
+				level.Body += line + "\n"
+			}
 			continue
 		}
-		if len(hints) > 0 {
-			hints[len(hints)-1].Body += line + "\n"
+		if m := hintTask.FindStringSubmatch(line); m != nil {
+			n, _ := strconv.Atoi(m[1])
+			if n < 1 || n > len(tasks) {
+				problems = append(problems, fmt.Errorf("hints.md has Task %d, but the README has %d tasks", n, len(tasks)))
+				cur, level = nil, nil
+				continue
+			}
+			cur = &tasks[n-1]
+			if title := strings.TrimSpace(m[2]); title != cur.Title {
+				problems = append(problems, fmt.Errorf("hints.md Task %d is %q, but the README calls it %q", n, title, cur.Title))
+			}
+			cur.Hints = append(cur.Hints, Hint{Title: HintLevels[0]})
+			level = &cur.Hints[len(cur.Hints)-1]
+			continue
+		}
+		if title, ok := strings.CutPrefix(line, "### "); ok && cur != nil {
+			cur.Hints = append(cur.Hints, Hint{Title: strings.TrimSpace(title)})
+			level = &cur.Hints[len(cur.Hints)-1]
+			continue
+		}
+		if strings.HasPrefix(line, "## ") {
+			problems = append(problems, fmt.Errorf("hints.md heading %q is not \"## Task N: Title\"", line))
+			cur, level = nil, nil
+			continue
+		}
+		if level != nil {
+			level.Body += line + "\n"
 		}
 	}
-	for i := range hints {
-		hints[i].Body = strings.TrimSpace(hints[i].Body)
+	if len(tasks) == 0 {
+		problems = append(problems, errors.New(`the README has no "### 1. ..." task headings`))
 	}
-	return hints
+	for i := range tasks {
+		t := &tasks[i]
+		var titles []string
+		for j := range t.Hints {
+			t.Hints[j].Body = strings.TrimSpace(t.Hints[j].Body)
+			titles = append(titles, t.Hints[j].Title)
+			if t.Hints[j].Body == "" {
+				problems = append(problems, fmt.Errorf("Task %d's %s hint is empty", t.Number, t.Hints[j].Title))
+			}
+		}
+		if !slices.Equal(titles, HintLevels) {
+			problems = append(problems, fmt.Errorf("Task %d has hints %v, want exactly %v", t.Number, titles, HintLevels))
+		}
+	}
+	return tasks, errors.Join(problems...)
 }
 
 // Find resolves an exercise number ("3", "003"), a pack name ("variables_2"),

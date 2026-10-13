@@ -1,20 +1,16 @@
-## Where to look
+## Task 1: Fix the greeting
 
-Open `exercise.go`. Each function has a `return` line with a string in double
-quotes. Those strings are the only thing you need to change.
+Open `exercise.go` and find `Greeting`. It has a `return` line with some text
+in double quotes. That text is the only thing you need to change.
 
-## Read the failure message
+### Closer
 
-The test output reads like this:
+The test output shows what you returned and what it wanted:
+`Greeting() = "hello world", want "Hello, Gopher!"`. Replace the text between
+the quotes with the wanted text, keeping the quotes. Capitals, the comma, the
+space and the `!` all count.
 
-```text
-Greeting() = "hello world", want "Hello, Gopher!"
-```
-
-The value after `=` is what your code returned. The value after `want` is what
-the test expected.
-
-## Almost the answer
+### Answer
 
 ```go
 func Greeting() string {
@@ -22,4 +18,20 @@ func Greeting() string {
 }
 ```
 
-Do the same for `Status`, using `"ready to deploy"`.
+## Task 2: Fix the status message
+
+Find `Status` in `exercise.go`. Just like `Greeting`, it returns some text in
+double quotes that needs to change.
+
+### Closer
+
+Keep the `return` and the double quotes, and put `ready to deploy` between
+them. It is all lowercase, with single spaces.
+
+### Answer
+
+```go
+func Status() string {
+	return "ready to deploy"
+}
+```

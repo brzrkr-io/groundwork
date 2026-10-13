@@ -1,21 +1,41 @@
-## Task 1: wrap it in defer
+## Task 1: Make Guard stop the panic
 
-Put the existing `if r := recover(); r != nil { ... }` inside
-`defer func() { ... }()`, and place that before `err = handler()`.
+Right now `recover()` runs before the handler, when nothing has gone wrong
+yet. Only deferred functions run during a panic, so that's where it belongs.
 
-## Task 2: name the result
+### Closer
 
-Change the signature to `func Guard(command string, handler func() error) (err error)`.
-Then delete `var err error`, because `err` already exists as the result. You
-can also replace the last two lines with `return handler()`.
+Wrap the existing `if r := recover(); r != nil { ... }` in
+`defer func() { ... }()`, and place it before `err = handler()`.
 
-## Task 3: a nil map can't be written to
+### Answer
 
-`var counts map[string]int` declares a map but doesn't create one, so
-`counts[a.Severity]++` panics. Use `counts := make(map[string]int)` instead,
-and remove the whole `defer func() { recover() }()` block.
+```go
+var err error
+defer func() {
+	if r := recover(); r != nil {
+		err = fmt.Errorf("command %q panicked: %v", command, r)
+	}
+}()
+err = handler()
+return err
+```
 
-## Almost the answer
+The panic is now stopped, but `Guard` still returns `nil` after one; task 2
+fixes that.
+
+## Task 2: Return the panic as an error
+
+After a panic the `return` line never runs, so setting a local `err` is lost.
+The deferred function must set the function's result itself.
+
+### Closer
+
+Change the signature to
+`func Guard(command string, handler func() error) (err error)` and delete
+`var err error`. The last two lines can become `return handler()`.
+
+### Answer
 
 ```go
 func Guard(command string, handler func() error) (err error) {
@@ -27,3 +47,28 @@ func Guard(command string, handler func() error) (err error) {
 	return handler()
 }
 ```
+
+A named result is what the caller receives, so the deferred function's
+assignment survives the panic.
+
+## Task 3: Fix the real bug instead of recovering
+
+`var counts map[string]int` declares a map but never creates one. Writing to
+a `nil` map always panics, and the `recover` just hides that.
+
+### Closer
+
+Delete the whole `defer func() { recover() }()` block, and replace the `var`
+line with `counts := make(map[string]int)`.
+
+### Answer
+
+```go
+counts := make(map[string]int)
+for _, a := range alerts {
+	counts[a.Severity]++
+}
+return counts
+```
+
+`make` creates an empty map, so no alerts gives `map[string]int{}`, not `nil`.

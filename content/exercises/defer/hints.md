@@ -1,28 +1,37 @@
-## Task 1: one defer, one deleted line
+## Task 1: Always close the connection in Deploy
+
+The early `return` inside the loop skips the `r.Close(host)` at the end. Use
+`defer` so the close runs on every return path.
+
+### Closer
 
 Put `defer r.Close(host)` on the line right after `r.Connect(host)`. Then
 delete the old `r.Close(host)` near the end, or the connection is closed twice.
 
-## Task 2: two pairs
-
-Each thing you acquire gets its own `defer` straight after it. Write them in
-the order you acquire things: lock, then connect. Last-in, first-out takes
-care of the closing order for you. You can finish with `return r.Run("migrate")`.
-
-## Task 3: the deferred closure
-
-The closure reads and changes the named result `err`. It runs after the
-`return` statements have stored their error in `err`:
+### Answer
 
 ```go
-defer func() {
-	if err != nil {
-		// replace err with a wrapped version
+r.Connect(host)
+defer r.Close(host)
+for _, cmd := range cmds {
+	if err := r.Run(cmd); err != nil {
+		return err
 	}
-}()
+}
+return nil
 ```
 
-## Almost the answer
+## Task 2: Lock, connect and clean up in order in Migrate
+
+Each thing you acquire gets its own `defer` straight after it. Write them in
+the order you acquire things; last-in, first-out handles the closing order.
+
+### Closer
+
+Lock, then `defer r.Unlock("migrations")`. Connect, then `defer r.Close(host)`.
+Finish with `return r.Run("migrate")`.
+
+### Answer
 
 ```go
 func Migrate(r *Recorder, host string) error {
@@ -34,5 +43,31 @@ func Migrate(r *Recorder, host string) error {
 }
 ```
 
-For `Backup`, inside the closure write
-`err = fmt.Errorf("backup %s: %w", host, err)`.
+The close was deferred last, so it runs first, before the unlock.
+
+## Task 3: Add context to every Backup error
+
+The result is named `err`, so a deferred closure can read and change it after
+a `return` has stored the error there.
+
+### Closer
+
+```go
+defer func() {
+	if err != nil {
+		// replace err with a wrapped version
+	}
+}()
+```
+
+### Answer
+
+```go
+defer func() {
+	if err != nil {
+		err = fmt.Errorf("backup %s: %w", host, err)
+	}
+}()
+```
+
+Checking for `nil` first keeps a successful backup returning `nil`.

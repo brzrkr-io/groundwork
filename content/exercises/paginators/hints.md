@@ -1,34 +1,76 @@
-## Task 1: wrap it in a loop
+## Task 1: Read every page
 
-Everything from `page, err := p.NextPage(ctx)` down to the end of the inner
-`for` loop has to run once per page. Put those lines inside
-`for p.HasMorePages() { ... }` and keep `return keys, nil` after the loop.
+The code that reads one page is already there. It just has to run once per
+page, for as long as the paginator says more pages remain.
 
-## Task 2: count as you go
+### Closer
 
-Inside the inner loop, right after appending a key, check
-`len(keys) == limit`. If it is, `return keys, nil` straight away. Returning
-from inside the loop means `NextPage` is never called again.
+Wrap everything from `page, err := p.NextPage(ctx)` to the end of the inner
+`for` in `for p.HasMorePages() { ... }`. Keep `return keys, nil` after the
+loop.
 
-## Task 3: the shape of the EC2 loop
+### Answer
 
-It is the same loop as task 1, with one more level of nesting:
+```go
+for p.HasMorePages() {
+	page, err := p.NextPage(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list s3://%s/%s: %w", bucket, prefix, err)
+	}
+	for _, obj := range page.Contents {
+		keys = append(keys, aws.ToString(obj.Key))
+	}
+}
+return keys, nil
+```
+
+## Task 2: Stop once you have enough
+
+`MaxKeys` doesn't stop the loop, so you have to. After each key you append,
+check whether you now have enough.
+
+### Closer
+
+Right after the `append`, compare `len(keys)` with `limit`. When they are
+equal, return from the function.
+
+### Answer
+
+```go
+keys = append(keys, aws.ToString(obj.Key))
+if len(keys) == limit {
+	return keys, nil
+}
+```
+
+Returning from inside the loop means `NextPage` is never called again.
+
+## Task 3: List every instance
+
+It's the same loop as task 1, using `ec2.NewDescribeInstancesPaginator`, with
+one more level of nesting: pages, then reservations, then instances.
+
+### Closer
 
 ```go
 p := ec2.NewDescribeInstancesPaginator(api, &ec2.DescribeInstancesInput{})
 var ids []string
 for p.HasMorePages() {
 	page, err := p.NextPage(ctx)
-	// handle err
+	// handle err, wrapped as "describe instances: %w"
 	for _, r := range page.Reservations {
 		// loop over r.Instances
 	}
 }
 ```
 
-## Task 3: almost the answer
+### Answer
 
 ```go
+p := ec2.NewDescribeInstancesPaginator(api, &ec2.DescribeInstancesInput{})
+var ids []string
+for p.HasMorePages() {
+	page, err := p.NextPage(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("describe instances: %w", err)
 	}
@@ -37,6 +79,8 @@ for p.HasMorePages() {
 			ids = append(ids, aws.ToString(inst.InstanceId))
 		}
 	}
+}
+return ids, nil
 ```
 
-Return `ids, nil` after the outer loop.
+`%w` keeps `context.Canceled` inside the error, so `errors.Is` still finds it.

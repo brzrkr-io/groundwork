@@ -1,9 +1,12 @@
-## Task 1: keep what Get returned
+## Task 1: Fix `ScaleDeployment`
 
-The bug is that the result of `Get` is thrown away (`_`). Store it in a
-variable, change one field on it, and pass that same object to `Update`.
+The bug is that the result of `Get` is thrown away (`_`) and a new, nearly empty Deployment is sent to `Update`. Keep the object you read, change one field on it, and send that back.
 
-## Task 1: read, modify, write
+### Closer
+
+Store the Deployment: `d, err := cs.AppsV1().Deployments(namespace).Get(...)`. Then set `d.Spec.Replicas = new(replicas)` and pass `d` to `Update`. Delete the now-unused `appsv1` import.
+
+### Answer
 
 ```go
 d, err := cs.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
@@ -15,7 +18,23 @@ _, err = cs.AppsV1().Deployments(namespace).Update(ctx, d, metav1.UpdateOptions{
 return err
 ```
 
-## Task 2: the AlreadyExists branch
+`Update` replaces the whole object, so you send the full copy you read with only the replica count changed.
+
+## Task 2: Finish `ApplyConfigMap`
+
+After `Create` fails, check whether the reason was AlreadyExists. If not, return the error; if so, read, modify and write the existing ConfigMap.
+
+### Closer
+
+`apierrors.IsAlreadyExists(err)` recognises the error (add `apierrors "k8s.io/apimachinery/pkg/api/errors"`). Then `Get` the existing ConfigMap, set `existing.Data = data`, and call `cs.CoreV1().ConfigMaps(namespace).Update(...)`.
+
+```go
+if !apierrors.IsAlreadyExists(err) {
+	return nil, err
+}
+```
+
+### Answer
 
 ```go
 if !apierrors.IsAlreadyExists(err) {
@@ -29,12 +48,23 @@ existing.Data = data
 return cs.CoreV1().ConfigMaps(namespace).Update(ctx, existing, metav1.UpdateOptions{})
 ```
 
-## Task 3: compare before you write
+Updating the object from `Get` keeps its other fields, such as the `team` label.
 
-Just before `existing.Data = data`:
+## Task 3: Skip no-op updates
+
+Before you change `existing.Data`, compare it with `data`. If they already match, there is nothing to write.
+
+### Closer
+
+`maps.Equal(a, b)` reports whether two maps hold the same keys and values. Add `"maps"` to the imports and put the check just before `existing.Data = data`.
+
+### Answer
 
 ```go
 if maps.Equal(existing.Data, data) {
 	return existing, nil
 }
+existing.Data = data
 ```
+
+Returning early means no `update` request is sent, so watching controllers aren't woken for nothing.

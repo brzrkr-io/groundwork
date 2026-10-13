@@ -45,17 +45,8 @@ func TestPacks(t *testing.T) {
 			if !strings.Contains(readme, "\n## Your task") {
 				t.Error(`README.md has no "## Your task" section`)
 			}
-			hints, err := c.Hints(e)
-			if err != nil {
-				t.Fatalf("missing hints.md: %v", err)
-			}
-			if len(hints) < 2 {
-				t.Errorf("hints.md has %d hints, want at least 2", len(hints))
-			}
-			for i, h := range hints {
-				if h.Body == "" {
-					t.Errorf("hint %d (%q) is empty", i+1, h.Title)
-				}
+			if _, err := c.Tasks(e); err != nil {
+				t.Errorf("hints.md doesn't match the README's tasks:\n%v", err)
 			}
 			starter := materialize(t, e, pack, false)
 			solved := materialize(t, e, pack, true)

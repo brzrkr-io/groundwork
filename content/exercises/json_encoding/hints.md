@@ -1,31 +1,74 @@
-## Task 1: one tag per field
+## Task 1: Tag the Deployment struct
 
-Each field gets a tag in backquotes after its type, with no spaces inside:
+Each field needs a struct tag that tells `encoding/json` its key. Two fields
+are special: one is dropped when empty, one is never encoded.
+
+### Closer
+
+A tag goes in backquotes after the type, with no spaces inside:
+``Service string `json:"service"` ``. Add `,omitempty` after the key for
+`Error`, and use `json:"-"` for `AuthToken`.
+
+### Answer
 
 ```go
-Service string `json:"service"`
+type Deployment struct {
+	Service   string    `json:"service"`
+	Version   string    `json:"version"`
+	Replicas  int       `json:"replicas"`
+	Healthy   bool      `json:"healthy"`
+	Started   time.Time `json:"started"`
+	Error     string    `json:"error,omitempty"`
+	AuthToken string    `json:"-"`
+}
 ```
 
-`Error` needs `,omitempty` after its key, and `AuthToken` needs `json:"-"`.
+Keys come out in field order, and only `error` uses `omitempty`.
 
-## Task 2: start with both keys
+## Task 2: Count healthy deployments
 
-Create the map with both keys set to zero, then loop over the deployments and
-add one to the right key:
+Both keys must be present even when nothing is counted, so put them in the
+map before the loop. Then add one to the right key for each deployment.
+
+### Closer
+
+Start with `counts := map[string]int{"healthy": 0, "unhealthy": 0}`, loop
+with `for _, d := range deps`, and use `counts["healthy"]++` or
+`counts["unhealthy"]++` depending on `d.Healthy`.
+
+### Answer
 
 ```go
 counts := map[string]int{"healthy": 0, "unhealthy": 0}
+for _, d := range deps {
+	if d.Healthy {
+		counts["healthy"]++
+	} else {
+		counts["unhealthy"]++
+	}
+}
+return counts
 ```
 
-## Task 3: nil becomes null
+Ranging over a nil slice runs zero times, so `nil` gives two zeros.
 
-A nil slice encodes as `null`. Check `deps == nil` first and replace it with
-`[]Deployment{}`. Then fill in a `Report` value and pass it to
-`json.MarshalIndent`.
+## Task 3: Encode the report
 
-## Task 3: almost the answer
+Fill in a `Report` value and hand it to `json.MarshalIndent`. Watch out: a
+nil slice encodes as `null`, not `[]`.
+
+### Closer
+
+Check `deps == nil` first and replace it with `[]Deployment{}`. Then call
+`b, err := json.MarshalIndent(report, "", "  ")` and return `string(b)`.
+Add `"encoding/json"` to the imports.
+
+### Answer
 
 ```go
+if deps == nil {
+	deps = []Deployment{}
+}
 report := Report{
 	Environment: env,
 	GeneratedAt: generatedAt,
@@ -38,3 +81,5 @@ if err != nil {
 }
 return string(b), nil
 ```
+
+An empty, non-nil slice is what makes the output say `"deployments": []`.

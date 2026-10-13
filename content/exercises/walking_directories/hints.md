@@ -1,14 +1,34 @@
-## Task 1: collect, then sort
+## Task 1: List every file
 
-Inside the callback, `d.IsDir()` tells you whether `p` is a directory. Only
-append when it's **not** one. After `fs.WalkDir` returns, sort the whole
-slice once with `slices.Sort(files)`.
+Inside the callback, `d.IsDir()` tells you whether `p` is a directory. Collect only the paths that aren't, then sort the whole slice once after the walk.
 
-## Task 2: skip by name
+### Closer
 
-`d.Name()` is just the last part of the path, so `svc/.git` has the name
-`".git"`. Check it **before** the append, and return `fs.SkipDir` instead of
-`nil`:
+Append with `if !d.IsDir() { files = append(files, p) }`. After `fs.WalkDir` returns without an error, call `slices.Sort(files)`. Add `"slices"` to the imports.
+
+### Answer
+
+```go
+// inside the callback, after the err check:
+if !d.IsDir() {
+	files = append(files, p)
+}
+return nil
+
+// after the walk:
+slices.Sort(files)
+return files, nil
+```
+
+## Task 2: Skip .git directories
+
+`d.Name()` is just the last part of the path, so `svc/.git` has the name `".git"`. Check for it before you append, and return a value that tells the walk not to go inside.
+
+### Closer
+
+Returning `fs.SkipDir` from the callback for a directory skips everything in it. Test `d.IsDir() && d.Name() == ".git"`.
+
+### Answer
 
 ```go
 if d.IsDir() && d.Name() == ".git" {
@@ -16,26 +36,43 @@ if d.IsDir() && d.Name() == ".git" {
 }
 ```
 
-## Task 3: the shape of the callback
+## Task 3: Find large log files
 
-Copy the `fs.WalkDir` call from `ListFiles`, with its own `logs` slice. In
-the callback: handle `err`, skip `.git`, return `nil` for other directories,
-then check the name with `path.Match("*.log", d.Name())`, then the size.
+Copy the `fs.WalkDir` call from `ListFiles`, with its own `logs` slice. In the callback: handle `err`, skip `.git`, ignore other directories, then check the name, then the size.
 
-## Task 3: almost the answer
+### Closer
+
+`path.Match("*.log", d.Name())` returns `(bool, error)`. For the size, `d.Info()` gives a `fs.FileInfo` with `.Size()`; keep the file when it is `>= minSize`. Sort with `slices.Sort(logs)` and add `"path"` to the imports.
+
+### Answer
 
 ```go
-if ok, _ := path.Match("*.log", d.Name()); !ok {
+var logs []string
+err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+	if err != nil {
+		return err
+	}
+	if d.IsDir() {
+		if d.Name() == ".git" {
+			return fs.SkipDir
+		}
+		return nil
+	}
+	if ok, _ := path.Match("*.log", d.Name()); !ok {
+		return nil
+	}
+	info, err := d.Info()
+	if err != nil {
+		return err
+	}
+	if info.Size() >= minSize {
+		logs = append(logs, p)
+	}
 	return nil
-}
-info, err := d.Info()
+})
 if err != nil {
-	return err
+	return nil, err
 }
-if info.Size() >= minSize {
-	logs = append(logs, p)
-}
-return nil
+slices.Sort(logs)
+return logs, nil
 ```
-
-Don't forget `slices.Sort(logs)` after the walk.

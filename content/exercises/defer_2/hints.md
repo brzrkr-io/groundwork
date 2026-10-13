@@ -1,28 +1,53 @@
-## Task 1: when is the text built?
+## Task 1: Record the real outcome in Maintenance
 
 `"maintenance " + host + ": " + status` is worked out at the `defer` line,
-while `status` is still `"failed"`. Wrap the call in a closure so the text is
-built when the function finishes instead.
+while `status` is still `"failed"`. You need the text to be built when the
+function finishes instead.
 
-## Task 2: check, then defer
+### Closer
 
-Move `defer r.Close(host)` below the `if err != nil { return err }` check, so
-it only runs once `Connect` has succeeded. You can write the check as
-`if err := r.Connect(host); err != nil {`.
+Defer a closure instead of a direct call: `defer func() { ... }()`. The
+closure reads `status` when it runs.
 
-## Task 3: let RotateHost do the work
-
-Once task 2 is fixed, `RotateHost` already does one host correctly, and its
-`defer` runs at the end of each call. Replace the whole loop body with a call
-to it.
-
-## Almost the answer
+### Answer
 
 ```go
 defer func() {
 	r.Record("maintenance " + host + ": " + status)
 }()
 ```
+
+## Task 2: Don't close what you never opened in RotateHost
+
+Right now the `defer` is scheduled before anyone checks whether `Connect`
+worked. Move it so it is only scheduled once the connection exists.
+
+### Closer
+
+Check the error first with `if err := r.Connect(host); err != nil { return
+err }`, and put `defer r.Close(host)` below that check.
+
+### Answer
+
+```go
+if err := r.Connect(host); err != nil {
+	return err
+}
+defer r.Close(host)
+return r.Rotate(host)
+```
+
+## Task 3: Close each host before the next in RotateAll
+
+A `defer` in the loop waits for `RotateAll` to return. Your fixed `RotateHost`
+already handles one host, and its `defer` runs at the end of each call.
+
+### Closer
+
+Replace the whole loop body with a call to `RotateHost(r, host)`, returning
+its error if it is not `nil`.
+
+### Answer
 
 ```go
 for _, host := range hosts {
@@ -32,3 +57,5 @@ for _, host := range hosts {
 }
 return nil
 ```
+
+Each `RotateHost` call closes its host before the loop moves on.

@@ -1,24 +1,40 @@
-## Task 1: convert both, then divide
+## Task 1: Healthy percentage
 
-Convert `healthy` and `total` to `float64` separately, divide, then multiply
-by 100:
+Dividing two ints throws away the fraction. Turn both into `float64` before you divide, then times 100.
+
+### Closer
+
+Convert each one separately: `float64(healthy) / float64(total)`. Then multiply the result by `100`.
+
+### Answer
 
 ```go
 return float64(healthy) / float64(total) * 100
 ```
 
-## Task 2: Itoa
+## Task 2: Listen address
 
-After adding `import "strconv"`, join `host`, `":"` and
-`strconv.Itoa(port)` with `+`.
+First add `import "strconv"`. You can only join strings with `+`, so turn the port into a string first.
 
-## Task 3: reuse task 1
+### Closer
 
-Call `HealthyPercent(healthy, total)` and format its result with
-`strconv.FormatFloat(pct, 'f', 1, 64)`. Use `strconv.Itoa` for the two
-counts.
+`strconv.Itoa(port)` turns an int into a string. The colon is fixed text, so it goes in quotes: `host + ":" + ...`.
 
-## Almost the answer
+### Answer
+
+```go
+return host + ":" + strconv.Itoa(port)
+```
+
+## Task 3: Health label
+
+Reuse `HealthyPercent` from task 1 to get the percentage. Then turn every number into a string and join the pieces.
+
+### Closer
+
+Use `strconv.Itoa` for the two counts and `strconv.FormatFloat(pct, 'f', 1, 64)` for one decimal. Fixed text like `"/"` and `" pods healthy ("` goes in quotes; the values don't.
+
+### Answer
 
 ```go
 pct := HealthyPercent(healthy, total)

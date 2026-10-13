@@ -1,21 +1,35 @@
-## Task 1: one keyword
+## Task 1: Warm caches in the background
 
-Putting `go` in front of a function call starts it in a new goroutine and
-moves on without waiting. Task 1 needs nothing else.
+Right now each `warm(host)` call runs and finishes before the loop moves on. One keyword in front of a call makes it run in its own goroutine.
+
+### Closer
+
+Put `go` in front of the call. Nothing else changes, and you don't wait for anything:
+`go someCall(arg)`.
+
+### Answer
 
 ```go
-go warm(host)
+for _, host := range hosts {
+	go warm(host)
+}
 ```
 
-## Task 2: start, then wait
+`go` starts the call in a new goroutine and carries on at once, so `WarmCaches` returns straight away.
 
-Create a `sync.WaitGroup` before the loop. Inside the loop, start each restart
-with `wg.Go(func() { ... })`. After the loop, call `wg.Wait()`. Remember to
-add `import "sync"` at the top of the file.
+## Task 2: Restart services and wait
 
-## Task 2: almost the answer
+You need to start every restart at the same time and then wait for all of them. A `sync.WaitGroup` does both; remember to add `"sync"` to the imports.
+
+### Closer
+
+Create `var wg sync.WaitGroup` before the loop, start each restart with `wg.Go(func() { ... })` inside the loop, and call `wg.Wait()` once **after** the loop.
+
+### Answer
 
 ```go
+import "sync"
+
 var wg sync.WaitGroup
 for _, service := range services {
 	wg.Go(func() {
@@ -25,5 +39,4 @@ for _, service := range services {
 wg.Wait()
 ```
 
-If the test says the restarts ran one after another, check that `wg.Wait()`
-is **after** the loop, not inside it.
+All restarts start before `wg.Wait()`, so they overlap and the whole thing takes about as long as one restart.

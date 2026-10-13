@@ -1,41 +1,69 @@
-## Task 1: one call does it
+## Task 1: Run all checks on one host
 
-`errors.Join` skips `nil` arguments and returns `nil` when every argument is
-`nil`. So you can pass the three check results straight in:
+Look at what `errors.Join` does with `nil` arguments. You don't need any `if`
+statements here.
+
+### Closer
+
+`errors.Join` skips `nil`s and returns `nil` when all of them are `nil`, so
+you can pass the three check results straight in, in order:
+`errors.Join(checkReachable(h), ...)`.
+
+### Answer
 
 ```go
 return errors.Join(checkReachable(h), checkDisk(h), checkMemory(h))
 ```
 
-## Task 2: collect, then join
+Passing the checks in order puts their messages in that order, one per line.
 
-Start with an empty `var errs []error` before the loops. Each element of
-`checks` is a function, so `check(h)` runs it. Instead of returning the first
-error, append it to `errs`. Append only the errors that are not `nil`.
+## Task 2: Check every host
 
-## Task 2: adding the host name
+Keep the two loops, but instead of returning the first error, save it and
+keep going. Join everything you saved at the end.
 
-Wrap each failure with `%w` so `errors.Is` still finds the sentinel:
+### Closer
+
+Declare `var errs []error` before the loops. For each failure, append
+`fmt.Errorf("%s: %w", h.Name, err)`. After the loops, spread the slice into
+`errors.Join` with `errs...`.
+
+### Answer
 
 ```go
-if err := check(h); err != nil {
-	errs = append(errs, fmt.Errorf("%s: %w", h.Name, err))
+var errs []error
+for _, h := range hosts {
+	for _, check := range checks {
+		if err := check(h); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", h.Name, err))
+		}
+	}
 }
+return errors.Join(errs...)
 ```
 
-After both loops, `return errors.Join(errs...)`. It is `nil` when `errs` is
-empty.
+`errors.Join` of an empty slice is `nil`, and `%w` keeps each sentinel visible
+to `errors.Is`.
 
-## Task 3: order matters
+## Task 3: Decide what to do
 
-Check for `nil` first, then for `ErrUnreachable`:
+There are three cases, and the order you check them in matters. Handle `nil`
+first, then look for `ErrUnreachable` anywhere in the error.
+
+### Closer
+
+`errors.Is(err, ErrUnreachable)` searches inside joined and wrapped errors.
+A `switch { case err == nil: ... }` or a few `if`s both work.
+
+### Answer
 
 ```go
-if err == nil {
+switch {
+case err == nil:
 	return "deploy"
-}
-if errors.Is(err, ErrUnreachable) {
+case errors.Is(err, ErrUnreachable):
 	return "abort"
+default:
+	return "warn"
 }
-return "warn"
 ```

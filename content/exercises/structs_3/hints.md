@@ -1,17 +1,30 @@
-## Task 1: count the fields first
+## Task 1: Parse one line
 
-`strings.Fields(line)` gives you a `[]string`. Check `len(fields) != 3`
-before you touch `fields[0]`, and return `Host{}` with an error from
-`fmt.Errorf` or `errors.New`. Otherwise build the `Host` from `fields[0]`,
-`fields[1]` and `fields[2]`.
+Split the line into its words, check that there are exactly three, then build a `Host` from them. You'll need to import `strings` and `fmt`.
 
-## Task 2: the line number is the index plus one
+### Closer
 
-`range` over `strings.Split(text, "\n")` gives you the index `i` of each line,
-starting at 0. The line number is `i+1`. Use `continue` to skip blank lines
-and comments.
+`fields := strings.Fields(line)` gives you a `[]string`. Check `len(fields) != 3` before you touch `fields[0]`, and in that case return `Host{}` with an error from `fmt.Errorf(...)`.
 
-## Task 2: near-solution
+### Answer
+
+```go
+fields := strings.Fields(line)
+if len(fields) != 3 {
+	return Host{}, fmt.Errorf("want 3 fields (name ip region), got %d in %q", len(fields), line)
+}
+return Host{Name: fields[0], IP: fields[1], Region: fields[2]}, nil
+```
+
+## Task 2: Parse the whole inventory
+
+Go through the text line by line, skip blank lines and comments, and hand each other line to `ParseHost`. The line number in the error is the loop index plus one.
+
+### Closer
+
+`for i, line := range strings.Split(text, "\n")` gives you each line and its index. Use `strings.TrimSpace`, then `continue` when the line is `""` or `strings.HasPrefix(line, "#")`. Wrap errors with `fmt.Errorf("line %d: %v", i+1, err)`.
+
+### Answer
 
 ```go
 var hosts []Host
@@ -29,8 +42,20 @@ for i, line := range strings.Split(text, "\n") {
 return hosts, nil
 ```
 
-## Task 3: make the map first
+## Task 3: Summarise the hosts
 
-Create `byRegion := map[string]int{}` before the loop, add one with
-`byRegion[h.Region]++` for each host, then return
-`Summary{Total: len(hosts), ByRegion: byRegion}`.
+`Total` is just how many hosts there are. For `ByRegion`, make a map before the loop and count each host's region.
+
+### Closer
+
+Create `byRegion := map[string]int{}`, then add one per host with `byRegion[h.Region]++`. Finish with a `Summary{...}` literal using `len(hosts)`.
+
+### Answer
+
+```go
+byRegion := map[string]int{}
+for _, h := range hosts {
+	byRegion[h.Region]++
+}
+return Summary{Total: len(hosts), ByRegion: byRegion}
+```

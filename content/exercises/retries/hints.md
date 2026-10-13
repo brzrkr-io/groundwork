@@ -1,23 +1,51 @@
-## Task 1: double in a loop
+## Task 1: Compute the backoff
 
-Start with `d := base` and double it once per attempt with a
-`for range attempt` loop. Each time round, check whether `d` has reached
-`limit`; if it has, return `limit`.
+Start from `base` and double it once per attempt. Stop as soon as the value reaches `limit`.
 
-## Task 2: half plus a random part
+### Closer
 
-Work out `half := d / 2` first. `rnd()` is a `float64`, so multiply it by
-`float64(half)` and convert the result back with `time.Duration(...)`. Add
-that to `half`.
+Use `d := base` and a `for range attempt` loop with `d *= 2`. Inside the loop, `if d >= limit { return limit }`.
 
-## Task 3: the order of the checks
-
-After `err = op(ctx)`, check in this order: success or permanent error
-(return), last attempt (`attempt == p.MaxAttempts-1`, so `break`), then sleep.
-
-## Task 3: almost the answer
+### Answer
 
 ```go
+d := base
+for range attempt {
+	d *= 2
+	if d >= limit {
+		return limit
+	}
+}
+return d
+```
+
+## Task 2: Add jitter
+
+The result is half of `d` plus a random fraction of the other half. Call `rnd()` only once.
+
+### Closer
+
+Work out `half := d / 2`. `rnd()` is a `float64`, so compute `rnd() * float64(half)` and convert back with `time.Duration(...)`.
+
+### Answer
+
+```go
+half := d / 2
+return half + time.Duration(rnd()*float64(half))
+```
+
+## Task 3: Retry the operation
+
+After each call to `op`, decide in order: return (success or permanent error), stop (last attempt), or sleep and go again.
+
+### Closer
+
+Loop with `for attempt := range p.MaxAttempts`. Success or permanent is `err == nil || !errors.Is(err, ErrTemporary)`; the last attempt is `attempt == p.MaxAttempts-1`. The wait is `Jitter(Backoff(attempt, p.Base, p.Max), p.Rand)`.
+
+### Answer
+
+```go
+var err error
 for attempt := range p.MaxAttempts {
 	err = op(ctx)
 	if err == nil || !errors.Is(err, ErrTemporary) {
@@ -31,4 +59,7 @@ for attempt := range p.MaxAttempts {
 		return sleepErr
 	}
 }
+return err
 ```
+
+Breaking before the sleep means there's no pointless wait after the final attempt.

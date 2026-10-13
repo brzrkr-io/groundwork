@@ -1,25 +1,43 @@
-## Task 1: where does the counter move?
+## Task 1: Fix FindPanics
 
-The counter goes up *after* the check, so the first line is reported while
-`lineNo` is still `0`. Move `lineNo++` to the top of the loop. Then check
-`sc.Err()` after the loop instead of always returning `nil`.
+Look at where `lineNo++` sits: the check runs before the counter goes up, so
+the first line is reported as `0`. Also look at what the function returns
+after the loop.
 
-## Task 2: count, check, format
+### Closer
 
-Grep needs its own `lineNo` counter, declared before the loop and increased
-at the top of it. Use `strings.Contains(line, word)` and
-`fmt.Sprintf("%d: %s", lineNo, line)`.
+Move `lineNo++` to the top of the loop. After the loop, check `sc.Err()` and
+return `nil, err` when it isn't `nil`, instead of always returning `nil`.
 
-## Task 3: one line before the loop
-
-`sc.Buffer` must run after `bufio.NewScanner` and before the first
-`sc.Scan()`. Copy the call from the Learn section.
-
-## Almost the answer
+### Answer
 
 ```go
-sc := bufio.NewScanner(r)
-sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+for sc.Scan() {
+	lineNo++
+	if strings.Contains(sc.Text(), "panic:") {
+		found = append(found, lineNo)
+	}
+}
+if err := sc.Err(); err != nil {
+	return nil, err
+}
+return found, nil
+```
+
+## Task 2: Finish Grep
+
+`Grep` needs its own line counter, just like `FindPanics`. For each line,
+check whether it contains `word` and, if so, format it with its number.
+
+### Closer
+
+Declare `lineNo := 0` before the loop and increase it at the top. Use
+`strings.Contains(line, word)` and `fmt.Sprintf("%d: %s", lineNo, line)`.
+Add `import "fmt"`.
+
+### Answer
+
+```go
 var matches []string
 lineNo := 0
 for sc.Scan() {
@@ -30,3 +48,23 @@ for sc.Scan() {
 	}
 }
 ```
+
+## Task 3: Handle huge lines
+
+The scanner's default line limit is 64 KiB. One call raises it, and it has to
+happen after the scanner is created but before the first `sc.Scan()`.
+
+### Closer
+
+Call `sc.Buffer(...)` right after `bufio.NewScanner(r)`. The first argument is
+a starting buffer from `make`; the second is the maximum, `1024*1024`.
+
+### Answer
+
+```go
+sc := bufio.NewScanner(r)
+sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+```
+
+A 2 MiB line still fails, and your `sc.Err()` check from task 2 returns
+`bufio.ErrTooLong`.

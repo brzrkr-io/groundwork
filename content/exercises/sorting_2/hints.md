@@ -1,24 +1,64 @@
-## Read each failure message
+## Task 1: Stop reordering the caller's slice
 
-Each test names the function and shows what it returned. Compare that with the
-README: is the order backwards, are ties out of order, or did the caller's
-slice change?
+`slices.Sort(nodes)` sorts in place, and `nodes` is the caller's slice. Sort
+something that belongs to the function instead.
 
-## Task 1: who owns the slice?
+### Closer
 
-`slices.Sort(nodes)` reorders the caller's slice. Sort a
-`slices.Clone(nodes)` instead and return that.
+Make a copy with `slices.Clone(nodes)`, sort the copy, and return the copy
+instead of `nodes`.
 
-## Task 2: swap the arguments
-
-`cmp.Compare(usage[a], usage[b])` puts small numbers first. Swap `a` and `b`
-in that one call. Leave the alphabetical tie-break as it is.
-
-## Task 3: add the tie-break
+### Answer
 
 ```go
-if c := cmp.Compare(pods[a], pods[b]); c != 0 {
+out := slices.Clone(nodes)
+slices.Sort(out)
+return out
+```
+
+The clone has its own storage, so sorting it leaves `nodes` alone.
+
+## Task 2: Put the fullest disks first
+
+`cmp.Compare(usage[a], usage[b])` puts small numbers first. One small change in
+that call reverses the order. Leave the alphabetical tie-break as it is.
+
+### Closer
+
+Swapping the arguments of `cmp.Compare` reverses the order: compare
+`usage[b]` with `usage[a]`.
+
+### Answer
+
+```go
+if c := cmp.Compare(usage[b], usage[a]); c != 0 {
 	return c
 }
 return cmp.Compare(a, b)
 ```
+
+With `b` first, a bigger usage counts as "comes first".
+
+## Task 3: Make ties predictable
+
+When two nodes have the same pod count, the comparison returns `0`, and
+`SortFunc` may leave them in any order. Add a second comparison for that case.
+
+### Closer
+
+Keep the pod comparison but only return it when it isn't `0`:
+`if c := cmp.Compare(pods[a], pods[b]); c != 0 { return c }`. After that,
+compare the names.
+
+### Answer
+
+```go
+slices.SortFunc(out, func(a, b string) int {
+	if c := cmp.Compare(pods[a], pods[b]); c != 0 {
+		return c
+	}
+	return cmp.Compare(a, b)
+})
+```
+
+Equal pod counts fall through to the name comparison, so ties come out alphabetical.

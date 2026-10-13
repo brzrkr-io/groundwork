@@ -1,14 +1,55 @@
-## Task 1: one line moves
+## Task 1: Fix the error counter
 
-`count := 0` runs every time the returned function runs. Move it above the
-`return func() int {` line.
+`count := 0` sits inside the returned function, so it starts again at 0 every
+time that function runs. Where should it live so it is created only once?
 
-## Task 2: same idea, then format
+### Closer
 
-Keep an `n := 0` outside, add 1 inside, and return
-`prefix + "-" + strconv.Itoa(n)`.
+Move the `count := 0` line up, out of the function literal, so it sits above
+`return func() int {`. Keep `count++` and `return count` inside.
 
-## Task 3: count calls, compare with limit
+### Answer
+
+```go
+count := 0
+return func() int {
+	count++
+	return count
+}
+```
+
+## Task 2: Build an ID generator
+
+Same idea as task 1: keep a number outside the returned function and add 1 on
+every call. Then join `prefix`, a dash and the number into one string.
+
+### Closer
+
+Declare `n := 0` before the `return`, and do `n++` inside. Fixed text goes in
+quotes (`"-"`); `prefix` doesn't. `strconv.Itoa(n)` turns the number into text,
+so join with `+`: `prefix + "-" + ...`. Add `strconv` to the imports.
+
+### Answer
+
+```go
+n := 0
+return func() string {
+	n++
+	return prefix + "-" + strconv.Itoa(n)
+}
+```
+
+## Task 3: Build a rate limiter
+
+Count how many calls have happened so far. A call is allowed while that count
+is still within `limit`.
+
+### Closer
+
+Declare `calls := 0` outside the returned function. Inside, do `calls++`, then
+return the result of comparing `calls` with `limit` using `<=`.
+
+### Answer
 
 ```go
 calls := 0

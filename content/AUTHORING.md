@@ -89,14 +89,38 @@ Rules:
 
 ## hints.md
 
-Every `## ` heading starts one hint. The TUI reveals them one at a time, in
-order.
+Every task has its own hints, in three levels. The learner presses `h` for
+the task they're stuck on and sees one level more each time. The format is
+fixed, and TestPacks rejects anything else:
 
-- Write 2–4 hints, from gentle to strong: point at the concept, then the
-  specific syntax or API, and finally a near-solution snippet.
-- Multi-task exercises may give one hint per task, as long as the hints get
-  stronger overall.
-- Headings are short titles: `## Use strconv.Itoa`, `## Task 2: the loop`.
+````markdown
+## Task 1: Name a pod
+
+A pod name is three parameters with a dash between each pair. Which parts are
+parameters and which are fixed text?
+
+### Closer
+
+Fixed text goes in quotes (`"-"`); parameters don't. Join every piece with `+`:
+`deployment + "-" + ...`.
+
+### Answer
+
+```go
+return deployment + "-" + hash + "-" + suffix
+```
+````
+
+- One `## Task N: Title` per README task (`### N. Title`), in order, with
+  **exactly** the README's title text.
+- **Nudge** (the text under the task heading): what to look at or think
+  about, in plain words. It may name the function or operator, but it gives no
+  code that solves the task. Write 1–3 sentences.
+- **`### Closer`**: the specific syntax or API, with a partial snippet or the
+  pattern. It still leaves the learner a step to take.
+- **`### Answer`**: near-complete code for **this task only**, following the
+  reference solution's approach, plus at most one sentence on why it works.
+- No other `##`/`###` headings. Code blocks may use any content.
 
 ## Starter code
 

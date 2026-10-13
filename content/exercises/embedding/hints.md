@@ -1,20 +1,15 @@
-## Task 1: fill in the embedded struct
+## Task 1: Build a pod
 
-In a struct literal, the embedded struct is a field named after its type. Add a
-`Metadata: Metadata{...}` line next to `Image: image`. A map with one entry is
-written `map[string]string{"app": name}`.
+Promoted fields can't be used in a struct literal, so `Name: name` won't
+compile inside `Pod{...}`. Fill in the embedded struct as a field named after
+its type.
 
-## Task 2: join with a slash
+### Closer
 
-Inside `Describe`, `m` is the `Metadata`. Join `m.Namespace`, `"/"` and
-`m.Name` with `+`.
+Add a `Metadata: Metadata{...}` line next to `Image: image`. A map with one
+entry is written `map[string]string{"app": name}`.
 
-## Task 3: call the inner Describe
-
-Inside the `Pod` method, `p.Metadata.Describe()` gives you `"default/api"`.
-Don't write `p.Describe()`: that calls the `Pod` method itself, forever.
-
-## Almost the answer
+### Answer
 
 ```go
 return Pod{
@@ -27,7 +22,33 @@ return Pod{
 }
 ```
 
-For task 3, add `import "fmt"` below the `package` line, then:
+## Task 2: Describe the metadata
+
+Inside `Describe`, `m` is the `Metadata`, so its namespace and name are right
+there. Join them with a slash.
+
+### Closer
+
+Strings join with `+`: `m.Namespace + "/" + ...`.
+
+### Answer
+
+```go
+return m.Namespace + "/" + m.Name
+```
+
+## Task 3: Override Describe for pods
+
+Task 2 already builds `default/api`. Call that method from the `Pod` version
+and wrap the result with `pod ` and the image.
+
+### Closer
+
+`p.Metadata.Describe()` runs `Metadata`'s method. Don't write `p.Describe()`:
+that calls the `Pod` method itself, forever. For `fmt.Sprintf`, add
+`import "fmt"` below the `package` line and use `"pod %s (%s)"`.
+
+### Answer
 
 ```go
 return fmt.Sprintf("pod %s (%s)", p.Metadata.Describe(), p.Image)

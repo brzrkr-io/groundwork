@@ -1,16 +1,34 @@
-## Task 1: where does Wait belong?
+## Task 1: Fix the slow drain
 
-`wg.Wait()` blocks until every goroutine started so far has finished. Calling
-it inside the loop means each drain must finish before the next one starts.
-Start them all first, then wait once.
+Look at where `wg.Wait()` is. It blocks until every goroutine started so far has finished, so where you call it decides whether the drains overlap.
 
-## Task 2: same shape as task 1
+### Closer
 
-Make a `sync.WaitGroup`, start each ping with `wg.Go`, and write the answer
-into `results[i]` inside the goroutine. Call `wg.Wait()` after the loop and
-before `return results`.
+`wg.Wait()` is inside the loop, so each drain must finish before the next one starts. Move it below the loop's closing `}`.
 
-## Task 2: almost the answer
+### Answer
+
+```go
+var wg sync.WaitGroup
+for _, node := range nodes {
+	wg.Go(func() {
+		drain(node)
+	})
+}
+wg.Wait()
+```
+
+Every drain starts first, then you wait once, so all of them run at the same time.
+
+## Task 2: Ping hosts concurrently
+
+This has the same shape as task 1, but each goroutine also has an answer to save. Every goroutine can write its answer into its own slot of `results`.
+
+### Closer
+
+Make a `sync.WaitGroup`, and inside `wg.Go(func() { ... })` write `results[i] = ping(host)`. Call `wg.Wait()` after the loop and before `return results`.
+
+### Answer
 
 ```go
 results := make([]bool, len(hosts))
@@ -23,3 +41,5 @@ for i, host := range hosts {
 wg.Wait()
 return results
 ```
+
+No two goroutines touch the same slot, and you only read `results` after `wg.Wait()`, so this is safe.

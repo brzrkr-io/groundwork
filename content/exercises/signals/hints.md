@@ -1,22 +1,19 @@
-## Task 1: check before each host
+## Task 1: Stop between hosts
 
-Put an `if ctx.Err() != nil { ... }` as the very first thing inside the loop,
-before `drain(host)` is called. The hosts not yet drained are
-`len(hosts) - drained`.
+The check belongs at the very top of the loop body, before `drain(host)` is
+called. That way the host in progress always finishes.
 
-## Task 2: errors.Is
+### Closer
 
-Check `err == nil` first, then `errors.Is(err, context.Canceled)`. A `switch`
-with no value after it (`switch { case ...: }`) reads nicely here. Remember to
-add `"errors"` to the imports.
+```go
+if ctx.Err() != nil {
+	// log, then return
+}
+```
 
-## Task 3: remember the first signal
+The hosts not yet drained are `len(hosts) - drained`.
 
-Use a variable such as `first := true` outside the loop. Inside
-`for sig := range sigs`, the first time round you log, call `cancel()` and set
-`first = false`. Any later time you log, call `force()` and `return`.
-
-## Almost the answer
+### Answer
 
 ```go
 if ctx.Err() != nil {
@@ -24,6 +21,43 @@ if ctx.Err() != nil {
 	return drained, ctx.Err()
 }
 ```
+
+## Task 2: Pick the exit code
+
+Check the cases in order: no error, a cancelled context, anything else. The
+error may be wrapped, so plain `==` won't find `context.Canceled`.
+
+### Closer
+
+`errors.Is(err, context.Canceled)` looks through wrapping. A `switch` with no
+value after it (`switch { case err == nil: ... }`) reads nicely here. Add
+`"errors"` to the imports.
+
+### Answer
+
+```go
+switch {
+case err == nil:
+	return 0
+case errors.Is(err, context.Canceled):
+	return 130
+default:
+	return 1
+}
+```
+
+## Task 3: Watch for signals
+
+You need to remember whether you've already seen a signal. Keep a variable
+outside the loop and check it each time a signal arrives.
+
+### Closer
+
+Use `first := true` before `for sig := range sigs`. The first time round, log,
+call `cancel()`, set `first = false` and `continue`. Any later time, log, call
+`force()` and `return`.
+
+### Answer
 
 ```go
 first := true

@@ -1,22 +1,63 @@
-## Task 1: look at the second argument
+## Task 1: Fix DecodePods
 
-`json.Unmarshal` has to change `list`. What do you pass when a function must
-change your variable? Add one character.
+Look at the second argument to `json.Unmarshal`. It has to change `list`, so
+what must you pass when a function needs to change your variable?
 
-## Task 2: exported and exact
+### Closer
 
-The json package can't see lowercase fields: rename `namespace` to
-`Namespace` (in the struct **and** in `Ref`). Then change the tag on `Phase`
-to `json:"phase"`.
+`Unmarshal` needs a pointer to the value it fills in. Add one character in
+front of `list`.
 
-## Task 3: the loop shape
+### Answer
 
-Create the decoder once, before the loop. Keep a counter `n` that goes up by
-one per object. Inside the loop: declare `var pod Pod`, call
-`dec.Decode(&pod)`, stop cleanly on `io.EOF`, return on any other error, and
-otherwise do `counts[pod.Status.Phase]++`.
+```go
+if err := json.Unmarshal(data, &list); err != nil {
+	return nil, fmt.Errorf("decode pods: %w", err)
+}
+```
 
-## Almost the answer
+Passing `&list` lets `Unmarshal` write into your variable instead of a copy.
+
+## Task 2: Fix the Pod struct
+
+The json package can only fill exported fields (capital first letter), and
+the tag must match the JSON key exactly.
+
+### Closer
+
+Rename `namespace` to `Namespace` in the struct **and** in `Ref`. Change the
+tag on `Phase` from `json:"state"` to the key the JSON really uses.
+
+### Answer
+
+```go
+type Metadata struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+type Status struct {
+	Phase string `json:"phase"`
+}
+
+func (p Pod) Ref() string {
+	return p.Metadata.Namespace + "/" + p.Metadata.Name
+}
+```
+
+## Task 3: Count phases in a stream
+
+Create one `json.NewDecoder(r)` before a loop, and call `Decode` once per pod
+until it reports `io.EOF`. Keep a counter so you know which pod failed.
+
+### Closer
+
+Use `for n := 1; ; n++` and declare `var pod Pod` inside the loop. Check
+`errors.Is(err, io.EOF)` first (return the counts), then any other error
+(wrap it with `fmt.Errorf("pod %d: %w", n, err)`), then do
+`counts[pod.Status.Phase]++`. Add `"errors"` to the imports.
+
+### Answer
 
 ```go
 dec := json.NewDecoder(r)
@@ -32,3 +73,5 @@ for n := 1; ; n++ {
 	counts[pod.Status.Phase]++
 }
 ```
+
+A fresh `pod` each time means no fields leak over from the previous object.

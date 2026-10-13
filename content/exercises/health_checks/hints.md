@@ -1,26 +1,48 @@
-## Task 1: one line
+## Task 1: Answer the liveness probe
 
-`Livez` only has to write `"ok\n"`. Use `fmt.Fprint(w, "ok\n")` and add
-`"fmt"` to the import list. The status is 200 automatically.
+Liveness only proves the process can answer HTTP, so `Livez` just writes a short body. You don't need to set the status yourself.
 
-## Task 2: the timeout context
+### Closer
 
-Shadowing `ctx` keeps the code short:
+`fmt.Fprint(w, ...)` writes text to the response. Add `"fmt"` to the imports. A handler that never calls `WriteHeader` sends 200 automatically.
+
+### Answer
+
+```go
+fmt.Fprint(w, "ok\n")
+```
+
+## Task 2: Run one check with a timeout
+
+Give the check its own context that expires after `timeout`, run it, and turn the error (or no error) into a `Result`.
+
+### Closer
+
+`context.WithTimeout(ctx, timeout)` returns a new context and a `cancel` function; `defer cancel()` right away. Shadowing `ctx` keeps the code short: `ctx, cancel := context.WithTimeout(ctx, timeout)`.
+
+### Answer
 
 ```go
 ctx, cancel := context.WithTimeout(ctx, timeout)
 defer cancel()
-err := c.Run(ctx)
+
+if err := c.Run(ctx); err != nil {
+	return Result{Name: c.Name, Status: "fail", Error: err.Error()}
+}
+return Result{Name: c.Name, Status: "ok"}
 ```
 
-Then return an `"ok"` or `"fail"` `Result` depending on `err`.
+A check that hangs returns `ctx.Err()` once the deadline passes, so its error text is `context deadline exceeded`.
 
-## Task 3: find any failure
+## Task 3: Serve the readiness report
 
-Loop over `results`. If one has `Status != "ok"`, change `report.Status`
-and remember a 503 in a `code` variable that starts as `http.StatusOK`.
+Look through `results` for any check that failed. The status code and header must be set before the body is encoded.
 
-## Task 3: almost the answer
+### Closer
+
+Keep a `code` variable that starts as `http.StatusOK` and becomes `http.StatusServiceUnavailable` when a result's `Status` isn't `"ok"`. Then `w.Header().Set("Content-Type", "application/json")` and `w.WriteHeader(code)`.
+
+### Answer
 
 ```go
 code := http.StatusOK
@@ -30,6 +52,7 @@ for _, res := range results {
 		code = http.StatusServiceUnavailable
 	}
 }
+
 w.Header().Set("Content-Type", "application/json")
 w.WriteHeader(code)
 json.NewEncoder(w).Encode(report)

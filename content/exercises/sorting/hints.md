@@ -1,19 +1,53 @@
-## Task 1: copy, then sort
+## Task 1: Sort hosts without touching the input
 
-`slices.Sort` rearranges the slice you give it. Make a copy with
-`slices.Clone(hosts)`, sort the copy, and return the copy.
+`slices.Sort` rearranges the slice you give it, and `hosts` belongs to the
+caller. Sort a copy instead.
 
-## Task 2: one line
+### Closer
 
-`maps.Keys(errs)` gives you the keys, and `slices.Sorted(...)` turns them into
-a sorted slice. Don't forget to add `"maps"` to the `import` block.
+`slices.Clone(hosts)` makes a new slice with the same values. Sort that one
+with `slices.Sort` and return it.
 
-## Task 3: reverse, then tie-break
+### Answer
+
+```go
+out := slices.Clone(hosts)
+slices.Sort(out)
+return out
+```
+
+Only `out` is reordered, so the caller's `hosts` keeps its order.
+
+## Task 2: List service names in order
+
+You need the map's keys, sorted, as a new slice. The `maps` and `slices`
+packages can do this in one line together.
+
+### Closer
+
+`maps.Keys(errs)` hands out the keys, and `slices.Sorted(...)` collects them
+into a sorted slice. Add `"maps"` to the `import` block.
+
+### Answer
+
+```go
+return slices.Sorted(maps.Keys(errs))
+```
+
+`slices.Sorted` builds a new slice, so the map is unchanged.
+
+## Task 3: Rank services by errors
+
+The comparison function first compares error counts, but reversed so bigger
+counts come first. Only when the counts are equal should it look at the names.
+
+### Closer
 
 `cmp.Compare(errs[b], errs[a])` (note: `b` first) puts bigger counts first.
-Only when that returns `0` do you need to look at the names.
+Store it with `if c := ...; c != 0 { return c }`, then fall back to comparing
+`a` and `b`. Add `"cmp"` to the imports.
 
-## Task 3: almost the answer
+### Answer
 
 ```go
 slices.SortFunc(names, func(a, b string) int {
@@ -23,3 +57,5 @@ slices.SortFunc(names, func(a, b string) int {
 	return cmp.Compare(a, b)
 })
 ```
+
+The counts decide when they differ; equal counts fall through to alphabetical order.

@@ -1,8 +1,15 @@
-## Task 1: loop over the required keys
+## Task 1: Find missing tags
 
 Don't loop over the instance's tags; `have` already holds them. Loop over
-`RequiredTags` instead, and look each key up in `have`. A key that is absent
-reads as `""`, just like a key with an empty value, so one check covers both:
+`RequiredTags` instead, and ask what `have` says about each key.
+
+### Closer
+
+A key that is absent reads as `""` from a map, just like a key with an empty
+value, so one check covers both: `if have[key] == "" { ... }`. Collect those
+keys in a `var missing []string`.
+
+### Answer
 
 ```go
 var missing []string
@@ -14,23 +21,47 @@ for _, key := range RequiredTags {
 return missing
 ```
 
-## Task 2: skip compliant instances, then sort
+## Task 2: Audit every instance
 
-Inside the inner loop, call `MissingTags(inst.Tags)` first. If the result is
-empty, `continue`. Otherwise append
-`Finding{InstanceID: aws.ToString(inst.InstanceId), Missing: missing}`.
+Inside the inner loop, ask `MissingTags` about the instance before you append
+anything. After the paginator loop, sort the findings.
 
-After the paginator loop:
+### Closer
+
+If `len(missing) == 0`, `continue`. Otherwise fill in both fields of
+`Finding`. Sort with `slices.SortFunc(findings, func(a, b Finding) int { ... })`
+and `strings.Compare`, and add `"slices"` and `"strings"` to the imports.
+
+### Answer
 
 ```go
+missing := MissingTags(inst.Tags)
+if len(missing) == 0 {
+	continue
+}
+findings = append(findings, Finding{
+	InstanceID: aws.ToString(inst.InstanceId),
+	Missing:    missing,
+})
+
+// after the paginator loop:
 slices.SortFunc(findings, func(a, b Finding) int {
 	return strings.Compare(a.InstanceID, b.InstanceID)
 })
 ```
 
-## Task 3: only keys with a default
+## Task 3: Build the fixes
 
-Use the two-value map lookup to see whether a default exists:
+Loop over `f.Missing` and only use keys that have an entry in `defaults`. If
+no tag was added, skip the finding.
+
+### Closer
+
+The two-value map lookup tells you whether a default exists:
+`if value, ok := defaults[key]; ok { ... }`. Then add
+`DryRun: aws.Bool(dryRun),` to the `CreateTagsInput` literal.
+
+### Answer
 
 ```go
 for _, key := range f.Missing {
@@ -41,6 +72,10 @@ for _, key := range f.Missing {
 if len(tags) == 0 {
 	continue
 }
-```
 
-Then add `DryRun: aws.Bool(dryRun),` to the `CreateTagsInput` literal.
+fixes = append(fixes, &ec2.CreateTagsInput{
+	Resources: []string{f.InstanceID},
+	Tags:      tags,
+	DryRun:    aws.Bool(dryRun),
+})
+```

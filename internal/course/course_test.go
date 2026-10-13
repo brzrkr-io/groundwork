@@ -42,15 +42,31 @@ func TestLoadRejectsDuplicateNames(t *testing.T) {
 	}
 }
 
-func TestParseHintsSplitsOnLevelTwoHeadings(t *testing.T) {
-	hints := ParseHints("intro ignored\n## First\nline one\n\n### not a split\n## Second\n```go\nx := 1\n```\n")
-	if len(hints) != 2 {
-		t.Fatalf("got %d hints, want 2: %+v", len(hints), hints)
+const twoTaskReadme = "# X\n\n## Your task\n\n### 1. Name a pod\n\ntext\n\n### 2. Build a target\n"
+
+func TestParseHintsGroupsThreeLevelsPerTask(t *testing.T) {
+	tasks, err := ParseHints(twoTaskReadme, "## Task 1: Name a pod\n\nLook at the dashes.\n\n### Closer\n\nUse +.\n\n### Answer\n\n```go\n## not a heading inside code\nreturn a + \"-\" + b\n```\n\n"+
+		"## Task 2: Build a target\n\nnudge\n\n### Closer\n\ncloser\n\n### Answer\n\nanswer\n")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if hints[0].Title != "First" || hints[0].Body != "line one\n\n### not a split" {
-		t.Errorf("hint 1 = %+v", hints[0])
+	if len(tasks) != 2 || tasks[0].Title != "Name a pod" || len(tasks[0].Hints) != 3 {
+		t.Fatalf("tasks = %+v, want 2 tasks with 3 hints each", tasks)
 	}
-	if hints[1].Title != "Second" || hints[1].Body != "```go\nx := 1\n```" {
-		t.Errorf("hint 2 = %+v", hints[1])
+	if got := tasks[0].Hints[2].Body; got != "```go\n## not a heading inside code\nreturn a + \"-\" + b\n```" {
+		t.Errorf("Task 1 Answer = %q; code blocks must stay whole", got)
+	}
+}
+
+func TestParseHintsRejectsMismatchedOrIncompleteHints(t *testing.T) {
+	for name, hints := range map[string]string{
+		"missing task":  "## Task 1: Name a pod\nn\n### Closer\nc\n### Answer\na\n",
+		"wrong title":   "## Task 1: Pods\nn\n### Closer\nc\n### Answer\na\n## Task 2: Build a target\nn\n### Closer\nc\n### Answer\na\n",
+		"missing level": "## Task 1: Name a pod\nn\n### Answer\na\n## Task 2: Build a target\nn\n### Closer\nc\n### Answer\na\n",
+		"old format":    "## Where to look\ntext\n",
+	} {
+		if _, err := ParseHints(twoTaskReadme, hints); err == nil {
+			t.Errorf("%s: ParseHints accepted it", name)
+		}
 	}
 }

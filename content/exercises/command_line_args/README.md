@@ -111,17 +111,7 @@ Run([]string{"./scale", "api"}, ...)      // => 2
 stderr: usage: ./scale SERVICE REPLICAS
 ```
 
-### 2. Print what you are scaling
-
-When there are exactly 3 arguments, print this line to **stdout** and return
-`0`. Print nothing to stderr.
-
-```text
-Run([]string{"scale", "api", "3"}, ...)   // => 0
-stdout: scaling api to 3 replicas
-```
-
-### 3. Reject bad replica counts
+### 2. Reject bad replica counts
 
 REPLICAS must be a whole number that is `0` or more. Convert it with
 `strconv.Atoi`. If the conversion fails, or the number is negative, print this
@@ -138,6 +128,16 @@ stderr: ./scale: replicas must be a whole number >= 0, got "-1"
 ```
 
 `0` is allowed: `scale worker 0` prints `scaling worker to 0 replicas`.
+
+### 3. Print what you are scaling
+
+When the arguments are good, print this line to **stdout** and return
+`0`. Print nothing to stderr.
+
+```text
+Run([]string{"scale", "api", "3"}, ...)   // => 0
+stdout: scaling api to 3 replicas
+```
 
 ## Learn more
 

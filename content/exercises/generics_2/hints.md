@@ -1,25 +1,28 @@
-## Task 1: add, don't replace
+## Task 1: Fix Sum
 
-`total = v` throws away what `total` held before. You want to add `v` on top
-of it.
+Look at the line inside the loop: it replaces `total` each time instead of adding to it.
 
-## Task 2: collect, then sort
+### Closer
 
-Range over the map to get each key (`for k := range m`) and `append` it to
-`keys`. After the loop, call `slices.Sort(keys)`. It works because `K` is
-`cmp.Ordered`. Remember to add `"slices"` to the imports.
+Use the `+=` operator, which adds the right side onto the variable. It works because `Number` only allows number types.
 
-## Task 3: grow the group
-
-`groups[k] = []T{item}` replaces the whole group with a new one-item slice.
-Use `append` on the existing group instead. A missing key reads as a `nil`
-slice, and appending to `nil` works fine.
-
-## Almost the answer
+### Answer
 
 ```go
 total += v
 ```
+
+`total` starts at the zero value of `T`, so an empty slice sums to `0`.
+
+## Task 2: List map keys in order
+
+Collect every key of the map into `keys` first, then sort the whole slice once at the end.
+
+### Closer
+
+`for k := range m` gives you each key; `append` it to `keys`. After the loop, call `slices.Sort(keys)`, and add `"slices"` to the imports.
+
+### Answer
 
 ```go
 for k := range m {
@@ -28,6 +31,20 @@ for k := range m {
 slices.Sort(keys)
 ```
 
+`slices.Sort` works because `K` is `cmp.Ordered`.
+
+## Task 3: Fix GroupBy
+
+`groups[k] = []T{item}` replaces the whole group with a new one-item slice. You want to add the item to the group that's already there.
+
+### Closer
+
+Use `append` on the existing group: `append(groups[k], item)`. A missing key reads as a `nil` slice, and appending to `nil` works fine.
+
+### Answer
+
 ```go
 groups[k] = append(groups[k], item)
 ```
+
+Store the result back, because `append` may return a new slice.

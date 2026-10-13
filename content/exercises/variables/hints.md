@@ -1,29 +1,54 @@
-## Task 1: join with +
+## Task 1: Build the service label
 
-Return one expression made of three parts joined with `+`: the `env`
-parameter, the string `"/"`, and the `name` parameter. Order matters.
+You need three pieces glued together: the `env` parameter, a slash, then the
+`name` parameter. Which piece comes first?
 
-## Task 2: create ref with :=
+### Closer
 
-`ref` doesn't exist yet, so create it with `:=`, then `return ref`. You need
-five parts: `registry`, `"/"`, `name`, `":"`, `tag`.
+Fixed text goes inside quotes (`"/"`); parameters don't (`env`, `name`). Join
+the pieces with `+`: `return env + ...`.
 
-## Task 3: copy the line above
-
-The line `path = path + "/environments/" + env` shows the pattern. Write one
-more line just like it, using `"/services/"` and `service`.
-
-## Almost the answer
+### Answer
 
 ```go
-func ServiceLabel(name, env string) string {
-	return env + "/" + name
-}
+return env + "/" + name
+```
 
-// inside ImageRef:
+## Task 2: Build the image reference
+
+`ref` doesn't exist yet, so you create it with `:=`, then return it. It is
+made of five pieces: `registry`, a slash, `name`, a colon, then `tag`.
+
+### Closer
+
+Fixed text goes inside quotes (`"/"` and `":"`); parameters don't. Create the
+variable, then return it:
+
+```go
+ref := registry + "/" + ...
+return ref
+```
+
+### Answer
+
+```go
 ref := registry + "/" + name + ":" + tag
 return ref
+```
 
-// inside DeployPath:
+## Task 3: Finish the deploy API path
+
+Look at the line `path = path + "/environments/" + env`. You need one more line
+just like it, for the service.
+
+### Closer
+
+`path` already exists, so change it with `=` (not `:=`). Fixed text goes inside
+quotes (`"/services/"`); the parameter `service` doesn't:
+`path = path + "/services/" + ...`.
+
+### Answer
+
+```go
 path = path + "/services/" + service
 ```

@@ -1,18 +1,32 @@
-## Only touch the innermost function
+## Task 1: Log every request
 
-In all three functions, your code goes inside
-`http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { ... })`,
-next to the `next.ServeHTTP(w, r)` line. The outer layers are done.
+Your code goes in the innermost function, before `next.ServeHTTP(w, r)`. The
+method and path are both on the request `r`.
 
-## Task 1: one Fprintf
+### Closer
 
-Add `"fmt"` to the imports, then before `next.ServeHTTP`:
+`fmt.Fprintf(out, ...)` writes formatted text to any `io.Writer`. Use
+`r.Method` and `r.URL.Path` with a `"%s %s\n"` format. Add the `"fmt"` import.
+
+### Answer
 
 ```go
 fmt.Fprintf(out, "%s %s\n", r.Method, r.URL.Path)
+next.ServeHTTP(w, r)
 ```
 
-## Task 2: read, maybe make, then set
+## Task 2: Tag every request with an ID
+
+Read the incoming header first. Only when it's empty do you make a new ID and
+put it on the request; either way the response gets the same ID.
+
+### Closer
+
+`r.Header.Get("X-Request-ID")` returns `""` when the header is missing. Set it
+on the request with `r.Header.Set(...)` and on the response with
+`w.Header().Set(...)`, both before `next.ServeHTTP`.
+
+### Answer
 
 ```go
 id := r.Header.Get("X-Request-ID")
@@ -21,11 +35,21 @@ if id == "" {
 	r.Header.Set("X-Request-ID", id)
 }
 w.Header().Set("X-Request-ID", id)
+next.ServeHTTP(w, r)
 ```
 
-## Task 3: defer before next
+## Task 3: Recover from panics
 
-The deferred function must be set up **before** `next.ServeHTTP` runs:
+A deferred function runs even when the code after it panics. Set it up
+**before** `next.ServeHTTP` runs, and call `recover()` inside it.
+
+### Closer
+
+`defer func() { if v := recover(); v != nil { ... } }()`. Inside, log with
+`fmt.Fprintf(out, "panic: %v\n", v)` and reply with `http.Error` and
+`http.StatusInternalServerError`.
+
+### Answer
 
 ```go
 defer func() {

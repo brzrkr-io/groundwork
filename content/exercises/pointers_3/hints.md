@@ -1,14 +1,23 @@
-## Task 1: new with a value
+## Task 1: Write WithReplicas
 
-`new(n)` makes a new `int` holding `n` and gives you a pointer to it. Store
-it in the copy and return the copy:
+`spec.Replicas` is a `*int`, so you need a pointer to a new int that holds `n`. `spec` is already a copy, so set the field and return it.
+
+### Closer
+
+`new(n)` makes a new `int` holding `n` and gives you a pointer to it: `spec.Replicas = new(...)`.
+
+### Answer
 
 ```go
 spec.Replicas = new(n)
 return spec
 ```
 
-## Task 2: check for nil, then read
+## Task 2: Write EffectiveReplicas
+
+A `nil` pointer means "not set", and reading through it would crash. Check for that case first.
+
+### Closer
 
 ```go
 if spec.Replicas == nil {
@@ -16,25 +25,49 @@ if spec.Replicas == nil {
 }
 ```
 
-After that check it is safe to return `*spec.Replicas`.
+After that check it is safe to read the value with `*`.
 
-## Task 3: one if per field
-
-Copy `base` into a result variable, then loop over `layers`. Inside the
-loop, check each pointer field of the layer on its own: if it isn't `nil`,
-copy the value it points to into the matching field of the result.
-
-## Almost the answer
+### Answer
 
 ```go
-func Merge(base Config, layers ...Overrides) Config {
-	cfg := base
-	for _, o := range layers {
-		if o.Image != nil {
-			cfg.Image = *o.Image
-		}
-		// ...the same for Replicas and Debug
-	}
-	return cfg
+if spec.Replicas == nil {
+	return DefaultReplicas
 }
+return *spec.Replicas
+```
+
+## Task 3: Write Merge
+
+Start from a copy of `base`, then go through `layers` in order. For each layer, only fields that aren't `nil` change the result.
+
+### Closer
+
+Use one `if` per field inside the loop, copying the pointed-to value:
+
+```go
+cfg := base
+for _, o := range layers {
+	if o.Image != nil {
+		cfg.Image = *o.Image
+	}
+	// ...the same for Replicas and Debug
+}
+```
+
+### Answer
+
+```go
+cfg := base
+for _, o := range layers {
+	if o.Image != nil {
+		cfg.Image = *o.Image
+	}
+	if o.Replicas != nil {
+		cfg.Replicas = *o.Replicas
+	}
+	if o.Debug != nil {
+		cfg.Debug = *o.Debug
+	}
+}
+return cfg
 ```

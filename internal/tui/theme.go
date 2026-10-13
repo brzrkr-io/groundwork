@@ -73,7 +73,10 @@ func markdownStyle() ansi.StyleConfig {
 	s.LinkText.Color = color(ansiCyan)
 	s.Image.Color = color(ansiMagenta)
 	s.ImageText.Color = color(ansiGray)
+	// Inline code: coloured, no background, so no padding spaces either
+	// (they'd read as extra spaces around `+` and `"-"`).
 	s.Code.Color, s.Code.BackgroundColor = color(ansiCyan), nil
+	s.Code.Prefix, s.Code.Suffix = "", ""
 
 	s.CodeBlock.Color = nil
 	c := *s.CodeBlock.Chroma

@@ -1,36 +1,51 @@
-## Task 1: look at the receiver
+## Task 1: Fix Take
 
-`Take` changes `l.Tokens`, but `(l RateLimiter)` hands it a copy. Which
-receiver keeps the change?
+`Take` changes `l.Tokens`, but look at its receiver: `(l RateLimiter)` hands
+it a copy. Which kind of receiver keeps the change?
 
-## Task 2: the copy happens one step earlier
+### Closer
 
-`TakeN` calls `l.Take()`. Even once `Take` has a pointer receiver, Go
-rewrites the call as `(&l).Take()`, and inside `TakeN` the `l` is a copy of
-the caller's limiter. Give `TakeN` a pointer receiver too, so `l` already is
-a pointer to the real bucket.
+Add a `*` to the receiver type: `(l *RateLimiter)`. The body stays the same.
 
-## Task 3: loop over indexes
-
-In `for _, lim := range limiters`, `lim` is a fresh copy of each element.
-Loop with `for i := range limiters` and call the method on `limiters[i]`, the
-element inside the slice.
-
-## Almost the answer
-
-Change the first line of `Take` and `TakeN` (keep their bodies):
+### Answer
 
 ```go
 func (l *RateLimiter) Take() bool {
+```
+
+## Task 2: Fix TakeN
+
+`TakeN` calls `l.Take()`, and `Take` now has a pointer receiver. But what is
+`l` inside `TakeN`? It's still a copy of the caller's limiter.
+
+### Closer
+
+Go rewrites `l.Take()` as `(&l).Take()`, so it points at the copy. Give
+`TakeN` a pointer receiver too, so `l` already is a pointer to the real
+bucket.
+
+### Answer
+
+```go
 func (l *RateLimiter) TakeN(n int) int {
 ```
 
-And loop by index in `RefillAll`:
+Keep the body as it is; now every `Take` lands on the caller's bucket.
+
+## Task 3: Fix RefillAll
+
+In `for _, lim := range limiters`, `lim` is a fresh copy of each element, so
+`lim.Refill(n)` refills the copy.
+
+### Closer
+
+Loop over indexes with `for i := range limiters` and call the method on
+`limiters[i]`, the element that lives inside the slice.
+
+### Answer
 
 ```go
-func RefillAll(limiters []RateLimiter, n int) {
-	for i := range limiters {
-		limiters[i].Refill(n)
-	}
+for i := range limiters {
+	limiters[i].Refill(n)
 }
 ```

@@ -1,33 +1,46 @@
-## Task 1: one case per constant
+## Task 1: Name the severities
 
-Copy the `case Debug:` pattern for each of the other four constants. In the
-`default` branch, build the text with `fmt.Sprintf` and `%d`. Convert the
-receiver with `int(s)` first so `Sprintf` doesn't call `String` again.
+The `case Debug:` branch already shows the pattern. Each other constant needs
+its own `case`, and the `default` branch needs to put the number into the text.
 
-## Task 2: the method signature
+### Closer
 
-A `String` method on `Host` with a value receiver looks like this:
+Copy `case Debug: return "DEBUG"` once per constant. In `default`, use
+`fmt.Sprintf` with `%d`, and pass `int(s)` rather than `s`, so `Sprintf`
+doesn't call `String` again and loop forever.
+
+### Answer
 
 ```go
-func (h Host) String() string {
-	// ...
+switch s {
+case Debug:
+	return "DEBUG"
+case Info:
+	return "INFO"
+case Warning:
+	return "WARNING"
+case Error:
+	return "ERROR"
+case Critical:
+	return "CRITICAL"
+default:
+	return fmt.Sprintf("Severity(%d)", int(s))
 }
 ```
 
-Inside, `fmt.Sprintf` with `%s` for the name and IP and `%d` for the port
-builds the text.
+## Task 2: Print a host
 
-## Task 3: look at the receiver
+`fmt` looks for a method called exactly `String` that takes nothing and
+returns a `string`. Write one on `Host` with a value receiver, then build the
+text from the three fields.
 
-The body of the `Disk` method is fine. The problem is `(d *Disk)`: only a
-`*Disk` has that method, and the tests print a plain `Disk`. Remove the `*`.
+### Closer
 
-## Almost the answer
+The method header is `func (h Host) String() string`. Inside, `fmt.Sprintf`
+with `%s` for the name and IP and `%d` for the port builds the text:
+`"%s (%s:%d)"`.
 
-```go
-default:
-	return fmt.Sprintf("Severity(%d)", int(s))
-```
+### Answer
 
 ```go
 func (h Host) String() string {
@@ -35,6 +48,22 @@ func (h Host) String() string {
 }
 ```
 
+## Task 3: Fix the disk printout
+
+The body of the `Disk` method is already right. Look at the receiver: which
+type actually has this method, `Disk` or `*Disk`?
+
+### Closer
+
+With `(d *Disk)`, only a `*Disk` has `String`, and the tests print a plain
+`Disk`. Change the receiver to a value receiver.
+
+### Answer
+
 ```go
 func (d Disk) String() string {
+	return fmt.Sprintf("%s %d%% used", d.Mount, d.UsedPercent)
+}
 ```
+
+A value receiver gives the method to both `Disk` and `*Disk`, so `fmt` finds it either way.
