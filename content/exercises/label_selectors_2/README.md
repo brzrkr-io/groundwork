@@ -4,72 +4,81 @@ A big cluster holds thousands of Pods. Instead of downloading them all and
 filtering in Go, you hand the selector to the API server and get back only
 the Pods you asked for.
 
+**New here:** `List` with `metav1.ListOptions{LabelSelector: ...}`, `metav1.NamespaceAll`, a Service's selector vs its own labels.
+
 ## Learn
 
 ### Recap
 
-Labels are key/value tags such as `app: checkout`, and a selector such as
-`app=checkout,tier=web` picks the objects whose labels match.
+A selector such as `app=checkout,tier=web` picks objects whose labels match.
 `labels.SelectorFromSet(set).String()` turns a map into selector text. As in
-*The clientset: get, create and delete*, your functions take a `kubernetes.Interface` and reach each
-kind of object through a typed client, such as
-`cs.CoreV1().Services(ns).Get(ctx, name, metav1.GetOptions{})`. In tests,
-`fake.NewClientset(objects...)` plays the API server.
+*The clientset: get, create and delete*, your functions take a
+`kubernetes.Interface`, and `fake.NewClientset(objects...)` plays the API
+server in tests.
 
 ### Selecting on the server
 
 `List` takes a `metav1.ListOptions`. Put selector text in its `LabelSelector`
-field and the API server does the filtering, exactly like
-`kubectl get pods -l app=checkout`:
+field and the API server does the filtering, like `kubectl get -l`:
 
 ```go
-pods, err := cs.CoreV1().Pods("shop").List(ctx, metav1.ListOptions{
-	LabelSelector: "app=checkout,tier=web",
+secrets, err := cs.CoreV1().Secrets("billing").List(ctx, metav1.ListOptions{
+	LabelSelector: "owner=vault",
 })
 if err != nil {
 	return err
 }
-for _, pod := range pods.Items { // pods is a *corev1.PodList
-	fmt.Println(pod.Name)
+for _, s := range secrets.Items { // secrets is a *corev1.SecretList
+	fmt.Println(s.Name)
 }
 ```
 
-The API server returns lists sorted by namespace, then by name. The fake
-clientset does the same, and it honours `LabelSelector` too.
+> **Why is it written like this?** `.Items` is required: `List` returns a
+> list *object* (with metadata of its own), and the objects are in its `Items`
+> slice. `LabelSelector:` names the field in the struct literal; that is
+> convention, and fields you don't name stay empty.
 
-An empty `LabelSelector` means "no filter": you get every Pod. To search
-every namespace at once, like `kubectl get pods -A`, pass
-`metav1.NamespaceAll` as the namespace. It is just the empty string `""`, but
-the name says what you mean.
+The API server returns lists sorted by namespace, then name. The fake does
+the same and honours `LabelSelector` too.
+
+An empty `LabelSelector` means "no filter": you get everything. To search
+every namespace, like `kubectl get pods -A`, pass `metav1.NamespaceAll` as the
+namespace. It is just `""`, but the name says what you mean.
 
 ### A Service's two sets of labels
 
-A Service has labels of its own in `metadata.labels`, which describe the
-Service itself. The labels it sends traffic to are in `spec.selector`. These
-often look alike, which makes them easy to mix up. A Service with no
-selector at all sends traffic to no Pods (someone wires it up by hand).
+| Field | What it describes |
+|---|---|
+| `svc.Labels` (`metadata.labels`) | the Service itself |
+| `svc.Spec.Selector` (`spec.selector`) | the Pods it sends traffic to |
+
+They often look alike, so they are easy to mix up. A Service with no selector
+sends traffic to **no** Pods (someone wires it up by hand).
+
+`len` works on a `nil` map and returns `0`.
 
 ## Your task
 
-You're on call for the `shop` cluster and want two quick answers: "which
-Pods are behind this Service?" and "how many Pods does this team run in each
+You're on call for the `shop` cluster and want two quick answers: "which Pods
+are behind this Service?" and "how many Pods does this team run in each
 environment?".
 
 ### 1. Fix `PodsForService`
 
-`PodsForService(ctx, cs, namespace, name)` gets the Service and lists the
-Pods behind it, but a teammate reports two bugs:
+**Goal:** make `PodsForService` list the Pods picked by the Service's selector, and return `nil, nil` for a Service with no selector.
 
-- It lists Pods using the Service's own labels (`svc.Labels`). It must use the
-  Service's selector, `svc.Spec.Selector`.
+A teammate reports two bugs:
+
+- It lists Pods using the Service's own labels (`svc.Labels`). It must use
+  `svc.Spec.Selector`.
 - For a Service with no selector it returns every Pod in the namespace. It
   must return `nil, nil` without listing anything.
 
-Keep the rest as it is: names in the order the List call returns them, and
-the "get service" error (wrapped with `%w`) when the Service doesn't exist.
+Keep the rest: names in the order `List` returns them, and the
+`get service ...` error (wrapped with `%w`) when the Service doesn't exist.
 
 ```go
-// Service shop/checkout: labels app=checkout,team=payments
+// Service shop/checkout: labels   app=checkout,team=payments
 //                        selector app=checkout,tier=web
 PodsForService(ctx, cs, "shop", "checkout")
 // => []string{"checkout-web-a", "checkout-web-b"}, nil
@@ -77,14 +86,23 @@ PodsForService(ctx, cs, "shop", "legacy-db") // no selector
 // => nil, nil
 ```
 
+**Think it through:**
+- Both bugs are on or just above the `selector :=` line.
+- What does an empty selector match, and so where must you return early?
+
 ### 2. Finish `CountByEnv`
 
-`CountByEnv(ctx, cs, team)` already counts Pods by their `env` label and
-skips Pods that have none. It is missing the part that fetches the Pods.
-List the Pods labelled `team=<team>` in **all** namespaces, using
-`LabelSelector` and `metav1.NamespaceAll`. If the List call fails, return
-`nil` and the error. Then loop over the listed Pods (`.Items`) instead of the
-empty `pods` slice. When the team has no Pods, return an empty map.
+**Goal:** make `CountByEnv` list the Pods labelled `team=<team>` in **all** namespaces and count them by their `env` label.
+
+The counting loop already works and skips Pods without `env`. It is missing
+the part that fetches the Pods:
+
+- Build the selector text from the `team` parameter, with the fixed key `team`.
+- List with `LabelSelector` and `metav1.NamespaceAll`. If `List` fails, return
+  `nil` and the error.
+- Loop over the listed Pods (`.Items`) instead of the empty `pods` slice. Then
+  delete that slice and the unused `corev1` import.
+- When the team has no Pods, return an empty map (not `nil`).
 
 ```go
 // team=payments: 4 Pods with env=prod, 1 with env=staging,
@@ -92,6 +110,10 @@ empty `pods` slice. When the team has no Pods, return an empty map.
 CountByEnv(ctx, cs, "payments")
 // => map[string]int{"prod": 4, "staging": 1}, nil
 ```
+
+**Think it through:**
+- `PodsForService` already builds selector text from a map. How would you build a one-entry map from `team`?
+- What namespace argument means "every namespace"?
 
 ## Learn more
 

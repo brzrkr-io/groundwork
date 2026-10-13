@@ -4,41 +4,65 @@ A teammate tried to make the team's chat bot crash-proof. The idea was right,
 but `recover` is easy to use wrongly. In this exercise you fix three common
 mistakes.
 
+**New here:** why `recover` must be deferred, why the result must be named. Otherwise practice.
+
 ## Learn
 
-Recap: a panic stops the current function and climbs up through its callers,
-running deferred functions on the way. `recover()` stops it, but only when it
-is called directly inside a deferred function. A deferred function can change
-a named result, which is how a panic becomes an error. Recover at a boundary,
-like a job runner or a chat-command handler, and never to hide a bug.
+### Recap from *panic and recover*
 
-Two details matter for the bugs below.
+- A panic stops the current function and climbs up through its callers, running deferred calls on the way.
+- `recover()` stops it, but only when called **directly inside a deferred function**.
+- A deferred closure can change a **named result**: that is how a panic becomes an error.
+- Recover at a boundary (a job runner, a chat-command handler), never to hide a bug.
 
-**`recover` outside a deferred function does nothing.** Code before the panic
-runs before anything has gone wrong, so `recover()` returns `nil` there. Code
-after the panic never runs at all. Only deferred functions run *during* the
-panic.
+### recover outside a deferred function does nothing
 
-**After a panic, the `return` statement never runs.** The function's results
-are whatever they hold when the deferred functions finish. With an unnamed
-result, that is the zero value, and a deferred function has no way to change
-it:
+Only deferred calls run *during* a panic. So anywhere else, `recover` is too
+early or too late:
+
+| Where `recover()` is | What happens |
+|---|---|
+| before the panicking line | nothing has gone wrong yet: returns `nil` |
+| after the panicking line | never runs at all |
+| inside a deferred function | runs during the panic and stops it |
+
+### After a panic, the return line never runs
+
+When a panic is recovered, the function ends with its results as they are
+**after the deferred calls finish**. The `return` line itself was skipped.
 
 ```go
-func check() error {
-	var err error
+func load() int {
+	n := 0
 	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("check panicked: %v", r) // sets a local variable...
-		}
+		recover()
+		n = -1 // changes the local n...
 	}()
-	err = probe() // panics
-	return err    // ...but this line never runs, so check returns nil
+	n = readCount() // panics
+	return n        // ...but this never runs, so load returns 0
 }
 ```
 
-With `func check() (err error)`, the deferred function sets the result itself,
-so the caller gets the error.
+With an unnamed result, the caller gets the zero value and the deferred
+function can't change that. With a named result, `func load() (n int)`, the
+deferred function sets the result itself and the caller gets `-1`.
+
+> **Why is it written like this?** Go requires parentheses around named
+> results: `(n int)`. A named result is already declared, so writing
+> `n := 0` or `var n int` again in the body is a compile error. Delete the old
+> declaration line; don't edit the line the error points at (see *Reading
+> compiler errors*).
+
+### Writing to a nil map panics
+
+`var m map[string]int` declares a map but creates nothing: `m` is `nil`.
+Reading from it is fine, writing to it panics. `make` creates a real, empty
+map you can write to.
+
+```go
+var seen map[string]bool // nil: seen["a"] = true would panic
+ports := make(map[string]int) // ready: ports["ssh"] = 22 works
+```
 
 ## Your task
 
@@ -48,23 +72,28 @@ the alert summary is always empty.
 
 ### 1. Make Guard stop the panic
 
-`Guard` runs the handler for one chat command. It calls `recover()` before the
-handler even runs, so a panicking handler still crashes the bot. Move the
-`recover` into a deferred function so that a panic no longer escapes from
-`Guard`.
+**Goal:** make `Guard` stop a panic in `handler`, so no panic escapes from `Guard`.
 
-When the handler doesn't panic, `Guard` returns whatever the handler returned
-(`nil` or its error). That part already works. Keep it working.
+`Guard` calls `recover()` before the handler even runs, so a panicking
+handler still crashes the bot. When the handler doesn't panic, `Guard` must
+still return whatever the handler returned (`nil` or its error, unchanged).
+
+**Think it through:**
+- Look at the table above: where is the `recover` now, and where must it be?
+- Which form of `defer` lets you run several lines (the `if` and the assignment)?
 
 ### 2. Return the panic as an error
 
+**Goal:** make `Guard` return an error describing the panic instead of `nil`.
+
 After task 1 the panic is stopped, but `Guard` returns `nil`, so the bot
-thinks the command succeeded. Make `err` a named result so the deferred
-function can set it. The error message is:
+thinks the command worked. The error text is:
 
 ```text
 command "<command>" panicked: <panic value>
 ```
+
+The quotes around the command are part of the text.
 
 ```go
 Guard("restart api", func() error { panic("boom") })
@@ -74,15 +103,18 @@ Guard("scale web", func() error { panic(7) })
 // => error `command "scale web" panicked: 7`
 ```
 
+**Think it through:**
+- Which line declares `err` now? Where must the name `err` live instead?
+- Once it is named, which old line becomes a duplicate declaration?
+- The message format is already in the code. Does it still need to change?
+
 ### 3. Fix the real bug instead of recovering
 
-`CountBySeverity` counts alerts per severity. It panics on every alert, and
-someone "fixed" that by recovering and ignoring the panic. Now it quietly
-returns `nil`.
+**Goal:** make `CountBySeverity` return the real count per severity, without any `recover`.
 
-Writing to a `nil` map always panics. That is a bug in the code, not a
-problem to recover from. Delete the deferred `recover` and fix the bug: create
-the map with `make` before the loop. With no alerts, return an empty map, not
+It panics on every alert, and someone "fixed" that by recovering and
+ignoring the panic, so it quietly returns `nil`. Delete the deferred
+`recover` and fix the actual bug. With no alerts, return an empty map, not
 `nil`.
 
 ```go
@@ -96,6 +128,10 @@ CountBySeverity([]Alert{
 CountBySeverity(nil)
 // => map[string]int{}
 ```
+
+**Think it through:**
+- Which line declares `counts`? Is that map `nil` or real?
+- The loop line that panics is fine; the fix belongs on the declaration.
 
 ## Learn more
 

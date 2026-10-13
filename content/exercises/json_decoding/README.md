@@ -1,15 +1,16 @@
 # Decoding JSON: load a service config
 
-Service configs, API responses and alert webhooks all arrive as JSON. In this
-exercise you turn JSON bytes into Go structs, catch typos in config files, and
-dig into JSON whose shape you don't know in advance.
+Service configs, API responses and alert webhooks all arrive as JSON. Here
+you turn JSON bytes into Go structs, catch typos in config files, and dig
+into JSON whose shape you don't know in advance.
+
+**New here:** `json.Unmarshal`, `json.NewDecoder`, `DisallowUnknownFields`, `map[string]any`, `*json.SyntaxError`.
 
 ## Learn
 
 ### json.Unmarshal fills in a value you own
 
-*Decoding* (or *unmarshalling*) turns JSON text into Go values. The
-`encoding/json` package does it with `json.Unmarshal`:
+*Decoding* (or *unmarshalling*) turns JSON text into Go values:
 
 ```go
 type Target struct {
@@ -22,79 +23,81 @@ err := json.Unmarshal([]byte(`{"host":"db-1","port":5432}`), &t)
 // t.Host == "db-1", t.Port == 5432
 ```
 
-Notice the `&t`. `Unmarshal` must change your variable, so it needs a
-**pointer** to it, just like any function that modifies its argument (see
-*Pointers*). Pass `t` without the `&` and you get an error instead of data.
+> **Why is it written like this?** Go requires the `&` here in practice:
+> `Unmarshal` must change your variable, so it needs a *pointer* to it (see
+> *Pointers*). Without `&` you get an error instead of data. Declaring `var t`
+> first, then filling it, is how the API is designed. The name `t` is your
+> choice.
 
 ### How keys find fields
 
-The text in backticks after a field is a *struct tag*. `json:"host"` says
-"this field holds the JSON key `host`". You saw the same tags in *Encoding
-JSON*; decoding reads them the other way round.
+The struct tags you wrote in *Encoding JSON: a deployment status report* work
+the other way round when decoding:
 
-| JSON | Go struct field it fills |
+| JSON | What happens |
 |---|---|
-| key with a matching tag | that field |
-| key with no tag match | a field with the same name, ignoring case (`"HOST"` → `Host`) |
+| key with a matching tag | fills that field |
+| key with no tag match | fills a field with the same name, ignoring case (`"HOST"` → `Host`) |
 | key that matches nothing | ignored, silently |
 | field whose key is missing | left alone: keeps its zero value |
 
-That last row is useful. If `replicas` is missing, your `Replicas` field stays
-`0`, so after decoding you can spot the zero and apply a default.
-
-Unexported (lowercase) fields are never filled. The json package can't see
-them.
+That last row is useful: a missing number stays `0`, so after decoding you
+can spot the zero and apply a default. Unexported (lowercase) fields are
+never filled.
 
 ### Nested objects and arrays
 
-A JSON object inside an object maps to a struct field of struct type. A JSON
-array maps to a slice. A JSON object with arbitrary keys can map to a map:
+A JSON object inside an object maps to a struct field. A JSON array maps to
+a slice. An object with arbitrary keys can map to a map:
 
 ```go
 type Deploy struct {
-	Image   string            `json:"image"`
-	Ports   []int             `json:"ports"`  // [80, 443]
-	Limits  Limits            `json:"limits"` // {"cpu": "500m"}
-	Labels  map[string]string `json:"labels"` // {"team": "core"}
+	Image  string            `json:"image"`
+	Ports  []int             `json:"ports"`  // [80, 443]
+	Limits Limits            `json:"limits"` // {"cpu": "500m"}
+	Labels map[string]string `json:"labels"` // {"team": "core"}
 }
 ```
 
 ### Strict decoding with json.Decoder
 
-`json.NewDecoder(r)` reads JSON from any `io.Reader` (see *Reading input line by line*). A
-decoder has an option that `Unmarshal` lacks: `DisallowUnknownFields`. With it
-switched on, a key that matches no field is an **error** instead of being
-ignored. That catches typos such as `"replica": 3` in a config file, which
-would otherwise silently leave `Replicas` at zero.
+`json.NewDecoder(r)` reads JSON from any `io.Reader` (see *Reading input line
+by line*). A decoder has an option `Unmarshal` lacks:
+`DisallowUnknownFields()`. Once switched on, a key that matches no field is an
+**error** instead of being ignored.
 
 ```go
-dec := json.NewDecoder(r)
-dec.DisallowUnknownFields()
-var cfg Config
-if err := dec.Decode(&cfg); err != nil {
-	return Config{}, err
-}
+d := json.NewDecoder(os.Stdin)
+d.DisallowUnknownFields()
+var t Target
+err := d.Decode(&t)
+// input {"host":"db-1","prot":5432}
+// err: json: unknown field "prot"
 ```
 
-The error text comes from `encoding/json` itself and looks like
-`json: unknown field "replica"`.
+That catches typos that would otherwise leave a field silently at zero.
+
+> **Why is it written like this?** `DisallowUnknownFields` is a method call
+> with no return value: it changes the decoder's settings, so it must come
+> before `Decode`. That order is required by how the decoder works, not by
+> the compiler.
 
 ### JSON of unknown shape
 
-Sometimes you only need one value from a big payload, or the shape varies.
-Decode into `map[string]any`. The json package then picks Go types for you:
+When you only need one value from a big or varying payload, decode into
+`map[string]any`. The json package picks Go types for you:
 
 | JSON value | Go type inside `any` |
 |---|---|
 | object `{...}` | `map[string]any` |
 | array `[...]` | `[]any` |
-| number `3`, `2.5` | `float64` (always, even for whole numbers) |
+| number `3`, `2.5` | `float64` (always, even whole numbers) |
 | string `"x"` | `string` |
 | `true` / `false` | `bool` |
 | `null` | `nil` |
 
-To use a value you need a type assertion. Use the comma-ok form (see *Type
-switches*), so a wrong type gives you `ok == false` instead of a panic:
+To use a value, you need a type assertion. Use the comma-ok form (see *Type
+switches*), so a wrong type gives `ok == false` instead of a panic:
 
 ```go
 var doc map[string]any
@@ -111,9 +114,8 @@ A missing key gives `nil`, and asserting `nil` to any type also gives
 
 ### Syntax errors
 
-Broken JSON gives a `*json.SyntaxError`. Its `Offset` field is the byte
-position where parsing failed. Use `errors.AsType` to get at it, even through
-a `%w` wrap:
+Broken JSON gives a `*json.SyntaxError`; its `Offset` field is the byte
+where parsing failed. `errors.AsType` finds it, even through a `%w` wrap:
 
 ```go
 if se, ok := errors.AsType[*json.SyntaxError](err); ok {
@@ -127,11 +129,9 @@ different error (`*json.UnmarshalTypeError`). Either way, `err != nil`.
 ## Your task
 
 You're writing the config loader for a small deploy tool, plus a helper for
-the alert webhook. The starter imports `errors` and `io`. Add `encoding/json`
-and `fmt` to the import list when you need them.
-
-The `Config` and `HealthCheck` structs are already written, with their tags.
-A config file looks like this:
+the alert webhook. The starter imports `errors` and `io`; add
+`"encoding/json"` and `"fmt"` when you need them. `Config` and `HealthCheck`
+already have their tags. A config file looks like this:
 
 ```json
 {
@@ -146,14 +146,13 @@ A config file looks like this:
 
 ### 1. Parse a config with a default
 
-Write `ParseConfig(data)`:
+**Goal:** `ParseConfig(data)` decodes `data` into a `Config` with
+`json.Unmarshal`, and sets `Replicas` to `1` when it is `0`.
 
-- Decode `data` into a `Config` with `json.Unmarshal`.
-- If decoding fails, return `Config{}` and the error wrapped as
-  `parse config: %w`. The original error must stay reachable with
-  `errors.AsType`, so use `%w`, not `%v`.
-- If `Replicas` is `0` after decoding (missing or written as `0`), set it to
-  `1`.
+- `Replicas` is `0` when the key is missing or written as `0`.
+- If decoding fails (broken JSON or a wrong type), return `Config{}` and the
+  error wrapped with the prefix `parse config: `. Wrap with `%w`, not `%v`,
+  so `errors.AsType` can still find the `*json.SyntaxError`.
 
 ```go
 ParseConfig([]byte(`{"service":"checkout","port":8080}`))
@@ -166,15 +165,20 @@ ParseConfig([]byte(`{"service": checkout}`))
 // => Config{}, error "parse config: invalid character 'c' looking for beginning of value"
 ```
 
+**Think it through:**
+- `cfg` is declared for you. What does `Unmarshal` need to be able to change it?
+- When is it safe to check `Replicas`: before or after the error check?
+
 ### 2. Load a config strictly
 
-Write `LoadStrict(r)`:
+**Goal:** `LoadStrict(r)` decodes a `Config` from the reader `r` and rejects
+any key that matches no field.
 
-- Create a decoder with `json.NewDecoder(r)` and call
-  `DisallowUnknownFields()` on it.
-- Decode into a `Config`. On error, return `Config{}` and the error wrapped
-  as `load config: %w`.
-- `LoadStrict` does not apply the replicas default.
+- Use a `json.Decoder` with unknown fields disallowed.
+- On error, return `Config{}` and the error wrapped with the prefix
+  `load config: `. The error must still contain the json package's text,
+  e.g. `unknown field "replica"`.
+- No replicas default here.
 
 ```go
 LoadStrict(strings.NewReader(`{"service":"api","replicas":2}`))
@@ -184,34 +188,35 @@ LoadStrict(strings.NewReader(`{"service":"api","replica":2}`))
 // => Config{}, error "load config: json: unknown field \"replica\""
 ```
 
-The tests check that the error starts with `load config: ` and contains
-`unknown field "replica"` (with the real key name in quotes).
+**Think it through:**
+- Which parameter does the decoder read from?
+- Which call must happen before `Decode`?
 
 ### 3. Find an alert's severity
 
-Alert webhooks carry lots of fields that vary between senders. You only need
-one: `labels` → `severity`.
+**Goal:** `Severity(data)` returns the string at `labels` → `severity` in an
+alert payload of unknown shape.
 
 ```json
 {"status": "firing", "labels": {"alertname": "DiskFull", "severity": "critical"}}
 ```
 
-Write `Severity(data)`:
-
 - Decode `data` into a `map[string]any`. If that fails, return `""` and the
-  error from `json.Unmarshal` (wrapping it is optional).
-- Get `labels` and assert it to `map[string]any`.
-- Get `severity` from that map and assert it to `string`.
-- If `labels` is missing or not an object, or `severity` is missing or not a
-  string, return `""` and the sentinel error `ErrNoSeverity`.
+  error from `json.Unmarshal` (wrapping is optional).
+- If `labels` is missing or not an object, or `severity` is missing, `null`
+  or not a string, return `""` and the sentinel error `ErrNoSeverity`.
 
 ```go
-Severity([]byte(`{"labels":{"severity":"critical"}}`))  // => "critical", nil
-Severity([]byte(`{"status":"firing"}`))                 // => "", ErrNoSeverity
-Severity([]byte(`{"labels":"severity=critical"}`))      // => "", ErrNoSeverity
-Severity([]byte(`{"labels":{"severity":3}}`))           // => "", ErrNoSeverity
-Severity([]byte(`not json`))                            // => "", a *json.SyntaxError
+Severity([]byte(`{"labels":{"severity":"critical"}}`)) // => "critical", nil
+Severity([]byte(`{"status":"firing"}`))                // => "", ErrNoSeverity
+Severity([]byte(`{"labels":"severity=critical"}`))     // => "", ErrNoSeverity
+Severity([]byte(`{"labels":{"severity":3}}`))          // => "", ErrNoSeverity
+Severity([]byte(`not json`))                           // => "", a *json.SyntaxError
 ```
+
+**Think it through:**
+- Two steps down: what Go type does an inner JSON object become inside `any`?
+- Each step needs one comma-ok assertion. What do you return when `ok` is false?
 
 ## Learn more
 

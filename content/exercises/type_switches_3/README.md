@@ -1,45 +1,50 @@
 # Type switches: flatten a nested config
 
-Tools such as Helm (`--set db.port=5432`), Consul and many config loaders work
-with *flat* keys like `db.port` instead of nested blocks. In this exercise you
-flatten a decoded config, using type switches to tell nested blocks apart from
-plain values.
+Tools such as Helm (`--set db.port=5432`) and Consul work with *flat* keys
+like `db.port` instead of nested blocks. Here you flatten a decoded config,
+using type switches to tell nested blocks apart from plain values.
+
+**New here:** several types in one `case`, interface cases, recursion (a function calling itself).
 
 ## Learn
 
 ### Recap
 
-`switch v := x.(type)` picks a case by the type `x` holds, and inside a case
-`v` has that type. `default` catches everything else. `%T` prints a value's
-type.
+`switch v := x.(type)` picks a case by the type `x` holds; inside a case `v`
+has that type. `default` catches everything else. `%T` prints a value's type.
 
 ### Several types in one case
 
-A case may list several types. Then Go can't pick one type for `v`, so `v`
-keeps the type of the switched value (`any`). That is fine when you treat
-them all the same way:
+A case may list several types, separated by commas. Then Go can't pick one
+type for `v`, so `v` keeps the type of the switched value (`any`). That is
+fine when you treat them all the same way:
 
 ```go
 switch v := x.(type) {
-case int, float64, bool:
-	return fmt.Sprintf("%v", v) // v is still an any here
+case int8, int16, int32:
+	return fmt.Sprintf("small number %d", v) // v is still an any here
 }
 ```
 
 ### Interface cases
 
-A case can also name an interface. It matches every type that has the
-interface's methods. `fmt.Stringer` (as in *Stringers*) matches anything with
-a `String() string` method, such as `time.Duration`:
+A case can name an interface. It matches every type that has the interface's
+methods. `fmt.Stringer` (as in *Stringers*) matches anything with a
+`String() string` method, such as `time.Duration`:
 
 ```go
-switch v := x.(type) {
+var d any = 30 * time.Second
+switch v := d.(type) {
 case fmt.Stringer:
-	return v.String() // time.Duration(30 * time.Second) gives "30s"
+	fmt.Println(v.String()) // "30s"
 }
 ```
 
-Cases are checked from top to bottom, and the first match wins.
+Cases are checked **top to bottom**, and the first match wins.
+
+> **Why is it written like this?** The commas in a multi-type case are
+> required syntax. The order of cases is your choice, but it matters: put the
+> specific types before a broad interface case.
 
 ### A function that calls itself
 
@@ -55,26 +60,28 @@ cfg := map[string]any{
 
 You can't write one loop per level when you don't know how many levels there
 are. Instead, a function handles one map and calls *itself* for every inner
-map it finds. This is called *recursion*:
+map it finds. This is *recursion*:
 
 ```go
-// countValues counts the plain (non-map) values in a nested config.
-func countValues(m map[string]any) int {
-	count := 0
+// depth reports how many levels of maps are nested inside m.
+func depth(m map[string]any) int {
+	deepest := 0
 	for _, value := range m {
-		switch v := value.(type) {
-		case map[string]any:
-			count += countValues(v) // the same function, one level deeper
-		default:
-			count++
+		if inner, ok := value.(map[string]any); ok {
+			deepest = max(deepest, depth(inner)) // same function, one level down
 		}
 	}
-	return count
+	return deepest + 1
 }
 ```
 
 It stops on its own: the innermost maps contain no more maps, so they make no
 further calls.
+
+> **Why is it written like this?** Go needs nothing special for recursion;
+> a function may simply call itself by name. Passing the shared result (here,
+> a map) in as a parameter is a common choice so every level writes to the
+> same place.
 
 ## Your task
 
@@ -83,43 +90,46 @@ Your deploy tool loads a nested config and has to pass it on as flat
 
 ### 1. Convert a plain value to text
 
-Write `Scalar(v any) (string, bool)`, which turns a single config value into
-text:
+**Goal:** make `Scalar(v)` turn one config value into text and `true`, or return `"", false` if it can't.
 
-| Type of `v` | Result |
+Use a type switch:
+
+| Type of `v` | Text to return |
 |---|---|
 | `string` | the string itself |
-| `int`, `float64` or `bool` | `fmt.Sprintf("%v", v)` |
-| anything with a `String() string` method (`fmt.Stringer`) | `v.String()` |
-| anything else (including `nil`, `int64`, slices and maps) | `""`, `false` |
+| `int`, `float64` or `bool` | the value printed with `%v` |
+| anything with a `String() string` method (`fmt.Stringer`) | the result of its `String()` method |
+| anything else (including `nil`, `int64`, slices and maps) | `""`, and `false` |
 
 Every supported value also returns `true`.
 
 ```go
-Scalar("eu-west-1")                 // => "eu-west-1", true
-Scalar(5432)                        // => "5432", true
-Scalar(0.75)                        // => "0.75", true
-Scalar(true)                        // => "true", true
-Scalar(30 * time.Second)            // => "30s", true
-Scalar(net.ParseIP("10.0.0.1"))     // => "10.0.0.1", true
-Scalar([]string{"a", "b"})          // => "", false
+Scalar("eu-west-1")             // => "eu-west-1", true
+Scalar(5432)                    // => "5432", true
+Scalar(0.75)                    // => "0.75", true
+Scalar(true)                    // => "true", true
+Scalar(30 * time.Second)        // => "30s", true
+Scalar(net.ParseIP("10.0.0.1")) // => "10.0.0.1", true
+Scalar([]string{"a", "b"})      // => "", false
 ```
+
+**Think it through:**
+- Which three types can share one case, because they're all handled the same way?
+- Which case does `time.Duration` reach? It isn't `int`, even though it looks like a number.
 
 ### 2. Flatten the config
 
-`Flatten` is already written. It calls `flattenInto` with an empty prefix.
-Finish `flattenInto(out, prefix, m)` so that for every key in `m`:
+**Goal:** finish `flattenInto(out, prefix, m)` so every plain value ends up in `out` under its full dotted key.
 
-- If the value is a `map[string]any`, call `flattenInto` again with the full
-  key as the new prefix. If that call returns an error, return it.
-- Otherwise convert it with `Scalar` and store it in `out` under the full key.
-- If `Scalar` can't convert it, return the error
-  `unsupported value for "<full key>": <type>`, using `%q` for the key and
-  `%T` for the type (`Flatten` then returns `nil` and that error).
+`Flatten` is already written; it calls `flattenInto` with an empty prefix.
+The starter builds `fullKey` for you: the prefix, a dot, and the key (just
+the key at the top level). For every key in `m`:
 
-The full key is the prefix, a dot, and the key; at the top level, where the
-prefix is `""`, it is just the key. The starter already builds it as
-`fullKey`. An empty inner map adds nothing.
+- If the value is a `map[string]any`, call `flattenInto` again with `fullKey` as the new prefix. If that call returns an error, return it.
+- Otherwise convert it with `Scalar` and store the text in `out` under `fullKey`.
+- If `Scalar` can't convert it, return the error `unsupported value for "<full key>": <type>`, using `%q` for the key and `%T` for the type. (`Flatten` then returns `nil` and that error.)
+
+An empty inner map adds nothing.
 
 ```go
 Flatten(map[string]any{
@@ -142,6 +152,10 @@ Flatten(map[string]any{
 })
 // => nil, error `unsupported value for "db.hosts": []string`
 ```
+
+**Think it through:**
+- Replace the starter's `out[fullKey] = fmt.Sprintf(...)` line; it skips both the nested check and `Scalar`.
+- Which function makes an error from a format string, as in earlier error exercises?
 
 ## Learn more
 

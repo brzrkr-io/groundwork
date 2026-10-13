@@ -4,7 +4,10 @@ Your team's maintenance script labels backups, warns about TLS certificates
 and picks a log level. A colleague started it, but it doesn't build yet and
 one check gives the wrong answers.
 
-This starter does not compile yet; the first job is to read the compiler error.
+**New here:** *scope* (where a variable can be used); practice with `if`.
+
+This starter does not compile yet. Your first job is to read the compiler
+error.
 
 ## Learn
 
@@ -12,8 +15,27 @@ This starter does not compile yet; the first job is to read the compiler error.
 
 As in *if and else*, Go checks `if` / `else if` conditions from top to bottom
 and runs only the first block that matches. A `return` inside a branch ends
-the function early. A variable made in an `if` short statement
-(`if x := ...; x > 5 {`) exists only inside that `if` / `else` chain.
+the function early.
+
+### Scope: where a name exists
+
+A variable exists only inside the block where it was created. That area is
+its *scope*. A variable made in an `if` short statement lives only in that
+`if` / `else` chain:
+
+```go
+if n := len(hosts); n > 0 {
+	fmt.Println(n) // fine: inside the if
+}
+fmt.Println(n) // compile error: undefined: n
+```
+
+To use a value both in the `if` and after it, create it on its own line
+**before** the `if`. Then its scope is the whole rest of the function.
+
+> **Why is it written like this?** Scope rules are what Go requires; the
+> compiler enforces them. Keeping a helper inside the `if` is good style when
+> nobody needs it afterwards, but it's your choice.
 
 ### Reading a compiler error
 
@@ -23,32 +45,41 @@ When code doesn't compile, Go prints the file, line, column and a message:
 ./exercise.go:12:32: undefined: days
 ```
 
-Here line 12, column 32 uses a name called `days` that Go can't see at that
-point. Gopherlings shows this message in place of the test results.
+Line 12, column 32 uses a name `days` that Go can't see there. The line in
+the error is where the name is **used**. The fix often belongs where the name
+is **declared**. See *Reading compiler errors* for more.
 
 ## Your task
 
 ### 1. Fix the compile error in BackupAgeLabel
 
-`BackupAgeLabel` turns a backup's age in hours into a label. It creates `days`
-in the `if` short statement and then uses it after the `if` has ended, where
-`days` no longer exists. Fix it by declaring `days` on its own line **before**
-the `if`, so the whole function can use it. The labels themselves are already
-right:
+**Goal:** make `BackupAgeLabel` compile by declaring `days` on its own line
+before the `if`, so the whole function can use it.
+
+The starter creates `days` in the `if` short statement, then uses it after
+the `if` has ended. The labels are already right; don't change them:
 
 - under 24 hours: `"fresh"`
 - otherwise: the number of whole days (`ageHours / 24`), then `"d old"`
 
 ```go
-BackupAgeLabel(5)  // => "fresh"
-BackupAgeLabel(50) // => "2d old"
-BackupAgeLabel(24) // => "1d old"
+BackupAgeLabel(0)   // => "fresh"
+BackupAgeLabel(23)  // => "fresh"
+BackupAgeLabel(24)  // => "1d old"
+BackupAgeLabel(50)  // => "2d old"
+BackupAgeLabel(168) // => "7d old"
 ```
+
+**Think it through:**
+- The error points at the last line, but which line creates `days`?
+- After you move the declaration, what's left for the `if` to hold?
 
 ### 2. Fix the order of the certificate checks
 
-`CertStatus` should label a TLS certificate by `daysLeft`, the number of days
-until it expires:
+**Goal:** reorder the checks in `CertStatus` so the most urgent one comes
+first.
+
+`daysLeft` is the number of days until the certificate expires:
 
 | `daysLeft` | Return |
 |---|---|
@@ -58,34 +89,50 @@ until it expires:
 | 30 and above | `"valid"` |
 
 The starter checks `daysLeft < 30` first. Any value below 7 is also below 30,
-so that first branch wins every time and the other branches can never run.
-Reorder the checks so the most urgent one comes first.
+so that branch wins every time and the others never run.
 
 ```go
-CertStatus(-1) // => "expired"
-CertStatus(3)  // => "renew now"
-CertStatus(12) // => "renew soon"
-CertStatus(90) // => "valid"
+CertStatus(-30) // => "expired"
+CertStatus(-1)  // => "expired"
+CertStatus(0)   // => "renew now"
+CertStatus(6)   // => "renew now"
+CertStatus(7)   // => "renew soon"
+CertStatus(29)  // => "renew soon"
+CertStatus(30)  // => "valid"
 ```
+
+**Think it through:**
+- The three conditions and labels are correct. Only their order is wrong.
+- Which condition matches the fewest values? That one goes first.
 
 ### 3. Finish LogLevelFor
 
-`LogLevelFor` picks a log level for a service:
+**Goal:** make `LogLevelFor` return `"warn"` when `env` is exactly
+`"production"` and `debug` is `false`.
+
+The rules, in order:
 
 1. If `debug` is `true`, return `"debug"`, whatever the environment.
 2. Otherwise, if `env` is exactly `"production"`, return `"warn"`.
 3. Otherwise, return `"info"`.
 
-The first and last rules are already written. Add the middle one.
+Rules 1 and 3 are already written. Add rule 2 between them.
 
 ```go
 LogLevelFor("production", true)  // => "debug"
+LogLevelFor("staging", true)     // => "debug"
 LogLevelFor("production", false) // => "warn"
 LogLevelFor("staging", false)    // => "info"
+LogLevelFor("dev", false)        // => "info"
 ```
+
+**Think it through:**
+- `env` is a parameter, so it has no quotes. `production` is fixed text, so
+  it does.
+- Which operator checks "exactly equal"? (Not `=`.)
 
 ## Learn more
 
 - [A Tour of Go: If with a short statement](https://go.dev/tour/flowcontrol/6)
-- [Go spec: If statements](https://go.dev/ref/spec#If_statements)
+- [Go spec: Declarations and scope](https://go.dev/ref/spec#Declarations_and_scope)
 - [Go by Example: If/Else](https://gobyexample.com/if-else)

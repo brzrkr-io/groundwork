@@ -2,16 +2,15 @@
 
 Networks drop packets, load balancers restart and databases fail over. A
 service that tries again, politely, rides out these blips instead of paging
-you at 3am. In this exercise you build a small retry helper of the kind every
-deploy tool and API client carries.
+you at 3am. Here you build the retry helper every deploy tool carries.
+
+**New here:** exponential backoff, jitter, multiplying a `time.Duration`.
 
 ## Learn
 
 ### Transient or permanent?
 
-Only retry failures that might go away on their own. A *transient* failure
-is a blip. A *permanent* failure gives the same answer no matter how often
-you ask.
+Only retry failures that might go away on their own.
 
 | Transient: retry | Permanent: give up straight away |
 |---|---|
@@ -19,23 +18,15 @@ you ask.
 | `503 Service Unavailable` | `404 Not Found` (it isn't there) |
 | Connection reset by peer | Bad credentials (`401`/`403`) |
 
-Retrying a permanent failure wastes time and hides the real problem.
-
-In this exercise, an operation marks a transient failure by wrapping the
-sentinel error `ErrTemporary` with `%w`, as in *Wrapping errors*:
-
-```go
-return fmt.Errorf("GET /healthz: 503: %w", ErrTemporary)
-```
-
-so `errors.Is(err, ErrTemporary)` tells you whether to try again. Any other
-error is permanent.
+In this exercise an operation marks a transient failure by wrapping the
+sentinel error `ErrTemporary` with `%w`, as in *Wrapping errors*. So
+`errors.Is(err, ErrTemporary)` tells you whether to try again. Any other error
+is permanent.
 
 ### Exponential backoff
 
-If a service is struggling, hammering it makes things worse. So you wait
-between attempts, and you wait longer each time. *Exponential backoff* doubles
-the wait after every failure: `base × 2^attempt`.
+Hammering a struggling service makes it worse, so you wait longer after each
+failure. *Exponential backoff* doubles the wait every time:
 
 | attempt | wait with base = 100ms |
 |---|---|
@@ -44,57 +35,57 @@ the wait after every failure: `base × 2^attempt`.
 | 2 | 400ms |
 | 3 | 800ms |
 
-Doubling grows fast, so you also set a *cap*: the wait never goes above some
+Doubling grows fast, so a *cap* (limit) keeps the wait from going above a
 maximum, such as 2 seconds.
 
 `time.Duration` is a whole number of nanoseconds, so you can multiply it:
 
 ```go
-d := 100 * time.Millisecond
-d *= 2 // 200ms
+timeout := 3 * time.Second
+timeout *= 10 // 30s
 ```
+
+> **Why is it written like this?**
+> - **Go requires** both sides of `*` to have the same type. `3` is an untyped
+>   constant, so it becomes a `Duration`; an `int` *variable* would need
+>   `time.Duration(n)`.
+> - **Convention:** `x *= 2` is short for `x = x * 2`.
 
 ### Jitter and the thundering herd
 
-Picture 500 pods that all lose the database at the same moment. With plain
-backoff they all retry at exactly 100ms, then all at 200ms, and so on. Each
-wave hits the database at once. This is the *thundering herd*. *Jitter* adds
-randomness so the retries spread out.
+If 500 pods lose the database at once, plain backoff makes them all retry at
+exactly 100ms, then 200ms… Each wave hits at once: the *thundering herd*.
+*Jitter* adds randomness to spread them out.
 
-You will use *equal jitter*: keep half of the wait, and randomise the other
-half.
+You'll use *equal jitter*: keep half the wait, randomise the other half.
 
 ```text
 jittered = d/2 + rnd × d/2        where 0 ≤ rnd < 1
 ```
 
-The random number comes from a function `rnd func() float64`, such as
-`rand.Float64` from `math/rand/v2`. Tests pass a function that always returns
-the same number, so the result is predictable. Multiplying a `Duration` by a
-fraction means converting to `float64` and back:
+The random number comes from a function `rnd func() float64`. Tests pass one
+that always returns the same number. To multiply a `Duration` by a fraction,
+convert to `float64` and back:
 
 ```go
-half := d / 2
-extra := time.Duration(0.5 * float64(half)) // a quarter of d
+third := time.Duration(0.33 * float64(time.Minute)) // about 20s
 ```
 
-### Stopping
+> **Why is it written like this?**
+> - **Go requires** the conversions: Go never mixes `float64` and `Duration`
+>   by itself.
+> - **Author's choice:** the parameter name `rnd`.
 
-A retry loop needs limits:
+### Stopping, and why sleep is injected
 
-- **Max attempts.** `MaxAttempts: 3` means at most 3 calls in total: the
-  first try plus 2 retries. After the last attempt there is nothing left to
-  wait for, so don't sleep.
-- **Cancellation.** If the caller's context is cancelled (the user pressed
-  Ctrl+C, or a deadline passed), stop waiting and return.
+- **Max attempts.** `MaxAttempts: 3` means at most 3 calls: the first try
+  plus 2 retries. After the last attempt there's nothing to wait for, so
+  don't sleep.
+- **Cancellation.** `p.Sleep` returns an error if the context is cancelled
+  while waiting. Stop and return it.
 
-### Why sleeping is injected
-
-Real code waits with something like `time.After` inside a `select` on
-`ctx.Done()`. Tests can't wait seconds for every case. So `Policy` takes a
-`Sleep` function. Production passes a real one; the tests pass a fake that
-just writes down each requested duration and returns straight away. That
-makes the tests instant and exact.
+`Policy` takes a `Sleep` function so tests don't wait for real. The fake just
+records each duration and returns at once.
 
 ## Your task
 
@@ -103,8 +94,10 @@ restarts. Build the retry helper in `exercise.go`.
 
 ### 1. Compute the backoff
 
-Complete `Backoff(attempt, base, limit)`. Return `base` doubled `attempt`
-times, but never more than `limit`. Attempt `0` returns `base`.
+**Goal:** make `Backoff(attempt, base, limit)` return `base` doubled
+`attempt` times, but never more than `limit`.
+
+Attempt `0` returns `base`.
 
 ```go
 Backoff(0, 100*time.Millisecond, 2*time.Second) // => 100ms
@@ -112,22 +105,35 @@ Backoff(3, 100*time.Millisecond, 2*time.Second) // => 800ms
 Backoff(5, 100*time.Millisecond, 2*time.Second) // => 2s (3.2s is over the limit)
 ```
 
+**Think it through:**
+- Which loop from *Looping with range* runs exactly `attempt` times?
+- When should you return `limit` instead? Checking inside the loop also stops
+  huge attempt numbers from overflowing.
+
 ### 2. Add jitter
 
-Complete `Jitter(d, rnd)`. Call `rnd()` once and return
-`d/2 + rnd() × d/2`.
+**Goal:** make `Jitter(d, rnd)` return `d/2 + rnd() × d/2`.
+
+Call `rnd()` once.
 
 ```go
-Jitter(2*time.Second, func() float64 { return 0 })          // => 1s
-Jitter(2*time.Second, func() float64 { return 0.5 })        // => 1.5s
+Jitter(2*time.Second, func() float64 { return 0 })           // => 1s
+Jitter(2*time.Second, func() float64 { return 0.5 })         // => 1.5s
 Jitter(400*time.Millisecond, func() float64 { return 0.25 }) // => 250ms
 ```
 
+**Think it through:**
+- `rnd` is a function: you need its *result*, `rnd()`, not its name.
+- Which part needs converting to `float64` and back to `time.Duration`?
+
 ### 3. Retry the operation
 
-Complete `Do(ctx, p, op)`. The loop that calls `op` up to `p.MaxAttempts`
-times is there. Change it to `for attempt := range p.MaxAttempts` so you have
-the attempt number (`0` for the first call). Then, after each call:
+**Goal:** make `Do(ctx, p, op)` retry temporary failures with jittered
+backoff, and stop on success, a permanent error, the last attempt, or a
+`Sleep` error.
+
+Change the loop to `for attempt := range p.MaxAttempts` so you have the attempt
+number (`0` for the first call). After each call to `op`:
 
 1. If `op` returned `nil`, return `nil`.
 2. If the error is permanent (`errors.Is(err, ErrTemporary)` is false), return
@@ -152,6 +158,10 @@ op always fails with "call N: temporary failure" (MaxAttempts: 3)
   Sleep asked:  75ms, 150ms   (no sleep after the last call)
   Do returns:   the error from call 3
 ```
+
+**Think it through:**
+- `attempt` counts from 0. What is its value on the last attempt?
+- Keep `Sleep`'s error in its own variable so it doesn't overwrite `err`.
 
 ## Learn more
 

@@ -1,8 +1,11 @@
 # Stringers
 
 Alerts, hosts and disks end up in log lines, chat messages and dashboards.
-A *Stringer* is a type that knows how to print itself, so every
-`fmt.Println` and `fmt.Sprintf` in your tools shows `ERROR` instead of `3`.
+A *Stringer* is a type that knows how to print itself, so `fmt.Println` shows
+`ERROR` instead of `3`.
+
+**New here:** `fmt.Stringer`, which verbs call `String`, `%%`, value vs
+pointer receivers for `String`.
 
 ## Learn
 
@@ -16,13 +19,17 @@ type Stringer interface {
 }
 ```
 
-As in *Interfaces*, you never say "I implement this". Any type with a method
-`String() string` satisfies `fmt.Stringer` automatically.
+As in *Interfaces*, any type with a method `String() string` satisfies it
+automatically.
+
+> **Why is it written like this?** Go requires the exact name `String`, no
+> parameters and one `string` result; `ToString()` or `String() []byte`
+> won't be found by `fmt`.
 
 ### fmt calls String for you
 
-When you print a value, `fmt` checks whether it has a `String` method. If it
-does, `fmt` prints whatever `String` returns:
+When you print a value, `fmt` checks for a `String` method and prints
+whatever it returns:
 
 ```go
 type Region string
@@ -32,20 +39,13 @@ func (r Region) String() string {
 }
 
 r := Region("eu-west-1")
-fmt.Println(r)
-// prints: region eu-west-1
-
-fmt.Sprintf("deploying to %v", r)
-// => "deploying to region eu-west-1"
-
-fmt.Sprint([]Region{"us-east-1", "eu-west-1"})
-// => "[region us-east-1 region eu-west-1]"
+fmt.Println(r)                     // prints: region eu-west-1
+fmt.Sprintf("deploying to %v", r)  // "deploying to region eu-west-1"
+fmt.Sprint([]Region{"us-east-1"})  // "[region us-east-1]"
 ```
 
-The last line shows that `fmt` also calls `String` on every element of a
-slice. You write the method once, and it is used everywhere.
-
-Which formatting verbs use `String`?
+`fmt` even calls `String` on each element of a slice. Write the method once;
+it's used everywhere.
 
 | Verb or function | Calls `String`? |
 |---|---|
@@ -56,8 +56,8 @@ Which formatting verbs use `String`?
 
 ### Enums print their names
 
-As in *Custom types and enums*, `iota` numbers a list of constants. Without a
-`String` method they print as plain numbers:
+As in *Custom types and enums*, `iota` numbers a list of constants. Without
+a `String` method they print as plain numbers:
 
 ```go
 type Color int
@@ -70,21 +70,13 @@ const (
 fmt.Println(Green) // 1, until Color gets a String method
 ```
 
-A `switch` with one `case` per constant is the simplest `String` method. Add
-a `default` for values that have no name. Note the `int(c)` below:
+A `switch` with one `case` per constant is the simplest `String` method. A
+`default` case handles numbers that have no name.
 
-```go
-func (c Color) String() string {
-	switch c {
-	case Red:
-		return "RED"
-	case Green:
-		return "GREEN"
-	default:
-		return fmt.Sprintf("Color(%d)", int(c))
-	}
-}
-```
+> **Why is it written like this?** Using a `switch` is the author's choice
+> (a slice of names also works, as you'll see later). Writing names in
+> CAPITALS here is also a choice. The `default` is not required by Go, but
+> without it unknown values print as `""`.
 
 ### Trap 1: printing the receiver inside String
 
@@ -96,14 +88,15 @@ func (c Color) String() string {
 }
 ```
 
-`%v` calls `String`, which calls `Sprintf`, which calls `String`, until the
-program crashes with a *stack overflow*. Convert to the underlying type first
-(`int(c)`), or print individual fields. `go vet` warns about this mistake.
+`%v` calls `String`, which calls `Sprintf`, which calls `String`… until the
+program crashes with a *stack overflow*. Fix: convert to the underlying type
+first. `int(c)` is a plain `int`, which has no `String` method. `go vet`
+warns about this mistake.
 
 ### Trap 2: a pointer receiver hides String
 
-Methods can have a pointer receiver, `func (d *Disk) String()`. You will
-learn when that is useful in *Pointer receivers*. For `String` there is a
+A method can have a pointer receiver, `func (d *Disk) String()`. You'll
+learn when that's useful in *Pointer receivers*. For `String` there's a
 catch:
 
 | Method declared on | `fmt.Print(d)` | `fmt.Print(&d)` |
@@ -111,31 +104,30 @@ catch:
 | `func (d Disk) String()` | uses `String` | uses `String` |
 | `func (d *Disk) String()` | **ignores** `String` | uses `String` |
 
-With a pointer receiver, only `*Disk` has the method, so printing a plain
-`Disk` value falls back to the default `{/var 91}` struct format. Give
-`String` a value receiver and it works for both.
+With `*Disk`, only a pointer has the method. Printing a plain `Disk` falls
+back to the default struct format, `{/var 91}`.
 
 ### Printing a percent sign
 
-In a format string, `%` starts a verb. To print a literal `%`, write `%%`:
+In a format string, `%` starts a verb. To print a real `%`, write `%%`:
 
 ```go
-fmt.Sprintf("%d%% full", 80) // "80% full"
+fmt.Sprintf("%d%% CPU", 80) // "80% CPU"
 ```
 
 ## Your task
 
-Your alerting tool prints severities, hosts and disks. Right now the output
-is a mess of numbers and curly braces. Teach each type to print itself.
+Your alerting tool prints severities, hosts and disks, but the output is a
+mess of numbers and curly braces. Teach each type to print itself.
 
 ### 1. Name the severities
 
-`Severity` is an enum with five values. Finish the `String` method in
-`exercise.go` so it returns:
+**Goal:** finish `Severity`'s `String` method so each constant returns its
+name in capitals.
 
 | Value | `String()` |
 |---|---|
-| `Debug` | `"DEBUG"` |
+| `Debug` | `"DEBUG"` (already done) |
 | `Info` | `"INFO"` |
 | `Warning` | `"WARNING"` |
 | `Error` | `"ERROR"` |
@@ -148,10 +140,19 @@ Severity(7).String()  // => "Severity(7)"
 Severity(-1).String() // => "Severity(-1)"
 ```
 
+**Think it through:**
+- The `case Debug:` lines show the pattern. What do the other four look like?
+- In `default`, which verb prints a number, and what must you pass so
+  `String` isn't called again (Trap 1)?
+
 ### 2. Print a host
 
-Add a `String` method to `Host` (with a value receiver) that returns the name,
-a space, and then the IP and port in brackets, separated by a colon:
+**Goal:** add a `String` method to `Host`, with a value receiver, that
+returns `name (ip:port)`.
+
+- `Name`, `IP` and `Port` come from the struct's fields.
+- Fixed text: one space after the name, `(` and `)` around the rest, and
+  `:` between IP and port.
 
 ```go
 h := Host{Name: "web-1", IP: "10.0.0.5", Port: 8080}
@@ -162,13 +163,21 @@ fmt.Sprintf("%v", []Host{h, {Name: "db-1", IP: "10.0.0.9", Port: 5432}})
 // => "[web-1 (10.0.0.5:8080) db-1 (10.0.0.9:5432)]"
 ```
 
-The tests print hosts with `fmt`, so they only pass once `fmt` can find your
+The tests print hosts with `fmt`, so they pass only once `fmt` finds your
 method.
+
+**Think it through:**
+- Copy the method line shape from `Severity.String`. What changes: the
+  receiver, the name, or the result?
+- `Port` is an `int` and the others are `string`s. Which verb fits each?
 
 ### 3. Fix the disk printout
 
-`Disk` already has a correct `String` method, but `fmt.Sprint(disk)` still
-prints `{/var 91}`. Fix the method so printing a plain `Disk` value gives:
+**Goal:** make `fmt.Sprint(disk)` print `"/var 91% used"` for a plain
+`Disk` value.
+
+`Disk` already has a `String` method with the right body, but `fmt` prints
+`{/var 91}` instead.
 
 ```go
 fmt.Sprint(Disk{Mount: "/var", UsedPercent: 91})
@@ -177,6 +186,10 @@ fmt.Sprint(Disk{Mount: "/var", UsedPercent: 91})
 fmt.Sprint([]Disk{{Mount: "/", UsedPercent: 40}, {Mount: "/data", UsedPercent: 100}})
 // => "[/ 40% used /data 100% used]"
 ```
+
+**Think it through:**
+- The body is fine. Look at the receiver in the method's first line.
+- Check Trap 2's table: which receiver works for a plain `Disk`?
 
 ## Learn more
 

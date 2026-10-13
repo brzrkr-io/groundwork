@@ -1,98 +1,120 @@
 # Informers: list, watch and cache
 
 Every real Kubernetes controller learns about the cluster through *informers*.
-In this exercise you set one up, react to Deployments coming and going, and
-wait until its cache is ready.
+Here you set one up, react to Deployments coming and going, and wait until its
+cache is ready.
+
+**New here:** shared informer factories, typed event handlers, `cache.DeletedObject`, starting and syncing informers.
 
 ## Learn
 
 ### Why not just watch?
 
-In *Watching resources: closed watches and ERROR events* you saw that a raw watch is fragile. The API server
-closes watches whenever it likes, so your code has to notice, list everything
-again, and start a new watch. And if you want to know "which Deployments exist
-right now?", you have to ask the API server every single time.
+In *Watching resources: closed watches and ERROR events* you saw that a raw
+watch is fragile. The API server closes it whenever it likes, and you must
+list again and re-watch.
 
-### The informer pattern
+Also, every "which Deployments exist right now?" question costs a call to the
+API server.
 
-An *informer* does that bookkeeping for you:
+### What an informer does
 
-1. It **lists** every object of one kind once, at startup.
-2. It **watches** for changes from then on, and quietly re-lists and
-   re-watches when the watch drops.
-3. It keeps every object in a local in-memory *cache* (client-go calls it the
-   *indexer*), so reading is instant and costs the API server nothing.
+An *informer* does that bookkeeping for one kind of object:
+
+1. It **lists** every object once, at startup.
+2. It **watches** for changes, and re-lists and re-watches when the watch drops.
+3. It keeps every object in a local in-memory *cache*, so reads are instant.
 4. It calls your *event handlers*: "added", "updated" or "deleted".
 
-One program often runs several controllers, and many of them want
-Deployments. A *shared informer factory* hands every caller the same informer
-per kind, so there is one watch per kind, not one per controller.
+### The shared informer factory
+
+One program often runs several controllers that all want Deployments. A
+*shared informer factory* hands every caller the same informer per kind, so
+there is one watch per kind.
+
+This is the function that builds one:
 
 ```go
-import "k8s.io/client-go/informers"
-
-factory := informers.NewSharedInformerFactory(cs, 0) // cs is a kubernetes.Interface
-deployments := factory.Apps().V1().Deployments()    // the Deployment informer
+func NewSharedInformerFactory(client kubernetes.Interface, defaultResync time.Duration) SharedInformerFactory
 ```
 
-The `0` is the *resync period*. With a value like `10*time.Minute`, the
-informer would replay every cached object to your "updated" handler every ten
-minutes, as a safety net. Plenty of controllers don't need that, and `0` turns
-it off.
+Read it left to right: the name, then two parameters (each `name Type`), then
+the return type. When you *call* it, you pass only values, in that order. You
+never write the types or the word `func`.
 
-Inside this exercise the package is also called `informers`. That's fine: the
-import `informers.` always means client-go's package.
+The *resync period* replays every cached object to your "updated" handler on a
+timer, as a safety net. `5*time.Minute` means every five minutes. `0` turns it
+off.
+
+You get an informer for one kind by walking the API group and version:
+
+```go
+pods := factory.Core().V1().Pods()        // group "core", version v1, kind Pod
+pods.Lister()                              // reads from the cache
+pods.TypedInformer()                       // where you add handlers
+```
+
+Inside this exercise your package is also called `informers`. That's fine:
+`informers.` always means client-go's package.
+
+> **Why is it written like this?** The chain `factory.Core().V1().Pods()` is
+> client-go's design: each method returns a smaller object. Go requires the
+> `()` on every call. Passing `0` instead of a named constant is the author's
+> choice for this exercise.
 
 ### Event handlers
 
-You register handlers on the typed informer. The handler functions get real
-`*appsv1.Deployment` values, so you don't need type assertions:
+You register handlers on a typed informer. You fill in a struct with up to
+three fields, each holding a function:
 
 ```go
-informer := factory.Apps().V1().Deployments().TypedInformer()
-_, err := informer.AddTypedEventHandler(cache.TypedResourceEventHandlerFuncs[*appsv1.Deployment]{
-	AddFunc: func(d *appsv1.Deployment) {
-		fmt.Println("new deployment", d.Namespace+"/"+d.Name)
-	},
-	UpdateFunc: func(oldD, newD *appsv1.Deployment) { /* ... */ },
-	DeleteFunc: func(deleted cache.DeletedObject[*appsv1.Deployment]) {
-		fmt.Println("gone:", deleted.GetKey()) // "shop/web"
+informer := factory.Core().V1().Pods().TypedInformer()
+_, err := informer.AddTypedEventHandler(cache.TypedResourceEventHandlerFuncs[*corev1.Pod]{
+	AddFunc: func(p *corev1.Pod) {
+		log.Println("pod appeared:", p.Name)
 	},
 })
 ```
 
-`cache` is `k8s.io/client-go/tools/cache`. A delete handler gets a
-`cache.DeletedObject`, because the informer sometimes misses the final state
-of a deleted object. Its `GetKey()` always works and returns
-`"<namespace>/<name>"`, the *key* the cache stores the object under.
+The other two fields have these shapes:
 
-Many tutorials use the older untyped form,
-`Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{...})`. Its
-handlers receive `any`, so they start with a type assertion. It does the same
-job.
+| Field | Function shape | Notes |
+|---|---|---|
+| `AddFunc` | `func(obj *T)` | also fires for objects found by the first list |
+| `UpdateFunc` | `func(oldObj, newObj *T)` | the **second** parameter is the new version |
+| `DeleteFunc` | `func(deleted cache.DeletedObject[*T])` | call `deleted.GetKey()` |
 
-Handlers run on the informer's own goroutines. If they touch data that other
-code reads, protect it with a mutex, as in *Mutexes*.
+A delete handler gets a `cache.DeletedObject`, because the informer sometimes
+misses the final state of a deleted object. Its `GetKey()` always works and
+returns `"<namespace>/<name>"`.
+
+Every object has `.Namespace` and `.Name` fields. They hold the values, so you
+join them with fixed text such as `"/"`.
+
+`AddTypedEventHandler` returns two values. Write `_` for one you don't need.
+
+Handlers run on the informer's own goroutines. If they touch shared data,
+protect it with a mutex, as in *Mutexes*.
+
+> **Why is it written like this?** `[*corev1.Pod]` is a *type argument*: Go
+> requires it so the handlers get real `*corev1.Pod` values. The `cache` and
+> `corev1` import names are convention. Many tutorials use the older untyped
+> `AddEventHandler`, whose handlers receive `any`; both work.
 
 ### Start, sync, stop
 
-Ask the factory for every informer and register every handler **before**
-starting it. The factory only starts informers it already knows about.
+Request every informer and register every handler **before** starting. The
+factory only starts informers it already knows about.
 
-```go
-ctx, cancel := context.WithCancel(context.Background())
-factory.StartWithContext(ctx)  // runs each informer in a goroutine and returns
-err := factory.WaitForCacheSyncWithContext(ctx).AsError()
-// ... use the cache ...
-cancel()           // tells the informers to stop
-factory.Shutdown() // waits until their goroutines have finished
-```
+| Method | What it does |
+|---|---|
+| `StartWithContext(ctx)` | starts each informer in a goroutine and returns at once |
+| `WaitForCacheSyncWithContext(ctx)` | blocks until every started informer has *synced* (loaded its first list); returns a `cache.SyncResult` |
+| `SyncResult.AsError()` | `nil` on success, or an error wrapping the context's error if `ctx` ended first |
+| `Shutdown()` | after you cancel `ctx`, waits for the informer goroutines to finish |
 
-`StartWithContext` returns straight away. Until the first list has finished,
-the cache is empty or half full. `WaitForCacheSyncWithContext` blocks until
-every started informer has *synced* (loaded its first list). It returns a
-`cache.SyncResult`. Its `AsError()` method gives `nil` on success, or an error
-wrapping the context's error if `ctx` ended first.
+You can call a method directly on the value another call returns, like
+`time.Now().Year()`. No temporary variable needed.
 
 ## Your task
 
@@ -100,55 +122,72 @@ The `shop` team wants a feed of Deployment changes for their chat channel.
 
 ### 1. Create the factory
 
-Make `NewFactory` return a shared informer factory for `cs` with a resync
-period of `0`.
+**Goal:** make `NewFactory` return a shared informer factory for `cs` that never resyncs.
 
 ```go
 factory := NewFactory(fake.NewClientset(web, api))
-// factory.Apps().V1().Deployments().Lister() sees shop/web and shop/api once started
+// once started, factory.Apps().V1().Deployments().Lister() sees shop/web and shop/api
 ```
+
+**Think it through:**
+- Which parameter of `NewFactory` is the clientset?
+- Which resync period means "off"?
 
 ### 2. Record Deployment events
 
-First fix `Recorder.Record`: lock `r.mu` while appending, the same way
-`Events` does. Handlers call `Record` from informer goroutines while the
-tests call `Events`, so without the lock the race detector fails the test.
+**Goal:** fix `Recorder.Record`, then make `WatchDeployments` record one string per Deployment event.
 
-Then make `WatchDeployments` register handlers on the factory's Deployment
-informer that call `rec.Record` with:
+Step 1: in `Record`, lock `r.mu` while appending, the same way `Events` does.
+Without it the race detector fails the test.
+
+Step 2: in `WatchDeployments`, register handlers on the factory's
+**Deployment** informer that call `rec.Record` with:
 
 | Event | Recorded string |
 |---|---|
 | added | `"added <namespace>/<name>"` |
-| updated | `"updated <namespace>/<name>"` (use the new object) |
-| deleted | `"deleted <namespace>/<name>"` (use `GetKey()`) |
+| updated | `"updated <namespace>/<name>"` (from the new object) |
+| deleted | `"deleted <namespace>/<name>"` (from `GetKey()`) |
 
-Return the error from `AddTypedEventHandler`. Add the imports
-`appsv1 "k8s.io/api/apps/v1"` and `"k8s.io/client-go/tools/cache"`.
+Note the single space after the word. Return the error from
+`AddTypedEventHandler`.
+
+Add the imports `appsv1 "k8s.io/api/apps/v1"` and
+`"k8s.io/client-go/tools/cache"`. The Deployment type is `appsv1.Deployment`.
 
 ```go
-// cluster starts with shop/web; later staging/worker is created,
-// shop/web is updated and staging/worker is deleted
+// cluster starts with shop/web; then staging/worker is created,
+// shop/web is updated, and staging/worker is deleted
 rec.Events()
 // => ["added shop/web", "added staging/worker", "updated shop/web", "deleted staging/worker"]
 ```
 
-Objects already in the cluster arrive as "added" events too, when the first
-list fills the cache.
+Objects already in the cluster arrive as "added" events when the first list
+fills the cache.
+
+**Think it through:**
+- Deployments live in the `apps` group, version `v1`.
+- Which parts of each string are fixed text, and which come from the object?
+- In `UpdateFunc`, which of the two parameters is the new object?
 
 ### 3. Start and wait for sync
 
-Make `StartAndSync` start the factory with `ctx`, wait for the caches to
-sync, and return the result of `AsError()`.
+**Goal:** make `StartAndSync` start the factory with `ctx`, wait for the caches to sync, and return the result of `AsError()`.
 
 ```go
 err := StartAndSync(ctx, factory)
 // => nil, and the Deployment informer's HasSynced() is true
 
-// The API server never answers, and the caller cancels ctx:
+// the API server never answers, and the caller has cancelled ctx:
 err := StartAndSync(ctx, factory)
-// => an error wrapping context.Canceled (check it with errors.Is)
+// => an error wrapping context.Canceled (errors.Is(err, context.Canceled) is true)
 ```
+
+Don't cancel or shut down anything yourself; the caller does that.
+
+**Think it through:**
+- Look at the *Start, sync, stop* table: which two methods, in which order?
+- What does the wait method return, and what do you call on it?
 
 ## Learn more
 

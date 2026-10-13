@@ -1,34 +1,36 @@
 # Channels
 
 A *channel* is a pipe that goroutines use to pass values to each other. It is
-how a goroutine hands back a result, streams log lines, or queues alerts for
-another part of your program.
+how a goroutine hands back a result, streams log lines, or queues alerts.
+
+**New here:** `chan`, `make(chan T)`, send `ch <- v`, receive `<-ch`, buffered
+channels, `close`, `for range` over a channel.
 
 ## Learn
 
 ### Making, sending and receiving
 
 ```go
-ch := make(chan string) // a channel that carries strings
+ch := make(chan int) // a channel that carries ints
 
 go func() {
-	ch <- "deploy finished" // send: put a value into the channel
+	ch <- 200 // send: put a value in
 }()
 
-msg := <-ch // receive: take a value out (waits until one arrives)
-fmt.Println(msg)
+code := <-ch // receive: take a value out (waits until one arrives)
 ```
 
 The arrow shows which way the value moves: `ch <- v` puts `v` in, `<-ch`
-takes a value out. A channel's type says what it carries: `chan string`,
-`chan int`, `chan Alert`.
+takes a value out. The type says what it carries: `chan int`, `chan string`.
+
+> **Why is it written like this?** Go requires `make` to create a channel;
+> a channel declared with `var ch chan int` is `nil` and every send or
+> receive on it waits forever. The name `ch` is a convention for short code.
 
 ### Unbuffered channels: a handoff
 
-A channel made with `make(chan string)` is *unbuffered*. It has no storage, so
-a send waits until another goroutine receives, and a receive waits until
-another goroutine sends. The two meet, the value changes hands, and both carry
-on:
+`make(chan T)` is *unbuffered*: it has no storage. A send waits until another
+goroutine receives, and the other way round:
 
 ```text
 sender:    ch <- "a"  ··· waits ···┐
@@ -36,45 +38,38 @@ sender:    ch <- "a"  ··· waits ···┐
 receiver:              v := <-ch ──┘
 ```
 
-Because the sender waits for a receiver, a send on an unbuffered channel
-almost always happens in a different goroutine from the receive.
+So the send and the receive almost always happen in different goroutines.
 
 ### Buffered channels: a mailbox
 
-`make(chan string, 3)` makes a *buffered* channel with room for 3 values. A send
-only waits when the buffer is full, and a receive only waits when it is empty:
+`make(chan T, 3)` is *buffered* with room for 3 values. A send only waits
+when the buffer is full; a receive only waits when it is empty:
 
 ```text
-make(chan string, 3)      [ _ , _ , _ ]
-ch <- "a"                 [ a , _ , _ ]   didn't wait
-ch <- "b"                 [ a , b , _ ]   didn't wait
-<-ch  → "a"               [ b , _ , _ ]   first in, first out
+make(chan string, 3)   [ _ , _ , _ ]
+ch <- "a"              [ a , _ , _ ]   didn't wait
+ch <- "b"              [ a , b , _ ]   didn't wait
+<-ch  → "a"            [ b , _ , _ ]   first in, first out
 ```
 
-`len(ch)` is how many values are waiting in the buffer, and `cap(ch)` is its
-size. An unbuffered channel has `cap(ch) == 0`.
+`len(ch)` is how many values are waiting; `cap(ch)` is the buffer size. An
+unbuffered channel has `cap(ch) == 0`.
+
+> **Why is it written like this?** The second argument to `make` is the
+> capacity. Leave it out (or pass 0) and Go makes an unbuffered channel.
 
 ### close and range
 
 When the sender has nothing more to send, it calls `close(ch)`. A `for range`
-loop over a channel receives values until the channel is closed **and** empty,
-then the loop ends:
+loop over a channel receives values until the channel is closed **and**
+empty, then ends:
 
 ```go
-go func() {
-	for _, line := range []string{"GET /", "GET /health"} {
-		ch <- line
-	}
-	close(ch) // tell the receiver there is nothing more
-}()
-
-for line := range ch {
-	fmt.Println(line)
+for code := range codes {
+	fmt.Println("status", code)
 }
-// we get here once ch is closed and drained
+// we get here once codes is closed and drained
 ```
-
-Rules of thumb:
 
 | Rule | Why |
 |---|---|
@@ -82,15 +77,18 @@ Rules of thumb:
 | Close when there are no more values. | Otherwise `range` waits forever. |
 | You don't have to close every channel. | Only close to say "no more values". |
 
+> **Why is it written like this?** Ranging over a channel gives one variable
+> (the value), not two like a slice. Go requires that; there is no index.
+
 ## Your task
 
-You're building the plumbing for a log shipper: something that collects lines,
-queues alerts and streams lines to the next stage.
+You're building the plumbing for a log shipper: something that collects
+lines, queues alerts and streams lines to the next stage.
 
 ### 1. Collect lines from a channel
 
-`CollectLines(lines)` should receive every line from the `lines` channel until
-it is closed, and return them in the order they arrived.
+**Goal:** make `CollectLines(lines)` receive every line until the channel is
+closed and return them in the order they arrived.
 
 ```go
 // another goroutine sends "GET /", "GET /health", then closes lines
@@ -98,11 +96,17 @@ CollectLines(lines)
 // => []string{"GET /", "GET /health"}
 ```
 
+**Think it through:**
+- Which loop keeps receiving until the channel is closed?
+- `collected` already exists. How do you add one line to the end of a slice?
+
 ### 2. Queue alerts in a buffered channel
 
-`QueueAlerts(alerts)` should return a **buffered** channel whose capacity is
-`len(alerts)`, already holding every alert in order, and already **closed**. No
-goroutine is needed, because the buffer has room for every alert.
+**Goal:** make `QueueAlerts(alerts)` return a **buffered**, **closed** channel
+that already holds every alert in order.
+
+Its capacity must be `len(alerts)`. No goroutine is needed: the buffer has
+room for every alert, so no send waits.
 
 ```go
 ch := QueueAlerts([]string{"disk 91%", "cpu 99%"})
@@ -111,11 +115,17 @@ len(ch) // => 2
 // ranging over ch gives "disk 91%", then "cpu 99%", then the loop ends
 ```
 
+**Think it through:**
+- What goes in `make` as the second argument, so there is one slot per alert?
+- Three steps in order: make, send each alert, then what before you return?
+
 ### 3. Stream lines through an unbuffered channel
 
-`StreamLines(lines)` should return an **unbuffered** channel and start a
-goroutine that sends each line in order, then closes the channel. Return the
-channel straight away. The goroutine keeps sending while the caller receives.
+**Goal:** make `StreamLines(lines)` return an **unbuffered** channel, with a
+goroutine sending each line in order and then closing it.
+
+Return the channel straight away. The goroutine keeps sending while the
+caller receives.
 
 ```go
 ch := StreamLines([]string{"boot", "ready"})
@@ -124,6 +134,11 @@ for line := range ch {
 	fmt.Println(line) // "boot", then "ready"
 }
 ```
+
+**Think it through:**
+- Why would the sends get stuck if they ran in `StreamLines` itself, before
+  `return`?
+- Which parts go inside the `go func() { ... }()`, and which stay outside?
 
 ## Learn more
 

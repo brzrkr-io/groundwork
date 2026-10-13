@@ -4,21 +4,25 @@ In Go, a variable never holds garbage. If you don't give it a value, it gets
 its type's *zero value*. Config code leans on this all the time: "the user
 left this field empty, so use the default".
 
+**New here:** `var` without a value, zero values.
+
 ## Learn
 
 ### Declaring without a value
 
-Up to now you created variables with `:=`, which always needs a value. With
-`var` you can name a variable and its type and leave the value out:
+So far you made variables with `:=`, which always needs a value. With `var`
+you write the name and the *type*, and leave the value out:
 
 ```go
-var port int      // port is 0
-var host string   // host is ""
-var debug bool    // debug is false
-var ratio float64 // ratio is 0
+var replicas int     // replicas is 0
+var region string    // region is ""
+var enabled bool     // enabled is false
+var load float64     // load is 0
 ```
 
-Each type has its own zero value:
+> **Why is it written like this?** The order `var name type` is what Go
+> requires (not `var type name`). The names are the author's choice. Lining
+> up the comments is gofmt's job.
 
 | Type | Zero value |
 |---|---|
@@ -29,8 +33,7 @@ Each type has its own zero value:
 
 ### Applying defaults
 
-Because "not set" means "zero", you can check for the zero value and swap in
-a default:
+"Not set" means "zero", so check for the zero value and use a default:
 
 ```go
 func RegionOrDefault(region string) string {
@@ -41,8 +44,7 @@ func RegionOrDefault(region string) string {
 }
 ```
 
-You can also overwrite a parameter and carry on, which is handy when there are
-several defaults in one function:
+When a function has several defaults, overwrite each parameter and carry on:
 
 ```go
 if retries == 0 {
@@ -50,52 +52,70 @@ if retries == 0 {
 }
 ```
 
+> **Why is it written like this?** `==` compares; a single `=` assigns.
+> Inside the `if` you use `=`, not `:=` and not `const`: the variable already
+> exists, you are just giving it a new value.
+
 ### A limitation
 
-This trick only works when the zero value is never a real setting. For a
-`bool`, `false` is both "unset" and "switched off", so you can't tell them
-apart. The same goes for a port of `0` if 0 ever meant something. For the
-settings in this exercise, zero always means "use the default".
+This only works when zero is never a real setting. For a `bool`, `false`
+means both "unset" and "off". In this exercise, zero always means "use the
+default".
 
 ## Your task
 
-You're writing the config loader for a small service. Missing settings arrive
-as zero values and need sensible defaults.
+You're writing the config loader for a small service. Missing settings
+arrive as zero values.
 
 ### 1. Declare variables with their zero values
 
-`ZeroSummary` creates four variables with `:=` and real values. Change the
-four declarations to use `var` with no value, so each one holds its zero
-value: `port` is an `int`, `host` a `string`, `debug` a `bool` and `ratio` a
-`float64`. Leave the `fmt.Sprintf` line alone. The result must be:
+**Goal:** in `ZeroSummary`, change the four `:=` lines to `var` lines with no value.
 
-```text
-port=0 host="" debug=false ratio=0
+The types are: `port` is an `int`, `host` a `string`, `debug` a `bool`,
+`ratio` a `float64`. Keep the names. Leave the `fmt.Sprintf` line alone.
+
+```go
+ZeroSummary()
+// => `port=0 host="" debug=false ratio=0`
 ```
+
+**Think it through:**
+- Each new line has three parts: the keyword, the name, the type. Where does the value go? (Nowhere.)
 
 ### 2. Default the port
 
-`PortOrDefault` returns `8080` when `port` is `0`, and `port` otherwise.
+**Goal:** `PortOrDefault(port)` returns `8080` when `port` is `0`, otherwise `port`.
 
 ```go
 PortOrDefault(0)    // => 8080
 PortOrDefault(9090) // => 9090
+PortOrDefault(443)  // => 443
 ```
+
+**Think it through:**
+- What is the zero value of an `int`? That's what you compare `port` with.
+- The starter's `return port` is already the "otherwise" case.
 
 ### 3. Build a connection string
 
-`ConnectionString(host, port, timeoutSeconds)` fills in defaults and then
-formats the result as `host:port timeout=Ns`:
+**Goal:** `ConnectionString(host, port, timeoutSeconds)` fills in defaults, then returns `host:port timeout=Ns`.
 
 - an empty `host` becomes `"localhost"`
 - a `port` of `0` becomes `8080` (call `PortOrDefault`)
 - a `timeoutSeconds` of `0` becomes `30`
 
+The `fmt.Sprintf` line is already correct.
+
 ```go
-ConnectionString("", 0, 0)            // => "localhost:8080 timeout=30s"
+ConnectionString("", 0, 0)               // => "localhost:8080 timeout=30s"
 ConnectionString("db.internal", 5432, 5) // => "db.internal:5432 timeout=5s"
-ConnectionString("cache", 0, 10)      // => "cache:8080 timeout=10s"
+ConnectionString("cache", 0, 10)         // => "cache:8080 timeout=10s"
+ConnectionString("", 9000, 0)            // => "localhost:9000 timeout=30s"
 ```
+
+**Think it through:**
+- Fix each parameter in turn, *above* the `return` line.
+- For the port, pass the parameter `port` into your task 2 function and store what it returns.
 
 ## Learn more
 

@@ -1,45 +1,67 @@
 # Wrapping errors: fix the secrets fetcher
 
-A deploy tool reads passwords and tokens from a secrets vault. Its error
-handling looks fine, and the messages print correctly, but three checks
-silently give the wrong answer. Bugs like these hide until the bad day when
-you need them.
+A deploy tool reads passwords and tokens from a secrets vault. Its messages
+print correctly, but three checks silently give the wrong answer. Bugs like
+these hide until the bad day you need them.
+
+**New here:** nothing; practice finding broken error chains.
 
 ## Learn
 
-Recap from the previous exercise: `fmt.Errorf("context: %w", err)` wraps
-`err`, building an error chain. `errors.Is(err, ErrX)` searches the chain for
-a sentinel value, and `errors.AsType[*T](err)` searches it for an error of
-type `*T`. Plain `==` and type assertions only see the outermost error.
+### Recap
 
-The tricky part: every bug in this exercise produces exactly the right
-*message*. `%v` and `%w` print the same text, so reading the output does not
-reveal a broken chain. Only the checks do.
+From *Wrapping errors*:
 
-A single `%v` anywhere in the chain cuts it. Everything below that point is
-gone, even if every other layer uses `%w`:
+| Tool | What it does |
+|---|---|
+| `fmt.Errorf("context: %w", err)` | wraps `err`, adding to the chain |
+| `errors.Is(err, ErrX)` | searches the chain for a sentinel value |
+| `errors.AsType[*T](err)` | searches the chain for an error of type `*T` |
+| `==` and `err.(*T)` | look at the outermost error only |
+
+### The message lies
+
+Every bug in this exercise prints exactly the right *message*. `%v` and `%w`
+print the same text, so reading the output won't show a broken chain. Only
+the checks will.
+
+### One %v cuts the chain
+
+A single `%v` anywhere cuts the chain. Everything below it is gone, even if
+every other layer uses `%w`:
 
 ```text
-database password for dev: ...         (%w)  chain intact
-  fetch secret "dev/db/password": ...  (%v)  chain cut here
-    secret not found                         unreachable for errors.Is
+renew cert for edge: ...            (%w)  chain intact
+  read cert "edge": ...             (%v)  chain cut here
+    expired                               unreachable for errors.Is
 ```
 
-Also remember that `errors.Is` compares error *values*, not text. A second
-`errors.New("vault timed out")` is a different error from `ErrTimeout`, even
-though the messages match.
+### Same text is not the same error
+
+`errors.Is` compares error *values*, not text:
+
+```go
+a := errors.New("disk full")
+b := errors.New("disk full")
+errors.Is(a, b) // false: two different values
+```
+
+> **Why is it written like this?** Each `errors.New` call makes a new, unique
+> value (Go requires this behaviour). That is why sentinels are stored once in
+> a package-level `var` and everyone compares against that variable.
 
 ## Your task
 
 The vault code is in `exercise.go`. `read`, `Vault`, the sentinel errors and
-`AccessDeniedError` are correct. Fix the three buggy spots marked with TODOs.
+`AccessDeniedError` are correct. Fix the three spots marked with TODOs.
 
 ### 1. Fix the broken chain in FetchSecret
 
-`FetchSecret(v, role, path)` adds the path as context, but uses `%v`, so
-`DatabasePassword`'s callers can no longer find `ErrSecretNotFound`,
-`ErrTimeout` or `*AccessDeniedError`. Make it wrap instead. The messages stay
-the same:
+**Goal:** make `FetchSecret` wrap the vault's error instead of copying its text.
+
+`FetchSecret(v, role, path)` adds the path as context. Right now callers
+(including `DatabasePassword`) can't find `ErrSecretNotFound`, `ErrTimeout`
+or `*AccessDeniedError` in its error. The messages must stay the same.
 
 ```go
 FetchSecret(vault, "deployer", "dev/api/token")
@@ -51,11 +73,16 @@ DatabasePassword(vault, "intern", "prod")
 // errors.AsType[*AccessDeniedError](err) finds it
 ```
 
+**Think it through:**
+- Look at the format string on the line under the TODO. Which verb copies text?
+- This is a one-character fix.
+
 ### 2. Fix ShouldRetry
 
-`ShouldRetry(err)` should return `true` when `ErrTimeout` is anywhere in the
-chain, and `false` otherwise (including for `nil`). It currently compares with
-`==`, which misses wrapped timeouts:
+**Goal:** make `ShouldRetry(err)` return `true` when `ErrTimeout` is anywhere in the chain.
+
+Return `false` otherwise, including for `nil`. Right now it compares with
+`==`, which misses wrapped timeouts.
 
 ```go
 ShouldRetry(fmt.Errorf("fetch secret %q: %w", "prod/api/token", ErrTimeout))
@@ -65,23 +92,30 @@ ShouldRetry(errors.New("vault timed out"))
 // => false: same text, but not ErrTimeout
 ```
 
+**Think it through:**
+- Which tool in the recap table searches the chain for a *value*?
+
 ### 3. Fix Explain
 
-`Explain(err)` should return:
+**Goal:** make `Explain(err)` find an `*AccessDeniedError` anywhere in the chain.
 
 | Error | Return |
 |---|---|
 | `nil` | `"ok"` |
-| chain contains an `*AccessDeniedError` | `ask an admin to let role "ROLE" read "PATH"`, using its fields |
+| chain contains an `*AccessDeniedError` | `ask an admin to let role "ROLE" read "PATH"`, using its `Role` and `Path` fields |
 | anything else | `"failed: "` followed by the error message |
 
-It uses a type assertion, which only sees the outermost error. Make it search
-the whole chain:
+Only the type check is wrong: it uses a type assertion, which sees just the
+outermost error.
 
 ```go
 Explain(fmt.Errorf("fetch secret %q: %w", "prod/api/token", &AccessDeniedError{Role: "ci", Path: "prod/api/token"}))
 // => `ask an admin to let role "ci" read "prod/api/token"`
 ```
+
+**Think it through:**
+- Which tool in the recap table searches the chain for a *type*?
+- It returns the same two things as the type assertion, so only the `if` line changes.
 
 ## Learn more
 

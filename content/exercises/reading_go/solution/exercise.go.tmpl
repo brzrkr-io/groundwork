@@ -1,0 +1,23 @@
+// Package anatomy is the Gopherlings exercise "Reading Go code: the parts of a file".
+package anatomy
+
+// Tool is the name of this tool.
+const Tool = "gopherlings"
+
+// Version is the tool's release.
+const Version = "v1.0.0"
+
+// Shout returns word followed by an exclamation mark.
+func Shout(word string) string {
+	return word + "!"
+}
+
+// Announce returns the deploy alert for a service, such as "deploy api!".
+func Announce(service string) string {
+	return Shout("deploy " + service)
+}
+
+// Banner returns the tool's name and version, such as "gopherlings v1.0.0".
+func Banner() string {
+	return Tool + " " + Version
+}

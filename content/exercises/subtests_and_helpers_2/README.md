@@ -4,69 +4,100 @@ Real tools read their hosts from files, so their tests need files too. This
 time you write the helper yourself: one that creates a throwaway file for
 each subtest.
 
+**New here:** `os.WriteFile`, `filepath.Join`, `t.TempDir`, `t.Cleanup`, `t.Fatal`.
+
 ## Learn
 
 ### Recap
 
-`t.Run(name, func(t *testing.T) { ... })` runs a named subtest, and
-`go test -run 'TestLoadHosts/missing_file'` runs just one of them. A helper
-takes `t`, calls `t.Helper()` first so failures point at the caller's line,
-and does the repeated work. `slices.Equal` compares two slices. As before,
-`TestGrader` runs `TestLoadHosts` against broken copies of `LoadHosts`, and
-your test must fail against each one.
+As in *Subtests and helpers*:
 
-### Reading and writing files
+- `t.Run(name, func(t *testing.T) { ... })` runs a named subtest.
+- A helper takes `t`, calls `t.Helper()` first, and does the repeated work.
+- `slices.Equal(a, b)` compares two slices.
+- `TestGrader` runs your test against mutants; it must fail on each one.
 
-File I/O gets its own exercises later. For now you need two functions from
+### Writing a file
+
+File I/O gets its own exercises later. For now you need one function from
 the `os` package:
 
 ```go
-data, err := os.ReadFile("hosts.txt")                     // whole file as []byte
-err = os.WriteFile("hosts.txt", []byte("web-1\n"), 0o644) // create or replace
+err := os.WriteFile("notes.txt", []byte("hello\n"), 0o644)
 ```
 
-`0o644` is the file's *permission*: you can read and write it, everyone else
-can only read it. It's the usual value for a normal file.
+| Piece | Meaning |
+|---|---|
+| `"notes.txt"` | the path to create or replace |
+| `[]byte("hello\n")` | the content; `[]byte(...)` turns a `string` into bytes |
+| `0o644` | the *permission*: you can read and write, others only read |
 
-To build a path, use `filepath.Join` from `path/filepath`. It puts the right
-separator between the parts: `filepath.Join("/tmp/x", "hosts.txt")` gives
-`"/tmp/x/hosts.txt"`.
+> **Why is it written like this?** `os.WriteFile` takes bytes, not a
+> string, so Go requires the `[]byte(...)` conversion. `0o644` is the usual
+> value for a normal file (convention); the `0o` prefix means the number is
+> written in octal.
+
+### Building a path
+
+Use `filepath.Join` from `path/filepath` to build paths. It puts the right
+separator between the parts:
+
+```go
+filepath.Join("/var/log", "app.log") // => "/var/log/app.log"
+```
 
 ### Temporary directories and cleanup
 
 Tests shouldn't leave files behind or share them with other tests.
-`t.TempDir()` creates a fresh, empty directory and returns its path. Each call
-gives a new directory, and Go deletes it automatically when the test or
-subtest that created it finishes.
+`t.TempDir()` creates a fresh, empty directory and returns its path. Each
+call gives a new directory, and Go deletes it when the test or subtest that
+created it finishes.
 
-`t.TempDir` does this with `t.Cleanup(func() { ... })`, which registers a
-function to run when the test ends, pass or fail. You can use it yourself for
-any teardown, such as stopping a fake server:
+Under the hood, `t.TempDir` uses `t.Cleanup(func() { ... })`, which
+registers a function to run when the test ends, pass or fail. You can use it
+for any teardown:
 
 ```go
 srv := startFakeServer()
 t.Cleanup(func() { srv.Stop() })
 ```
 
-`t.Fatal(err)` is `t.Fatalf` without a format string: it prints its arguments
-and stops the test.
+### t.Fatal
+
+`t.Fatal(err)` is `t.Fatalf` without a format string: it prints its
+arguments and stops the test. In a helper it's the usual way to give up when
+setup (like writing a file) fails.
+
+> **Why is it written like this?** A helper that returns a value (here, a
+> path) can't also return an error the caller must check every time.
+> Failing the test inside the helper keeps each subtest short; that's a
+> common Go convention for test setup helpers.
 
 ## Your task
 
-The deploy tool now loads its targets with `LoadHosts(path)`. It reads the
-file and applies the same rules as before: trim spaces around each line, skip
-blank lines and lines starting with `#`, and return the hosts in order. If
-the file can't be read, it returns an error. The code in `exercise.go` is
-correct. Write `TestLoadHosts` in `exercise_test.go`.
+The deploy tool now loads its targets with `LoadHosts(path)`. The code in
+`exercise.go` is correct. It reads the file and applies the same rules as
+before:
+
+- trim spaces around each line,
+- skip blank lines and lines starting with `#`,
+- return the hosts in order,
+- return an error if the file can't be read.
 
 ```go
 // hosts.txt contains "# web tier\nweb-1\n\n  web-2\n"
 LoadHosts("hosts.txt") // => []string{"web-1", "web-2"}, nil
 ```
 
+`exercise_test.go` is almost empty. You write the helper and all three
+subtests in `TestLoadHosts`. You'll need the imports `"os"`,
+`"path/filepath"` and `"slices"` next to `"testing"`.
+
 ### 1. Write the helper and read a file
 
-Write `writeFile(t *testing.T, content string) string`. It:
+**Goal:** write the helper `writeFile(t *testing.T, content string) string`, and the subtest `"reads hosts"` that uses it.
+
+The helper:
 
 - calls `t.Helper()`,
 - builds a path to `hosts.txt` inside `t.TempDir()`,
@@ -74,27 +105,39 @@ Write `writeFile(t *testing.T, content string) string`. It:
   fails,
 - returns the path.
 
-Then add the subtest `"reads hosts"`. Write
-`"# web tier\nweb-1\n\n  web-2\n"` with `writeFile`, call `LoadHosts` on
-the path, fail with `t.Fatalf` on an error, and check the result is
-`[]string{"web-1", "web-2"}` with `slices.Equal`. You'll need the imports
-`"os"`, `"path/filepath"` and `"slices"`.
+The subtest `"reads hosts"`:
+
+- writes `"# web tier\nweb-1\n\n  web-2\n"` with `writeFile`,
+- calls `LoadHosts` on the returned path, failing with `t.Fatalf` on an error,
+- checks the result is `[]string{"web-1", "web-2"}` with `slices.Equal`.
+
+**Think it through:**
+- `writeFile` gets text, but `os.WriteFile` wants bytes. What converts it?
+- Which two parts go into `filepath.Join`?
+- In the subtest, which value do you pass to `LoadHosts`: a file name, or what `writeFile` returned?
 
 ### 2. Check a file without a final newline
 
+**Goal:** add the subtest `"no trailing newline"`, checking that a file containing `"web-1\ndb-1"` loads as `[]string{"web-1", "db-1"}` with no error.
+
 Many editors save files without a newline at the end. A classic bug is to
-assume the last piece after splitting on `"\n"` is always empty, and throw it
+assume the last piece after splitting on `"\n"` is always empty and throw it
 away, which loses the last host.
 
-Add the subtest `"no trailing newline"`. Write `"web-1\ndb-1"` and check
-that `LoadHosts` returns `[]string{"web-1", "db-1"}` and no error.
+**Think it through:**
+- This subtest has the same shape as `"reads hosts"`. Which three things change?
 
 ### 3. Check a missing file
 
-Add the subtest `"missing file"`. Build a path to `missing.txt` inside
-`t.TempDir()` without creating the file, and check that `LoadHosts` returns
-an error. A tool that treats a missing hosts file as "no hosts" would
-silently deploy to nothing.
+**Goal:** add the subtest `"missing file"`, checking that `LoadHosts` returns an error for a file that doesn't exist.
+
+Build a path to `missing.txt` inside `t.TempDir()`, but don't create the
+file. A tool that treats a missing hosts file as "no hosts" would silently
+deploy to nothing.
+
+**Think it through:**
+- Should you call `writeFile` here?
+- Only the error matters. What does `err` look like when the bug happens?
 
 The exercise is done when `TestLoadHosts` passes and `TestGrader` reports
 that every mutant was caught.
@@ -103,5 +146,5 @@ that every mutant was caught.
 
 - [testing.T.TempDir](https://pkg.go.dev/testing#T.TempDir)
 - [testing.T.Cleanup](https://pkg.go.dev/testing#T.Cleanup)
-- [os.ReadFile](https://pkg.go.dev/os#ReadFile) and [os.WriteFile](https://pkg.go.dev/os#WriteFile)
+- [os.WriteFile](https://pkg.go.dev/os#WriteFile)
 - [Go by Example: Temporary Files and Directories](https://gobyexample.com/temporary-files-and-directories)

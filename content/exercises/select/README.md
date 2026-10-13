@@ -1,8 +1,10 @@
 # select and timeouts
 
 `select` waits on several channels at once and acts on whichever is ready
-first. Ops code uses it everywhere: "use whichever replica answers first",
-"give up after 5 seconds", "drop the alert rather than block".
+first. Ops code uses it for "use whichever replica answers first", "give up
+after 5 seconds" and "drop the alert rather than block".
+
+**New here:** `select`, `time.After`, `chan struct{}`, `default` in a select.
 
 ## Learn
 
@@ -13,55 +15,62 @@ receive:
 
 ```go
 select {
-case msg := <-primary:
-	fmt.Println("primary said", msg)
-case msg := <-replica:
-	fmt.Println("replica said", msg)
+case n := <-eu:
+	fmt.Println("eu region:", n)
+case n := <-us:
+	fmt.Println("us region:", n)
 }
 ```
 
 ```text
-primary ──┐
-          ├──▶ select runs the case that is ready first, once
-replica ──┘
+eu ──┐
+     ├──▶ select runs the case that is ready first, once
+us ──┘
 ```
 
 - `select` waits until at least one case can go ahead, runs that one case,
-  and is done. The other cases do not run.
-- If several cases are ready at the same moment, Go picks one at random.
+  and is done. The other cases don't run.
+- If several are ready at the same moment, Go picks one at random.
+
+> **Why is it written like this?** Go requires every `case` in a `select` to
+> be a send or a receive. `n := <-eu` receives and names the value; the
+> variable only exists inside that case.
 
 ### Timeouts with time.After
 
-`time.After(d)` returns a channel that receives a single value once `d` has
-passed. Put it in a `select` to stop waiting after a while:
+`time.After(d)` returns a channel that receives one value once `d` has
+passed. Put it in a `select` to stop waiting:
 
 ```go
 select {
-case result := <-results:
-	fmt.Println("got", result)
-case <-time.After(5 * time.Second):
-	fmt.Println("gave up after 5s")
+case size := <-sizes:
+	fmt.Println("size", size)
+case <-time.After(2 * time.Second):
+	fmt.Println("gave up after 2s")
 }
 ```
 
-`case <-ch:` (with nothing on the left) receives a value and ignores it. You
-use it when the arrival is the signal and the value doesn't matter.
+`case <-ch:` (nothing on the left) receives and ignores the value. Use it
+when the arrival itself is the signal.
 
 ### Signal channels: chan struct{}
 
-`struct{}` is a type with no fields. It takes no memory and carries no
-information, so `chan struct{}` is the usual type for a channel that only
-signals "it happened". Usually the sender closes it, which wakes every
-receiver at once:
+`struct{}` is a type with no fields. It carries no information, so
+`chan struct{}` is the usual type for "it happened". The sender usually
+closes it, which wakes every receiver at once:
 
 ```go
-ready := make(chan struct{})
+done := make(chan struct{})
 go func() {
-	warmUp()
-	close(ready) // signal: ready now
+	migrate()
+	close(done) // signal: finished
 }()
-<-ready // waits for the close
+<-done // waits for the close
 ```
+
+> **Why is it written like this?** Using `struct{}` for signals is a
+> convention; `chan bool` would also work but suggests the value matters.
+> A receive on a closed channel never waits; Go guarantees that.
 
 ### Not waiting at all: default
 
@@ -70,19 +79,18 @@ A `select` with a `default` case never waits. If no other case is ready
 
 ```go
 select {
-case alerts <- msg:
-	// there was room, the alert is queued
+case n := <-jobs:
+	fmt.Println("got job", n)
 default:
-	// the buffer is full; don't block, drop it
+	fmt.Println("no job waiting; doing something else")
 }
 ```
 
 ### About the tests
 
-The tests use `testing/synctest`, which gives them a fake clock. A
-`time.After(5 * time.Second)` fires instantly in real time, but the test still
-sees exactly 5 seconds pass on its clock. Your code doesn't need to do
-anything special for this.
+The tests use `testing/synctest`, which gives them a fake clock. A 5-second
+`time.After` fires instantly in real time, but the test still sees exactly 5
+seconds pass. Your code needs nothing special for this.
 
 ## Your task
 
@@ -91,19 +99,28 @@ services.
 
 ### 1. Use whichever replica answers first
 
-`FirstReply(primary, replica)` should wait for an answer on either channel
-and return the first one that arrives.
+**Goal:** make `FirstReply(primary, replica)` wait on both channels and
+return the first answer that arrives.
+
+The starter only listens to `primary`, so it waits even when `replica` is
+faster.
 
 ```go
-// replica answers "replica: 42 rows" after 1s, primary answers after 2s
+// replica answers "replica: 42 rows" after 1s, primary after 2s
 FirstReply(primary, replica) // => "replica: 42 rows"   (after 1s)
 ```
 
+**Think it through:**
+- How many cases does the `select` need, and which channel is in each?
+- What should each case do with the value it received?
+
 ### 2. Wait for a service with a timeout
 
-`WaitReady(ready, timeout)` waits for the `ready` channel to be closed. If
-that happens within `timeout`, return `nil` as soon as it does. If `timeout`
-passes first, return `ErrNotReady` (already declared in the starter).
+**Goal:** make `WaitReady(ready, timeout)` return `nil` as soon as `ready` is
+closed, or `ErrNotReady` if `timeout` passes first.
+
+`ErrNotReady` is already declared in the starter; return it, don't create a
+new error. Use the `timeout` parameter, not a fixed number of seconds.
 
 ```go
 // ready is closed after 3s
@@ -113,17 +130,27 @@ WaitReady(ready, 5*time.Second) // => nil, after 3s
 WaitReady(ready, 5*time.Second) // => ErrNotReady, after 5s
 ```
 
+**Think it through:**
+- Which two things are you waiting for? Each becomes one case.
+- Does the `ready` case need the received value, or only the fact it arrived?
+
 ### 3. Drop alerts instead of blocking
 
-`TryNotify(alerts, msg)` tries to send `msg` on `alerts` without waiting. If
-the send can happen right now, do it and return `true`. If it would have to
-wait (the buffer is full), return `false` without sending.
+**Goal:** make `TryNotify(alerts, msg)` send `msg` on `alerts` only if that
+can happen right now, and report whether it did.
+
+If the send can happen, do it and return `true`. If it would have to wait
+(the buffer is full), return `false` without sending.
 
 ```go
 alerts := make(chan string, 1)
 TryNotify(alerts, "disk 91%") // => true   (now the buffer is full)
 TryNotify(alerts, "cpu 99%")  // => false  (dropped)
 ```
+
+**Think it through:**
+- A `case` can be a *send*, not only a receive. Which way does the arrow go?
+- Which kind of case runs when nothing else is ready right now?
 
 ## Learn more
 

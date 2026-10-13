@@ -1,99 +1,105 @@
 # Graceful shutdown: drain in-flight requests
 
-Every deploy stops your old pods. If a pod just dies, every request it was
-handling fails, and users see errors on each release. A *graceful shutdown*
-stops taking new work, finishes the work it already has, and then exits.
+Every deploy stops your old pods. If a pod just dies, the requests it was
+handling fail and users see errors on each release. A *graceful shutdown*
+stops taking new work, finishes the work it has, then exits.
+
+**New here:** `http.Server` timeouts, `Serve`, `Shutdown` and `Close`,
+waiting on a goroutine or a context with `select`.
 
 ## Learn
 
 ### What happens during a rolling deploy
 
-1. Kubernetes starts a new pod and removes the old one from the Service.
+1. Kubernetes removes the old pod from the Service.
 2. It sends the old container `SIGTERM`.
 3. It waits up to `terminationGracePeriodSeconds` (30 seconds by default).
-4. If the process is still running, it sends `SIGKILL`, which can't be caught.
+4. If the process still runs, it sends `SIGKILL`, which can't be caught.
 
-So you have a few seconds between `SIGTERM` and `SIGKILL`. In that time:
-stop accepting new connections, let in-flight requests finish, and exit.
+Between `SIGTERM` and `SIGKILL`: stop accepting connections, let in-flight
+requests finish, and exit.
 
 ### Server timeouts
 
-`http.ListenAndServe` uses a server with no timeouts. A client can open a
-connection and send its headers one byte a minute, holding the connection open
-forever. Enough of those clients use up your server. That attack is called
-*Slowloris*. A production server sets timeouts on its `http.Server`:
+`http.ListenAndServe` has no timeouts. A client can send its headers one byte
+a minute and hold a connection forever; enough of them use up your server
+(the *Slowloris* attack). A production `http.Server` sets these fields:
 
 | Field | Limits |
 |---|---|
 | `ReadHeaderTimeout` | reading the request headers (the Slowloris fix) |
 | `ReadTimeout` | reading the whole request, headers and body |
-| `WriteTimeout` | from the end of reading the headers to the end of writing the response |
-| `IdleTimeout` | how long a keep-alive connection may wait for its next request |
+| `WriteTimeout` | from the end of the headers to the end of the response |
+| `IdleTimeout` | how long a keep-alive connection waits for its next request |
+
+> **Why is it written like this?**
+> - **Go requires** the type `time.Duration` for each field, so write a
+>   number times a unit, such as `3 * time.Minute`.
+> - **Convention:** in a struct literal, one `Field: value,` per line, with a
+>   trailing comma. gofmt lines up the values.
 
 ### Serve, Shutdown and Close
 
-```go
-srv := &http.Server{Handler: mux}
-ln, err := net.Listen("tcp", ":8080")
-err = srv.Serve(ln) // blocks until the server stops
-```
-
-`Serve` blocks, so it runs in a goroutine while another goroutine waits for the
-signal to stop. Two methods stop a server:
+`srv.Serve(ln)` blocks until the server stops. Two methods stop it:
 
 | Method | What it does |
 |---|---|
-| `srv.Shutdown(ctx)` | Closes the listener (new connections are refused), closes idle connections, then waits for active requests to finish. Returns `nil` when they are all done, or `ctx.Err()` if `ctx` ends first. |
+| `srv.Shutdown(ctx)` | Refuses new connections, closes idle ones, waits for active requests. Returns `nil` when they're done, or `ctx.Err()` if `ctx` ends first. |
 | `srv.Close()` | Closes everything right now. In-flight requests are cut off. |
 
-Once `Shutdown` or `Close` is called, `Serve` returns `http.ErrServerClosed`.
-That is the normal way to stop, not a failure.
+After either one, `Serve` returns `http.ErrServerClosed`: the normal way to
+stop, not a failure.
 
-`Shutdown` waits as long as its context lets it, so give it a deadline. Build
-that context from `context.Background()`, not from the context that told you
-to stop: that one is already cancelled, and `Shutdown` would give up at once.
+Give `Shutdown` a deadline with `context.WithTimeout`, built from
+`context.Background()`. Don't build it from the context that told you to stop:
+that one is already cancelled.
+
+### Waiting for whichever comes first
+
+`select` waits on several channels and runs the case that is ready first. A
+blocking call runs in a goroutine that sends its result on a channel:
 
 ```go
-ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-defer cancel()
-if err := srv.Shutdown(ctx); err != nil {
-	srv.Close() // grace period over: cut off whatever is left
+done := make(chan int, 1) // buffer of 1: the send never blocks
+go func() { done <- countLines(path) }()
+
+select {
+case n := <-done:
+	fmt.Println("lines:", n)
+case <-ctx.Done():
+	fmt.Println("cancelled")
 }
 ```
 
-### Waiting for a goroutine or a context
+The buffer matters. If `ctx` wins, nobody reads `done`; with a buffer of 1 the
+goroutine can still send and exit instead of leaking.
 
-`Run` waits for whichever happens first: `Serve` fails, or `ctx` is cancelled.
-A `select` over two channels does that. A buffered channel of size 1 lets the
-`Serve` goroutine send its result and exit, even if nobody is reading anymore:
+> **Why is it written like this?**
+> - **Go requires** `go` in front of a *call*, so the anonymous `func() {...}`
+>   ends with `()`.
+> - **Convention:** `<-ctx.Done()` is how you wait for cancellation.
+
+### Wrapping an error
+
+As in *Wrapping errors*, `%w` in `fmt.Errorf` adds context but keeps the
+original error findable with `errors.Is`:
 
 ```go
-serveErr := make(chan error, 1)
-go func() { serveErr <- srv.Serve(ln) }()
-
-select {
-case err := <-serveErr:
-	// Serve failed before anyone asked us to stop.
-case <-ctx.Done():
-	// Time to shut down.
-}
+return fmt.Errorf("load config: %w", err)
 ```
 
 ### Wiring it to signals
 
-In `main`, `signal.NotifyContext` gives you a context that is cancelled on
-Ctrl-C or `SIGTERM`, which is exactly what `Run` needs:
+In `main`, `signal.NotifyContext` gives a context that is cancelled on Ctrl-C
+or `SIGTERM`, which is what `Run` waits on:
 
 ```go
 ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 defer stop()
-ln, err := net.Listen("tcp", ":8080")
-// handle err
 err = shutdown.Run(ctx, shutdown.NewServer(mux), ln, 20*time.Second)
 ```
 
-Keep the grace period shorter than `terminationGracePeriodSeconds`, so you
-finish before `SIGKILL` arrives.
+Keep the grace period shorter than `terminationGracePeriodSeconds`.
 
 ## Your task
 
@@ -103,19 +109,24 @@ that stays busy until the test lets it reply.
 
 ### 1. Set the server timeouts
 
-Make `NewServer` return an `*http.Server` with `Handler: h` and these
-timeouts:
+**Goal:** make `NewServer` return an `*http.Server` with `Handler: h` and
+these four timeouts.
 
 | Field | Value |
 |---|---|
-| `ReadHeaderTimeout` | `5 * time.Second` |
-| `ReadTimeout` | `10 * time.Second` |
-| `WriteTimeout` | `30 * time.Second` |
-| `IdleTimeout` | `60 * time.Second` |
+| `ReadHeaderTimeout` | 5 seconds |
+| `ReadTimeout` | 10 seconds |
+| `WriteTimeout` | 30 seconds |
+| `IdleTimeout` | 60 seconds |
+
+**Think it through:**
+- The struct literal already has `Handler: h,`. Add the other fields next to it.
+- How do you write "5 seconds" as a `time.Duration`?
 
 ### 2. Run until cancelled, then shut down
 
-Rewrite `Run`:
+**Goal:** make `Run` serve in the background and return when either serving
+fails or `ctx` is cancelled.
 
 - Start `srv.Serve(ln)` in a goroutine that sends its error on a buffered
   channel.
@@ -130,10 +141,18 @@ ctx cancelled while GET /deploy is in flight
 => Run returns nil
 ```
 
+**Think it through:**
+- What type of value does `Serve` return? That's the channel's element type.
+- Which two things does the `select` wait on?
+
 ### 3. Force-close when the grace period runs out
 
-`Stop` already calls `Shutdown` with a `grace` timeout. If `Shutdown` returns
-an error, call `srv.Close()` and return the error wrapped with `%w`:
+**Goal:** in `Stop`, if `Shutdown` fails, close the server and return the
+error wrapped as `forced shutdown: <error>`.
+
+`Stop` already calls `Shutdown` with a `grace` timeout. On error, call
+`srv.Close()`, then return the error wrapped with `%w`. On success return
+`nil`. Add `"fmt"` to the imports.
 
 ```go
 Stop(srv, 20*time.Millisecond) // a request is stuck forever
@@ -145,7 +164,11 @@ Stop(srv, time.Second) // nothing in flight
 // => nil
 ```
 
-Add `"fmt"` to the imports for `fmt.Errorf`.
+**Think it through:**
+- Right now `Shutdown`'s result is returned directly. Store it in `err` and
+  check it with `if`.
+- The fixed text is `forced shutdown: ` (with a space after the colon); the
+  rest comes from `err`.
 
 ## Learn more
 

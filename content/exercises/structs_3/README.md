@@ -1,9 +1,11 @@
 # Structs: parse a host inventory
 
 Plenty of ops tooling starts from a plain text inventory: one host per line,
-with its name, IP address and region. In this exercise you turn that text into
-a slice of structs, then summarise it, the way a deploy script would before it
-decides where to roll out.
+with its name, IP address and region. Here you turn that text into a slice of
+structs, then summarise it, the way a deploy script would before a rollout.
+
+**New here:** filling structs from parsed text, a struct with a map field,
+adding context to an error.
 
 ## Learn
 
@@ -11,42 +13,63 @@ decides where to roll out.
 
 A struct groups named fields, as in *Structs*. You build one with a literal
 such as `Host{Name: "web-1", IP: "10.0.0.5"}` and reach fields with a dot.
-Structs are copied when you assign them or pass them to a function, as you
-saw when fixing the health checker. When every field can be compared
-(strings, numbers, bools), two structs can be compared with `==`. That is
-how the tests check your `Host` values.
+
+When every field can be compared (strings, numbers, bools), two structs can
+be compared with `==`. That's how the tests check your `Host` values.
 
 ### Building a slice of structs
 
 Start with an empty slice and `append` one struct per item:
 
 ```go
-var hosts []Host
-hosts = append(hosts, Host{Name: "web-1", IP: "10.0.0.5", Region: "eu-west-1"})
+var users []User
+users = append(users, User{Login: "ana", Shell: "/bin/bash"})
 ```
+
+> **Why is it written like this?** `var users []User` gives a `nil` slice,
+> and `append` works on it fine. Go requires you to store `append`'s result
+> (`users = append(...)`); calling it alone does nothing.
 
 ### A struct with a map inside
 
-A map field starts as `nil`, like any map. Make the map before you write to
-it, then put it in the struct:
+A map field starts as `nil`, like any map, and writing to a `nil` map
+crashes. Make the map first, fill it, then put it in the struct:
 
 ```go
-counts := map[string]int{}
-counts["eu-west-1"]++
-s := Summary{Total: 1, ByRegion: counts}
+perShell := map[string]int{}
+perShell["/bin/bash"]++
+report := Report{Count: 1, PerShell: perShell}
 ```
+
+`m[key]++` adds 1 to the value at `key`. A missing key starts at 0, so you
+don't need to check first.
 
 ### Adding context to an error
 
-When one function calls another that can fail, add where it failed to the
-message. `%v` prints an error's message:
+When one function calls another that can fail, add *where* it failed to the
+message. `fmt.Errorf` builds an error like `fmt.Sprintf` builds a string, and
+`%v` prints another error's message:
 
 ```go
-h, err := ParseHost(line)
+cfg, err := LoadConfig(path)
 if err != nil {
-	return nil, fmt.Errorf("line %d: %v", n, err)
+	return fmt.Errorf("config %s: %v", path, err)
 }
+// => error "config /etc/app.yaml: file not found"
 ```
+
+> **Why is it written like this?** Returning the error is Go convention: no
+> exceptions, just a value you pass up. Prefixing it with context is
+> convention too. The exact prefix text is the author's choice.
+
+### Splitting text
+
+| Function | Does |
+|---|---|
+| `strings.Split(s, "\n")` | cuts `s` at every `\n`, keeps empty pieces |
+| `strings.Fields(s)` | cuts at runs of spaces/tabs, drops empty pieces |
+| `strings.TrimSpace(s)` | removes spaces/tabs at both ends |
+| `strings.HasPrefix(s, p)` | `true` if `s` starts with `p` |
 
 ## Your task
 
@@ -65,13 +88,15 @@ db-1 10.0.1.10 us-east-1
 
 ### 1. Parse one line
 
-`ParseHost(line)` splits `line` into fields separated by spaces (use
-`strings.Fields`, so extra spaces don't matter). A valid line has exactly 3
-fields: name, IP and region, in that order. Return the `Host` and a `nil`
-error.
+**Goal:** make `ParseHost(line)` turn `"name ip region"` into a `Host` and a
+`nil` error.
 
-With any other number of fields, return the zero `Host` (`Host{}`) and an
-error. The error text is up to you; the tests only check that there is one.
+Split with `strings.Fields`, so extra spaces don't matter. A valid line has
+exactly 3 fields: name, IP and region, in that order.
+
+With any other number of fields (including an empty line), return the zero
+`Host` (`Host{}`) and an error. The error text is up to you; the tests only
+check that there is one.
 
 ```go
 ParseHost("web-1 10.0.0.5 eu-west-1")
@@ -84,17 +109,22 @@ ParseHost("web-2 10.0.0.6")
 // => Host{}, error
 ```
 
+**Think it through:**
+- Check the number of fields *before* you read any of them.
+- Which index holds the name, the IP, the region?
+
 ### 2. Parse the whole inventory
 
-`ParseInventory(text)` splits `text` into lines with `strings.Split(text,
-"\n")` and handles each line in order:
+**Goal:** make `ParseInventory(text)` return one `Host` per host line, in
+order.
 
-- Trim spaces from the line with `strings.TrimSpace`.
-- Skip a line that is empty, or that starts with `#` (a comment).
-- Otherwise parse it with `ParseHost` and append the host to the result.
+Split `text` into lines with `strings.Split(text, "\n")`, then for each line:
 
-Hosts come back in the same order as in the text. If the text has no host
-lines at all, return no hosts (a slice of length 0) and a `nil` error.
+1. Trim spaces with `strings.TrimSpace`.
+2. Skip it if it's empty or starts with `#` (a comment).
+3. Otherwise parse it with `ParseHost` and append the host to the result.
+
+If the text has no host lines, return no hosts (length 0) and a `nil` error.
 
 If `ParseHost` fails, stop and return `nil` and an error whose message starts
 with `line N: `, where `N` is the line's number in the text. The first line is
@@ -111,9 +141,17 @@ ParseInventory("web-1 10.0.0.5 eu-west-1\n# db\ndb-1 10.0.1.10\n")
 // => nil, error "line 3: ..."
 ```
 
+**Think it through:**
+- A `range` loop over the lines gives you an index. Indexes start at 0, but
+  line numbers start at 1.
+- Which keyword moves on to the next line without parsing this one?
+- The error message is the fixed text `line `, the number, `: `, then
+  `ParseHost`'s error.
+
 ### 3. Summarise the hosts
 
-`Summarize(hosts)` returns a `Summary`:
+**Goal:** make `Summarize(hosts)` return a `Summary` with the host count and
+the count per region.
 
 - `Total` is the number of hosts.
 - `ByRegion` maps each region to how many hosts are in it.
@@ -131,6 +169,10 @@ Summarize([]Host{
 Summarize(nil)
 // => Summary{Total: 0, ByRegion: map[string]int{}}
 ```
+
+**Think it through:**
+- Do you need a loop for `Total`, or is there a built-in that counts?
+- Make the map *before* the loop, so it exists even when `hosts` is empty.
 
 ## Learn more
 

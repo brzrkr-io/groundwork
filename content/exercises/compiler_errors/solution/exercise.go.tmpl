@@ -1,0 +1,28 @@
+// Package compilefix is the Gopherlings exercise "Reading compiler errors".
+package compilefix
+
+// Version returns the release being deployed.
+func Version() string {
+	return "v2"
+}
+
+// URL returns the https address of a host, such as "https://api.internal".
+func URL(host string) string {
+	return "https://" + host
+}
+
+// Tag returns the image tag for a service, such as "api:v2".
+func Tag(service string) string {
+	return service + ":" + Version()
+}
+
+// Port returns the port every service listens on.
+func Port() int {
+	return 8080
+}
+
+// Greeting returns a greeting for an on-call engineer, such as "Hello, Sam".
+func Greeting(name string) string {
+	full := "Hello, " + name
+	return full
+}

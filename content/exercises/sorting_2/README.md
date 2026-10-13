@@ -3,16 +3,46 @@
 A teammate wrote a small package that orders Kubernetes nodes for a capacity
 report. It compiles and looks right, but each function has one sorting bug.
 
+**New here:** nothing; practice finding sorting bugs.
+
 ## Learn
 
-### Recap
+### Recap: the sorting tools
 
-`slices.Sort(s)` sorts `s` in place, so clone first with `slices.Clone` if the
-slice belongs to someone else. `slices.SortFunc(s, func(a, b T) int {...})`
-uses your comparison: negative means `a` first, positive means `b` first, zero
-means "equal". `cmp.Compare(x, y)` gives you that number, and swapping its
-arguments reverses the order. When two elements compare equal, `SortFunc` may
-put them in any order, so add a tie-break.
+| Tool | What it does |
+|---|---|
+| `slices.Sort(s)` | sorts `s` *in place*: smallest or alphabetical first; returns nothing |
+| `slices.Clone(s)` | returns a new slice with the same values |
+| `slices.SortFunc(s, fn)` | sorts `s` in place using your comparison `fn` |
+| `cmp.Compare(x, y)` | `-1` if `x < y`, `0` if equal, `+1` if `x > y` |
+
+In a comparison function, negative means `a` goes first, positive means `b`
+goes first, zero means "equal".
+
+### Three classic sorting bugs
+
+1. **Sorting someone else's slice.** A slice you were given shares its data
+   with the caller. Sorting it in place reorders theirs too.
+2. **Backwards order.** `cmp.Compare(x, y)` sorts smallest first. Swapping
+   which value goes first and which goes second flips the order.
+3. **No tie-break.** When the comparison returns `0`, `SortFunc` may put the
+   two elements in any order. Add a second comparison for that case.
+
+A tie-break looks like this, here for words sorted by length, then
+alphabetically:
+
+```go
+slices.SortFunc(words, func(a, b string) int {
+	if d := cmp.Compare(len(a), len(b)); d != 0 {
+		return d // the lengths differ, so they decide
+	}
+	return cmp.Compare(a, b) // same length: alphabetical
+})
+```
+
+> **Why is it written like this?** `if d := ...; d != 0` is Go's `if` with a
+> short statement first; the `;` is required. `d` only exists inside the `if`.
+> The name `d` is the author's choice.
 
 ## Your task
 
@@ -21,9 +51,10 @@ it. You don't need to rewrite anything from scratch.
 
 ### 1. Stop reordering the caller's slice
 
-`SortedNodes` should return the node names in alphabetical order **without**
-changing the slice it was given. Right now the returned slice is correct, but
-the caller's slice gets sorted too.
+**Goal:** make `SortedNodes` return the names in alphabetical order **without** changing the slice it was given.
+
+Right now the returned slice is correct, but the caller's slice gets sorted
+too.
 
 ```go
 nodes := []string{"node-c", "node-a", "node-b"}
@@ -32,24 +63,35 @@ SortedNodes(nodes)
 // nodes is still ["node-c" "node-a" "node-b"]
 ```
 
+**Think it through:**
+- Which slice does `slices.Sort` get right now: the caller's, or a copy?
+- Which tool from the recap table makes a copy? Remember to sort and return the copy.
+
 ### 2. Put the fullest disks first
 
-`FullestFirst` gets a map from node name to disk usage in percent. It should
-return the node names with the **highest** usage first. Nodes with the same
-usage are in alphabetical order. Right now the emptiest disks come first.
+**Goal:** make `FullestFirst` return node names with the **highest** disk usage first.
+
+`FullestFirst` gets a map from node name to disk usage in percent. Nodes with
+the same usage stay in alphabetical order. Right now the emptiest disks come
+first.
 
 ```go
 FullestFirst(map[string]int{"node-a": 40, "node-b": 91, "node-c": 40})
 // => ["node-b" "node-a" "node-c"]
 ```
 
+**Think it through:**
+- Which of the three classic bugs is this?
+- Only the usage comparison is wrong. Leave the alphabetical tie-break line alone.
+
 ### 3. Make ties predictable
 
-`LeastBusy` gets a slice of node names and a map from node name to the number
-of pods running on it. It returns a sorted copy of the names: **fewest** pods
-first, and nodes with the same pod count in alphabetical order. The caller's
-slice is not changed. Right now nodes with the same pod count come out in
-whatever order they went in.
+**Goal:** make `LeastBusy` put nodes with the same pod count in alphabetical order.
+
+`LeastBusy(nodes, pods)` gets a slice of node names and a map from node name
+to the number of pods on it. It returns a sorted **copy** of the names:
+**fewest** pods first, ties alphabetical. The caller's slice is not changed.
+Right now tied nodes come out in whatever order they went in.
 
 ```go
 LeastBusy(
@@ -58,6 +100,10 @@ LeastBusy(
 )
 // => ["node-b" "node-c" "node-a"]
 ```
+
+**Think it through:**
+- What does the comparison return when two nodes have the same pod count?
+- Look at how `FullestFirst` handles ties in the same file.
 
 ## Learn more
 

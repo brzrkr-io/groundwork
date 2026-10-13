@@ -4,13 +4,14 @@ When several goroutines share one piece of data, such as a map of request
 counts, they must take turns. A *mutex* (short for "mutual exclusion") is the
 lock that makes them take turns.
 
+**New here:** `sync.Mutex`, `sync.RWMutex`, `maps.Clone`.
+
 ## Learn
 
 ### Why goroutines must take turns
 
-`hits[path]++` looks like one step, but it is three: read the old value, add
-one, write it back. If two goroutines do this at the same moment, one update
-can be lost:
+`hits[path]++` looks like one step, but it is three: read, add one, write
+back. Two goroutines doing it at once can lose an update:
 
 ```text
 goroutine A: read 5 ─────────── add 1 ─ write 6
@@ -18,109 +19,126 @@ goroutine B:        read 5 ─ add 1 ─ write 6
 result: 6, not 7
 ```
 
-Maps are worse: Go may crash the whole program with `fatal error: concurrent
-map writes`. Two goroutines touching the same data at the same time, with at
-least one of them writing, is a *data race*. Gopherlings runs every test in
-this module with Go's race detector, which spots data races and fails the
-test. The next-but-one exercise, *The race detector*, is all about it.
+With maps, Go may even crash: `fatal error: concurrent map writes`. Two
+goroutines touching the same data at once, at least one writing, is a *data
+race*. The tests in this module run with Go's race detector, which fails the
+test with "race detected". *The race detector* covers it in depth.
 
 ### sync.Mutex
 
-A `sync.Mutex` has two methods. `Lock` waits until nobody else holds the lock,
-then takes it. `Unlock` releases it. Code between them runs in one goroutine
-at a time. That code is the *critical section*:
+`Lock` waits until nobody else holds the lock, then takes it. `Unlock`
+releases it. The code between them, the *critical section*, runs in one
+goroutine at a time:
 
 ```go
-type HitCounter struct {
-	mu   sync.Mutex
-	hits map[string]int
+type Inventory struct {
+	mu    sync.Mutex // protects items
+	items map[string]int
 }
 
-func (c *HitCounter) Inc(path string) {
-	c.mu.Lock()
-	defer c.mu.Unlock() // released when Inc returns, whatever happens
-	c.hits[path]++
+func (inv *Inventory) Remove(name string) {
+	inv.mu.Lock()
+	defer inv.mu.Unlock() // released when Remove returns
+	delete(inv.items, name)
 }
 ```
 
-- Put the mutex in the struct, next to the data it protects.
-- Use pointer receivers (`*HitCounter`). A copied mutex is a different lock,
-  and `go vet` warns about it.
-- The zero value of a mutex is an unlocked mutex. No setup needed.
-- `defer c.mu.Unlock()` right after `Lock` means you can't forget to unlock,
-  even when the function has several `return`s.
+> **Why is it written like this?**
+> - **Go requires** pointer receivers (`*Inventory`) here: a copied mutex is
+>   a separate lock, and `go vet` warns about it.
+> - **Convention:** the mutex sits just above the data it protects, with a
+>   `// protects …` comment. `defer …Unlock()` goes on the line right after
+>   `Lock`, so no `return` can skip it.
+> - **Free:** the zero value of a mutex is unlocked; no setup needed.
 
 ### sync.RWMutex: many readers, one writer
 
-Reading a map from many goroutines at once is fine, as long as nobody is
-writing. A `sync.RWMutex` allows that:
+Many goroutines may *read* a map at once, as long as nobody writes. A
+`sync.RWMutex` has two kinds of lock:
 
-| Method | Who can hold it at the same time |
-|---|---|
-| `Lock` / `Unlock` | one writer, and no readers |
-| `RLock` / `RUnlock` | any number of readers, and no writer |
+| Method pair | Who can hold it at the same time | Use it in |
+|---|---|---|
+| `Lock` / `Unlock` | one writer, no readers | methods that change the data |
+| `RLock` / `RUnlock` | any number of readers, no writer | methods that only read |
 
-Use `Lock` in methods that change the data and `RLock` in methods that only
-read it. For a dashboard that reads counters far more often than it writes
-them, this means readers don't queue up behind each other.
+Reads (`RLock`) still wait while a writer holds `Lock`. That waiting is what
+makes them safe.
 
 ### Keep critical sections small
 
-Hold the lock only while you touch the shared data. Never hold it while doing
-something slow, like a network call. Every other goroutine waits in the
-meantime.
+Hold the lock only while touching the shared data, never during something
+slow like a network call. Everyone else waits meanwhile.
 
 ### Don't hand out the protected map
 
-If a method returns `c.hits` itself, the caller can read or write it with no
-lock held, and you're back to a data race. Return a **copy** instead.
+A map value is a reference: returning `c.hits` gives the caller the **same**
+map, which they can then use with no lock. Return a **copy**.
 `maps.Clone(m)` from the `maps` package makes one:
 
 ```go
 import "maps"
 
-copied := maps.Clone(original) // a new map with the same keys and values
+backup := maps.Clone(settings) // new map, same keys and values
 ```
 
 ## Your task
 
 Your edge proxy counts requests per path. Many request goroutines call `Inc`,
-and a metrics endpoint reads the counts. `HitCounter` uses a `sync.RWMutex`
-named `mu`.
+and a metrics endpoint reads the counts. `HitCounter` keeps the counts in the
+map `c.hits`, protected by the `sync.RWMutex` field `c.mu`.
 
 ### 1. Count a hit
 
-`Inc(path)` should add 1 to the count for `path`, holding the **write** lock
-(`Lock`/`Unlock`).
+**Goal:** make `Inc(path)` add 1 to `c.hits[path]` while holding the **write**
+lock.
+
+Many goroutines call it at once; no hit may be lost.
 
 ```go
 c := NewHitCounter()
 c.Inc("/login")
 c.Inc("/login")
-// c now holds "/login": 2
+c.Inc("/health")
+// c.hits is now map[string]int{"/login": 2, "/health": 1}
 ```
+
+**Think it through:**
+- Which method pair from the table is for changing data?
+- The lock lives in `c`. How did the `Inventory` example reach its lock?
 
 ### 2. Read a count
 
-`Count(path)` should return the count for `path`, holding the **read** lock
-(`RLock`/`RUnlock`). A path that has never been hit has a count of 0.
+**Goal:** make `Count(path)` return `c.hits[path]` while holding the **read**
+lock.
+
+A path that has never been hit returns 0.
 
 ```go
 c.Count("/login")  // => 2
 c.Count("/health") // => 0
 ```
 
+**Think it through:**
+- Which method pair is for reading only?
+- What does a map give you for a key it doesn't have?
+
 ### 3. Take a snapshot
 
-`Snapshot()` should return a **copy** of all the counts, holding the read
-lock. Changing the returned map must not change the counter. Add `"maps"` to
-the imports.
+**Goal:** make `Snapshot()` return a **copy** of `c.hits`, made while holding
+the read lock.
+
+Changing the returned map must not change the counter. If a writer holds the
+lock, `Snapshot` must wait for it. Add `"maps"` to the import block.
 
 ```go
-snap := c.Snapshot() // => map[string]int{"/login": 2}
+snap := c.Snapshot() // => map[string]int{"/login": 2, "/health": 1}
 snap["/login"] = 100
 c.Count("/login")    // => still 2
 ```
+
+**Think it through:**
+- Is this a read or a write of `c.hits`?
+- Which function from Learn makes the copy?
 
 ## Learn more
 

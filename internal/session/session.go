@@ -146,10 +146,10 @@ func (s *Session) NextPending(after *course.Exercise) *course.Exercise {
 //
 // Edited exercise files are never touched.
 func (s *Session) Sync() error {
+	if err := s.moveFolders(); err != nil {
+		return err
+	}
 	for _, e := range s.Course.Exercises {
-		if err := s.move(e); err != nil {
-			return fmt.Errorf("move %s: %w", e.Dir(), err)
-		}
 		if _, err := s.sync(e, false); err != nil {
 			return fmt.Errorf("update %s: %w", e.Dir(), err)
 		}
@@ -162,29 +162,51 @@ func (s *Session) Sync() error {
 	return progress.Save(s.Root, s.State)
 }
 
-// move relocates e's folders if the course moved them since the last Sync.
-func (s *Session) move(e *course.Exercise) error {
-	previous := s.State.Folders[e.Name]
-	s.State.Folders[e.Name] = e.Dir()
-	if previous == "" || previous == e.Dir() {
-		return nil
-	}
-	for _, top := range []string{"exercises", "solutions"} {
-		from := filepath.Join(s.Root, top, filepath.FromSlash(previous))
-		to := filepath.Join(s.Root, top, filepath.FromSlash(e.Dir()))
-		if _, err := os.Stat(from); err != nil {
+// moveFolders relocates exercise and solution folders the course moved
+// since the last Sync. Inserting an exercise shifts the numbers of the ones
+// after it, and follow-ups share their topic's name (003_variables,
+// 004_variables), so a folder's new name is often still taken by the
+// exercise that is about to move on. Every moving folder is therefore first
+// renamed aside, then put in place.
+func (s *Session) moveFolders() error {
+	type move struct{ from, aside, to string }
+	var moves []move
+	for _, e := range s.Course.Exercises {
+		previous := s.State.Folders[e.Name]
+		s.State.Folders[e.Name] = e.Dir()
+		if previous == "" || previous == e.Dir() {
 			continue
 		}
-		if _, err := os.Stat(to); err == nil {
-			continue // never overwrite; the old folder stays for the learner to merge
+		for _, top := range []string{"exercises", "solutions"} {
+			from := filepath.Join(s.Root, top, filepath.FromSlash(previous))
+			if _, err := os.Stat(from); err != nil {
+				continue
+			}
+			moves = append(moves, move{
+				from:  from,
+				aside: filepath.Join(s.Root, top, ".moving-"+e.Name),
+				to:    filepath.Join(s.Root, top, filepath.FromSlash(e.Dir())),
+			})
 		}
-		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+	}
+	for _, m := range moves {
+		if err := os.Rename(m.from, m.aside); err != nil {
+			return fmt.Errorf("move %s: %w", m.from, err)
+		}
+	}
+	for _, m := range moves {
+		if _, err := os.Stat(m.to); err == nil {
+			// Something unexpected already lives there; leave the work under
+			// its aside name rather than overwrite anything.
+			return fmt.Errorf("can't move your work to %s: that folder already exists (your files are safe in %s)", m.to, m.aside)
+		}
+		if err := os.MkdirAll(filepath.Dir(m.to), 0o755); err != nil {
 			return err
 		}
-		if err := os.Rename(from, to); err != nil {
-			return err
+		if err := os.Rename(m.aside, m.to); err != nil {
+			return fmt.Errorf("move %s: %w", m.to, err)
 		}
-		os.Remove(filepath.Dir(from)) // drop the old module folder once empty
+		os.Remove(filepath.Dir(m.from)) // drop an old module folder once empty
 	}
 	return nil
 }

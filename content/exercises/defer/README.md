@@ -4,116 +4,111 @@ Ops code is full of things that must be undone: a connection must be closed,
 a lock must be released. `defer` makes sure the cleanup happens, even when the
 function returns early because something failed.
 
+**New here:** `defer`, last-in first-out order, deferred closures, named results.
+
 ## Learn
 
 ### What defer does
 
 A `defer` statement schedules a function call to run **when the surrounding
-function returns**, not right away:
+function returns**, not right away.
 
 ```go
-func Uptime(r *Recorder) {
-	r.Connect("web-1")
-	defer r.Close("web-1") // scheduled now, runs at the very end
-	r.Run("uptime")
-	r.Run("df")
+func Report(log *Log) {
+	log.Open("report.txt")
+	defer log.Save("report.txt") // scheduled now, runs at the very end
+	log.Write("disk 80%")
+	log.Write("cpu 12%")
 }
-// events: connect web-1, run uptime, run df, close web-1
+// order: open, write, write, save
 ```
+
+> **Why is it written like this?** Go requires `defer` to be followed by a
+> function *call* (with `()`), not just a function name. Putting the `defer`
+> on the line right after the setup is convention: the cleanup sits next to
+> the thing it cleans up.
 
 ### It runs on every return path
 
-The deferred call runs no matter which `return` ends the function. That is the
-whole point. Compare:
+The deferred call runs no matter which `return` ends the function. That is
+the whole point.
 
 ```go
-// Leaks the connection when Run fails: the early return skips Close.
-func Restart(r *Recorder) error {
-	r.Connect("web-1")
-	if err := r.Run("restart"); err != nil {
-		return err
+func Check(log *Log) error {
+	log.Open("check.txt")
+	defer log.Save("check.txt")
+	if err := log.Write("ping"); err != nil {
+		return err // Save still runs here
 	}
-	r.Close("web-1")
-	return nil
-}
-
-// Always closes: defer runs on both returns.
-func Restart(r *Recorder) error {
-	r.Connect("web-1")
-	defer r.Close("web-1")
-	if err := r.Run("restart"); err != nil {
-		return err
-	}
-	return nil
+	return nil // ...and here
 }
 ```
 
-### Acquire, then defer straight away
-
-Write the `defer` on the line right after you get the thing that needs
-cleaning up. The cleanup sits next to the setup, so you can't forget it, and
-every `return` below it is covered.
+Without `defer`, a cleanup line placed at the bottom is **skipped** by every
+early `return` above it.
 
 ### Several defers run last-in, first-out
 
-When a function defers more than one call, they run in reverse order: the last
-one deferred runs first. That is exactly what cleanup needs, because you undo
-things in the opposite order you did them:
+When a function defers more than one call, the last one deferred runs first.
+That is what cleanup needs: you undo things in the opposite order you did
+them, like taking off shoes before socks.
 
 ```go
-r.Lock("deploys")
-defer r.Unlock("deploys") // runs second
-r.Connect("web-1")
-defer r.Close("web-1")    // runs first
-// events: lock deploys, connect web-1, close web-1, unlock deploys
+defer fmt.Println("first deferred")  // prints second
+defer fmt.Println("second deferred") // prints first
 ```
 
-### Arguments are evaluated when you write defer
+### Arguments are worked out at the defer line
 
-Go works out the arguments of a deferred call **at the `defer` line**, not when
-the call finally runs:
+Go evaluates the arguments of a deferred call **when the `defer` line runs**,
+not when the call finally happens.
 
 ```go
 status := "failed"
-defer r.Record("status " + status) // the text is built now: "status failed"
+defer fmt.Println("status " + status) // text built now: "status failed"
 status = "ok"
-// records "status failed"
+// prints "status failed"
 ```
 
-If you want the value at the end, defer a *closure* (a `func() { ... }` that
-you call with `()`). The closure reads `status` when it runs:
+To read a variable's value at the end, defer a *closure*: a
+`func() { ... }` that you call right away with `()`. Its body runs at the end,
+so it sees the latest value.
 
 ```go
 defer func() {
-	r.Record("status " + status)
+	fmt.Println("status " + status) // prints "status ok"
 }()
 ```
 
-### Changing the returned error from a defer
+> **Why is it written like this?** The trailing `()` is required: `defer`
+> needs a call, and `func() {...}` alone is only a value.
 
-A function can give its result a name: `func Backup(...) (err error)`. A
-*named result* is a normal variable that holds what the function will return.
-A deferred closure runs after `return` has set it, so the closure can still
-change it. This adds context to every error in one place:
+### Named results: changing what a function returns
+
+A function can name its result: `func Fetch() (err error)`. A *named result*
+is a normal variable that holds what the function will return. `return x`
+copies `x` into it, and **then** deferred calls run, so a deferred closure can
+still change it.
 
 ```go
-func Restart(r *Recorder, host string) (err error) {
+func Count() (n int) {
 	defer func() {
-		if err != nil {
-			err = fmt.Errorf("restart %s: %w", host, err)
-		}
+		n = n * 10 // runs after "return 4" has set n to 4
 	}()
-	// every "return someErr" below gets the "restart <host>: " prefix
-	...
+	return 4
 }
+// Count() => 40
 ```
+
+> **Why is it written like this?** The parentheses around `(n int)` are
+> required once a result has a name. The name itself (`n`, `err`) is your
+> choice; `err` is the convention for errors.
 
 ## Your task
 
 Your team's deploy tool talks to servers through a `Recorder`. It is a fake:
-instead of contacting a real server, each method appends a line to
-`r.Events`, so the tests can check what happened and in what order. The
-`Recorder` is already written for you:
+each method appends a line to `r.Events` instead of contacting a server, so
+the tests can check what happened and in what order. It is already written:
 
 | Call | Appends to `r.Events` |
 |---|---|
@@ -129,10 +124,11 @@ then returns an error wrapping `ErrCommandFailed`, for example
 
 ### 1. Always close the connection in Deploy
 
-`Deploy` connects to the host, runs each command in order and stops at the
-first command that fails, returning its error unchanged. Right now it only
-closes the connection when every command succeeds. Use `defer` so the
-connection is closed on every path.
+**Goal:** make `Deploy` close the connection on every return path, using `defer`.
+
+`Deploy` connects, runs each command in order, and stops at the first failing
+command, returning its error unchanged. Right now it only closes when every
+command succeeds.
 
 ```go
 r := &Recorder{FailOn: "migrate"}
@@ -141,19 +137,23 @@ Deploy(r, "web-1", []string{"pull", "migrate", "restart"})
 // r.Events: connect web-1, run pull, run migrate, close web-1
 ```
 
-When every command works, `Deploy` returns `nil` and the log ends with
-`close web-1` as before.
+When every command works (or there are none), `Deploy` returns `nil` and the
+events still end with `close <host>`.
+
+**Think it through:**
+- Which line does the setup, and which line is the cleanup?
+- Where should the cleanup move to, so no `return` can skip it? Does the old line still belong at the bottom?
+- Which value names the host: the parameter `host`, not a fixed `"web-1"`.
 
 ### 2. Lock, connect and clean up in order in Migrate
 
-Write `Migrate(r, host)`. It must:
+**Goal:** write `Migrate(r, host)` so it locks, connects, runs `migrate`, and cleans up in reverse order.
 
-1. take the `migrations` lock and defer releasing it,
+It must:
+
+1. take the lock named `migrations` and defer releasing it,
 2. connect to `host` and defer closing it,
 3. run `migrate` and return its error (or `nil`).
-
-Thanks to last-in, first-out, the connection closes before the lock is
-released, whether or not `migrate` fails:
 
 ```go
 r := &Recorder{}
@@ -162,20 +162,33 @@ Migrate(r, "db-1")
 // r.Events: lock migrations, connect db-1, run migrate, close db-1, unlock migrations
 ```
 
+The events are the same when `migrate` fails; only the returned error is
+`run migrate: command failed`.
+
+**Think it through:**
+- `"migrations"` is fixed text; the host comes from the parameter.
+- With last-in, first-out, which `defer` must you write first so `unlock` comes last?
+- `Run` already returns an error. Can you return its result directly?
+
 ### 3. Add context to every Backup error
 
+**Goal:** add a deferred closure to `Backup` that prefixes any returned error with `backup <host>: `.
+
 `Backup(r, host)` connects, runs `dump`, then runs `upload`. Its result is
-already named `err`. Add a deferred closure so that any error it returns is
-wrapped with `%w` and prefixed with `backup <host>: `. Return `nil` unchanged
-when everything works.
+already named `err`. Wrap with `%w` so `errors.Is(err, ErrCommandFailed)`
+stays true. When everything works, return `nil` unchanged.
 
 ```go
 r := &Recorder{FailOn: "upload"}
 Backup(r, "db-1")
 // => error "backup db-1: run upload: command failed"
-// errors.Is(err, ErrCommandFailed) is true
 // r.Events: connect db-1, run dump, run upload, close db-1
 ```
+
+**Think it through:**
+- Inside the closure, check the named result: is there an error to wrap at all?
+- You set the new error by assigning to `err`, not by `return` (the closure returns nothing).
+- The pieces: fixed text `backup `, the `host` parameter, fixed `: `, then the old error with `%w` (as in *Errors are values*).
 
 ## Learn more
 

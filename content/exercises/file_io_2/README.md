@@ -1,24 +1,28 @@
 # Files: an append-only audit log
 
-Every deploy, restart and config change should leave a trace. In this exercise
-you fix an *append-only* audit log: a file that only ever grows, one line per
-event, so nobody can quietly lose history.
+Every deploy, restart and config change should leave a trace. Here you fix an
+*append-only* audit log: a file that only ever grows, one line per event, so
+nobody can quietly lose history.
+
+**New here:** `os.OpenFile` and its flags, `os.MkdirAll`.
 
 ## Learn
 
-**Recap.** `os.ReadFile` and `os.WriteFile` handle small whole files.
-`os.Open` plus `defer f.Close()` plus `bufio.Scanner` reads line by line.
-`os.Create` opens for writing and *truncates* an existing file. A missing file
-matches `errors.Is(err, fs.ErrNotExist)`, and for written files you return the
-error from `Close`.
+### Recap
+
+- `os.Open` + `defer f.Close()` + `bufio.Scanner` reads line by line.
+- `os.Create` opens for writing and *truncates* (empties) an existing file.
+- A missing file matches `errors.Is(err, fs.ErrNotExist)`.
+- For files you write, return the error from `Close`.
 
 ### os.OpenFile: choose exactly how to open
 
-`os.Open` and `os.Create` are shortcuts for `os.OpenFile`, which takes *flags*
-that you combine with `|`:
+`os.Open` and `os.Create` are shortcuts for `os.OpenFile`. It takes *flags*,
+combined with `|`, and a permission:
 
 ```go
-f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+// a lock file: read+write, create it, and fail if it already exists
+f, err := os.OpenFile("/run/deploy.lock", os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 ```
 
 | Flag | Meaning |
@@ -31,49 +35,55 @@ f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 | `os.O_TRUNC` | empty the file when opening it |
 | `os.O_EXCL` | with `O_CREATE`: fail if the file already exists |
 
-Use exactly one of the first three, plus any of the others. The last argument
-is the permission used only when the file is created.
+Use exactly **one** of the first three, plus any of the others.
 
 | Shortcut | Same as |
 |---|---|
 | `os.Open(p)` | `os.OpenFile(p, os.O_RDONLY, 0)` |
 | `os.Create(p)` | `os.OpenFile(p, os.O_RDWR\|os.O_CREATE\|os.O_TRUNC, 0o666)` |
 
-So `os.Create` on a log file wipes it every time. For a log you want
-`O_APPEND|O_CREATE|O_WRONLY`: create it the first time, then always add to the
-end.
+So `os.Create` on a log wipes it every time.
+
+> **Why is it written like this?** Go requires all three arguments. The flags
+> are bits, and `|` (bitwise OR) is how you switch several on at once; their
+> order doesn't matter. The permission is only used when the file is created.
 
 ### os.MkdirAll: make the directory first
 
 Opening `/var/log/deployer/audit.log` fails if `/var/log/deployer` doesn't
-exist. `os.MkdirAll` creates a directory and any missing parents, like
-`mkdir -p`. If the directory already exists, it does nothing and returns `nil`:
+exist. `os.MkdirAll(path, perm)` creates a directory and any missing parents,
+like `mkdir -p`. If it already exists, it does nothing and returns `nil`.
 
 ```go
-if err := os.MkdirAll(dir, 0o755); err != nil {
+if err := os.MkdirAll("/srv/backups/daily", 0o700); err != nil {
 	return err
 }
 ```
 
+> **Why is it written like this?** Directories need the *execute* bit to be
+> entered, so they usually get `0o755` (or `0o700` when private). That's
+> convention, not a Go rule.
+
 ### "Nothing yet" is not an error
 
-Before the first event, the log doesn't exist. For a reader, that simply means
-"no entries". Return an empty slice, `[]string{}`, rather than an error. An
-empty slice (not `nil`) also encodes as `[]` instead of `null` if you later
-print it as JSON.
+Before the first event, the log doesn't exist. For a reader that just means
+"no entries", so return an empty slice `[]string{}` and no error. An empty
+slice (not `nil`) also prints as `[]` instead of `null` in JSON.
 
 ## Your task
 
-Your deploy tool records each action in `<dir>/audit.log`. `LogName` holds the
-file name. The current code loses history and crashes on fresh machines.
+Your deploy tool records each action in `<dir>/audit.log`; the constant
+`LogName` holds the file name. The current code loses history and fails on
+fresh machines.
 
 ### 1. Stop wiping the log
 
-`AppendAudit(dir, entry)` opens the log with `os.Create`, so each call erases
-the earlier entries. Open it with `os.OpenFile` so new entries are added to the
-end and the file is created (mode `0o644`) if needed. Each entry is written as
-one line ending in `"\n"`. While you're there, return the error from `Close`
-instead of ignoring it.
+**Goal:** in `AppendAudit`, open the log with `os.OpenFile` so new entries go at the end.
+
+- The file is opened write-only, created if missing, with mode `0o644`.
+- Each entry is written as one line ending in `"\n"` (the existing
+  `Fprintln` already does this).
+- Return the error from `Close` instead of ignoring it.
 
 ```go
 AppendAudit(dir, "deploy api v1.4.2 by alice")
@@ -81,23 +91,47 @@ AppendAudit(dir, "rollback api v1.4.1 by bob")
 // audit.log holds "deploy api v1.4.2 by alice\nrollback api v1.4.1 by bob\n"
 ```
 
+An existing log keeps its earlier lines.
+
+**Think it through:**
+- Which three flags from the table describe "write-only, create, add to the end"?
+- Keep the path argument as it is; only the function and flags change.
+- Look at the last two lines: where is Close's error lost?
+
 ### 2. Create the log directory
 
-On a fresh host, `dir` may not exist yet, and may be several levels deep (for
-example `<tmp>/var/log/deployer`). Make `AppendAudit` create it, and any
-missing parents, with mode `0o755` before opening the log.
+**Goal:** `AppendAudit` creates `dir`, and any missing parents, with mode `0o755` before opening the log.
+
+`dir` may be several levels deep and not exist yet:
+
+```go
+AppendAudit(tmp+"/var/log/deployer", "deploy api v2.0.0 by erin")
+// creates var/log/deployer, then audit.log holding "deploy api v2.0.0 by erin\n"
+```
+
+**Think it through:**
+- Which `os` function behaves like `mkdir -p`?
+- Which parameter holds the directory? (Not the log path.)
 
 ### 3. Read a log that doesn't exist yet
 
-`ReadAudit(dir)` returns the log's lines, without their `"\n"`. When the log
-file doesn't exist (even if `dir` doesn't exist either), return an empty,
-non-nil slice `[]string{}` and a `nil` error. Return any other error as it is.
-You will need to add `"errors"` and `"io/fs"` to the imports.
+**Goal:** `ReadAudit(dir)` returns `[]string{}, nil` when the log file doesn't exist.
+
+- This holds even when `dir` itself doesn't exist.
+- The slice must be empty and **not** `nil`.
+- Any other error is returned as it is.
+- Add `"errors"` and `"io/fs"` to the imports.
+
+Lines come back without their `"\n"`; that part already works.
 
 ```go
 ReadAudit(freshDir)
 // => []string{}, nil
 ```
+
+**Think it through:**
+- Which error value means "no such file"? How do you test for it?
+- That check must come before the general `err != nil` one.
 
 ## Learn more
 

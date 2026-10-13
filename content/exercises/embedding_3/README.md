@@ -4,36 +4,44 @@ A monitoring agent runs many kinds of health checks: HTTP, TCP, DNS. They all
 share a name and a schedule. Here you put the shared part in one embedded
 struct and let promotion make every check type satisfy one interface.
 
+**New here:** promoted methods satisfying an interface, the `%` (remainder) operator.
+
 ## Learn
 
 ### Recap
 
-As in *Struct embedding*, embedding `BaseCheck` in
-`HTTPCheck` promotes `BaseCheck`'s fields and methods, so `h.Name` and
-`h.CheckName()` work on an
-`HTTPCheck`. In a literal you write the embedded struct out:
-`HTTPCheck{BaseCheck: BaseCheck{Name: "api-health"}, URL: "..."}`.
+As in *Struct embedding*: embedding `BaseCheck` in `HTTPCheck` promotes
+`BaseCheck`'s fields and methods, so `h.Name` works on an `HTTPCheck`. In a
+literal you write the embedded struct out: `BaseCheck: BaseCheck{...}`.
 
 ### Promoted methods satisfy interfaces
 
-As in *Interfaces*, a type satisfies an interface when it has all of the
-interface's methods. Promoted methods count:
+As in *Interfaces*, a type satisfies an interface when it has all of its
+methods. Promoted methods **count**:
 
 ```go
-type Check interface {
-	CheckName() string
-	Target() string
+type Notifier interface {
+	Channel() string
+	Send(msg string) string
 }
 
-func (b BaseCheck) CheckName() string { ... } // shared by every check
-func (h HTTPCheck) Target() string { ... }    // HTTPCheck's own method
+type Base struct{ Name string }
 
-var c Check = HTTPCheck{...} // OK: CheckName is promoted from BaseCheck
+func (b Base) Channel() string { return b.Name } // shared
+
+type Slack struct{ Base }
+
+func (s Slack) Send(msg string) string { return "slack: " + msg } // its own
+
+var n Notifier = Slack{Base{Name: "#ops"}} // OK: Channel is promoted
 ```
 
-`HTTPCheck` gets `CheckName` from `BaseCheck` and adds its own `Target`, so it
-has everything `Check` asks for. Write the shared methods once on `BaseCheck`;
-each check type only writes what makes it different.
+Write the shared methods once on the base; each type only adds what makes it
+different.
+
+> **Why is it written like this?**
+> - **Go requires** every interface method to exist, but doesn't care whether it was declared on the type or promoted.
+> - **Author's choice:** which methods live on the base and which on each type.
 
 ### The remainder operator
 
@@ -48,7 +56,7 @@ multiple of `b`:
 
 ## Your task
 
-The agent's checks all implement this interface:
+All checks implement this interface:
 
 ```go
 type Check interface {
@@ -58,11 +66,11 @@ type Check interface {
 }
 ```
 
-`HTTPCheck` and `TCPCheck` embed `BaseCheck`.
+`HTTPCheck` and `TCPCheck` both embed `BaseCheck`.
 
 ### 1. Write the shared methods
 
-Finish the two methods on `BaseCheck`:
+**Goal:** finish `CheckName` and `Interval` on `BaseCheck`.
 
 - `CheckName` returns `Name`.
 - `Interval` returns `IntervalSeconds`, or `DefaultInterval` (60) when
@@ -79,12 +87,13 @@ c = TCPCheck{BaseCheck: BaseCheck{Name: "postgres"}}
 c.Interval()  // => 60
 ```
 
+**Think it through:**
+- The receiver is `b`. Which of its fields does each method need?
+- Use the constant's name `DefaultInterval`, not the number 60.
+
 ### 2. Write each check's Target
 
-Finish `Target` on both check types:
-
-- `HTTPCheck.Target` returns the `URL`.
-- `TCPCheck.Target` returns the host, a colon and the port.
+**Goal:** finish `Target` on `HTTPCheck` (return the URL) and on `TCPCheck` (return host, colon, port).
 
 ```go
 HTTPCheck{URL: "https://api.internal/healthz"}.Target()
@@ -94,20 +103,19 @@ TCPCheck{Host: "db.internal", Port: 5432}.Target()
 // => "db.internal:5432"
 ```
 
-If you use `fmt.Sprintf` with `%d` for the port, add `import "fmt"` below the
-`package` line.
+**Think it through:**
+- `Port` is an `int`, not a string, so `+` won't join it. Which `Sprintf` verb prints an `int`?
+- The `:` is fixed text, with no spaces around it.
+- If you use `fmt.Sprintf`, add `import "fmt"` below the `package` line.
 
 ### 3. Find the checks that are due
 
-Finish `DueNow(checks []Check, elapsed int) []string`. The agent calls it
-every second with the number of seconds since it started. A check is due when
-`elapsed` is a multiple of its `Interval()`. For each due check, in the order
-they appear in `checks`, add the line `<name> -> <target>`. If no check is
-due, return an empty slice.
+**Goal:** finish `DueNow(checks, elapsed)` so it returns `"<name> -> <target>"` for each check that is due.
 
-The tests for this task use a small fake check type from the test file, so
-they work even before tasks 1 and 2 pass. Any type with the three methods is a
-`Check`.
+- The agent calls it every second; `elapsed` is the seconds since it started.
+- A check is due when `elapsed` is a multiple of its `Interval()`.
+- Keep the order of `checks`.
+- If nothing is due, return an empty slice (`nil` is fine too).
 
 ```go
 checks := []Check{
@@ -121,6 +129,14 @@ DueNow(checks, 30)
 DueNow(checks, 45)
 // => []string{}
 ```
+
+The tests for this task use a small fake check type from the test file, so
+they work even before tasks 1 and 2 pass.
+
+**Think it through:**
+- Loop over `checks`. Each item is a `Check`, so you can only call its three methods.
+- Which operator tells you "is a multiple of"?
+- The text between name and target is fixed: space, `->`, space.
 
 ## Learn more
 

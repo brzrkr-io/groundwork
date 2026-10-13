@@ -2,43 +2,44 @@
 
 Before a deploy, a preflight check looks at every target host. If three hosts
 each have two problems, you want to see all six at once, not fix one, rerun,
-and discover the next. In this exercise you combine several errors into one.
+and find the next. Here you combine several errors into one.
+
+**New here:** `errors.Join`, collecting errors in a `[]error`.
 
 ## Learn
 
 ### One error is not always enough
 
-So far every function returned at the first problem:
+So far, functions returned at the first problem:
 
 ```go
-if err := checkDisk(h); err != nil {
+if err := checkCert(s); err != nil {
 	return err
 }
 ```
 
-That is right when later steps depend on earlier ones. For checks that are
-independent of each other, it hides information. You want to run every check
-and report everything that failed.
+That is right when later steps depend on earlier ones. For independent checks
+it hides information: you want to run every check and report every failure.
 
 ### errors.Join
 
-`errors.Join` takes any number of errors and combines them into one *joined
-error*:
+`errors.Join` combines any number of errors into one *joined error*:
 
 ```go
 err := errors.Join(
-	errors.New("low disk space"),
-	errors.New("low memory"),
+	errors.New("cert expires in 3 days"),
+	errors.New("no backup in 48 hours"),
 )
 fmt.Println(err)
 ```
 
 ```text
-low disk space
-low memory
+cert expires in 3 days
+no backup in 48 hours
 ```
 
-Three rules to remember:
+The message is each error's message, in the order you passed them, with a
+newline (`"\n"`) between. There is no newline at the end.
 
 | You pass | `errors.Join` returns |
 |---|---|
@@ -46,61 +47,52 @@ Three rules to remember:
 | only `nil`s | `nil` |
 | nothing at all | `nil` |
 
-The message of a joined error is the messages of its errors, in the order you
-passed them, with a newline (`"\n"`) between each one. There is no newline at
-the end.
-
-Because `nil` arguments are skipped, you can pass the results of several
-checks straight in. If they all succeed, the result is `nil`, which means
-success, just like any other error:
-
-```go
-return errors.Join(checkA(), checkB())
-```
+Because `nil`s are skipped, you can pass check results straight in. If every
+check passes, you get `nil`, which means success.
 
 ### Collecting errors in a slice
 
-When the number of checks is not fixed, collect the failures in a `[]error`
-and join them at the end. The `...` spreads a slice into a variadic call, as
-with `append(a, b...)`:
+When the number of checks isn't fixed, collect failures in a `[]error` and
+join them at the end:
 
 ```go
 var errs []error
-for _, name := range names {
-	if name == "" {
-		errs = append(errs, errors.New("empty name"))
+for _, user := range users {
+	if user.Email == "" {
+		errs = append(errs, fmt.Errorf("user %d: no email", user.ID))
 	}
 }
 return errors.Join(errs...) // nil when errs is empty
 ```
 
-You can wrap each error with `%w` before you append it, to add context. The
-wrapped error keeps working with `errors.Is`.
+> **Why is it written like this?** The `...` after `errs` is required: it
+> spreads a slice into a function that takes any number of arguments, as in
+> `append(a, b...)`. Naming the slice `errs` is convention. Wrapping each
+> error with context is your choice; use `%w` so the original stays findable.
 
 ### errors.Is looks inside
 
 `errors.Is` and `errors.AsType`, from *Wrapping errors*, search every error
-inside a joined error, including errors wrapped with `%w`:
+inside a joined error, including ones wrapped with `%w`:
 
 ```go
 err := errors.Join(
-	fmt.Errorf("web-1: %w", ErrLowDisk),
-	fmt.Errorf("web-2: %w", ErrUnreachable),
+	fmt.Errorf("db-1: %w", ErrNoBackup),
+	fmt.Errorf("edge: %w", ErrCertExpiring),
 )
-errors.Is(err, ErrUnreachable) // true
-errors.Is(err, ErrLowMemory)   // false
+errors.Is(err, ErrNoBackup) // true
+errors.Is(err, ErrDiskFull) // false
 ```
 
-So a joined error is safe to return from any function that returns `error`.
-Callers who only check `err != nil` still work, and callers who care about a
-particular problem can ask for it.
+So callers that only check `err != nil` still work, and callers who care about
+one problem can ask for it.
 
 ## Your task
 
-The deploy pipeline runs a preflight on every host before it rolls out a
-release. The three checks already exist in `exercise.go`. Each returns `nil`
-when the host is fine, or an error wrapping one of the sentinels
-`ErrUnreachable`, `ErrLowDisk` and `ErrLowMemory`:
+The deploy pipeline runs a preflight on every host before a rollout. The
+three checks already exist in `exercise.go`. Each returns `nil` when the host
+is fine, or an error wrapping one of the sentinels `ErrUnreachable`,
+`ErrLowDisk`, `ErrLowMemory`:
 
 | Check | Fails when | Message |
 |---|---|---|
@@ -112,8 +104,9 @@ The `checks` slice lists the three checks in that order.
 
 ### 1. Run all checks on one host
 
-Change `Preflight` so it runs all three checks, in the order above, and joins
-their errors. It returns `nil` when every check passes.
+**Goal:** make `Preflight(h)` run all three checks and return their errors joined.
+
+Run them in the table's order. Return `nil` when every check passes.
 
 ```go
 Preflight(Host{Name: "web-1", Reachable: true, DiskFreeGB: 3, MemoryFreeGB: 1})
@@ -125,14 +118,20 @@ Preflight(Host{Name: "web-2", Reachable: true, DiskFreeGB: 40, MemoryFreeGB: 8})
 // => nil
 ```
 
+**Think it through:**
+- What does `errors.Join` do with the `nil` from a check that passed?
+- Do you need any `if` statements at all?
+
 ### 2. Check every host
 
-The starter `PreflightAll` already loops over every host and every check in
-`checks`, but it returns the first problem it finds. Change it to keep going.
-Each failure becomes one error, prefixed with the host name and `": "`. Wrap
-with `%w` so the sentinel is still visible. Join all of them: hosts in the
-order given, and checks in the order of `checks` for each host. Return `nil`
-when nothing failed, including when `hosts` is empty.
+**Goal:** make `PreflightAll(hosts)` report every failed check on every host, joined, instead of stopping at the first.
+
+The starter already loops over every host and every check. Change it so:
+
+- each failure becomes one error: the host's `Name`, then `": "`, then the
+  check's error, wrapped with `%w` so the sentinel stays visible;
+- the order is hosts as given, and for each host, checks in `checks` order;
+- it returns `nil` when nothing failed, including when `hosts` is empty.
 
 ```go
 PreflightAll([]Host{
@@ -146,14 +145,18 @@ PreflightAll([]Host{
 // web-3: host unreachable
 ```
 
+**Think it through:**
+- Where do you keep failures until the loops finish?
+- Which line returns early today, and what should it do instead?
+
 ### 3. Decide what to do
 
-Change `Decide` so it turns a preflight result into a decision:
+**Goal:** make `Decide(err)` turn a preflight result into `"deploy"`, `"abort"` or `"warn"`.
 
 | `err` | `Decide` returns |
 |---|---|
 | `nil` | `"deploy"` |
-| contains `ErrUnreachable` anywhere (use `errors.Is`) | `"abort"` |
+| contains `ErrUnreachable` anywhere | `"abort"` |
 | any other error | `"warn"` |
 
 ```go
@@ -169,6 +172,10 @@ Decide(errors.Join(
 Decide(fmt.Errorf("web-2: %w", ErrLowMemory))
 // => "warn"
 ```
+
+**Think it through:**
+- Check the rows top to bottom: does the order matter?
+- Which function from *Wrapping errors* looks inside joined errors?
 
 ## Learn more
 

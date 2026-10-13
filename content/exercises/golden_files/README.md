@@ -3,16 +3,17 @@
 Ops tools print a lot of text: inventory tables, generated configs, reports.
 Checking that output with a giant string inside your test gets painful fast.
 *Golden files* keep the expected output in a file of its own, where you can
-read it and review changes to it like any other file.
+read it and review changes like any other file.
+
+**New here:** the `testdata` directory, `os.ReadFile`, `[]byte` vs `string`, an `-update` flag.
 
 ## Learn
 
-### The `testdata` directory
+### The testdata directory
 
-The go tool ignores any directory named `testdata`. Nothing in it gets
-compiled, so it is the standard place for files your tests need: sample
-inputs, expected outputs, broken configs. Gopherlings already put one in this
-exercise:
+The go tool ignores any directory named `testdata`; nothing in it gets
+compiled. That makes it the standard place for files your tests need: sample
+inputs, expected outputs, broken configs. This exercise already has one:
 
 ```text
 golden_files/
@@ -22,44 +23,58 @@ golden_files/
     └── inventory.golden
 ```
 
-`go test` runs your tests with the package folder as the *working directory*,
-so a test opens that file with the relative path `testdata/inventory.golden`.
-`filepath.Join("testdata", "inventory.golden")` builds that path with the
-right separator for the operating system (`/` on Linux and macOS, `\` on
-Windows).
+`go test` runs your tests with the package folder as the *working
+directory*, so a test reaches that file with the relative path
+`testdata/inventory.golden`. `filepath.Join("testdata", "inventory.golden")`
+builds it with the right separator for the operating system.
+
+> **Why is it written like this?** The name `testdata` is a Go rule: the
+> tool skips it. The `.golden` file ending is only a convention; Go doesn't
+> care what you call the file.
 
 ### Golden files
 
-A golden file holds the exact output a function should produce. The test
-calls the function, reads the golden file, and fails if the two differ. The
-expected output is now a plain file: you see the table exactly as an operator
-would, without `\n` escapes and quotes in the way.
+A golden file holds the exact output a function should produce. The test:
+
+1. calls the function (`got`),
+2. reads the golden file (`want`),
+3. fails if the two differ.
+
+You see the expected table exactly as an operator would, without `\n`
+escapes and quotes in the way.
 
 ### Reading a file
 
-`os.ReadFile` reads a whole file and returns its contents as a `[]byte` (a
+`os.ReadFile` reads a whole file. It returns the contents as a `[]byte` (a
 slice of bytes) plus an error:
 
 ```go
-want, err := os.ReadFile(filepath.Join("testdata", "inventory.golden"))
+data, err := os.ReadFile(filepath.Join("testdata", "config.yaml"))
 if err != nil {
-	t.Fatalf("reading golden file: %v", err)
+	t.Fatalf("reading config: %v", err)
 }
 ```
 
-A `string` and a `[]byte` can't be compared directly, so convert with
-`string(want)`. When the outputs differ, print both on their own lines so
-the reader can spot the difference:
+### Comparing bytes with a string
+
+A `string` and a `[]byte` can't be compared with `!=` directly. Convert the
+bytes first with `string(...)`:
 
 ```go
-if got != string(want) {
-	t.Errorf("output differs from golden file\ngot:\n%s\nwant:\n%s", got, want)
+if text != string(data) {
+	t.Errorf("config differs\ngot:\n%s\nwant:\n%s", text, data)
 }
 ```
 
-`%s` prints a `[]byte` as text, so `want` needs no conversion there.
+`%s` prints a `[]byte` as text, so no conversion is needed in the message.
+Printing each value after its own `\n` puts every table on its own lines, so
+the reader can spot the difference.
 
-### Updating golden files with `-update`
+> **Why is it written like this?** Go never converts between types for you,
+> so `string(data)` is required. Showing both values in the message is
+> convention; the exact wording is your choice.
+
+### Updating golden files with -update
 
 When you *mean* to change the output, editing the golden file by hand is
 tedious and error-prone. The usual trick is an `-update` flag that makes the
@@ -74,65 +89,71 @@ if *update {
 }
 ```
 
-The `flag` package reads command-line options (a later exercise covers it
-properly). `flag.Bool` returns a pointer to a `bool` that starts as `false`
-and becomes `true` when you pass `-update`, so `*update` reads its value.
-`os.WriteFile` writes the bytes to the file, replacing what was there. `0o644`
-is the usual file permission: you can read and write it, everyone else can
-read it.
+- `flag.Bool` returns a pointer to a `bool`. It is `false` unless you pass
+  `-update`; `*update` reads its value. (The `flag` package gets its own
+  exercise later.)
+- `os.WriteFile` replaces the file's content. `0o644` is the usual file
+  permission.
 
-Running the test with the flag rewrites the golden file:
+Run it like this:
 
 ```text
 go test -run TestRenderInventory -update
 ```
 
-`go test` passes `-update` on to your test, and `-run` keeps the run to the
-one test you care about. Then comes the important part: **read the new golden
-file** (in a real project, `git diff testdata/`) and check that the change is
-the one you wanted before you commit it. `-update` makes the test agree with
-the code, whatever the code does, so the review is your actual check.
+Then comes the important part: **read the new golden file** (in a real
+project, `git diff testdata/`) and check the change is the one you wanted.
+`-update` makes the test agree with the code, whatever the code does, so the
+review is your real check.
 
 ### How Gopherlings grades your test
 
-`TestGrader` in `grader_test.go` re-runs `TestRenderInventory` against the
-real `RenderInventory`, where it must pass, and then against *mutants*:
-copies of `RenderInventory` with one deliberate bug each. Your test must fail
-on every mutant. If one slips through, `TestGrader` names the bug, for
-example "your tests didn't notice when RenderInventory left out the last
-host". The re-runs never pass `-update`, so they can't touch your golden file.
+As in *Your first test*, `TestGrader` runs your test against the real code
+(it must pass) and against *mutants*, copies with one bug each (it must fail
+on every one). It names any mutant that slips through. The re-runs never
+pass `-update`, so they can't touch your golden file.
 
 ## Your task
 
 The fleet tool prints the host inventory with `RenderInventory`. The code in
-`exercise.go` is correct. Finish `TestRenderInventory` in `exercise_test.go`
-so it checks the output against `testdata/inventory.golden`. The hosts,
-the call and the `-update` branch are already written.
+`exercise.go` is correct. `TestRenderInventory` in `exercise_test.go`
+already builds the hosts, calls `RenderInventory` (the result is in `got`),
+stores the golden file's path in `golden`, and has the `-update` branch. You
+add the comparison.
 
 ### 1. Compare with the golden file
 
-Below the `if *update` block, read `testdata/inventory.golden` with
-`os.ReadFile` (stop with `t.Fatalf` if that fails), then compare it with
-`got`. If they differ, fail with `t.Errorf` and a message that prints both
-`got` and `want`.
+**Goal:** below the `if *update` block, read the golden file and fail the test if its contents differ from `got`.
+
+- Read the file at `golden` with `os.ReadFile`. Stop with `t.Fatalf` if
+  that fails.
+- Compare it with `got`. If they differ, fail with `t.Errorf` and a message
+  that prints both `got` and `want`.
 
 This catches mutants that leave out the header line, leave out the last
 host, or stop lining up the columns.
 
+**Think it through:**
+- The path is already built. Which variable holds it?
+- `got` is a `string`; what type does `os.ReadFile` give you?
+
 ### 2. Update the outdated golden file
 
-Once task 1 is done, your test **fails**, and `TestGrader` says "your tests
-must pass on the real code first". That's expected: the team recently added a
-REGION column on purpose, but nobody updated the golden file. It still holds
-the old two-column table.
+**Goal:** regenerate `testdata/inventory.golden` with `-update` and check that it now has a REGION column.
 
-Open a terminal in the exercise folder and run:
+After task 1 your test **fails**, and `TestGrader` says "your tests must
+pass on the real code first". That's expected. The team added a REGION
+column on purpose, but nobody updated the golden file; it still holds the
+old two-column table.
+
+You don't change any code here. Open a terminal in the exercise folder and
+run:
 
 ```text
 go test -run TestRenderInventory -update
 ```
 
-Then open `testdata/inventory.golden` and review it. It should now read:
+Then open `testdata/inventory.golden` and review it. It should read:
 
 ```text
 NAME         IP              REGION
@@ -142,8 +163,12 @@ db-primary   10.0.2.5        us-east-1
 ```
 
 Save `exercise_test.go` (or run `go test` again) and everything passes. The
-updated golden file is what catches the last mutant, which still prints the
-old layout without REGION.
+updated golden file catches the last mutant, which still prints the old
+layout without REGION.
+
+**Think it through:**
+- In the failure message from task 1, which side has REGION: got or want?
+- Which one is out of date: the code or the golden file?
 
 The exercise is done when `TestRenderInventory` passes and `TestGrader`
 reports that every mutant was caught.

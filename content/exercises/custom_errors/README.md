@@ -1,24 +1,19 @@
 # Custom error types
 
-An error made with `errors.New` or `fmt.Errorf` carries only a message. Some
-callers need more: which config field was wrong, which port was taken, which
-host timed out. A custom error type carries that data in fields, so code can
-react to it instead of parsing a message.
+An error from `errors.New` or `fmt.Errorf` carries only a message. Sometimes
+the caller needs details: which config field was wrong, which host timed out.
+A *custom error type* keeps those details in fields, so code can react to
+them instead of reading the message.
+
+**New here:** custom error types, pointer receivers for errors, `&T{...}`, the nil-pointer trap.
 
 ## Learn
 
 ### Any type with an Error method is an error
 
-As in *Errors are values*, `error` is an interface with one method:
-
-```go
-type error interface {
-	Error() string
-}
-```
-
-So any type with an `Error() string` method can be used as an `error`. A
-struct is the usual choice, because its fields hold the details:
+As in *Errors are values*, `error` is an interface with one method,
+`Error() string`. Any type with that method can be used as an `error`. A struct
+is the usual choice, because its fields hold the details:
 
 ```go
 // NotFoundError reports a service that is not in the registry.
@@ -31,67 +26,64 @@ func (e *NotFoundError) Error() string {
 }
 ```
 
-Name custom error types with an `Error` suffix: `NotFoundError`,
-`ValidationError`, `TimeoutError`.
+Inside the method, `e` is the error itself, so `e.Service` reads its field.
 
-### Pointer receiver, so return `&T{...}`
+> **Why is it written like this?** Go requires the exact method name and
+> signature `Error() string`. Ending the type name with `Error` is
+> convention. The receiver name `e` is the author's choice (short names are
+> convention).
 
-The method above has a *pointer receiver*, `(e *NotFoundError)`. That means
-the pointer type `*NotFoundError` has the method and satisfies `error`. The
-plain struct `NotFoundError` does not. So you create the error with `&`:
+### Pointer receiver, so create it with `&`
+
+`(e *NotFoundError)` is a *pointer receiver*. It means the pointer type
+`*NotFoundError` has the method, so only the pointer counts as an `error`.
+You make a pointer to a new struct with `&`:
 
 ```go
 func Lookup(name string) error {
 	if name != "api" {
-		return &NotFoundError{Service: name} // ✓ a *NotFoundError is an error
+		return &NotFoundError{Service: name}
 	}
 	return nil
 }
 ```
 
-Writing `return NotFoundError{Service: name}` (without `&`) does not compile.
-That is a good thing: the error always has the same type, `*NotFoundError`, so
-everyone who checks for it checks for that one type. Most custom errors in Go
-code use a pointer receiver for this reason.
+Without `&`, Go refuses to compile. That's useful: the error always has one
+type, `*NotFoundError`, so every caller checks for that one type.
 
-Notice that `Lookup` returns `error`, not `*NotFoundError`. Callers that only
-care whether something went wrong use the usual `if err != nil`.
+`Lookup` returns plain `error`, not `*NotFoundError`. Callers who only care
+whether something failed still write `if err != nil`.
 
 ### Getting the details back out
 
-Callers that want the fields use a type assertion or a type switch, as you did
-with interfaces in Module 4:
+Use a type assertion or a type switch, as in *Type assertions and switches*:
 
 ```go
-err := Lookup("web")
-
 nf, ok := err.(*NotFoundError)
 if ok {
-	fmt.Println("missing service:", nf.Service) // missing service: web
+	fmt.Println("missing service:", nf.Service)
 }
 ```
 
 If `err` is `nil` or a different kind of error, `ok` is `false`. Nothing
-crashes. To handle several kinds at once, use a type switch:
+crashes. For several kinds at once, use a type switch:
 
 ```go
-switch e := err.(type) {
+switch err.(type) {
 case nil:
 	fmt.Println("all good")
 case *NotFoundError:
-	fmt.Println("register", e.Service, "first")
+	fmt.Println("register it first")
 default:
 	fmt.Println("failed:", err)
 }
 ```
 
-Cases are checked from top to bottom, and `case nil` matches when there is no
-error at all.
+Cases are tried top to bottom. `case nil` matches when there is no error.
 
-### Always write `return nil`
+### The nil-pointer trap: always write `return nil`
 
-One trap catches almost everyone once. Never return a nil *pointer* of your
-error type through an `error` result:
+Never return a nil *pointer* of your error type through an `error` result:
 
 ```go
 func Lookup(name string) error {
@@ -103,51 +95,60 @@ func Lookup(name string) error {
 }
 ```
 
-An interface value remembers the *type* of what you put in it. Here it holds
-"a `*NotFoundError` that happens to be nil", and that is not the same as no
-error, so `err != nil` is `true`. The fix is simple: on success, always write
-`return nil`.
+An interface value remembers the *type* of what you put in it. "A nil
+`*NotFoundError`" is not the same as "no error", so `err != nil` is `true`.
+On success, always write `return nil`.
 
 ## Your task
 
-Your deploy tool reads a replica count from a config file. You'll give it a
-proper validation error and use that error to choose the tool's exit code.
+Your deploy tool reads a replica count from a config file. Give it a proper
+validation error, then use that error to choose the tool's exit code.
 
 ### 1. Write the error message
 
-`ValidationError` has two fields, `Field` and `Reason`. Make its `Error`
-method return the field, a colon and a space, then the reason:
+**Goal:** the `Error` method of `ValidationError` returns the `Field`, then `: `, then the `Reason`.
 
 ```go
 err := &ValidationError{Field: "replicas", Reason: "must be at least 1"}
-err.Error()
-// => "replicas: must be at least 1"
+err.Error() // => "replicas: must be at least 1"
+
+err = &ValidationError{Field: "image", Reason: "must not be empty"}
+err.Error() // => "image: must not be empty"
 ```
+
+**Think it through:**
+- Two pieces come from the fields of `e`. One piece is fixed text between them.
+- The fixed text is a colon **and** a space.
 
 ### 2. Validate the replica count
 
-`CheckReplicas(n int) error` accepts counts from 1 to 50.
+**Goal:** `CheckReplicas(n)` returns `nil` for counts from 1 to 50, and a `*ValidationError` otherwise.
 
-- Below 1, return `&ValidationError{Field: "replicas", Reason: "must be at least 1"}`.
-- Above 50, return `&ValidationError{Field: "replicas", Reason: "must be at most 50"}`.
-- Otherwise, return `nil`.
+| `n` | `Field` | `Reason` |
+|---|---|---|
+| below 1 (0, -3) | `"replicas"` | `"must be at least 1"` |
+| above 50 (51, 500) | `"replicas"` | `"must be at most 50"` |
+| 1 to 50 | no error: `nil` | |
 
 ```go
-CheckReplicas(0)
-// => error "replicas: must be at least 1"
-CheckReplicas(51)
-// => error "replicas: must be at most 50"
-CheckReplicas(3)
-// => nil
+CheckReplicas(0)  // => error "replicas: must be at least 1"
+CheckReplicas(51) // => error "replicas: must be at most 50"
+CheckReplicas(50) // => nil
 ```
 
-The tests use a type assertion to check that the error is a
-`*ValidationError` and then check both fields.
+The tests check that the error is a `*ValidationError` and check both fields.
+
+**Think it through:**
+- You need two separate checks, because the two `Reason`s differ.
+- How do you build a `*ValidationError` with its fields filled in? See `Lookup` above.
+- What should the last line return? Remember the nil-pointer trap.
 
 ### 3. Pick an exit code
 
-Command-line tools report success or failure through an *exit code*. Many
-tools use 2 for "you gave me bad input". Make `ExitCode(err error) int` return:
+**Goal:** `ExitCode(err)` returns the number a command-line tool exits with.
+
+An *exit code* tells the shell how a tool finished. Many tools use `2` for
+"you gave me bad input".
 
 | `err` | Exit code |
 |---|---|
@@ -156,10 +157,14 @@ tools use 2 for "you gave me bad input". Make `ExitCode(err error) int` return:
 | any other error | `1` |
 
 ```go
-ExitCode(nil)                                  // => 0
-ExitCode(CheckReplicas(0))                     // => 2
-ExitCode(errors.New("registry unreachable"))   // => 1
+ExitCode(nil)                                // => 0
+ExitCode(CheckReplicas(0))                   // => 2
+ExitCode(errors.New("registry unreachable")) // => 1
 ```
+
+**Think it through:**
+- Three outcomes depend on the *type* inside `err`. Which tool from Learn handles several types?
+- Which case catches "any other error"?
 
 ## Learn more
 

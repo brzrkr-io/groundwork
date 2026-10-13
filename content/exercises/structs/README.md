@@ -2,14 +2,17 @@
 
 A deployment has a name, an image, a replica count, environment variables and
 resource limits. A *struct* keeps all of those together in one value, so you
-can pass "a deployment" around instead of five loose variables.
+pass around "a deployment" instead of five loose variables.
+
+**New here:** `type ... struct`, struct literals, field access with `.`,
+nested structs, slices of structs.
 
 ## Learn
 
 ### Declaring a struct type
 
-`type` gives a new type a name. `struct { ... }` lists its *fields*, each with
-a name and a type:
+`type` gives a new type a name. `struct { ... }` lists its *fields*, each a
+name followed by a type:
 
 ```go
 // Service is one running service.
@@ -19,24 +22,36 @@ type Service struct {
 }
 ```
 
-Fields of the same type can share a line: `Name, Image string`.
+> **Why is it written like this?** Go requires `type`, the name, `struct`
+> and the braces, and in each field the name comes *before* the type.
+> Capitalised names (`Service`, `Name`) are visible to other packages: Go
+> requires that rule. Lining up the types in a column is gofmt's job, not
+> yours. The names themselves are the author's choice.
+
+You don't declare any types in this exercise: `Resources` and `Deployment`
+are already in `exercise.go`. Read them before you start.
 
 ### Creating a value
 
-A *struct literal* builds a value. Write the type, then `{}` with
-`Field: value` pairs:
+A *struct literal* builds a value: the type name, then `{}` holding
+`Field: value` pairs separated by commas.
 
 ```go
 svc := Service{Name: "api", Port: 8080}
 ```
 
-Any field you leave out gets its zero value, as in *Zero values*. So
-`Service{Name: "api"}` has `Port` 0, and `Service{}` has every field at its
-zero value: `Name` is `""` and `Port` is `0`.
+Any field you leave out gets its zero value, as in *Zero values: default the config*.
+`Service{Name: "api"}` has `Port` 0. `Service{}` has every field at zero:
+`Name` is `""`, `Port` is `0`.
+
+> **Why is it written like this?** The `Field: value` form and the commas
+> are required. Field order inside the braces is your choice. When you
+> spread a literal over several lines, Go requires a comma after the *last*
+> field too, so adding a line later never breaks the one above.
 
 ### Reading and changing fields
 
-Use a dot to reach a field, both to read it and to assign to it:
+A dot reaches a field, both to read it and to assign to it:
 
 ```go
 fmt.Println(svc.Name) // api
@@ -48,21 +63,22 @@ if svc.Port == 0 {
 
 ### Structs inside structs
 
-A field can itself be a struct. Chain the dots to reach inside:
+A field can itself be a struct. Its value is then another struct literal,
+and you chain dots to reach inside:
 
 ```go
-type Limits struct {
-	CPUMillis int
-	MemoryMB  int
+type Disk struct {
+	SizeGB int
+	Type   string
 }
 
-type Job struct {
-	Name   string
-	Limits Limits
+type Volume struct {
+	Name string
+	Disk Disk
 }
 
-j := Job{Name: "backup", Limits: Limits{CPUMillis: 500, MemoryMB: 256}}
-j.Limits.MemoryMB = 512
+v := Volume{Name: "logs", Disk: Disk{SizeGB: 20, Type: "ssd"}}
+v.Disk.SizeGB = 50
 ```
 
 ### Slices of structs
@@ -79,13 +95,13 @@ for _, s := range services {
 }
 ```
 
-Inside a `[]Service{...}` literal you can leave out the type name before each
-`{`.
+Inside a `[]Service{...}` literal you may leave out the type name before each
+`{`. That's allowed by Go, not required.
 
 ### Passing structs to functions
 
 A struct is a value, like an `int`. Passing it to a function hands over a
-copy. To give back a changed struct, change the copy and `return` it:
+*copy*. To give back a changed struct, change the copy and `return` it:
 
 ```go
 func WithPort(s Service, port int) Service {
@@ -94,39 +110,36 @@ func WithPort(s Service, port int) Service {
 }
 ```
 
-### Printing a struct
+### Printing and comparing
 
-The `%+v` verb prints a struct with its field names, which is handy when
-debugging. `%v` prints only the values:
+`%+v` prints a struct with its field names; `%v` prints only the values. The
+examples below use the `%+v` style.
 
 ```go
 fmt.Printf("%+v\n", svc) // {Name:api Port:9090}
 fmt.Printf("%v\n", svc)  // {api 9090}
 ```
 
-### Comparing structs
-
-You can compare two structs with `==` when every field can be compared. A
-struct with a map field cannot use `==`, so the tests in this exercise check
-fields one at a time.
+You can compare two structs with `==` only when every field can be compared.
+A map field can't, so the tests here check fields one at a time.
 
 ## Your task
 
 You're writing the part of a deploy tool that builds and looks up
-deployments. The `Resources` and `Deployment` types are already declared in
-`exercise.go`. Read them first.
+deployments.
 
 ### 1. Build a deployment with defaults
 
-`NewDeployment(name, image)` returns a `Deployment` with these fields:
+**Goal:** make `NewDeployment(name, image)` return a `Deployment` with every
+field filled in.
 
 | Field | Value |
 |---|---|
-| `Name` | the `name` argument |
-| `Image` | the `image` argument |
+| `Name` | the `name` parameter |
+| `Image` | the `image` parameter |
 | `Replicas` | `1` |
-| `Env` | an empty map made with `map[string]string{}` (not `nil`) |
-| `Limits` | `Resources{CPUMillis: 250, MemoryMB: 128}` |
+| `Env` | an empty map of `string` to `string` (not `nil`) |
+| `Limits` | a `Resources` with `CPUMillis` 250 and `MemoryMB` 128 |
 
 ```go
 NewDeployment("api", "registry.local/api:1.4.0")
@@ -136,12 +149,19 @@ NewDeployment("api", "registry.local/api:1.4.0")
 
 An empty map, unlike a `nil` map, is ready for `d.Env["LOG_LEVEL"] = "info"`.
 
+**Think it through:**
+- Which two values come from the parameters, and which three are fixed?
+- `Limits` has type `Resources`. What does a value of a struct type look
+  like (see *Structs inside structs*)?
+- How did you write an empty map literal in *Maps*?
+
 ### 2. Fill in missing settings
 
-`ApplyDefaults(d)` returns `d` with two defaults filled in:
+**Goal:** make `ApplyDefaults(d)` return `d` with two missing values filled
+in.
 
-- if `Replicas` is `0`, set it to `1`
-- if `Limits.MemoryMB` is `0`, set it to `128`
+- If `Replicas` is `0`, set it to `1`.
+- If `Limits.MemoryMB` is `0`, set it to `128`.
 
 Every other field, including `Limits.CPUMillis`, stays exactly as it was.
 Values that are already set are kept.
@@ -154,11 +174,20 @@ ApplyDefaults(Deployment{Name: "db", Replicas: 3, Limits: Resources{CPUMillis: 1
 // => {Name:db Replicas:3 Limits:{CPUMillis:1000 MemoryMB:2048} ...}
 ```
 
+**Think it through:**
+- `d` is already your own copy. You can change its fields and keep the
+  existing `return d`.
+- Memory lives one level down, inside `Limits`. How many dots does that
+  take?
+
 ### 3. Find a deployment by name
 
-`FindDeployment(ds, name)` looks through `ds` for the deployment whose `Name`
-equals `name`. It returns that deployment and `true`. When no deployment has
-that name, it returns the zero `Deployment` (`Deployment{}`) and `false`.
+**Goal:** make `FindDeployment(ds, name)` return the deployment whose `Name`
+equals `name`, plus `true`.
+
+When no deployment has that name (or `ds` is empty), return the zero
+`Deployment` (`Deployment{}`) and `false`. The starter's last line already
+does that, so keep it.
 
 ```go
 ds := []Deployment{
@@ -168,6 +197,13 @@ ds := []Deployment{
 FindDeployment(ds, "web")   // => {Name:web Image:web:2.0.1 Replicas:2 ...}, true
 FindDeployment(ds, "cache") // => {}, false
 ```
+
+**Think it through:**
+- You need to look at each deployment in `ds` in turn. Which loop does
+  that?
+- Compare which field with which parameter?
+- Return as soon as you find a match; the "not found" line runs only if the
+  loop finishes.
 
 ## Learn more
 

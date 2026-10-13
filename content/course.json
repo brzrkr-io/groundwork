@@ -9,9 +9,11 @@
       "outcome": "Read and write small Go functions: variables, constants, int/float64 maths, the strings package, fmt verbs and type conversion.",
       "exercises": [
         { "name": "hello_go", "title": "Hello, Go", "minutes": 10 },
+        { "name": "reading_go", "title": "Reading Go code: the parts of a file", "minutes": 20 },
         { "name": "variables", "title": "Variables", "minutes": 15 },
         { "name": "variables_2", "title": "Variables: fix the broken builders", "minutes": 10 },
         { "name": "variables_3", "title": "Variables: build ops commands", "minutes": 15 },
+        { "name": "compiler_errors", "title": "Reading compiler errors", "minutes": 20 },
         { "name": "constants", "title": "Constants", "minutes": 15 },
         { "name": "constants_2", "title": "Constants: fix the health check config", "minutes": 10 },
         { "name": "constants_3", "title": "Constants: write your own config block", "minutes": 15 },

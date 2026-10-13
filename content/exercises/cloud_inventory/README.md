@@ -1,57 +1,58 @@
 # Practice: cloud inventory report
 
 "What do we actually run, and where?" is the first question in every cost
-review, security audit and incident. In this practice you build a small
-inventory tool that asks several AWS regions at once and prints the answer as
-a table for humans and as JSON for other tools.
+review, security audit and incident. You build a small inventory tool that asks
+several AWS regions at once and prints the answer as a table and as JSON.
+
+**New here:** `s3.NewListBucketsPaginator` with `BucketRegion`,
+`text/tabwriter`, `cmp.Or`. The rest is practice.
 
 ## Learn
 
 ### Recap
 
-Everything here comes from earlier exercises:
-
 | You need | Where you saw it |
 |---|---|
-| SDK interfaces such as `ec2.DescribeInstancesAPIClient`, fakes in tests | *SDK clients: small interfaces and fakes* |
+| SDK interfaces, fakes in tests | *SDK clients: small interfaces and fakes* |
 | `HasMorePages` / `NextPage` loops | *Paginators: walk every page* |
-| `aws.String`, `aws.ToString`, instance `State.Name` and `Tags` | *SDK clients: small interfaces and fakes*, *Tag compliance: audit and fix instance tags* |
+| `aws.String`, `aws.ToString`, `State.Name`, `Tags` | *Tag compliance: audit and fix instance tags* |
 | Wrapping errors with `%w` | *Wrapping errors* |
-| `sync.WaitGroup`, `sync.Mutex`, a buffered channel as a limit | *WaitGroups*, *Mutexes*, *Worker pools* |
+| `sync.WaitGroup`, `sync.Mutex`, buffered channel as a limit | *WaitGroups*, *Mutexes*, *Worker pools* |
 | `context.WithCancel` | *Context and cancellation* |
 | `json.MarshalIndent` | *Encoding JSON: a deployment status report* |
 
-### Buckets have a region, but ListBuckets is global
+### Architecture
 
-EC2 is *regional*: an EC2 client for `eu-west-1` only sees instances in
-`eu-west-1`, so you need one client per region. In real code you build them
-from one config with `cfg.Copy()`, as in *AWS SDK configuration: many
-regions, no leaked keys*:
-
-```go
-func(region string) ec2.DescribeInstancesAPIClient {
-	regional := cfg.Copy()
-	regional.Region = region
-	return ec2.NewFromConfig(regional)
-}
+```text
+Gather(regions)  ── one goroutine per region (at most maxParallel at once)
+   └─ regionItems(region)
+         ├─ Buckets(s3api, region)       shared S3 client, filtered by region
+         └─ Instances(ec2For(region))    one EC2 client per region
+   → merge, sort  → Table(items) or JSON(items)
 ```
 
-S3 is different. `ListBuckets` returns the buckets of the whole account, no
-matter which region you call. Each bucket still lives in one region, and you
-can ask S3 to return only the buckets of one region with the `BucketRegion`
-field. `ListBuckets` pages like other list calls, and the SDK ships
-`s3.NewListBucketsPaginator`:
+| File | What it holds |
+|---|---|
+| `exercise.go` | `Item`, `Report`, `EC2Factory`, and the five functions you write. |
+| `exercise_test.go` | Fake S3 (2 buckets per page, honours `BucketRegion`) and fake EC2 clients. Nothing talks to AWS. |
+
+### Regional EC2, global S3 list
+
+EC2 is *regional*: a client for `eu-west-1` only sees `eu-west-1`, so you need
+one client per region. `EC2Factory` is a function that hands you that client.
+
+S3's `ListBuckets` returns buckets from the whole account. The `BucketRegion`
+field filters to one region, and `s3.NewListBucketsPaginator` pages through:
 
 ```go
 p := s3.NewListBucketsPaginator(api, &s3.ListBucketsInput{
-	BucketRegion: aws.String("eu-west-1"),
+	BucketRegion: aws.String("ap-south-1"),
 })
 ```
 
 ### Aligned tables with text/tabwriter
 
-`text/tabwriter` turns tab-separated cells into aligned columns. You write
-rows with `\t` between cells and `\n` at the end, then call `Flush`:
+Write cells separated by `\t`, end rows with `\n`, then call `Flush`:
 
 ```go
 var b strings.Builder
@@ -62,62 +63,72 @@ w.Flush()
 // b.String() == "HOST  PORT\ndb-1  5432\n"
 ```
 
-The arguments `0, 0, 2, ' ', 0` mean: no minimum width, ignore tab stops, put
-2 spaces between columns, pad with spaces, no special flags. The last cell of
-each row is not padded, so lines never end in spaces.
+`0, 0, 2, ' ', 0` means: no minimum width, no tab stops, 2 spaces between
+columns, pad with spaces, no flags. The last cell is never padded.
+
+> **Why is it written like this?** Go requires `&b`, because the writer must
+> add to your builder. Forgetting `Flush` is the classic bug: nothing is
+> written until you call it.
 
 ### Sorting by several fields with cmp.Or
 
-`cmp.Compare(a, b)` returns -1, 0 or +1. `cmp.Or` returns its first argument
-that is not zero, which makes "sort by this, then by that" one expression:
+`cmp.Or` returns its first non-zero argument, so "sort by this, then that" is
+one expression:
 
 ```go
 slices.SortFunc(hosts, func(a, b Host) int {
 	return cmp.Or(
-		cmp.Compare(a.Region, b.Region),
+		cmp.Compare(a.Rack, b.Rack),
 		cmp.Compare(a.Name, b.Name),
 	)
 })
 ```
 
+> **Why is it written like this?** The `func(a, b T) int` shape is required by
+> `SortFunc`. The order of `cmp.Compare` calls is your choice: the first one
+> wins, later ones only break ties.
+
 ## Your task
 
-Your platform team wants a weekly report of every S3 bucket and EC2 instance
-in its regions. All the types are in `exercise.go`. The tests use fake S3 and
-EC2 clients, so nothing talks to AWS.
-
-An `Item` is one row of the report:
+Your platform team wants a weekly report of every S3 bucket and EC2 instance in
+its regions. An `Item` is one row:
 
 | Field | Bucket | Instance |
 |---|---|---|
 | `Kind` | `"bucket"` | `"instance"` |
-| `Region` | the region asked for | the region asked for |
+| `Region` | the `region` parameter | the `region` parameter |
 | `ID` | bucket name | instance ID, such as `"i-0a1"` |
-| `Name` | `""` | value of the `Name` tag, or `""` if it has none |
-| `State` | `""` | `string(inst.State.Name)`, such as `"running"`; `""` if `State` is nil |
+| `Name` | `""` | value of the `Name` tag, or `""` if none |
+| `State` | `""` | `string(inst.State.Name)`, e.g. `"running"`; `""` if `State` is nil |
 
 ### 1. List the buckets of one region
 
-Write `Buckets`. Page through `ListBuckets` with `s3.NewListBucketsPaginator`,
-passing `BucketRegion: aws.String(region)` so S3 only returns that region's
-buckets. Return one `"bucket"` item per bucket, in the order S3 returns them.
-Wrap errors as `list buckets: <error>` with `%w`.
+**Goal:** `Buckets(ctx, api, region)` returns one `"bucket"` item per bucket in
+`region`.
+
+- Use `s3.NewListBucketsPaginator` with `BucketRegion` set to `region`; walk
+  every page.
+- Keep the order S3 returns. No buckets → empty or nil slice.
+- On error return `nil` and the error wrapped as `list buckets: <error>` (`%w`).
 
 ```go
 Buckets(ctx, api, "eu-west-1")
 // => []Item{{Kind: "bucket", Region: "eu-west-1", ID: "acme-logs-euw1"}}
 ```
 
-A region with no buckets gives an empty (or nil) slice.
+**Think it through:**
+- Which field of each page holds the buckets, and which bucket field is the name?
+- Is `region` a fixed string or a parameter here?
 
 ### 2. List the instances of one region
 
-Write `Instances`. Page through `DescribeInstances` with
-`ec2.NewDescribeInstancesPaginator`, and go through every reservation and
-every instance in it. Return one `"instance"` item per instance, in the order
-EC2 returns them. Find the name by looking for the tag whose key is `Name`
-(an instance has other tags too). Wrap errors as
-`describe instances: <error>`.
+**Goal:** `Instances(ctx, api, region)` returns one `"instance"` item per
+instance.
+
+- Use `ec2.NewDescribeInstancesPaginator` with an empty input; walk every page,
+  every reservation, every instance. Keep EC2's order.
+- `Name` comes from the tag whose key is `Name` (instances have other tags too).
+- On error return `nil` and `describe instances: <error>` (`%w`).
 
 ```go
 Instances(ctx, api, "us-east-1")
@@ -127,12 +138,18 @@ Instances(ctx, api, "us-east-1")
 //    }
 ```
 
+**Think it through:**
+- How many nested loops do pages → reservations → instances need?
+- What must you check before reading `inst.State.Name`?
+
 ### 3. Render a table
 
-Write `Table` with `tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)`. Write the
-header row `KIND REGION ID NAME STATE`, then one row per item in the order
-given. Show an empty `Name` or `State` as `-`. End every row with `\n`, and
-remember to `Flush`.
+**Goal:** `Table(items)` returns an aligned text table with a header row.
+
+- Use `tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)` writing into a `strings.Builder`.
+- Header cells: `KIND`, `REGION`, `ID`, `NAME`, `STATE`. Then one row per item,
+  in the given order, with the fields in that same order.
+- An empty `Name` or `State` is shown as `-`. Every row ends with `\n`. Flush.
 
 ```go
 Table([]Item{
@@ -147,16 +164,23 @@ bucket    eu-west-1  acme-logs-euw1  -      -
 instance  us-east-1  i-0a1           web-1  running
 ```
 
-With no items, the result is just the header:
-`"KIND  REGION  ID  NAME  STATE\n"`.
+With no items, the result is just `"KIND  REGION  ID  NAME  STATE\n"`.
+
+**Think it through:**
+- Which character goes between cells, and which at the end of a row?
+- Two fields need the same "empty → `-`" rule. A tiny helper function avoids repeating it.
 
 ### 4. Render JSON
 
-Write `JSON`. Count the items whose `Kind` is `"bucket"` and `"instance"`, put
-the counts and the items into a `Report`, and encode it with
-`json.MarshalIndent(report, "", "  ")` (two spaces). The struct tags in
-`exercise.go` already give the field names, and `omitempty` drops the empty
-`name` and `state` of buckets.
+**Goal:** `JSON(items)` returns a `Report` with counts and items, as indented JSON.
+
+- `Buckets` counts items with `Kind == "bucket"`, `Instances` those with
+  `"instance"`.
+- Encode with `json.MarshalIndent(report, "", "  ")` (two spaces). The struct
+  tags already name the fields; `omitempty` drops a bucket's empty `name` and
+  `state`.
+- No items → `"items": []`, not `null`. A nil slice encodes as `null`, so start
+  `Items` as an empty, non-nil slice.
 
 ```json
 {
@@ -179,44 +203,52 @@ the counts and the items into a `Report`, and encode it with
 }
 ```
 
-With no items, `"items"` must be `[]`, not `null`. A nil slice encodes as
-`null`, so start from an empty slice: `Items: []Item{}`.
+Empty input gives `{"buckets": 0, "instances": 0, "items": []}` in the same
+indented layout.
+
+**Think it through:**
+- Which field of each item decides which counter grows?
+- What is the difference between a nil slice and an empty slice literal?
 
 ### 5. Gather every region concurrently
 
-Write `Gather`. First write a helper
-`regionItems(ctx, region, s3api, ec2api) ([]Item, error)` that calls
-`Buckets` and then `Instances` for one region and returns both lists in one
-slice (return the first error unchanged). Then, in `Gather`, run
-`regionItems` for every region in its own goroutine, with `ec2For(region)` as
-the EC2 client and the one shared `s3api`. Then:
+**Goal:** `Gather` collects buckets and instances of every region, at most
+`maxParallel` regions at once, sorted.
 
-- **Limit:** at most `maxParallel` regions may be in progress at once (it is
-  always at least 1). A buffered channel of size `maxParallel` works as a
-  limit: send to it before the work and receive from it after.
-- **Collect:** append each region's items to one slice. Guard it with a
-  `sync.Mutex`, because several goroutines write to it.
-- **Fail fast:** if a region fails, remember the first error as
-  `region <name>: <error>` (wrapped with `%w`), and cancel a context made
-  with `context.WithCancel(ctx)` so the other regions stop early. Gather then
-  returns `nil` and that error.
-- **Sort:** on success, sort the items by `Kind`, then `Region`, then `ID`,
-  and return them.
+First write the helper
+`regionItems(ctx, region, s3api, ec2api) ([]Item, error)`: call `Buckets`, then
+`Instances`, return both lists in one slice. Return the first error unchanged.
+
+Then in `Gather`, run `regionItems` for each region in its own goroutine, with
+`ec2For(region)` as the EC2 client and the shared `s3api`:
+
+- **Limit:** at most `maxParallel` regions in progress at once (always ≥ 1). A
+  buffered channel of that size works: send before the work, receive after.
+- **Collect:** append each region's items to one slice, guarded by a `sync.Mutex`.
+- **Fail fast:** keep only the first error, wrapped as `region <name>: <error>`
+  (`%w`), and cancel a context made with `context.WithCancel(ctx)` so other
+  regions stop early. Then return `nil` and that error.
+- **Sort:** on success, sort by `Kind`, then `Region`, then `ID`.
 
 ```go
 Gather(ctx, []string{"us-east-1", "eu-west-1"}, s3api, ec2For, 2)
-// => buckets first (eu-west-1 before us-east-1), then instances, each group sorted by region and ID.
+// => buckets first (eu-west-1 before us-east-1), then instances, each sorted by region, then ID.
 
 // If eu-west-1's DescribeInstances fails with "boom":
 // => nil, "region eu-west-1: describe instances: boom"
 ```
 
-This exercise runs with the race detector, as in *The race detector*: any
-unguarded shared write fails the tests.
+This exercise runs with the race detector (*The race detector*): any unguarded
+shared write fails the tests.
+
+**Think it through:**
+- Which variables do several goroutines touch? Those need the mutex.
+- How do you know an error is the *first* one?
+- Why must you wait for every goroutine before sorting?
 
 ## Learn more
 
 - [S3 ListBuckets API](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListBuckets.html)
-- [AWS regions and availability zones](https://docs.aws.amazon.com/global-infrastructure/latest/regions/aws-regions.html)
 - [text/tabwriter](https://pkg.go.dev/text/tabwriter)
 - [cmp.Or](https://pkg.go.dev/cmp#Or)
+- [Go by Example: WaitGroups](https://gobyexample.com/waitgroups)

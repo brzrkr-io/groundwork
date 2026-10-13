@@ -31,7 +31,7 @@ func courseWithStarter(t *testing.T, starter string) *course.Course {
 func loadCourse(t *testing.T, courseJSON, starter string) *course.Course {
 	t.Helper()
 	files := fstest.MapFS{"course.json": {Data: []byte(courseJSON)}}
-	for _, name := range []string{"a", "b", "c", "new"} {
+	for _, name := range []string{"a", "a_2", "b", "c", "new"} {
 		files["exercises/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n\n## Your task\n")}
 		files["exercises/"+name+"/hints.md"] = &fstest.MapFile{Data: []byte("## One\na\n## Two\nb\n")}
 		files["exercises/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte(starter)}
@@ -140,6 +140,49 @@ func TestSyncMovesWorkWhenTheCourseIsReordered(t *testing.T) {
 	}
 	if _, err := os.Stat(mine); err == nil {
 		t.Errorf("old folder %s still exists after the move", c.Dir())
+	}
+}
+
+func TestSyncShiftsSameTopicFoldersWhenAnExerciseIsInserted(t *testing.T) {
+	root := t.TempDir()
+	if err := Init(root); err != nil {
+		t.Fatal(err)
+	}
+	// a and a_2 share the topic "a": folders 001_a and 002_a.
+	before := loadCourse(t, `{"modules":[{"title":"m","dir":"one","exercises":[{"name":"a"},{"name":"a_2"}]}]}`, starter)
+	s, err := Open(root, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"a": "// work on a\n", "a_2": "// work on a_2\n"} {
+		e, _ := before.Find(name)
+		if err := os.WriteFile(filepath.Join(s.Dir(e), "exercise.go"), []byte("package x\n"+body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Inserting "new" first moves a to 002_a, which a_2 occupies until it
+	// moves on to 003_a.
+	after := loadCourse(t, `{"modules":[{"title":"m","dir":"one","exercises":[{"name":"new"},{"name":"a"},{"name":"a_2"}]}]}`, starter)
+	s2, err := Open(root, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s2.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"a": "// work on a\n", "a_2": "// work on a_2\n"} {
+		e, _ := after.Find(name)
+		got, _ := os.ReadFile(filepath.Join(s2.Dir(e), "exercise.go"))
+		if string(got) != "package x\n"+want {
+			t.Errorf("%s in %s = %q, want the learner's work %q", name, e.Dir(), got, want)
+		}
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(root, "exercises", ".moving-*")); len(leftovers) > 0 {
+		t.Errorf("temporary folders left behind: %v", leftovers)
 	}
 }
 

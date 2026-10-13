@@ -1,20 +1,20 @@
 # Encoding JSON: a deployment status report
 
-Dashboards, APIs, log collectors and `kubectl -o json` all speak JSON. In this
-exercise you turn Go structs into JSON with the `encoding/json` package, so
-your tools can report deployment status to anything that listens.
+Dashboards, APIs, log collectors and `kubectl -o json` all speak JSON. Here you
+turn Go structs into JSON with the `encoding/json` package, so your tools can
+report deployment status to anything that listens.
+
+**New here:** `encoding/json`, `json.Marshal`, `json.MarshalIndent`, struct tags.
 
 ## Learn
 
 ### json.Marshal
 
-`json.Marshal` takes any Go value and returns its JSON form as a `[]byte`
-(a slice of bytes), plus an error. Convert the bytes to a string with
-`string(b)`:
+`json.Marshal(v)` takes any Go value and returns two things: its JSON form as
+a `[]byte` (a slice of bytes) and an `error`. Turn the bytes into a string
+with `string(b)`.
 
 ```go
-import "encoding/json"
-
 type Host struct {
 	Name string
 	Port int
@@ -28,11 +28,16 @@ fmt.Println(string(b))
 // {"Name":"web-1","Port":8080}
 ```
 
+> **Why is it written like this?** Go requires the `"encoding/json"` import
+> before you can call `json.Marshal`. Returning `[]byte` instead of `string`
+> is the package's choice: bytes are what files and networks want. Checking
+> `err` right away is convention, as in *Errors*.
+
 ### Only exported fields are encoded
 
-`encoding/json` lives in another package, so it can only see *exported*
-fields: the ones that start with a capital letter. Lowercase fields are
-silently skipped. There is no error, they just don't appear:
+`encoding/json` is another package, so it can only see *exported* fields:
+the ones that start with a capital letter. Lowercase fields are skipped
+silently. No error, they just don't appear.
 
 ```go
 type Host struct {
@@ -44,26 +49,29 @@ type Host struct {
 
 ### Struct tags
 
-By default the JSON key is the Go field name (`"Name"`). Most JSON uses
-lowercase keys, so you attach a *struct tag* to the field. A tag is a string
-in backquotes after the field type:
+By default the JSON key is the Go field name (`"Name"`). To choose a
+different key, add a *struct tag*: a string in backquotes after the field's
+type.
 
 ```go
-type Host struct {
-	Name     string `json:"name"`
-	Port     int    `json:"port"`
-	Comment  string `json:"comment,omitempty"`
+type User struct {
+	Login    string `json:"login"`
+	Nickname string `json:"nickname,omitempty"`
 	Password string `json:"-"`
 }
 ```
 
 | Tag | Effect |
 |---|---|
-| `json:"name"` | Use `name` as the key. |
-| `json:"comment,omitempty"` | Use `comment` as the key, but leave the field out when it holds its zero value (`""`, `0`, `false`, `nil`). |
+| `json:"login"` | Use `login` as the key. |
+| `json:"nickname,omitempty"` | Use `nickname`, but leave the field out when it holds its zero value (`""`, `0`, `false`, `nil`). |
 | `json:"-"` | Never encode this field. Good for secrets. |
 
-The format is strict: `json:"name"` with no spaces anywhere.
+> **Why is it written like this?** Go requires the backquotes; the tag is
+> just text that the compiler stores. The `json:"…"` format is what the
+> `encoding/json` package expects, and it's strict: no spaces anywhere.
+> Lining the tags up in a column is gofmt's job, not yours. The key names
+> are your (or your API's) choice.
 
 ### How Go values become JSON
 
@@ -75,33 +83,27 @@ The format is strict: `json:"name"` with no spaces anywhere.
 | struct | object `{...}`, keys in field order |
 | `map[string]int` | object `{...}`, keys **sorted** alphabetically |
 | slice with items | array `[...]` |
-| empty slice `[]T{}` | `[]` |
-| nil slice | `null` |
-| `time.Time` | a string in RFC 3339 format: `"2026-10-11T09:30:00Z"` |
+| empty slice, e.g. `[]string{}` | `[]` |
+| nil slice, e.g. `var s []string` | `null` |
+| `time.Time` | RFC 3339 string: `"2026-10-11T09:30:00Z"` |
 
-That nil-slice row catches people out. `var deps []Deployment` is nil and
-encodes as `null`, which many dashboards choke on. If you want `[]`, replace
-the nil slice with an empty one before encoding:
-
-```go
-if deps == nil {
-	deps = []Deployment{}
-}
-```
+That nil-slice row catches people out. Many dashboards choke on `null`
+where they expect a list. An empty slice (made with `{}`) encodes as `[]`.
 
 ### Pretty output with MarshalIndent
 
 `json.MarshalIndent(v, prefix, indent)` works like `Marshal`, but puts each
-field on its own line. Use an empty prefix and two spaces of indent:
+field on its own line. `prefix` goes at the start of every line; `indent` is
+added once per nesting level.
 
 ```go
-b, err := json.MarshalIndent(Host{Name: "web-1", Port: 8080}, "", "  ")
+b, err := json.MarshalIndent(Host{Name: "web-1", Port: 8080}, "", "\t")
 ```
 
 ```json
 {
-  "name": "web-1",
-  "port": 8080
+	"Name": "web-1",
+	"Port": 8080
 }
 ```
 
@@ -110,13 +112,13 @@ There is no newline after the final `}`.
 ## Your task
 
 The deploy dashboard wants a JSON status report for every environment. The
-`Deployment` and `Report` types are in `exercise.go`. `Report` already has its
-tags.
+`Deployment` and `Report` types are in `exercise.go`. `Report` already has
+its tags, so use it as a model.
 
 ### 1. Tag the Deployment struct
 
-Add struct tags to `Deployment` so that `json.Marshal` produces these keys,
-in this order:
+**Goal:** add a struct tag to every field of `Deployment` so `json.Marshal`
+produces the keys below.
 
 | Field | Key | Rule |
 |---|---|---|
@@ -140,14 +142,18 @@ json.Marshal(Deployment{Service: "worker", Version: "2.0.0", Replicas: 0,
 // => {"service":"worker","version":"2.0.0","replicas":0,"healthy":false,"started":"2026-10-11T09:30:00Z","error":"image pull failed"}
 ```
 
-Notice that `"replicas":0` and `"healthy":false` still appear: only `error`
-uses `omitempty`.
+**Think it through:**
+- Look at how `Report` writes its tags: where does the tag go on the line?
+- `"replicas":0` and `"healthy":false` still appear. Which single field gets `omitempty`?
+- Which row of the tag table hides a field completely?
 
 ### 2. Count healthy deployments
 
-Implement `HealthCounts(deps []Deployment) map[string]int`. Return a map with
-two keys: `"healthy"` (deployments where `Healthy` is true) and `"unhealthy"`
-(all the others). Both keys are always present, even when a count is zero.
+**Goal:** `HealthCounts(deps)` returns a map with the keys `"healthy"` and
+`"unhealthy"`.
+
+`"healthy"` counts deployments whose `Healthy` is `true`; `"unhealthy"`
+counts all the others. Both keys are always present, even when a count is 0.
 
 ```go
 HealthCounts([]Deployment{{Healthy: true}, {Healthy: true}, {Healthy: false}})
@@ -157,23 +163,30 @@ HealthCounts(nil)
 // => map[healthy:0 unhealthy:0]
 ```
 
+**Think it through:**
+- With `nil` the loop never runs. How do both keys still end up in the map?
+- Each deployment adds 1 to exactly one of the two keys. Which field decides?
+
 ### 3. Encode the report
 
-Implement `ReportJSON(env string, generatedAt time.Time, deps []Deployment) (string, error)`:
+**Goal:** `ReportJSON(env, generatedAt, deps)` returns the `Report` encoded
+as indented JSON, as a string.
 
-1. Build a `Report` with `Environment: env`, `GeneratedAt: generatedAt`,
-   `Counts` from `HealthCounts(deps)`, and `Deployments: deps`.
-2. If `deps` is nil, use an empty slice instead, so the report shows
-   `"deployments": []` and not `null`.
-3. Encode it with `json.MarshalIndent(report, "", "  ")` (two spaces).
-4. Return the JSON as a string. If encoding fails, return `""` and the error.
+Build a `Report` from the pieces:
 
-Add `"encoding/json"` to the imports. This task uses your tags from task 1,
-so finish that first.
+| Report field | Comes from |
+|---|---|
+| `Environment` | parameter `env` |
+| `GeneratedAt` | parameter `generatedAt` |
+| `Counts` | your `HealthCounts`, called on `deps` |
+| `Deployments` | parameter `deps`, but an empty slice when `deps` is nil |
+
+Encode it with `json.MarshalIndent`, using an empty prefix and **two spaces**
+as the indent. If encoding fails, return `""` and the error. Add
+`"encoding/json"` to the imports. This task uses your tags from task 1.
 
 With the two deployments from task 1, `env` = `"production"` and
-`generatedAt` = `time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)`, the result
-is:
+`generatedAt` = `time.Date(2026, 10, 11, 10, 0, 0, 0, time.UTC)`:
 
 ```json
 {
@@ -203,7 +216,8 @@ is:
 }
 ```
 
-With `env` = `"staging"` and `deps` = `nil`:
+With `env` = `"staging"` and `deps` = `nil` (an empty `[]Deployment{}` gives
+the same `"deployments": []`):
 
 ```json
 {
@@ -217,7 +231,9 @@ With `env` = `"staging"` and `deps` = `nil`:
 }
 ```
 
-An empty, non-nil slice (`[]Deployment{}`) gives the same `"deployments": []`.
+**Think it through:**
+- Where does `null` come from, and what can you check before building the `Report`?
+- `MarshalIndent` returns bytes and an error. What must you do with each before returning?
 
 ## Learn more
 

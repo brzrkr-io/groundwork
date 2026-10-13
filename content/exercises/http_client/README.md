@@ -4,28 +4,38 @@ Most ops tooling talks HTTP: health checks, status pages, cloud APIs, chat
 webhooks. Here you write a small client that asks a status service how a
 service is doing, the way a production tool should.
 
+**New here:** `net/http` clients, requests, headers, status codes, `io.LimitReader`.
+
 ## Learn
 
 ### Requests and responses
 
-An HTTP *request* has a *method* (`GET` to read, `POST` to send), a URL, and
-*headers*: `Name: value` pairs with extra information such as who you are. The
-server sends back a *response* with a *status code* (`200` OK, `404` Not
-Found, `503` Service Unavailable, ...), its own headers, and a *body*.
+An HTTP *request* has:
+
+- a *method*: `GET` to read, `POST` to send
+- a URL
+- *headers*: `Name: value` pairs with extra information, such as who you are
+
+The server sends back a *response* with a *status code* (`200` OK, `404` Not
+Found, `503` Service Unavailable), its own headers, and a *body*.
 
 ### Your own client, with a timeout
 
-In the `net/http` package an `*http.Client` sends requests. It has a `Timeout`
-field that limits the whole request, from connecting to reading the body:
+In `net/http`, an `*http.Client` sends requests. Its `Timeout` field limits
+the whole request, from connecting to reading the body:
 
 ```go
-client := &http.Client{Timeout: 10 * time.Second}
+client := &http.Client{Timeout: 30 * time.Second}
 ```
 
-You will see `http.Get(url)` in tutorials. It uses the shared
-`http.DefaultClient`, which has **no timeout**. One stuck server and your
-health check hangs forever. In real tools, always build your own client with a
-timeout.
+Tutorials often use `http.Get(url)`. That uses the shared
+`http.DefaultClient`, which has **no timeout**: one stuck server and your
+health check hangs forever. Real tools build their own client.
+
+> **Why is it written like this?** `&http.Client{...}` is a *struct literal*
+> with `&` in front to get a pointer; Go requires `Field: value` inside the
+> braces. `30 * time.Second` works because `time.Second` is a `Duration`, and
+> Go needs a `Duration` there. Using a pointer to a client is convention.
 
 ### Building a request
 
@@ -33,57 +43,54 @@ timeout.
 add headers first:
 
 ```go
-req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://status.internal/status/api", nil)
+req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://chat.internal/hooks/"+room, body)
 if err != nil {
 	return nil, err // for example, the URL couldn't be parsed
 }
-req.Header.Set("Authorization", "Bearer s3cret")
-req.Header.Set("Accept", "application/json")
+req.Header.Set("X-Api-Key", key)
+req.Header.Set("Content-Type", "text/plain")
 ```
 
-- `ctx` is a *context*. A `context.Context` carries a deadline and a cancel
-  signal, and `context.Background()` is the empty starting context. The
-  Concurrency module covers contexts properly; here you pass `ctx` along.
-- `http.MethodGet` is the constant `"GET"`.
+- `ctx` is a *context*: it carries a deadline and a cancel signal. Here you just pass it along.
+- `http.MethodPost` is the constant `"POST"`; `http.MethodGet` is `"GET"`.
 - The last argument is the request body. A `GET` has none, so it is `nil`.
-- `Authorization: Bearer <token>` is the usual way to send an API token.
-  `Accept` says which format you want back.
+- `Header.Set(name, value)`: both are strings. The fixed text goes in quotes;
+  a variable like `key` does not.
 
-### Sending it and reading the response
+Two common headers:
 
-```go
-resp, err := client.Do(req)
-if err != nil {
-	return err // no response at all: refused, timed out, ...
-}
-defer resp.Body.Close()
+| Header | Meaning |
+|---|---|
+| `Authorization: Bearer <token>` | the usual way to send an API token (note the space after `Bearer`) |
+| `Accept: application/json` | "please answer in JSON" |
 
-if resp.StatusCode != http.StatusOK {
-	return fmt.Errorf("unexpected status %d", resp.StatusCode)
-}
-```
+> **Why is it written like this?** Go requires you to receive both return
+> values. Checking `err` right away and returning it is convention. The name
+> `req` is the author's choice.
 
-Three rules for every response:
+### Three rules for every response
 
-1. **Close the body.** `resp.Body` holds the network connection open until you
-   close it. `defer resp.Body.Close()` right after the error check does it on
-   every path, including early returns.
+`client.Do(req)` sends the request and returns `resp, err`.
+
+1. **Close the body.** `resp.Body` holds the connection open until closed.
+   `defer resp.Body.Close()` right after the error check closes it on every
+   path, including early returns.
 2. **Check the status code.** `client.Do` only returns an error when there is
-   no response at all. A `503` is still a response, so `err` is `nil`.
-   `http.StatusOK` is the constant `200`.
+   no response at all. A `503` is still a response, so `err` is `nil`. Look at
+   `resp.StatusCode`; `http.StatusOK` is the constant `200`.
 3. **Limit what you read.** A broken server can send gigabytes.
    `io.LimitReader(r, n)` wraps a reader and stops after `n` bytes.
 
-The body is an `io.Reader`, so you decode JSON from it with `json.NewDecoder`,
-as in the JSON exercises:
-
 ```go
-var s ServiceStatus
-err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&s)
+data, err := io.ReadAll(io.LimitReader(file, 512)) // reads at most 512 bytes
 ```
 
-`1<<20` is 1,048,576 bytes: 1 MiB. If the JSON is cut off by the limit,
-`Decode` returns an error.
+`1<<20` is 1,048,576 bytes: 1 MiB. If JSON is cut off by the limit, `Decode`
+returns an error.
+
+> **Why is it written like this?** `defer` is Go syntax: the call runs when
+> the function returns. Putting it right after the error check is convention,
+> because before that `resp` may be `nil`.
 
 ## Your task
 
@@ -95,18 +102,25 @@ Your team's status service answers `GET /status/{service}` with JSON like:
 
 ### 1. Build a client with a timeout
 
-`NewClient()` returns a new `*http.Client` whose `Timeout` is 5 seconds. Add
-the `time` import.
+**Goal:** `NewClient()` returns a new `*http.Client` whose `Timeout` is 5 seconds.
+
+Do not return `http.DefaultClient`. Add the `time` import.
+
+**Think it through:**
+- Which field of the client sets the limit?
+- How do you write "5 seconds" as a `time.Duration`?
 
 ### 2. Build the status request
 
-`NewStatusRequest(ctx, baseURL, service, token)` returns a `GET` request for
-`baseURL + "/status/" + service`, made with `http.NewRequestWithContext` and
-`ctx`, with two headers:
+**Goal:** `NewStatusRequest(ctx, baseURL, service, token)` returns a `GET` request with two headers.
+
+- URL: `baseURL`, then the fixed text `/status/`, then `service`
+- build it with `http.NewRequestWithContext`, passing `ctx`
+- headers:
 
 | Header | Value |
 |---|---|
-| `Authorization` | `Bearer ` followed by `token` |
+| `Authorization` | fixed text `Bearer ` (with the space), then `token` |
 | `Accept` | `application/json` |
 
 ```go
@@ -116,30 +130,39 @@ NewStatusRequest(ctx, "http://status.internal", "payments", "s3cret")
 //    Accept: application/json
 ```
 
-If `http.NewRequestWithContext` returns an error (for example for the base URL
-`"://status.internal"`), return `nil` and that error.
+If `http.NewRequestWithContext` returns an error (for example for the base
+URL `"://status.internal"`), return `nil` and that error.
+
+**Think it through:**
+- Which parts are parameters and which are fixed text in quotes?
+- Return the request only after both headers are set.
 
 ### 3. Finish `FetchStatus`
 
+**Goal:** close the body, reject non-200 responses, and decode at most 1 MiB.
+
 `FetchStatus(client, req)` already sends the request and decodes the body.
-Finish it:
+Fill in the three `TODO(3)` spots:
 
 - close the response body when the function returns, on every path
-- when the status code is not `200`, return an empty `ServiceStatus` and the
-  error `unexpected status 503` (with the real code); add the `fmt` import
-- decode at most 1 MiB of the body; add the `io` import
+- status code is not `200`: return an empty `ServiceStatus` and the error
+  `unexpected status 503` (with the real code). Add the `fmt` import.
+- decode at most 1 MiB (`1<<20` bytes) of the body. Add the `io` import.
 
 ```go
 FetchStatus(client, req)
 // 200 with {"name":"payments","version":"1.4.2","healthy":true}
 //   => ServiceStatus{Name: "payments", Version: "1.4.2", Healthy: true}, nil
-// 503
-//   => ServiceStatus{}, error "unexpected status 503"
+// 503 => ServiceStatus{}, error "unexpected status 503"
+// 404 => ServiceStatus{}, error "unexpected status 404"
 ```
 
-The tests use `httptest.NewServer`, a real HTTP server on your machine that
-lives only during the test. They also check that the body was closed, and send
-a body over 1 MiB that must produce an error.
+The tests run a real local server with `httptest.NewServer`. They check the
+body was closed, and send a body over 1 MiB that must give an error.
+
+**Think it through:**
+- Which field of `resp` holds the code, and which `fmt` verb prints an `int`?
+- What does the decoder read from now, and how do you wrap it?
 
 ## Learn more
 

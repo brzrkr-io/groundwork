@@ -1,79 +1,75 @@
 # Signals: SIGHUP reloads, SIGTERM stops
 
-Not every signal means "stop". Long-running services treat `SIGHUP` as
-"re-read your config file", so you can change settings without dropping a
-single connection. Here you fix a log-shipping agent that dies when asked to
-reload.
+Not every signal means "stop". Services treat `SIGHUP` as "re-read your
+config", so you can change settings without dropping a connection. Here you
+fix a log-shipping agent that dies when asked to reload.
+
+**New here:** `SIGHUP`, `switch` on a signal.
 
 ## Learn
 
-**Recap.** In *Signals: graceful stop for a rolling drain* you used `signal.Notify` to deliver signals on a
-channel, and `for sig := range sigs` to handle each one until the channel
-closes. `SIGINT` (Ctrl-C) and `SIGTERM` (`kill`, `docker stop`, Kubernetes)
-ask a program to stop, and a program stopped by signal *n* exits with code
-`128 + n`.
+### Recap
+
+In *Signals: graceful stop for a rolling drain* you received signals on a
+channel with `for sig := range sigs`. `SIGINT` (Ctrl-C) and `SIGTERM` ask a
+program to stop. A program stopped by signal *n* exits with `128 + n`.
 
 ### SIGHUP means "reload"
 
-`SIGHUP` ("hang up") originally told a program that its terminal had
-disconnected. Services that run in the background have no terminal, so they
-reuse it to mean **reload your configuration**:
+`SIGHUP` ("hang up") once meant "your terminal disconnected". Background
+services have no terminal, so they reuse it to mean **reload your config**:
 
 ```text
 kill -HUP <pid>          # send SIGHUP by hand
-nginx -s reload          # nginx sends itself SIGHUP
 systemctl reload agent   # often configured to send SIGHUP
 ```
 
-A good reload is safe. If the new config is broken, the service logs the
-problem and **keeps running with the old config**. A typo in a config file
-should never take down production.
+A good reload is safe: if the new config is broken, log it and **keep running
+with the old config**. A typo should never take down production.
 
 ### Telling signals apart
 
-Signal values can be compared with `==`, so a `switch` on the signal works:
+Signals compare with `==`, so `switch` works. One `case` can list several
+values, separated by commas:
 
 ```go
 switch sig {
-case syscall.SIGHUP:
-	// reload
-case os.Interrupt, syscall.SIGTERM:
-	// stop
+case syscall.SIGUSR1:
+	fmt.Println("dump stats")
+case syscall.SIGQUIT, syscall.SIGABRT:
+	fmt.Println("crash with a stack trace")
+default:
+	fmt.Println("something else")
 }
 ```
 
-`os.Interrupt` is the same signal as `syscall.SIGINT`. Each signal has a number,
-and prints with `%v` as a short name:
+> **Why is it written like this?** Go requires `case` values to match the
+> type after `switch`. Unlike C, Go doesn't fall through to the next case, so
+> no `break` is needed. `default` is optional; it runs when no case matches.
 
-| Signal | Number | Prints as | Exit code (128 + n) |
+| Signal | Number | Prints as (`%v`) | Exit code (128 + n) |
 |---|---|---|---|
 | `syscall.SIGHUP` | 1 | `hangup` | 129 |
 | `os.Interrupt` (`SIGINT`) | 2 | `interrupt` | 130 |
 | `syscall.SIGTERM` | 15 | `terminated` | 143 |
 
-A service listens for all three. As in *Signals: graceful stop for a rolling drain*, `go serveLogs()` starts the
-real work in the background; that is all you need to know about `go` here:
+The real `main` listens for all three and passes the channel to `Serve`:
 
 ```go
-func main() {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGHUP, os.Interrupt, syscall.SIGTERM)
-
-	go serveLogs()
-	os.Exit(reload.Serve(sigs, loadConfig, os.Stderr))
-}
+signal.Notify(sigs, syscall.SIGHUP, os.Interrupt, syscall.SIGTERM)
+go serveLogs()
+os.Exit(reload.Serve(sigs, loadConfig, os.Stderr))
 ```
 
 ## Your task
 
-Your log-shipping agent reads its routing rules from a config file. The team
-sends it `SIGHUP` after every config change, and every time the agent shuts
-down instead of reloading.
+Your agent reads routing rules from a config file. The team sends `SIGHUP`
+after every change, and every time the agent shuts down instead.
 
 ### 1. Exit with 128 + n
 
-Make `ExitCodeFor` return the exit code for a stop signal: `130` for
-`os.Interrupt` and `143` for `syscall.SIGTERM`. Any other signal returns `1`.
+**Goal:** make `ExitCodeFor(sig)` return `130` for `os.Interrupt`, `143` for
+`syscall.SIGTERM`, and `1` for any other signal.
 
 ```go
 ExitCodeFor(os.Interrupt)    // => 130
@@ -81,19 +77,28 @@ ExitCodeFor(syscall.SIGTERM) // => 143
 ExitCodeFor(syscall.SIGHUP)  // => 1
 ```
 
+Add `"syscall"` to the imports.
+
+**Think it through:**
+- Which value are you comparing: the parameter `sig`.
+- Which `switch` part covers "any other signal"?
+
 ### 2. Reload on SIGHUP instead of quitting
 
-`Serve` has a bug: it returns on the **first** signal of any kind, so `SIGHUP`
-kills the agent. Fix it so that each signal is handled like this:
+**Goal:** fix `Serve` so `SIGHUP` reloads and keeps going, and only other
+signals shut down.
+
+Right now the loop returns on the first signal of any kind. Handle each
+signal like this:
 
 | Signal | What `Serve` does | Log line |
 |---|---|---|
-| `syscall.SIGHUP`, reload succeeds | keeps going | `reloaded config` |
-| `syscall.SIGHUP`, reload fails | keeps going (old config stays) | `reload failed: <err>; keeping old config` |
+| `syscall.SIGHUP`, `reload()` returns `nil` | keeps going | `reloaded config` |
+| `syscall.SIGHUP`, `reload()` returns an error | keeps going | `reload failed: <err>; keeping old config` |
 | anything else | returns `ExitCodeFor(sig)` | `received <sig>: shutting down` |
 
-Call `reload()` once per `SIGHUP`. Every log line ends with a newline. If the
-channel closes, return `0` without logging anything. Example:
+Call `reload()` exactly once per `SIGHUP`. Every log line ends with a
+newline. If the channel closes, return `0` without logging.
 
 ```go
 // sigs delivers: SIGHUP, SIGHUP, SIGTERM
@@ -106,6 +111,10 @@ reload failed: parse routes.yaml: line 3: bad indent; keeping old config
 reloaded config
 received terminated: shutting down
 ```
+
+**Think it through:**
+- The existing two lines in the loop are right for stop signals. Which signal should skip them?
+- `reload()` returns an error. Where do you keep it so you can both test and print it?
 
 ## Learn more
 

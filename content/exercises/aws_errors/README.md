@@ -1,16 +1,17 @@
 # AWS API errors: codes, faults and NoSuchKey
 
-AWS calls fail all the time: a file is missing, a bucket name has a typo,
-you hit a rate limit, or AWS has a bad minute. Good automation tells these
-apart. It shrugs off a missing file, retries a rate limit later, and stops
-with a clear message on everything else.
+AWS calls fail all the time: a missing file, a typo in a bucket name, a rate
+limit, or a bad minute at AWS. Good automation tells these apart: it shrugs
+off a missing file, retries a rate limit, and stops clearly on everything else.
+
+**New here:** `smithy.APIError`, `ErrorCode()`, `ErrorFault()`, typed S3 errors like `*types.NoSuchKey`.
 
 ## Learn
 
 ### What a failed SDK call returns
 
-When AWS rejects a call, the SDK returns an error with three layers, each
-wrapping the next, just like the chains in *Wrapping errors*:
+A failed AWS call gives you an error *chain*: three layers, each wrapping the
+next, like the chains in *Wrapping errors*.
 
 ```text
 operation error S3: GetObject, https response error StatusCode: 404, RequestID: 4e7f1c9a-EXAMPLE, NoSuchKey: The specified key does not exist.
@@ -20,15 +21,18 @@ operation error S3: GetObject, https response error StatusCode: 404, RequestID: 
     wraps *types.NoSuchKey       the API error: what AWS actually said
 ```
 
-Only the innermost layer, the *API error*, tells you what went wrong. The
-outermost layer is a `*smithy.OperationError`, so a type assertion such as
-`err.(*types.NoSuchKey)` always fails. Use `errors.AsType`, which searches
-the whole chain. Matching on `err.Error()` text is fragile, so don't.
+Only the innermost layer, the *API error*, says what went wrong. A type
+assertion like `err.(*types.NoSuchKey)` only looks at the outer layer, so it
+always fails. `errors.AsType` searches the whole chain.
+
+> **Why is it written like this?** Searching the chain is required in
+> practice: the SDK always wraps. Not matching on `err.Error()` text is
+> convention: text can change, codes and types don't.
 
 ### smithy.APIError: the code of any AWS error
 
-Every API error, from every AWS service, satisfies the `smithy.APIError`
-interface from the package `github.com/aws/smithy-go`:
+Every API error, from every AWS service, satisfies the *interface*
+`smithy.APIError` (package `github.com/aws/smithy-go`):
 
 ```go
 type APIError interface {
@@ -39,56 +43,62 @@ type APIError interface {
 }
 ```
 
-`errors.AsType` works with an interface type too. It finds the first error
-in the chain that has these methods:
+`errors.AsType` works with an interface type too. It returns the first error
+in the chain that has these methods, plus an `ok` bool:
 
 ```go
 if apiErr, ok := errors.AsType[smithy.APIError](err); ok {
-	fmt.Println(apiErr.ErrorCode()) // "NoSuchKey"
+	log.Println("AWS says:", apiErr.ErrorMessage())
 }
 ```
+
+> **Why is it written like this?** The type in square brackets is required:
+> it tells `AsType` what to look for. The names `apiErr` and `ok` are
+> convention; you may pick others.
 
 `ErrorFault()` says whose fault the failure was:
 
 | Fault | Meaning | Retry? |
 |---|---|---|
-| `smithy.FaultClient` | Your request was wrong: missing file, no permission, bad input. | No, the same request fails again. |
+| `smithy.FaultClient` | Your request was wrong: missing file, no permission, bad input. | No, it fails again. |
 | `smithy.FaultServer` | AWS had a problem on its side. | Yes, later. |
 | `smithy.FaultUnknown` | AWS did not say. | Decide by code. |
 
+You compare a fault with `==`, like any other value.
+
 ### Throttling codes
 
-AWS limits how fast you can call each API. Go over the limit and you get a
-*throttling* error. Different services use different codes for it. In this
-exercise these five codes count as throttling, and the starter has an
-`isThrottling(code)` helper that checks for them:
+AWS limits how fast you call each API. Go over and you get a *throttling*
+error. In this exercise these five codes count as throttling, and the
+starter's helper `isThrottling(code)` checks for them:
 
 ```text
 Throttling  ThrottlingException  RequestLimitExceeded  TooManyRequestsException  SlowDown
 ```
 
-The SDK already retries throttling and server errors for you, up to 3
-attempts in total by default. Your own checks decide what happens after
-the SDK gives up, for example whether your deploy loop waits and tries the
-whole step again, as in *Retries: backoff and jitter*.
+The SDK already retries these (3 attempts by default). Your checks decide
+what happens after the SDK gives up, as in *Retries: backoff and jitter*.
 
 ### Typed S3 errors
 
-Some services also give their errors their own Go types. S3 has
-`*types.NoSuchKey` (the object does not exist) and `*types.NoSuchBucket` (the
-bucket does not exist), from `github.com/aws/aws-sdk-go-v2/service/s3/types`.
-Ask for the exact type when you need to react to one specific error:
+S3 also gives some errors their own Go types, in
+`github.com/aws/aws-sdk-go-v2/service/s3/types`: `*types.NoSuchKey` (object
+missing) and `*types.NoSuchBucket` (bucket missing). Ask for the exact type
+to react to one specific error:
 
 ```go
-if _, ok := errors.AsType[*types.NoSuchKey](err); ok {
-	// the object is not there
+if _, ok := errors.AsType[*types.NoSuchBucket](err); ok {
+	log.Println("check the bucket name")
 }
 ```
 
+> **Why is it written like this?** The `*` is required: these errors are
+> pointers. `_` is required when you don't use a value, because Go rejects
+> unused variables.
+
 ### Imports
 
-The starter only imports what it already uses. As you work, add these to the
-import block:
+The starter imports only what it already uses. Add these as you go:
 
 ```go
 "errors"
@@ -98,7 +108,8 @@ import block:
 "github.com/aws/smithy-go"
 ```
 
-The package name of `github.com/aws/smithy-go` is `smithy`.
+The package at `github.com/aws/smithy-go` is named `smithy`, so you write
+`smithy.APIError`.
 
 ## Your task
 
@@ -107,30 +118,36 @@ handling that knows what AWS is telling it.
 
 ### 1. Read the error code
 
-Write `ErrorCode(err)`. If a `smithy.APIError` is anywhere in `err`'s chain,
-return its `ErrorCode()`. Otherwise (including when `err` is `nil`) return
-`""`.
+**Goal:** `ErrorCode(err)` returns the code of the AWS API error in `err`'s chain, or `""`.
+
+- A `smithy.APIError` anywhere in the chain: return its `ErrorCode()`.
+- No API error, or `err` is `nil`: return `""`.
 
 ```go
 ErrorCode(errFromGetObject)             // NoSuchKey from the SDK
 // => "NoSuchKey"
+ErrorCode(fmt.Errorf("stop web-1: %w", errFromStopInstances)) // wrapped again
+// => "InvalidInstanceID.NotFound"
 ErrorCode(errors.New("dial tcp: i/o timeout"))
 // => ""
 ```
 
+**Think it through:**
+- Which type do you ask `errors.AsType` for: a specific error, or the interface every AWS error has?
+- What does `ok` tell you, and what do you return when it is `false`?
+
 ### 2. Decide whether to retry
 
-Write `ShouldRetry(err)`. Return `true` when the chain holds a
-`smithy.APIError` and either:
+**Goal:** `ShouldRetry(err)` returns `true` for throttling codes and server faults, `false` otherwise.
 
-- its code is one of the five throttling codes (call `isThrottling`), or
+Return `true` when the chain holds a `smithy.APIError` and either:
+
+- its code is one of the five throttling codes (use `isThrottling`), or
 - its `ErrorFault()` is `smithy.FaultServer`.
 
-The starter already returns `isThrottling(ErrorCode(err))`, so the first
-case works as soon as task 1 does. Add the second.
-
-Return `false` for everything else: `nil`, errors that are not AWS API
-errors, and API errors with any other code and a client or unknown fault.
+The starter already returns `isThrottling(ErrorCode(err))`, so the first case
+works once task 1 does. Return `false` for everything else: `nil`, non-AWS
+errors, and other codes with a client or unknown fault.
 
 ```go
 ShouldRetry(slowDownErr)     // code "SlowDown"
@@ -141,15 +158,22 @@ ShouldRetry(accessDeniedErr) // code "AccessDenied", fault smithy.FaultClient
 // => false
 ```
 
+**Think it through:**
+- To read the fault you need the API error itself, not just its code. How did you get it in task 1?
+- Two reasons to retry, either is enough: which operator means "or"?
+
 ### 3. Handle errors in LoadSettings
 
-`LoadSettings(ctx, api, bucket, key)` already calls `GetObject` and reads the
-body. Finish the `if err != nil` block:
+**Goal:** in `LoadSettings`, a missing key gives the default settings; any other error is wrapped and returned.
 
-- If the chain holds a `*types.NoSuchKey`, the service has no settings file
-  yet. Return `[]byte(DefaultSettings), nil`.
+`LoadSettings(ctx, api, bucket, key)` already calls `GetObject` and reads the
+body. Finish its `if err != nil` block:
+
+- The chain holds a `*types.NoSuchKey` (no settings file yet): return
+  `[]byte(DefaultSettings), nil`.
 - Any other error: return `nil` and the error wrapped with `%w` as
-  `load settings s3://BUCKET/KEY: <err>`.
+  `load settings s3://BUCKET/KEY: <err>`. `BUCKET` and `KEY` are the
+  parameters `bucket` and `key`; the rest is fixed text.
 
 ```go
 LoadSettings(ctx, api, "deploy-configs", "payments/settings.json")
@@ -160,6 +184,10 @@ LoadSettings(ctx, api, "deploy-configs", "payments/settings.json")
 The tests check that `errors.AsType[*types.NoSuchBucket]` and
 `errors.AsType[smithy.APIError]` still find the original error through your
 wrap.
+
+**Think it through:**
+- Which check comes first: the "file missing" case or the wrap?
+- In the message, which parts are inside the quotes and which are `%s` filled by parameters?
 
 ## Learn more
 

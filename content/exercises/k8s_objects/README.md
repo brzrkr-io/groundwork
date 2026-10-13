@@ -4,22 +4,20 @@ Kubernetes runs most modern platforms, and everything you ask it to do is
 written down as an *object*. In this exercise you build a Deployment, the
 object that keeps an app running, in plain Go.
 
+**New here:** Kubernetes objects, the `k8s.io/api` types, pointer fields with `new(value)`, `resource.Quantity`.
+
 ## Learn
 
 ### Kubernetes in one minute
 
 *Kubernetes* runs containers on a group of machines called a *cluster*. You
-never log in to a machine to start a container. Instead you send the cluster a
-description of what you want, and Kubernetes makes it happen and keeps it
-that way.
+don't start containers by hand. You send the cluster a description of what
+you want, and Kubernetes makes it happen and keeps it that way.
 
-Every description goes to one place: the *API server*, the cluster's front
-door. The API server stores *objects*. Programs called *controllers* watch
-those objects and work to make the real world match them. If a Deployment
-says "3 copies" and one machine dies, a controller notices that only 2 are
-running and starts another. Desired state in, actual state follows.
-
-The objects you will meet most:
+Descriptions go to the *API server*, the cluster's front door, which stores
+them as *objects*. Programs called *controllers* watch the objects and fix
+the real world to match. If a Deployment says "3 copies" and one dies, a
+controller starts another.
 
 | Kind | What it is |
 |---|---|
@@ -29,7 +27,9 @@ The objects you will meet most:
 | Service | A stable network address in front of a set of Pods. |
 | ConfigMap | Plain configuration values for Pods. |
 
-Every object has the same outline. Here is a Deployment, written in YAML:
+### The shape of an object
+
+Every object has the same outline. Here is a Deployment in YAML:
 
 ```yaml
 apiVersion: apps/v1       # which API group and version defines this kind
@@ -54,95 +54,95 @@ spec:                     # what you want
           image: registry.example.com/shop/checkout:1.4.2
 ```
 
-Kubernetes adds a fourth part, `status` (what is actually happening), which
-you don't write yourself.
+Kubernetes adds a fourth part, `status` (what is really happening). You
+never write it yourself.
 
-*Labels* are short key/value tags such as `app: checkout` or
-`env: production`. Kubernetes uses them to connect objects. A Deployment
-finds its own Pods with its *selector*. The selector's `matchLabels` must
-match the labels in the Pod `template`, otherwise the Deployment would
-create Pods it can't recognise. The API server rejects a Deployment like
-that.
+*Labels* are key/value tags such as `app: checkout`. A Deployment finds its
+own Pods with its *selector*. The selector's `matchLabels` must match the
+labels in the Pod `template`, or the API server rejects the Deployment.
 
 ### The same object in Go
 
 The Go types live in `k8s.io/api` (one package per API group) and
-`k8s.io/apimachinery` (the shared parts). Everyone imports them with short
-names:
+`k8s.io/apimachinery` (shared parts). Each YAML section becomes a struct
+field: `metadata` is `ObjectMeta`, `spec` is `Spec`. Here is a different
+object, a ConfigMap:
 
 ```go
-import (
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-```
-
-Each YAML section becomes a struct field. `metadata` is `ObjectMeta`, and
-`spec` is `Spec`:
-
-```go
-d := &appsv1.Deployment{
+cm := &corev1.ConfigMap{
 	ObjectMeta: metav1.ObjectMeta{
-		Name:      "checkout",
-		Namespace: "shop",
-		Labels:    map[string]string{"app": "checkout"},
+		Name:      "settings",
+		Namespace: "monitoring",
 	},
-	Spec: appsv1.DeploymentSpec{ /* ... */ },
+	Data: map[string]string{"level": "debug"},
 }
 ```
 
-The struct is nested several levels deep. Take it one level at a time, and
-read the field types in your editor or on pkg.go.dev.
+The Go field name is the YAML name with a capital first letter:
+`namespace` → `Namespace`. Take nested structs one level at a time, and
+check field types in your editor or on pkg.go.dev.
+
+> **Why is it written like this?**
+> - **Go requires** capitalised field names: only capitalised names can be
+>   used from another package.
+> - **Convention:** the import names `appsv1`, `corev1` and `metav1` are what
+>   every Kubernetes project uses. Go would accept any name.
+> - **Author's choice:** one field per line, and the aligned `:` columns,
+>   come from gofmt and taste, not the compiler.
 
 ### Pointer fields and `new(value)`
 
-`Spec.Replicas` is a `*int32`, not an `int32`. With a pointer, "not set"
-(`nil`, so Kubernetes uses the default of 1) is different from "set to 0".
-Go won't let you write `&3` or `&int32(3)`, but since Go 1.26 the built-in
-`new` accepts a value as well as a type. `new(v)` returns a pointer to a
-fresh copy of `v`:
+Some fields are pointers, like `*int32`. A pointer can be `nil`, which
+means "not set, use the default". That is different from "set to 0".
+
+Go won't let you write `&3`. Since Go 1.26 the built-in `new` accepts a
+value: `new(v)` returns a pointer to a fresh copy of `v`.
 
 ```go
-Replicas: new(replicas),  // replicas is an int32, so this is a *int32
+timeout := int64(30)
+p := new(timeout)  // p is a *int64 pointing at 30
+q := new(int64(5)) // with a constant, say the type you want
 ```
 
-With a constant, say which type you want: `new(3)` would give an `*int`,
-so write `new(int32(3))` for an `*int32`.
+For a struct, put `&` in front of the struct literal instead:
 
-Older Kubernetes code uses the helper `ptr.To` from `k8s.io/utils/ptr` for
-the same job. You will see it in other projects, but plain `new` needs no
-import.
+```go
+sel := &metav1.LabelSelector{MatchLabels: map[string]string{"tier": "db"}}
+```
 
-`Spec.Selector` is a pointer too, `*metav1.LabelSelector`, so you write
-`&metav1.LabelSelector{MatchLabels: labels}`.
+> **Why is it written like this?** **Go requires** a pointer where the field
+> type starts with `*`; a plain value won't compile. Older code uses
+> `ptr.To(v)` from `k8s.io/utils/ptr` for the same job (**convention** of
+> its time); plain `new` needs no import.
 
 ### Ports and resources
 
-A container lists the ports it listens on, as a slice of
-`corev1.ContainerPort`. It also asks for CPU and memory. *Requests* are what
-the scheduler reserves for the container. *Limits* are the most it may use.
-The amounts are `resource.Quantity` values (package
-`k8s.io/apimachinery/pkg/api/resource`), parsed from the same strings you'd
-write in YAML:
+A container lists its ports as a slice, `[]corev1.ContainerPort`. It also
+asks for CPU and memory:
+
+- *Requests*: what the scheduler reserves for the container.
+- *Limits*: the most it may use.
+
+Amounts are `resource.Quantity` values from package
+`k8s.io/apimachinery/pkg/api/resource`, parsed from YAML-style strings:
 
 | String | Meaning |
 |---|---|
-| `"500m"` | 500 millicores, which is half a CPU core |
+| `"500m"` | 500 millicores, half a CPU core |
 | `"128Mi"` | 128 mebibytes of memory |
 
+`corev1.ResourceList` is a map from a resource name (`corev1.ResourceCPU`,
+`corev1.ResourceMemory`) to a quantity:
+
 ```go
-Resources: corev1.ResourceRequirements{
-	Requests: corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse("100m"),
-		corev1.ResourceMemory: resource.MustParse("128Mi"),
-	},
-},
+list := corev1.ResourceList{
+	corev1.ResourceCPU: resource.MustParse("2"),
+}
 ```
 
-`corev1.ResourceList` is a map from a resource name to a quantity.
-`resource.MustParse` panics on a bad string, so use it only with fixed
-strings like these.
+> **Why is it written like this?** `MustParse` panics on a bad string. By
+> **convention** you use it only with fixed strings you typed yourself, never
+> with user input.
 
 ## Your task
 
@@ -151,23 +151,30 @@ gets the same labels, replicas and resource settings.
 
 ### 1. Build the labels
 
-Make `Labels` return a map with `"app"` set to the app name and `"env"` set
-to the environment:
+**Goal:** make `Labels(app, env)` return a map with two entries.
+
+- Key `"app"` → the `app` parameter.
+- Key `"env"` → the `env` parameter.
 
 ```go
 Labels("checkout", "production")
 // => map[string]string{"app": "checkout", "env": "production"}
 ```
 
+**Think it through:**
+- Which parts are fixed text (in quotes) and which are parameters (no quotes)?
+- What does a map literal look like? (Seen in *Maps*.)
+
 ### 2. Fill in the Deployment
 
-`NewDeployment` already sets the name and the Pod template. Add the missing
-fields:
+**Goal:** add the missing fields in `NewDeployment` at the two `TODO(2)` lines.
 
-- `ObjectMeta.Namespace` is `ns`, and `ObjectMeta.Labels` is `labels`.
-- `Spec.Replicas` points to `replicas`. Use `new(replicas)`.
-- `Spec.Selector` is a `*metav1.LabelSelector` whose `MatchLabels` is `labels`,
-  the same labels as the Pod template.
+The name and Pod template are already set. Add:
+
+- `ObjectMeta.Namespace`: the `ns` parameter.
+- `ObjectMeta.Labels`: the local variable `labels`.
+- `Spec.Replicas`: a pointer to the `replicas` parameter (type `*int32`).
+- `Spec.Selector`: a `*metav1.LabelSelector` whose `MatchLabels` is `labels`.
 
 ```go
 d := NewDeployment("checkout", "shop", "production", "registry.example.com/shop/checkout:1.4.2", 3)
@@ -177,24 +184,34 @@ d := NewDeployment("checkout", "shop", "production", "registry.example.com/shop/
 // d.Spec.Selector.MatchLabels  => map[app:checkout env:production]
 ```
 
+**Think it through:**
+- Which fields are pointers? Check the type: does it start with `*`?
+- For a pointer to a value use `new(...)`; for a pointer to a struct use `&`.
+- Why must the selector use the same `labels` as the Pod template?
+
 ### 3. Build the container
 
-Make `AppContainer` return a container with:
+**Goal:** make `AppContainer` return a container with its image, one port and resources.
 
-- `Name` set to `name` (already done) and `Image` set to `image`.
-- `Ports`: exactly one `corev1.ContainerPort` with `Name` `"http"` and
-  `ContainerPort` set to `port`.
-- `Resources`: requests of `100m` CPU and `128Mi` memory, and limits of
-  `500m` CPU and `256Mi` memory. Use `resource.MustParse` and add the import
-  `"k8s.io/apimachinery/pkg/api/resource"`.
+- `Name` is `name` (already done); `Image` is `image`.
+- `Ports`: exactly one `corev1.ContainerPort`, `Name` `"http"`, `ContainerPort` the `port` parameter.
+- `Resources.Requests`: CPU `"100m"`, memory `"128Mi"`.
+- `Resources.Limits`: CPU `"500m"`, memory `"256Mi"`.
+
+Add the import `"k8s.io/apimachinery/pkg/api/resource"` yourself.
 
 ```go
 c := AppContainer("metrics", "registry.example.com/ops/metrics:2.0.0", 9090)
 // c.Image                    => "registry.example.com/ops/metrics:2.0.0"
 // c.Ports[0].Name            => "http"
 // c.Ports[0].ContainerPort   => 9090
-// c.Resources.Limits.Memory  => 256Mi
+// c.Resources.Requests.Cpu() => 100m
+// c.Resources.Limits.Memory() => 256Mi
 ```
+
+**Think it through:**
+- `Ports` is a slice of structs: one `{...}` inside `[]corev1.ContainerPort{...}`.
+- `Requests` and `Limits` are two separate `corev1.ResourceList` maps inside `corev1.ResourceRequirements`.
 
 ## Learn more
 

@@ -4,6 +4,8 @@ Host names typed by people come with stray spaces and random capitals. Image
 names need checking before you trust them. Go's `strings` package has a tool
 for each job, and here you learn to use it.
 
+**New here:** `import`, the `strings` package, `len`, `bool`, `\n`.
+
 ## Learn
 
 ### Importing a package
@@ -23,9 +25,14 @@ Then call its functions as `packagename.Function(...)`:
 strings.ToUpper("api") // => "API"
 ```
 
-Go is strict about imports: importing a package and not using it is a compile
-error (`"strings" imported and not used`). So add the import when you first
-need it.
+> **Why is it written like this?**
+> - **Go requires** `import` after `package` and before any functions.
+> - **Go requires** the package path in quotes: `"strings"`. It's a path,
+>   like a file name, not a name in your code.
+> - **Go requires** you to use every import. An unused one stops the build
+>   with `"strings" imported and not used`, so add it when you first need it.
+> - **Go requires** the capital letter in `strings.ToUpper`: only names
+>   starting with a capital are *exported*, usable from outside the package.
 
 ### Useful functions in `strings`
 
@@ -40,12 +47,21 @@ need it.
 | `strings.ReplaceAll("a-b-c", "-", "_")` | `"a_b_c"` |
 | `strings.Repeat("-", 5)` | `"-----"` |
 
+The values you pass in the `( )` are called *arguments*. They go in the order
+the function expects: for `HasPrefix`, the text to check first, then the
+prefix. Arguments can be parameters, constants or quoted text.
+
+### Nesting calls
+
 You can pass the result of one call straight into another. The inner call runs
 first:
 
 ```go
-strings.ToUpper(strings.TrimSpace("  api ")) // => "API"
+strings.ReplaceAll(strings.ToUpper("eu-west"), "-", "_") // => "EU_WEST"
 ```
+
+Read it inside out: `ToUpper` makes `"EU-WEST"`, then `ReplaceAll` swaps the
+dash.
 
 ### The length of a string
 
@@ -53,26 +69,29 @@ strings.ToUpper(strings.TrimSpace("  api ")) // => "API"
 in a string, as an `int`:
 
 ```go
-len("api")     // => 3
-len("web-01")  // => 6
+len("api")    // => 3
+len("web-01") // => 6
 ```
 
 For plain English letters, digits and punctuation, one character is one byte.
-(Accented letters and emoji take more. You'll meet that in *Bytes, runes and
-UTF-8*.)
+(Accented letters and emoji take more; see *Bytes, runes and UTF-8*.)
 
 ### true and false
 
 `HasPrefix`, `HasSuffix` and `Contains` answer a yes/no question. Their result
-has type `bool`, which has exactly two values: `true` and `false`. A function
-can return a `bool` like any other value:
+has type `bool`, which has two values: `true` and `false`. A function can
+return a `bool` like any other value:
 
 ```go
-// IsProdHost reports whether host is in the production domain.
-func IsProdHost(host string) bool {
-	return strings.HasSuffix(host, ".prod.example.com")
+// IsTicket reports whether msg mentions a ticket.
+func IsTicket(msg string) bool {
+	return strings.Contains(msg, "OPS-")
 }
 ```
+
+> **Why is it written like this?** **Go requires** `bool` after the `)` when
+> the function returns `true`/`false`. **Convention:** yes/no functions are
+> named `IsX` or `HasX`, and their comment says "reports whether".
 
 ### Special characters in strings
 
@@ -82,13 +101,12 @@ newline (line break) and `"\t"` is a tab. `"a\nb"` prints as two lines.
 ## Your task
 
 Write three helpers for your team's inventory tool. Start by adding
-`import "strings"` under the `package` line.
+`import "strings"` where `TODO(1)` says, on line 4.
 
 ### 1. Normalise a host name
 
-People paste host names with extra spaces, tabs or newlines, and in any mix
-of capitals. Change `NormalizeHost` so it removes the whitespace at both ends
-and turns the name into lowercase:
+**Goal:** make `NormalizeHost` remove the whitespace at both ends of `host`
+and turn it into lowercase.
 
 ```go
 NormalizeHost("  API-01.Prod.Example.COM\n")
@@ -101,25 +119,32 @@ NormalizeHost("web-02.example.com")
 // => "web-02.example.com"
 ```
 
+**Think it through:**
+- Which two functions in the table do this?
+- One call's result goes into the other. Which is inside?
+
 ### 2. Check the image registry
 
-Production may only run images from your own registry. Change
-`IsInternalImage` so it returns `true` when the image starts with
-`registry.internal/` (including the slash), and `false` otherwise:
+**Goal:** make `IsInternalImage` return `true` when `image` starts with
+`registry.internal/` (slash included), and `false` otherwise.
 
 ```go
-IsInternalImage("registry.internal/api:v1.4.2")    // => true
-IsInternalImage("docker.io/library/nginx:1.27")    // => false
+IsInternalImage("registry.internal/api:v1.4.2")      // => true
+IsInternalImage("docker.io/library/nginx:1.27")      // => false
 IsInternalImage("registry.internal.evil.com/api:v1") // => false
 ```
 
 The last example is why the slash matters: without it, a look-alike registry
 would pass.
 
+**Think it through:**
+- "Starts with": which function asks that?
+- Which argument is the parameter and which is fixed text in quotes?
+
 ### 3. Underline a heading
 
-Runbook sections start with a heading in capitals, a newline, then a row of
-`=` signs as long as the title. Change `Heading` to build it:
+**Goal:** make `Heading` return the title in capitals, a newline, then one
+`=` per character of the title.
 
 ```go
 Heading("deploy api")
@@ -130,6 +155,11 @@ Heading("rollback")
 ```
 
 `"deploy api"` has 10 characters (the space counts), so it gets 10 `=` signs.
+The pieces: the title in capitals, the fixed text `\n`, the row of `=`.
+
+**Think it through:**
+- Which function repeats a character, and what tells it how many times?
+- How do you join the three pieces?
 
 ## Learn more
 

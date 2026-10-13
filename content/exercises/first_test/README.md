@@ -2,17 +2,19 @@
 
 Until now Gopherlings wrote the tests and you wrote the code. From here on you
 write tests too. A test is a small program that checks your real program, so
-you find out a config parser is broken on your laptop instead of during a
-deploy.
+you find a broken config parser on your laptop, not during a deploy.
+
+**New here:** `_test.go` files, `testing.T`, `t.Errorf`, `t.Fatalf`, mutation grading.
 
 ## Learn
 
 ### Test files
 
-Tests live next to the code, in files whose names end in `_test.go`. They
-belong to the same package, so they can call every function in it. The
-`go test` command builds and runs them. A normal `go build` ignores them, so
-tests never end up in the program you ship.
+Tests live next to the code, in files whose names end in `_test.go`. They are
+in the same package, so they can call every function in it.
+
+`go test` builds and runs them. `go build` ignores them, so tests never end
+up in the program you ship.
 
 ```go
 // file: exercise_test.go
@@ -20,24 +22,33 @@ package ports
 
 import "testing"
 
-func TestParsePort(t *testing.T) {
+func TestDouble(t *testing.T) {
 	// checks go here
 }
 ```
 
 A *test function* must:
 
-- start with `Test`, followed by a capital letter (`TestParsePort`),
-- take exactly one parameter, `t *testing.T`, from the `testing` package,
+- have a name that starts with `Test`, then a capital letter (`TestDouble`),
+- take exactly one parameter, `t *testing.T`,
 - return nothing.
 
 `go test` finds every function like this and runs it. A test passes unless it
 reports a failure.
 
-### Reporting failures
+> **Why is it written like this?** Go requires the `_test.go` file ending,
+> the `Test` prefix and the `t *testing.T` parameter; otherwise `go test`
+> doesn't see your function. The name `t` is convention (every Go test uses
+> it). The part after `Test` is your choice, but it usually names the
+> function being tested.
 
-The usual shape is *got* and *want*: call the function, then compare what you
-got with what you want.
+### Got and want
+
+Every check has three steps:
+
+1. Call the function and store the result in `got`.
+2. Compare it with the value you `want`.
+3. If they differ, report a failure.
 
 ```go
 got := Double(4)
@@ -47,37 +58,56 @@ if got != want {
 }
 ```
 
-`t` gives you two common ways to fail:
+> **Why is it written like this?** `got` and `want` are just variable
+> names, a community convention. The message format "call = got, want want"
+> is also convention: it tells the reader what was called and what went
+> wrong. Go itself only needs the `if` and a call that reports failure.
+
+### Errorf or Fatalf?
+
+`t` has two common ways to fail:
 
 | Method | What happens |
 |---|---|
-| `t.Errorf(format, args...)` | Marks the test failed, prints the message, and **keeps going**. |
-| `t.Fatalf(format, args...)` | Marks the test failed, prints the message, and **stops this test** right away. |
+| `t.Errorf(format, args...)` | Marks the test failed, prints the message, **keeps going**. |
+| `t.Fatalf(format, args...)` | Marks the test failed, prints the message, **stops this test now**. |
 
-Both format their message like `fmt.Sprintf`. Use `t.Errorf` by default, so
-one run shows you every problem. Use `t.Fatalf` when carrying on makes no
-sense. A common case is an unexpected error: if `ParsePort` failed, the port
-it returned is meaningless, so stop there.
+Both format their message like `fmt.Sprintf` (`%d` for numbers, `%q` for
+quoted text, `%v` for anything, such as an error).
+
+Use `t.Errorf` by default, so one run shows every problem. Use `t.Fatalf`
+when carrying on makes no sense, for example after an unexpected error: if
+the call failed, the number it returned is meaningless.
 
 ```go
-port, err := ParsePort("22")
+size, err := ParseSize("10GB")
 if err != nil {
-	t.Fatalf("ParsePort(%q) returned error: %v", "22", err)
+	t.Fatalf("ParseSize(%q) returned error: %v", "10GB", err)
 }
-if port != 22 {
-	t.Errorf("ParsePort(%q) = %d, want %d", "22", port, 22)
+if size != 10 {
+	t.Errorf("ParseSize(%q) = %d, want %d", "10GB", size, 10)
 }
 ```
 
-To check that bad input is rejected, look for a missing error:
+If you call the function again later in the same test, `size` and `err`
+already exist. Use `=` instead of `:=` for the second call (`:=` creates
+new variables, `=` reuses them).
+
+### Checking that bad input is rejected
+
+Sometimes only the error matters. Then you fail when there is **no** error
+(`err == nil`):
 
 ```go
-if _, err := ParsePort("ssh"); err == nil {
-	t.Errorf("ParsePort(%q) returned no error, want an error", "ssh")
+if _, err := ParseSize("lots"); err == nil {
+	t.Errorf("ParseSize(%q) returned no error, want an error", "lots")
 }
 ```
 
-The `_` throws away the port, because only the error matters here.
+> **Why is it written like this?** The `_` is Go's way to throw away a
+> return value you don't need; Go rejects unused variables. Putting
+> `_, err := ...;` before the condition is optional syntax: it keeps `err`
+> inside this one `if`.
 
 ### Running tests yourself
 
@@ -85,31 +115,34 @@ Gopherlings runs the tests whenever you save. You can also run them in a
 terminal from the exercise folder:
 
 ```text
-go test                       run every test in the package
-go test -v                    also print each test's name and result
-go test -run TestParsePort    run only tests whose names match
+go test                     run every test in the package
+go test -v                  also print each test's name and result
+go test -run TestDouble     run only tests whose names match
 ```
 
 ### How Gopherlings grades your test
 
 A test that never fails is useless, so Gopherlings checks that yours catches
-bugs. The file `grader_test.go` holds `TestGrader`. It re-runs your test
-against the real `ParsePort`, where it must pass. Then it runs it again
-against several *mutants*: copies of `ParsePort` with one deliberate bug each.
-Your test must fail against every mutant. If one slips through, `TestGrader`
-names the bug your test missed, for example "your tests didn't notice when
-ParsePort accepted port "0"". The `parsePort` variable in `exercise.go` is how
-the grader swaps the mutants in. You don't need to touch it or
-`grader_test.go`.
+bugs. `TestGrader` (in `grader_test.go`) does two things:
+
+1. It runs your test against the real code. Your test must **pass**.
+2. It runs your test against *mutants*: copies of the code with one
+   deliberate bug each. Your test must **fail** on every mutant.
+
+If a mutant slips through, `TestGrader` names the bug you missed, such as
+"your tests didn't notice when ParsePort accepted port "0"".
+
+The `parsePort` variable in `exercise.go` is how the grader swaps mutants in.
+Don't change it or `grader_test.go`.
 
 ## Your task
 
 The deploy tool reads service ports from config files with `ParsePort`. The
 code in `exercise.go` is already correct. Write `TestParsePort` in
-`exercise_test.go` so that a broken `ParsePort` can never sneak back in.
+`exercise_test.go` so a broken `ParsePort` can never sneak back in.
 
-`ParsePort` accepts a whole number from 1 to 65535 and returns it. Anything
-else gives an error.
+`ParsePort` takes text, and returns a whole number from 1 to 65535 and a nil
+error. Anything else gives an error.
 
 ```go
 ParsePort("8080")  // => 8080, nil
@@ -118,20 +151,33 @@ ParsePort("0")     // => 0, error
 
 ### 1. Check valid ports
 
-In `TestParsePort`, check that:
+**Goal:** in `TestParsePort`, check that two valid ports come back as the right numbers with no error.
+
+Check both:
 
 - `ParsePort("8080")` returns `8080` and no error,
 - `ParsePort("443")` returns `443` and no error.
 
-Fail with `t.Fatalf` if there is an error and `t.Errorf` if the number is
-wrong. This catches mutants that reject valid ports or return the wrong
-number.
+Fail with `t.Fatalf` if there is an error, and with `t.Errorf` if the number
+is wrong. This catches mutants that reject valid ports or always return the
+same number.
+
+**Think it through:**
+- `ParsePort` returns two values. What do you name each one?
+- Which check comes first: the error or the number?
+- For the second port, do the variables already exist?
 
 ### 2. Check out-of-range ports
 
-Check that `ParsePort("0")` and `ParsePort("65536")` both return an error.
-These are just outside the allowed range, the places where a bug like `<`
-instead of `<=` hides.
+**Goal:** in the same `TestParsePort`, check that `ParsePort("0")` and `ParsePort("65536")` both return an error.
+
+These are just outside the range 1–65535. That edge is where a bug like `<`
+instead of `<=` hides. Report a failure with `t.Errorf` if either call gives
+no error. The returned number doesn't matter here.
+
+**Think it through:**
+- Which return value do you care about, and which can you throw away?
+- What does `err` look like when the function *wrongly* accepted the port?
 
 The exercise is done when `TestParsePort` passes and `TestGrader` reports
 that every mutant was caught.

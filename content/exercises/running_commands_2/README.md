@@ -1,92 +1,100 @@
 # Running commands: stdin, stderr and PATH lookups
 
-Real tools talk through all three streams: `kubectl apply -f -` reads a
-manifest from stdin, prints results on stdout and warnings on stderr. This
-time you wire those streams yourself, and check a tool is installed before
-you rely on it.
+`kubectl apply -f -` reads a manifest from stdin, prints results on stdout
+and warnings on stderr. This time you wire those streams yourself, and check a
+tool is installed before relying on it.
+
+**New here:** `cmd.Stdin`/`Stdout`/`Stderr`, `bytes.Buffer`, `exec.LookPath`.
 
 ## Learn
 
-**Recap.** `exec.Command(name, args...)` starts a program directly, with no
-shell. `Output` and `CombinedOutput` collect what it prints, a non-zero exit
-gives an `*exec.ExitError`, and `cmd.Env` must start from `os.Environ()` or the
-program loses `PATH`, `HOME` and the rest. The tests run the test binary
-itself as a fake `kubectl` (the helper-process pattern from *Running
-commands*), switched on by `TOOLRUN_HELPER=1`.
+### Recap
+
+`exec.Command(name, args...)` starts a program directly, no shell. A non-zero
+exit gives an `*exec.ExitError`. `cmd.Env` must start from `os.Environ()`, or
+the program loses `PATH`, `HOME` and the rest. The tests run the test binary
+as a fake `kubectl`, switched on by `TOOLRUN_HELPER=1`.
 
 ### Arguments are a slice, not a sentence
 
-The program receives each slice element as one argument, exactly as written:
+Each string you pass reaches the program as **one** argument:
 
 ```go
-exec.Command("kubectl", "get", "pods", "-n kube-system")   // 3 args: "-n kube-system" is ONE
-exec.Command("kubectl", "get", "pods", "-n", "kube-system") // 4 args: correct
+exec.Command("ls", "-l -a")    // 1 argument: ls sees "-l -a" and fails
+exec.Command("ls", "-l", "-a") // 2 arguments: correct
 ```
 
-To add arguments conditionally, build a `[]string` and spread it with `...`:
+To add arguments only sometimes, build a `[]string` and spread it with `...`:
 
 ```go
-args := []string{"get", "pods"}
-if namespace != "" {
-	args = append(args, "-n", namespace)
+args := []string{"log"}
+if limit != "" {
+	args = append(args, "--max-count", limit)
 }
-cmd := exec.Command("kubectl", args...)
+cmd := exec.Command("git", args...)
 ```
+
+> **Why is it written like this?** The `...` after `args` is required: it
+> tells Go "pass these as separate arguments". `append` takes as many values
+> as you like after the slice.
 
 ### Wiring the streams yourself
 
-A `Cmd` has three fields for its streams:
-
-| Field | Type | The program... |
+| Field | Type | The program… |
 |---|---|---|
 | `cmd.Stdin` | `io.Reader` | reads its input from here |
 | `cmd.Stdout` | `io.Writer` | writes normal output here |
 | `cmd.Stderr` | `io.Writer` | writes errors and warnings here |
 
-A `nil` field means "nothing": empty input, output thrown away. Set them,
-then call `cmd.Run()`. A `bytes.Buffer` is an `io.Writer` that keeps
-everything written to it; `buf.String()` gives it back.
+A `nil` field means empty input or thrown-away output. Set the fields, then
+call `cmd.Run()`. A `bytes.Buffer` keeps everything written to it;
+`buf.String()` gives it back. `strings.NewReader(s)` turns a string into a
+reader.
 
 ```go
-var stdout, stderr bytes.Buffer
-cmd := exec.Command("kubectl", "apply", "-f", "-")
-cmd.Stdin = strings.NewReader(manifest) // a string as an io.Reader
-cmd.Stdout = &stdout
-cmd.Stderr = &stderr
+var result bytes.Buffer
+cmd := exec.Command("sort")
+cmd.Stdin = strings.NewReader("b\na\n")
+cmd.Stdout = &result
 err := cmd.Run()
+// result.String() == "a\nb\n"
 ```
 
-Keeping the two buffers separate lets you show results and errors
-differently, even when the command succeeds but prints a warning.
+> **Why is it written like this?** `&result` (with `&`) is required: a
+> buffer only works as a writer through a pointer, so it can grow. `var x
+> bytes.Buffer` is fine because its zero value is an empty buffer, ready to use.
 
 ### Is the tool installed?
 
-`exec.LookPath(name)` searches the directories in `PATH`, the same way your
-shell does, and returns the full path of the program. If `name` contains a
-slash, it checks that exact file instead. When nothing is found, the error
-wraps `exec.ErrNotFound`:
+`exec.LookPath(name)` searches `PATH` like your shell does, and returns the
+full path. If `name` contains a slash, it checks that exact file. When
+nothing is found, the error wraps `exec.ErrNotFound`:
 
 ```go
-path, err := exec.LookPath("helm")
+_, err := exec.LookPath("terraform")
 if errors.Is(err, exec.ErrNotFound) {
-	fmt.Println("helm is not installed")
+	fmt.Println("please install terraform")
 }
 ```
 
-Other errors mean something else went wrong, for example the file exists but
+Other errors mean something else went wrong, like a file that exists but
 isn't executable.
 
 ## Your task
 
 Your platform team's deploy tool shells out to `kubectl`. In the examples,
-`kubectl` is the fake kubectl from the tests (`os.Args[0]`).
+`kubectl` is the fake one from the tests (`os.Args[0]`).
 
 ### 1. Fix RolloutStatus
 
-`RolloutStatus` has two bugs. The `-n` flag and the namespace are passed as
-one argument, and `cmd.Env` drops our whole environment. Fix both: pass `"-n"`
-and the namespace as separate arguments (only when `namespace` isn't `""`),
-and set `cmd.Env` to `os.Environ()` plus `"KUBECONFIG=" + kubeconfig`.
+**Goal:** fix the two bugs in `RolloutStatus` so the fake kubectl accepts
+the call.
+
+- Bug 1: `-n` and the namespace are joined into one argument. Pass `"-n"`
+  and the namespace as **two** arguments, only when `namespace` isn't `""`.
+- Bug 2: `cmd.Env` drops our whole environment. Make it `os.Environ()` plus
+  `"KUBECONFIG="` followed by the `kubeconfig` parameter. Add `"os"` to the
+  imports.
 
 ```go
 RolloutStatus(kubectl, "/tmp/config", "kube-system", "coredns")
@@ -95,11 +103,17 @@ RolloutStatus(kubectl, "/tmp/config", "", "api")   // no -n flag at all
 // => `deployment "api" successfully rolled out`, nil
 ```
 
+**Think it through:**
+- Both bugs have a `TODO(1)` right above them. Change those two lines.
+- In bug 2, which part is fixed text in quotes and which is the parameter?
+
 ### 2. Feed a manifest to kubectl apply
 
-Finish `Apply`. Feed `manifest` to the command's stdin, collect stdout and
-stderr in two separate buffers, and return both exactly as written (no
-trimming) together with the error from `cmd.Run()`.
+**Goal:** make `Apply` send `manifest` to stdin and return stdout and stderr
+separately, plus the error from `cmd.Run()`.
+
+Collect each stream in its own buffer. Return both strings exactly as
+written: no trimming. Add `"bytes"` to the imports.
 
 ```go
 Apply(kubectl, "kind: ConfigMap\nmetadata:\n  name: app-settings\n")
@@ -110,9 +124,13 @@ Apply(kubectl, "")
 // => "", "error: no objects passed to apply\n", <exit status 1 error>
 ```
 
+**Think it through:**
+- Set the three fields **before** `cmd.Run()`; read the buffers **after**.
+- `err` is already declared in the function line, so use `=`, not `:=`.
+
 ### 3. Check that a tool is installed
 
-Write `Installed` with `exec.LookPath`:
+**Goal:** write `Installed(name)` with `exec.LookPath`.
 
 | `LookPath` result | `Installed` returns |
 |---|---|
@@ -120,14 +138,20 @@ Write `Installed` with `exec.LookPath`:
 | error wrapping `exec.ErrNotFound` | `false, nil` |
 | any other error | `false, err` |
 
+Add `"errors"` to the imports.
+
 ```go
-Installed("fake-helm")                 // fake-helm is on PATH
+Installed("fake-helm")            // fake-helm is on PATH
 // => true, nil
-Installed("kubectl")                   // not on PATH
+Installed("kubectl")              // not on PATH
 // => false, nil
-Installed("/tmp/bin/notes.txt")        // exists, but not executable
+Installed("/tmp/bin/notes.txt")   // exists, but not executable
 // => false, <error>
 ```
+
+**Think it through:**
+- You only need `LookPath`'s error. What do you write for a value you ignore?
+- Check the "not found" case before the general `err != nil` case.
 
 ## Learn more
 

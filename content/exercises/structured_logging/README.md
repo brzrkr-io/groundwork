@@ -2,7 +2,9 @@
 
 When a service misbehaves at 3am, its logs are the first thing you search.
 *Structured logs* turn every log line into data you can filter, like "all
-errors for service `checkout` in `eu-west-1`", instead of text you squint at.
+errors for service `checkout` in `eu-west-1`".
+
+**New here:** `log/slog`, handlers, levels, `With`, `slog.Group`, `ReplaceAttr`.
 
 ## Learn
 
@@ -14,99 +16,127 @@ A plain log line is a sentence for humans:
 2026/10/11 09:15:02 deploy d-101 of checkout to eu-west-1 failed after 3 tries
 ```
 
-To find every failed `checkout` deploy you would need a fragile regular
-expression. A structured log line is a JSON object, one per line:
+A structured log line is one JSON object per line:
 
 ```json
 {"time":"2026-10-11T09:15:02Z","level":"ERROR","msg":"deploy failed","deploy_id":"d-101","service":"checkout","tries":3}
 ```
 
-Log platforms such as Loki, Elasticsearch and CloudWatch Logs parse each line
-into fields, so a query like `service="checkout" AND level="ERROR"` just works.
+Log platforms (Loki, Elasticsearch, CloudWatch Logs) split it into fields, so
+a query like `service="checkout" AND level="ERROR"` just works.
 
-### log/slog
+### Logger and handler
 
-Go's standard library ships a structured logger in the `log/slog` package. A
-`*slog.Logger` sends each *record* (one log call) to a *handler*, and the
-handler decides how to write it:
+The `log/slog` package has two parts:
+
+- a `*slog.Logger`: the thing you call (`logger.Info(...)`).
+- a *handler*: decides **how** each log call (a *record*) is written.
 
 ```go
-handler := slog.NewJSONHandler(os.Stdout, nil) // nil = default options
+handler := slog.NewTextHandler(os.Stdout, nil) // nil = default options
 logger := slog.New(handler)
 
-logger.Info("service started", "service", "api", "port", 8080)
-// {"time":"...","level":"INFO","msg":"service started","service":"api","port":8080}
+logger.Info("queue drained", "queue", "emails", "jobs", 12)
+// time=... level=INFO msg="queue drained" queue=emails jobs=12
 ```
 
-After the message come *attributes* as key/value pairs: `"service", "api"`
-means key `service`, value `"api"`. You can also build an attribute
-explicitly, which reads well when there are many:
+| Handler constructor | Writes |
+|---|---|
+| `slog.NewTextHandler(w, opts)` | `key=value` text (nice on a laptop) |
+| `slog.NewJSONHandler(w, opts)` | one JSON object per line (what machines want) |
+
+Both take the same two arguments, so swapping one for the other is easy.
+
+> **Why is it written like this?** `slog.New(handler)` is required: a logger
+> always needs a handler. Passing `nil` for options is allowed by the API and
+> means "defaults". The names `handler` and `logger` are the author's choice.
+
+### Attributes
+
+After the message come *attributes*: alternating key, value, key, value.
+`"queue", "emails"` means key `queue`, value `"emails"`. You can also build
+one attribute at a time:
 
 ```go
-logger.Warn("disk almost full", slog.String("host", "web-1"), slog.Int("percent", 93))
+logger.Warn("slow query", slog.String("table", "orders"), slog.Int("ms", 950))
 ```
 
-`slog.NewTextHandler` writes `key=value` text instead of JSON. It is handy on
-your laptop, but machines prefer JSON.
+> **Why is it written like this?** Keys are strings in quotes, because they
+> become the JSON field names. Values can be any type. Mixing pairs and
+> `slog.String(...)` in one call is allowed; pick whichever reads better.
 
-### Levels
+### Levels and options
 
-Each record has a *level*. The handler drops records below its minimum level.
+Every record has a *level*. The handler drops records below its minimum.
 
-| Method | Level | Use it for |
+| Method | Level constant | JSON shows |
 |---|---|---|
-| `logger.Debug` | `slog.LevelDebug` | Noisy detail for troubleshooting |
-| `logger.Info` | `slog.LevelInfo` | Normal events: started, deployed |
-| `logger.Warn` | `slog.LevelWarn` | Something odd, but still working |
-| `logger.Error` | `slog.LevelError` | Something failed |
+| `logger.Debug` | `slog.LevelDebug` | `"DEBUG"` |
+| `logger.Info` | `slog.LevelInfo` | `"INFO"` |
+| `logger.Warn` | `slog.LevelWarn` | `"WARN"` |
+| `logger.Error` | `slog.LevelError` | `"ERROR"` |
 
-You set the minimum level with `slog.HandlerOptions`:
+You set the minimum in a `slog.HandlerOptions` struct:
 
 ```go
-opts := &slog.HandlerOptions{Level: slog.LevelWarn}
-logger := slog.New(slog.NewJSONHandler(w, opts))
-logger.Info("ignored")  // below Warn: not written
-logger.Warn("written")
+opts := &slog.HandlerOptions{Level: slog.LevelError}
+logger := slog.New(slog.NewTextHandler(w, opts))
+logger.Warn("ignored")  // below Error: dropped
+logger.Error("written")
 ```
 
-In JSON output the level appears as `"level":"DEBUG"`, `"INFO"`, `"WARN"` or
-`"ERROR"`.
+> **Why is it written like this?** `Field: value,` inside `{ }` is Go's
+> syntax for setting struct fields by name. The trailing comma is required
+> when the closing `}` is on its own line. Fields you leave out keep their
+> zero value.
 
 ### With and Group
 
-`logger.With(...)` returns a **new** logger that adds the given attributes to
-every line. The original logger is unchanged. `slog.Group` nests attributes
-under one key:
+`logger.With(...)` returns a **new** logger that adds attributes to every
+line. The original logger is unchanged. `slog.Group(name, ...)` nests
+attributes under one key:
 
 ```go
-reqLogger := logger.With("request_id", "r-7", slog.Group("client", "ip", "10.0.0.5", "country", "NL"))
+reqLogger := logger.With("request_id", "r-7", slog.Group("client", "ip", "10.0.0.5"))
 reqLogger.Info("cache miss")
-// {"time":"...","level":"INFO","msg":"cache miss","request_id":"r-7","client":{"ip":"10.0.0.5","country":"NL"}}
+// {...,"msg":"cache miss","request_id":"r-7","client":{"ip":"10.0.0.5"}}
 ```
 
 ### ReplaceAttr
 
 `HandlerOptions.ReplaceAttr` is a function the handler calls on every
-attribute just before writing it. Whatever it returns is written instead:
+attribute just before writing it. It writes whatever the function returns.
+The function must have exactly this shape:
 
 ```go
 func(groups []string, a slog.Attr) slog.Attr
 ```
 
-`a.Key` is the attribute's key and `groups` lists the groups it sits inside
-(`[]string{"client"}` for `ip` above). It is the perfect place to stop secrets
-from ever reaching your logs.
+`a.Key` is the attribute's key; `a.Value` its value. `groups` lists the
+groups it sits inside. Example that upper-cases one field:
+
+```go
+func shout(groups []string, a slog.Attr) slog.Attr {
+	if a.Key == "env" {
+		return slog.String("env", strings.ToUpper(a.Value.String()))
+	}
+	return a
+}
+```
+
+> **Why is it written like this?** You assign a function to `ReplaceAttr` by
+> its **name**, without `()`: you hand over the function itself, you don't
+> call it. Go requires the parameter and result types to match exactly.
 
 ## Your task
 
-Your deploy tool logs as plain text, logs everything, and has leaked a
-database password into the logs. Fix all three.
+Your deploy tool logs plain text, logs everything, and leaked a database
+password into the logs. Fix all three in `exercise.go`.
 
 ### 1. Log JSON at a minimum level
 
-Change `NewLogger` so it returns a logger that writes JSON lines to `w` and
-drops records below `level`. Use `slog.NewJSONHandler` and set `Level` in the
-options.
+**Goal:** make `NewLogger` return a logger that writes JSON to `w` and drops
+records below `level`.
 
 ```go
 logger := NewLogger(os.Stdout, slog.LevelInfo)
@@ -115,13 +145,23 @@ logger.Info("service started", "service", "api", "port", 8080)
 // {"time":"...","level":"INFO","msg":"service started","service":"api","port":8080}
 ```
 
+**Think it through:**
+- Which options field holds the minimum level, and which parameter has it?
+- Which handler constructor writes JSON instead of text?
+
 ### 2. Tag every line of a deploy
 
-Change `DeployLogger` so it returns `logger.With(...)` with these attributes:
+**Goal:** make `DeployLogger` return `logger.With(...)` carrying the deploy's
+details.
 
-- `deploy_id`: the deploy's `ID`
-- a group called `target` holding `service` (the `Service`) and `region`
-  (the `Region`)
+The attributes to add:
+
+- `deploy_id`: the deploy's `ID` field
+- a group named `target` holding `service` (from `Service`) and `region`
+  (from `Region`)
+
+The keys are fixed text; the values come from `d`. Don't change `logger`
+itself: lines from the original logger must not get `deploy_id`.
 
 ```go
 d := Deploy{ID: "d-101", Service: "checkout", Region: "eu-west-1"}
@@ -129,12 +169,20 @@ DeployLogger(logger, d).Info("rollout started", "replicas", 3)
 // {"time":"...","level":"INFO","msg":"rollout started","deploy_id":"d-101","target":{"service":"checkout","region":"eu-west-1"},"replicas":3}
 ```
 
+**Think it through:**
+- How many key/value pairs go directly in `With`, and how many inside the group?
+- How do you read a field from the struct `d`?
+
 ### 3. Redact secrets
 
-Change `Redact` so that any attribute whose key is exactly `password` or
-`token` gets the string value `REDACTED` (keep the key). Every other attribute
-comes back unchanged. The key counts at any depth, so a `token` inside a group
-is redacted too. You don't need `groups` for this.
+**Goal:** make `Redact` hide the value of `password` and `token` attributes,
+then make `NewLogger` use it.
+
+- Key exactly `password` or `token` → return an attribute with the same key
+  and the string value `REDACTED`.
+- Any other key → return `a` unchanged.
+- Groups don't matter: a `token` inside a group is redacted too. You don't
+  need the `groups` parameter.
 
 ```go
 Redact(nil, slog.String("password", "hunter2"))         // => password=REDACTED
@@ -142,13 +190,17 @@ Redact([]string{"db"}, slog.String("token", "s3cr3t"))  // => token=REDACTED
 Redact(nil, slog.String("user", "alice"))               // => user=alice
 ```
 
-Then set `ReplaceAttr: Redact` in the options in `NewLogger`, so every logger
-it builds redacts secrets:
+Then fill in the second TODO in `NewLogger` so every logger it builds
+redacts:
 
 ```go
 logger.Info("login", "user", "alice", "password", "hunter2")
 // {"time":"...","level":"INFO","msg":"login","user":"alice","password":"REDACTED"}
 ```
+
+**Think it through:**
+- Which part of `a` do you compare, and with which operator for "either one"?
+- Which options field takes a function, and do you write `()` after the name?
 
 ## Learn more
 

@@ -4,63 +4,77 @@ A list of hosts in an inventory, the ports a service listens on, the lines of
 a log file: most collections don't have a size you know in advance. Go uses a
 *slice* for them, and you will see slices in almost every Go program.
 
+**New here:** slice types like `[]string`, slicing with `s[a:b]`, `make`,
+`nil` slices.
+
 ## Learn
 
 ### A slice is a list without a fixed length
 
-The type `[]string` (no number in the brackets) is a slice of strings. A slice
-literal looks like an array literal without the length:
+`[]string` (no number in the brackets) is a slice of strings. A slice literal
+looks like an array literal without the length:
 
 ```go
-hosts := []string{"web-1", "web-2", "web-3"}
+users := []string{"ana", "ben", "cho"}
 ```
 
-Indexing and `len` work just as with arrays from *Arrays*:
+Indexing and `len` work as with *Arrays*:
 
 ```go
-hosts[0]   // "web-1"
-hosts[2]   // "web-3"
-len(hosts) // 3
-hosts[1] = "web-9"
+users[0]   // "ana"
+len(users) // 3
+users[1] = "bo"
 ```
 
-Because the length is not part of the type, one function can accept slices of
-any length: `func Count(hosts []string) int` works for 2 hosts or 2000.
+Because the length is not part of the type, one function can take slices of
+any length: `func Count(users []string) int` works for 2 users or 2000.
+
+> **Why is it written like this?** Empty brackets `[]T` are how Go spells a
+> slice type; a number inside would make it an array. That's required syntax.
 
 ### Out of range is a panic
 
-Reading `hosts[3]` from a 3-element slice is a mistake the compiler can't
-catch, because the length is only known when the program runs. The program
-stops with a *panic*:
+Reading `users[3]` from a 3-element slice can't be caught by the compiler,
+because the length is only known when the program runs. The program stops
+with a *panic*:
 
 ```text
 panic: runtime error: index out of range [3] with length 3
 ```
 
-Check `len` before you index if you aren't sure the element exists.
+Check `len` first if you aren't sure the element exists.
 
 ### Slicing: taking a part
 
-`s[a:b]` gives you the elements from index `a` up to, but **not** including,
+`s[a:b]` gives the elements from index `a` up to, but **not** including,
 index `b`. The result has `b - a` elements. Leave out `a` to start at the
-beginning, or leave out `b` to go to the end:
+beginning; leave out `b` to go to the end.
 
 ```go
-hosts := []string{"web-1", "web-2", "web-3", "web-4"}
-hosts[1:3] // ["web-2" "web-3"]
-hosts[:2]  // ["web-1" "web-2"]          (the first 2)
-hosts[2:]  // ["web-3" "web-4"]          (everything from index 2)
-hosts[4:]  // []                         (nothing left, still fine)
-hosts[:5]  // panic: slice bounds out of range [:5] with capacity 4
+logs := []string{"l0", "l1", "l2", "l3", "l4"}
+logs[1:4] // ["l1" "l2" "l3"]
+logs[3:]  // ["l3" "l4"]   (from index 3 to the end)
+logs[:1]  // ["l0"]        (up to, not including, index 1)
+logs[5:]  // []            (nothing left, still fine)
+logs[:6]  // panic: slice bounds out of range [:6] with capacity 5
 ```
 
-`a` and `b` may each be anything from `0` to `len(hosts)`, as long as `a` is
-not bigger than `b`. Anything else panics. A handy pattern:
-`hosts[len(hosts)-n:]` is the last `n` elements.
+| Expression | Means |
+| --- | --- |
+| `s[a:b]` | from `a` up to (not incl.) `b` |
+| `s[a:]` | from `a` to the end |
+| `s[:b]` | from the start up to (not incl.) `b` |
+
+`a` and `b` can be anything from `0` to `len(s)`, with `a` not bigger than
+`b`. Anything else panics. Both may be expressions, like `s[i+1:]`.
+
+> **Why is it written like this?** The colon and square brackets are required
+> syntax. "Up to but not including" is a Go rule; it makes `s[:k]` have
+> exactly `k` elements.
 
 A slice made by slicing shares its elements with the original; it does not
 copy them. That matters later, in *Slice gotchas: shared memory*. For now,
-just don't change elements of a slice you were handed.
+don't change elements of a slice you were handed.
 
 ### make: a slice of a given length
 
@@ -68,40 +82,41 @@ just don't change elements of a slice you were handed.
 Then you fill it by index:
 
 ```go
-ports := make([]int, 3) // [0 0 0]
-for i := range len(ports) {
-	ports[i] = 9000 + i
+squares := make([]int, 4) // [0 0 0 0]
+for i := range len(squares) {
+	squares[i] = i * i
 }
-// ports is [9000 9001 9002]
+// squares is [0 1 4 9]
 ```
+
+> **Why is it written like this?** `make` is built into Go; the first
+> argument is the type, the second the length. `n` may be a variable or `0`.
 
 ### nil and empty slices
 
-A slice variable that was declared but never set is `nil`: it has no elements
-at all. `len` of a `nil` slice is `0`, and slicing it with `[:0]` or `[0:]`
-works fine.
+A slice variable declared but never set is `nil`. `len` of a `nil` slice is
+`0`, and slicing it with `[:0]` or `[0:]` works fine.
 
 ```go
-var none []string     // nil, len 0
-empty := []string{}   // not nil, but also len 0
-none == nil           // true
+var none []string   // nil, len 0
+empty := []string{} // not nil, also len 0
 ```
 
-For most code, `nil` and empty behave the same: both have length `0`. The
-tests in this exercise only check the length and the elements, never whether a
-slice is `nil`.
+For most code they behave the same. The tests only check length and
+elements, never whether a slice is `nil`.
 
 ## Your task
 
-Your deploy tool works on a list of hosts. Write three small slice helpers for
-it. Don't use `append` yet (it comes in *append and copy*).
+Your deploy tool works on a list of hosts. Write three small slice helpers.
+Don't use `append` yet (it comes in *append and copy*).
 
 ### 1. The first n hosts
 
-Change `FirstN(hosts []string, n int) []string` so it returns the first `n`
-hosts. If `n` is bigger than the number of hosts, return all of them. `n` is
-never negative. `FirstN` of a `nil` or empty slice returns an empty result
-(length `0`).
+**Goal:** make `FirstN` return the first `n` elements of `hosts`.
+
+If `n` is bigger than the number of hosts, return all of them (don't panic).
+`n` is never negative. `n` of `0`, or a `nil`/empty `hosts`, returns an empty
+result (length `0`).
 
 ```go
 FirstN([]string{"web-1", "web-2", "web-3"}, 2)
@@ -114,11 +129,18 @@ FirstN(nil, 3)
 // => []string{} (length 0)
 ```
 
+**Think it through:**
+- Which slicing form from the table means "from the start"?
+- What should happen to `n` when it is bigger than `len(hosts)`? You may
+  change a parameter inside the function.
+
 ### 2. The last n hosts
 
-Change `LastN(hosts []string, n int) []string` so it returns the last `n`
-hosts, in their original order. The same rules as task 1 apply: too big an
-`n` means all hosts, `n` is never negative, and `nil` gives an empty result.
+**Goal:** make `LastN` return the last `n` elements of `hosts`, in their
+original order.
+
+Same rules as task 1: too big an `n` means all hosts, `n` is never negative,
+`n` of `0` or `nil` gives an empty result.
 
 ```go
 LastN([]string{"web-1", "web-2", "web-3"}, 2)
@@ -128,11 +150,18 @@ LastN([]string{"web-1"}, 4)
 // => []string{"web-1"}
 ```
 
+**Think it through:**
+- In the example, the result starts at index 1 of 3 hosts. How do you get
+  that 1 from the length and `n`?
+- Which slicing form means "to the end"?
+- Guard against a big `n` the same way as in task 1.
+
 ### 3. A range of ports
 
-Change `PortRange(start, count int) []int` so it returns `count` consecutive
-port numbers beginning at `start`. Use `make`. A `count` of `0` returns an
-empty slice.
+**Goal:** make `PortRange` return `count` consecutive port numbers, starting
+at `start`.
+
+Use `make`. A `count` of `0` returns an empty slice.
 
 ```go
 PortRange(8080, 3)
@@ -141,6 +170,10 @@ PortRange(8080, 3)
 PortRange(9100, 0)
 // => []int{}
 ```
+
+**Think it through:**
+- How long must the slice be? Which parameter tells you?
+- The element at index `i` is how far past `start`?
 
 ## Learn more
 

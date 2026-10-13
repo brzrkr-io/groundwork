@@ -1,94 +1,98 @@
 # Health checks: liveness and readiness
 
 Kubernetes asks every pod two questions, many times a minute: "are you
-alive?" and "are you ready for traffic?" If you answer them well, deploys and
-outages go smoothly. If you answer them badly, Kubernetes can restart every pod
-you have at the worst possible moment.
+alive?" and "are you ready for traffic?" Answer well and deploys go smoothly.
+Answer badly and Kubernetes can restart every pod you have at the worst moment.
+
+**New here:** liveness and readiness probes, `context.WithTimeout`, setting a
+status code and header on an HTTP response.
 
 ## Learn
 
 ### Liveness and readiness
 
-A *probe* is an HTTP request that Kubernetes (the kubelet on each node) sends
-to your container on a schedule. Two probes matter most:
+A *probe* is an HTTP request that Kubernetes sends to your container on a
+schedule. Two probes matter most:
 
 | Probe | The question | Usual path | When it fails, Kubernetes… |
 |---|---|---|---|
 | *Liveness* | Is the process stuck beyond repair? | `/livez` | kills and restarts the container |
-| *Readiness* | Can this pod serve requests right now? | `/readyz` | stops sending it traffic (removes it from the Service's endpoints) until it passes again |
+| *Readiness* | Can this pod serve requests right now? | `/readyz` | stops sending it traffic until it passes again |
 
-Any status from 200 to 399 counts as a pass. Services answer `200 OK` for
-"yes" and `503 Service Unavailable` for "no".
+Any status from 200 to 399 is a pass. Services answer `200 OK` for "yes" and
+`503 Service Unavailable` for "no".
 
 ### Keep liveness dumb
 
-Imagine `/livez` checked the database and the database went down. Every pod
-would fail liveness and Kubernetes would restart all of them. The restarts
-can't fix the database, so the pods keep crashing in a loop. A database outage
-has become a full outage.
+Imagine `/livez` checked the database, and the database went down. Every pod
+would fail liveness, and Kubernetes would restart all of them. Restarts can't
+fix the database, so the pods crash in a loop.
 
-So liveness only proves that the process can still answer HTTP. Dependency
-checks belong in readiness. When the database is down, pods stop getting
-traffic. When it recovers, they pass readiness again and traffic comes back,
-with no restarts.
+So liveness only proves the process can answer HTTP. Dependency checks belong
+in readiness: pods stop getting traffic while the database is down, and get it
+back when it recovers. No restarts.
 
 ### Named checks
 
-A readiness endpoint runs a list of *checks*, one per dependency:
+Readiness runs a list of *checks*, one per dependency. `Run` returns `nil`
+when the dependency is healthy, and an error when it isn't:
 
 ```go
-type Check struct {
-	Name string
-	Run  func(ctx context.Context) error
-}
-
 postgres := Check{Name: "postgres", Run: func(ctx context.Context) error {
 	return db.PingContext(ctx) // db is a *sql.DB connection pool
 }}
 ```
 
-`Run` returns `nil` when the dependency is healthy, and an error when it isn't.
-
 ### A timeout for each check
 
-Probes have their own timeout (`timeoutSeconds`, 1 second by default). One
-check that hangs would make the whole probe hang, so each check gets its own
-deadline from `context.WithTimeout`:
+One hanging check would make the whole probe hang. `context.WithTimeout`
+gives a piece of work its own deadline:
 
 ```go
-ctx, cancel := context.WithTimeout(parent, 500*time.Millisecond)
-defer cancel() // always release the context's timer
-err := check.Run(ctx)
+dl, cancel := context.WithTimeout(parent, 2*time.Second)
+defer cancel()
+resp, err := fetch(dl, url) // fetch gives up when dl expires
 ```
 
-A well-behaved check watches `ctx.Done()`. When the deadline passes, it gives
-up and returns `ctx.Err()`, which is `context.DeadlineExceeded`. That error's
-message is:
+A well-behaved check watches its context. When the deadline passes, it returns
+`ctx.Err()`, whose message is exactly `context deadline exceeded`.
 
-```text
-context deadline exceeded
+> **Why is it written like this?**
+> - **Go requires** you to use both return values: Go won't compile if a
+>   variable like `cancel` is never used.
+> - **Convention:** `defer cancel()` right after creating the context, so its
+>   timer is always released. `go vet` warns if you forget.
+> - **Author's choice:** the names `dl` and `cancel`. The new context is often
+>   also called `ctx`, replacing the old one.
+
+### Writing a response
+
+A handler writes to `w http.ResponseWriter`. Headers and the status code go
+out *before* the body, so set them first:
+
+```go
+w.Header().Set("Content-Type", "text/plain")
+w.WriteHeader(http.StatusNotFound) // 404
+fmt.Fprint(w, "no such page\n")    // the body comes last
 ```
+
+If you never call `WriteHeader`, the first body write sends `200` for you.
+
+> **Why is it written like this?**
+> - **Go requires** nothing about the order, but HTTP does: once body bytes
+>   are written, the status and headers are already sent and can't change.
+> - **Convention:** use named constants like `http.StatusOK` instead of `200`.
 
 ### The readiness report
 
-People debugging an outage want to see *which* dependency failed, so the
-readiness endpoint sends a JSON report:
+People debugging an outage want to see *which* dependency failed:
 
 ```json
 {"status":"fail","checks":[{"name":"postgres","status":"ok"},{"name":"redis","status":"fail","error":"connection refused"}]}
 ```
 
-The `Result` struct uses `json:"error,omitempty"`, so the `error` field is left
-out when it's empty. You only have to fill in the structs. `encoding/json`
-does the rest.
-
-The status code and headers go out before the body, so set them first:
-
-```go
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusServiceUnavailable)
-json.NewEncoder(w).Encode(report) // the body comes last
-```
+The structs and their `json:"..."` tags are written for you. The tag
+`omitempty` leaves `error` out when it's empty. `encoding/json` does the rest.
 
 ## Your task
 
@@ -97,29 +101,34 @@ Kubernetes. The types are written for you. Fill in the logic.
 
 ### 1. Answer the liveness probe
 
-Make `Livez` reply with status 200 and exactly this body: `ok` followed by a
-newline (`"ok\n"`). It must not run any checks.
+**Goal:** make `Livez` reply with status 200 and the body `"ok\n"`.
 
-`fmt.Fprint(w, "ok\n")` writes text to the response. Add `"fmt"` to the
-imports. A handler that never calls `WriteHeader` sends 200 automatically.
+The body is the two letters `ok` followed by a newline. It must not run any
+checks.
 
 ```text
 GET /livez
 => 200, body "ok\n"
 ```
 
+**Think it through:**
+- Which function from *Formatting with fmt* can write text to an
+  `io.Writer` like `w`? Remember to add its package to the imports.
+- Do you need to call `WriteHeader` at all for a 200?
+
 ### 2. Run one check with a timeout
 
-`RunChecks` already loops over the checks in order and calls `RunCheck` for
-each one. Write `RunCheck`:
+**Goal:** make `RunCheck` run `c.Run` with its own deadline and return a
+`Result`.
 
-- Create a context from `ctx` that expires after `timeout`, and pass it to
-  `c.Run`. Remember `defer cancel()`.
-- If `Run` returns `nil`, return `Result{Name: c.Name, Status: "ok"}`.
-- Otherwise return `Status: "fail"` and `Error: err.Error()`.
+`RunChecks` already calls `RunCheck` for each check, in order. In `RunCheck`:
 
-`healthy`, `refused` and `hangs` are small checks defined in
-`exercise_test.go`:
+- Make a context from `ctx` that expires after `timeout`, and pass it to `c.Run`.
+- If `Run` returns `nil`: `Result{Name: c.Name, Status: "ok"}`.
+- Otherwise: `Status: "fail"` and `Error` set to the error's message (a
+  `string`, from `err.Error()`).
+
+`healthy`, `refused` and `hangs` are small checks in `exercise_test.go`:
 
 ```go
 RunChecks(ctx, []Check{{"postgres", healthy}, {"redis", refused}}, time.Second)
@@ -133,10 +142,18 @@ RunChecks(ctx, []Check{{"vault", hangs}}, 5*time.Millisecond)
 // => []Result{{Name: "vault", Status: "fail", Error: "context deadline exceeded"}}
 ```
 
+**Think it through:**
+- Which parameter is the parent context, and which is the duration?
+- `c.Run` must get the *new* context, not the original `ctx`.
+- `Name` always comes from the check; only `Status` and `Error` change.
+
 ### 3. Serve the readiness report
 
-Finish the handler returned by `Readyz`. It already runs the checks and builds
-a `Report` with `Status: "ok"`. Before the `Encode` line:
+**Goal:** in the handler returned by `Readyz`, reply 200 when all checks
+passed and 503 when any failed, with a JSON content type.
+
+The handler already runs the checks and builds `report` with `Status: "ok"`.
+Before the `Encode` line:
 
 - If any result's `Status` is `"fail"`, set `report.Status` to `"fail"` and
   reply `503`. Otherwise reply `200`.
@@ -148,6 +165,10 @@ GET /readyz   (postgres ok, redis down)
    Content-Type: application/json
    {"status":"fail","checks":[{"name":"postgres","status":"ok"},{"name":"redis","status":"fail","error":"connection refused"}]}
 ```
+
+**Think it through:**
+- Loop over `results` and remember the status code in a variable.
+- Headers, then status code, then body. The `Encode` line is the body.
 
 ## Learn more
 

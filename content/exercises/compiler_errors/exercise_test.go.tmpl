@@ -1,0 +1,36 @@
+package compilefix
+
+import "testing"
+
+func TestURL(t *testing.T) {
+	if got := URL("api.internal"); got != "https://api.internal" {
+		t.Errorf(`URL("api.internal") = %q, want "https://api.internal"`, got)
+	}
+	if got := URL("grafana.ops"); got != "https://grafana.ops" {
+		t.Errorf(`URL("grafana.ops") = %q, want "https://grafana.ops"`, got)
+	}
+}
+
+func TestTag(t *testing.T) {
+	if got := Tag("api"); got != "api:v2" {
+		t.Errorf(`Tag("api") = %q, want "api:v2"`, got)
+	}
+	if got := Tag("worker"); got != "worker:v2" {
+		t.Errorf(`Tag("worker") = %q, want "worker:v2"`, got)
+	}
+}
+
+func TestPort(t *testing.T) {
+	if got := Port(); got != 8080 {
+		t.Errorf("Port() = %d, want 8080", got)
+	}
+}
+
+func TestGreeting(t *testing.T) {
+	if got := Greeting("Sam"); got != "Hello, Sam" {
+		t.Errorf(`Greeting("Sam") = %q, want "Hello, Sam"`, got)
+	}
+	if got := Greeting("Priya"); got != "Hello, Priya" {
+		t.Errorf(`Greeting("Priya") = %q, want "Hello, Priya"`, got)
+	}
+}

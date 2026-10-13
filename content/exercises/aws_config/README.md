@@ -4,18 +4,24 @@ Every program that talks to AWS starts the same way: work out *which region*
 to talk to and *who you are*. Get this right, and never print your secret key
 while doing it.
 
+**New here:** the AWS SDK for Go, `aws.Config`, `config.LoadDefaultConfig`, functional options, credentials providers.
+
 ## Learn
 
 ### AWS in one minute
 
-*AWS* (Amazon Web Services) rents out servers, storage and databases through an
-API. Your resources live in an *account*. Each resource sits in a *region*, a
-group of data centres with a name like `us-east-1` or `eu-west-1`. A request
-to `eu-west-1` only sees what is in `eu-west-1`.
+*AWS* (Amazon Web Services) rents out servers, storage and databases through
+an API. Each resource sits in a *region*, a group of data centres with a name
+like `us-east-1` or `eu-west-1`. A request to `eu-west-1` only sees what is in
+`eu-west-1`.
 
-To call the API you need *credentials*: an *access key ID* (`AKIA...`, safe to
-show), a *secret access key* (a password: never log it) and, for temporary
-credentials, a *session token*.
+To call the API you need *credentials*:
+
+| Part | Example | Safe to log? |
+|---|---|---|
+| *access key ID* | `AKIA...` | only shortened |
+| *secret access key* | `wJal...` | never |
+| *session token* | only for temporary credentials | never |
 
 ### Profiles and the two shared files
 
@@ -40,18 +46,24 @@ aws_secret_access_key = stagingSecretKey/K7MDENG/EXAMPLEKEY
 
 ### Loading an aws.Config
 
-The SDK module is `github.com/aws/aws-sdk-go-v2`. Every client is built from
-an `aws.Config` (package `aws`), which holds the `Region` and a `Credentials`
-provider. `config.LoadDefaultConfig` (package `config`) builds one from
-your environment and the shared files. You tweak it with *functional
-options*: small functions that each change one setting.
+Every SDK client is built from an `aws.Config` (package `aws`). It holds the
+`Region` and a `Credentials` provider. `config.LoadDefaultConfig` (package
+`config`) builds one from your environment and the shared files.
+
+You change its behaviour with *functional options*: small values that each
+change one setting. You pass as many as you like after `ctx`:
 
 ```go
 cfg, err := config.LoadDefaultConfig(ctx,
-	config.WithRegion("eu-west-1"),
-	config.WithSharedConfigProfile("staging"),
+	config.WithRegion("ap-south-1"),
+	config.WithSharedConfigProfile("billing"),
 )
 ```
+
+> **Why is it written like this?** Go requires the commas between arguments,
+> including the one after the last argument when the `)` is on its own line.
+> One option per line is convention (gofmt keeps it readable). Which options
+> you pass, and in which order, is your choice: order doesn't matter here.
 
 | Option | Effect |
 |---|---|
@@ -61,23 +73,42 @@ cfg, err := config.LoadDefaultConfig(ctx,
 | `config.WithSharedCredentialsFiles([]string{path})` | read this credentials file instead of `~/.aws/credentials` |
 | `config.WithCredentialsProvider(p)` | use credentials provider `p` |
 
-For keys you already have (for example from a secret store),
-`credentials.NewStaticCredentialsProvider(keyID, secret, sessionToken)` from
-package `credentials` makes a provider. Pass `""` when there is no session token.
+The two file options take a *slice* of paths, even when you have only one.
+`[]string{x}` builds a slice holding just `x`.
 
-The options parameter is *variadic* (as in *Variadic functions*). Each
-option has the type `func(*config.LoadOptions) error`. When some options are
-optional, collect them in a slice of that type and spread it with `opts...`:
+### Static credentials
+
+For keys you already hold (for example from a secret store), package
+`credentials` (`github.com/aws/aws-sdk-go-v2/credentials`) makes a provider:
+
+```go
+prov := credentials.NewStaticCredentialsProvider("AKIABILLING0EXAMPLE", "billingSecret", "")
+```
+
+The three arguments are key ID, secret, session token, in that order. Pass
+`""` as the session token when you don't have one. You pass the provider
+itself into an option; you don't call anything on it yourself.
+
+### Options you only sometimes want
+
+The options parameter is *variadic* (as in *Variadic functions*). Each option
+has the type `func(*config.LoadOptions) error`. When an option is only
+sometimes needed, collect options in a slice and spread it with `...`:
 
 ```go
 opts := []func(*config.LoadOptions) error{
-	config.WithSharedConfigProfile("staging"),
+	config.WithSharedConfigProfile("billing"),
 }
-if region != "" {
-	opts = append(opts, config.WithRegion(region))
+if debug {
+	opts = append(opts, config.WithClientLogMode(aws.LogRequest))
 }
 cfg, err := config.LoadDefaultConfig(ctx, opts...)
 ```
+
+> **Why is it written like this?** Go requires the `...` after `opts` to
+> spread a slice into a variadic parameter. The long type
+> `func(*config.LoadOptions) error` is required too: it is what each option
+> really is. The name `opts` is convention.
 
 `LoadDefaultConfig` returns an error if, for example, the profile you named
 does not exist.
@@ -90,6 +121,9 @@ does not exist.
 | 2 | `AWS_REGION` environment variable |
 | 3 | `region =` in the profile |
 
+The SDK applies this order for you. You only decide whether to pass
+`WithRegion` at all.
+
 ### Reading the credentials
 
 `cfg.Credentials.Retrieve(ctx)` returns an `aws.Credentials` struct with
@@ -99,13 +133,13 @@ example when the key ID or secret is empty):
 ```go
 creds, err := cfg.Credentials.Retrieve(ctx)
 if err != nil {
-	return "", err
+	return err
 }
-fmt.Println(creds.AccessKeyID) // fine; never print creds.SecretAccessKey
+log.Println("expires:", creds.Expires) // never log creds.SecretAccessKey
 ```
 
-Even the key ID is better shortened in logs. You can slice a string like a
-slice: `s[:4]` is its first 4 bytes.
+You can slice a string like a slice: `s[:3]` is its first 3 bytes. Slicing
+past the end panics, so check `len(s)` first.
 
 ## Your task
 
@@ -115,53 +149,76 @@ files in `testdata/`, never your real `~/.aws`.
 
 ### 1. Build a config from static keys
 
-Complete `StaticConfig` so it calls `config.LoadDefaultConfig` with
-`WithRegion(region)` and `WithCredentialsProvider` using
-`credentials.NewStaticCredentialsProvider(keyID, secret, "")`. Return what
-`LoadDefaultConfig` returns.
+**Goal:** `StaticConfig(ctx, region, keyID, secret)` returns an `aws.Config`
+for `region` that uses `keyID` and `secret` as its credentials.
+
+There is no session token. Return whatever `config.LoadDefaultConfig` returns
+(the config and the error). Add the import
+`"github.com/aws/aws-sdk-go-v2/credentials"`.
 
 ```go
 cfg, _ := StaticConfig(ctx, "us-east-1", "AKIAIOSFODNN7EXAMPLE", "wJal...")
 cfg.Region // => "us-east-1"
+// cfg.Credentials.Retrieve(ctx) gives AccessKeyID "AKIAIOSFODNN7EXAMPLE", SecretAccessKey "wJal..."
 ```
+
+**Think it through:**
+- Which two rows of the options table do you need?
+- Which of the three parameters go into the credentials provider, and what goes in the third slot?
 
 ### 2. Load a profile from given files
 
-Complete `Load`. The starter already builds an options slice with
-`WithSharedConfigProfile(s.Profile)` and passes it to `LoadDefaultConfig`.
-Add `WithSharedConfigFiles` with `s.ConfigFile` and
-`WithSharedCredentialsFiles` with `s.CredentialsFile`, and append
-`WithRegion(s.Region)` only when `s.Region` is not `""`. Return the error
-for an unknown profile.
+**Goal:** `Load(ctx, s)` returns the config for profile `s.Profile`, read from
+the files `s.ConfigFile` and `s.CredentialsFile`; a non-empty `s.Region`
+overrides the region.
+
+The starter already puts the profile option in `opts`. Always add the two file
+options. Add the region option only when `s.Region` is not `""`. An unknown
+profile must return the error from `LoadDefaultConfig`.
 
 With `testdata/team/config` and `testdata/team/credentials`:
 
-| Profile | `s.Region` | `AWS_REGION` | Region you get |
-|---|---|---|---|
-| `staging` | `""` | unset | `eu-west-1` |
-| `prod` | `""` | unset | `us-west-2` |
-| `prod` | `ca-central-1` | unset | `ca-central-1` |
-| `staging` | `""` | `ap-northeast-1` | `ap-northeast-1` |
-| `staging` | `sa-east-1` | `ap-northeast-1` | `sa-east-1` |
-| `qa` or `dev` | | | error |
+| Profile | `s.Region` | `AWS_REGION` | Region you get | Access key ID |
+|---|---|---|---|---|
+| `staging` | `""` | unset | `eu-west-1` | `AKIASTAGING000EXAMPLE` |
+| `prod` | `""` | unset | `us-west-2` | `AKIAPROD00000EXAMPLE` |
+| `prod` | `ca-central-1` | unset | `ca-central-1` | `AKIAPROD00000EXAMPLE` |
+| `staging` | `""` | `ap-northeast-1` | `ap-northeast-1` | `AKIASTAGING000EXAMPLE` |
+| `staging` | `sa-east-1` | `ap-northeast-1` | `sa-east-1` | `AKIASTAGING000EXAMPLE` |
+| `qa` or `dev` | | | error | |
+
+**Think it through:**
+- Which fields of `s` hold the two file paths, and what type do the file options want?
+- Why must the region option be skipped when `s.Region` is `""`? (Look at the *Who wins?* table.)
 
 ### 3. Describe the config safely
 
-Complete `Redact`: return the first 4 characters followed by exactly
-`****`. If the string has 4 characters or fewer, return just `****`.
+**Goal:** `Redact(secret)` hides most of a string, and `Describe(ctx, cfg)`
+returns a log line that shows the region and the redacted access key ID.
+
+`Redact` returns the first 4 characters followed by exactly `****`. If the
+string has 4 characters or fewer (including `""`), it returns just `****`.
 
 ```go
 Redact("AKIAIOSFODNN7EXAMPLE") // => "AKIA****"
+Redact("ASIAXYZ")              // => "ASIA****"
 Redact("abcd")                 // => "****"
+Redact("")                     // => "****"
 ```
 
-Then complete `Describe`: retrieve the credentials from `cfg`, and return
-`region=<cfg.Region> access_key=<Redact(AccessKeyID)>`. If `Retrieve` fails,
-return `""` and its error. The secret must never appear.
+`Describe` retrieves the credentials from `cfg` and returns exactly
+`region=<region> access_key=<redacted key ID>`, with one space between the two
+parts. If retrieving fails, return `""` and that error. The secret must never
+appear. Add the import `"fmt"` if you format with `fmt.Sprintf`.
 
 ```go
-Describe(ctx, cfg) // => "region=eu-west-1 access_key=AKIA****"
+Describe(ctx, cfg) // => "region=eu-west-1 access_key=AKIA****", nil
 ```
+
+**Think it through:**
+- In `Redact`, what must you check before slicing, so a short string doesn't panic?
+- In `Describe`, which parts are fixed text (`region=`, ` access_key=`) and which come from `cfg` and the credentials?
+- Which credential field goes through `Redact`, and which fields don't appear at all?
 
 ## Learn more
 

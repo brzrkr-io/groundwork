@@ -4,13 +4,15 @@ Release tags, hostnames, log lines: ops work is full of text that follows a
 pattern. A *regular expression* (regex) describes that pattern once, and Go's
 `regexp` package checks and picks apart any string against it.
 
+**New here:** regex syntax, raw strings in backticks, `regexp.MustCompile`,
+`MatchString`, `FindStringSubmatch`, named groups and `SubexpIndex`.
+
 ## Learn
 
 ### What a regular expression is
 
-A regular expression is a small pattern language. Most characters match
-themselves: the pattern `ERROR` matches the text "ERROR". A few characters are
-special:
+A regex is a small pattern language. Most characters match themselves: the
+pattern `ERROR` matches the text "ERROR". A few are special:
 
 | Pattern | Matches |
 |---|---|
@@ -18,57 +20,59 @@ special:
 | `\d` | one digit, `0`–`9` |
 | `\w` | one letter, digit or `_` |
 | `\S` | one character that is not a space or tab |
-| `[a-z]` | one character from the set: here, a lowercase letter. `[a-z0-9-]` adds digits and `-` |
+| `[a-z]` | one character from the set. `[a-z0-9-]` adds digits and `-` |
 | `x+` | one or more `x` |
 | `x*` | zero or more `x` |
 | `x?` | zero or one `x` (optional) |
 | `x{3}` | exactly three `x` |
-| `^` | the start of the text |
-| `$` | the end of the text |
-| `\.` | a literal dot (a plain `.` means "any character") |
+| `^` / `$` | the start / the end of the text |
+| `\.` | a literal dot (plain `.` means "any character") |
 | `( )` | a *capture group*: remember what matched inside |
 | `(?P<name> )` | a capture group with a name |
 
-So `\d+` means "one or more digits", and `^\d{3}$` means "exactly three
-digits and nothing else".
+So `^\d{3}-\d{4}$` means "three digits, a dash, four digits, and nothing
+else".
 
-Without `^` and `$`, a pattern may match *anywhere* inside the text: `\d+`
-matches "port 8080" because "8080" is in there. Add `^...$` when the whole
-string must fit.
+Without `^` and `$`, a pattern may match *anywhere*: `\d+` matches
+"port 8080" because "8080" is in there. Add `^...$` when the whole string
+must fit.
 
 ### Write patterns in backticks
 
-Patterns are full of backslashes. In a normal `"double-quoted"` Go string, a
-backslash starts an escape such as `\n`, so you would have to write `"\\d+"`.
-A *raw string literal* in backticks keeps every character exactly as typed:
+In a `"double-quoted"` Go string, a backslash starts an escape such as `\n`,
+so you'd have to double every backslash. A *raw string literal* in backticks
+keeps every character as typed:
 
 ```go
-"\\d+\\.\\d+" // double quotes: every backslash doubled
-`\d+\.\d+`    // backticks: what you see is the pattern
+"\\d+-\\d+" // double quotes: every backslash doubled
+`\d+-\d+`   // backticks: what you see is the pattern
 ```
 
-Always use backticks for patterns.
+> **Why is it written like this?** Both are valid Go. Backticks for patterns
+> are a strong convention because they avoid the doubling.
 
 ### Compile once, use many times
 
 ```go
-var port = regexp.MustCompile(`^\d+$`)
+var orderID = regexp.MustCompile(`^ORD-\d+$`)
 
-port.MatchString("8080") // true
-port.MatchString("80a")  // false
+orderID.MatchString("ORD-1042") // true
+orderID.MatchString("ord-1042") // false
 ```
 
-`regexp.MustCompile` turns the pattern into a `*regexp.Regexp`. Declare it at
-package level so it is compiled once, when the program starts. If the pattern
-is invalid, `MustCompile` panics. For a pattern written in your code that is
-what you want: the program crashes straight away instead of misbehaving later.
+`regexp.MustCompile` turns the pattern into a `*regexp.Regexp`.
+`MatchString` reports whether the text matches.
 
-`MatchString` reports whether the pattern matches.
+> **Why is it written like this?** Declaring it at package level (`var`
+> outside any function) is convention: it compiles once, at start-up.
+> `MustCompile` panics on a bad pattern, which is what you want for a pattern
+> written in your code: the program crashes at once instead of misbehaving
+> later.
 
 ### Pull out the parts
 
-`FindStringSubmatch` returns a `[]string`: index 0 holds the whole match, then
-one entry per capture group, in order. It returns `nil` when there is no
+`FindStringSubmatch` returns a `[]string`: index 0 is the whole match, then
+one entry per capture group, left to right. It returns `nil` when there is no
 match.
 
 ```go
@@ -85,6 +89,8 @@ hostPort.FindStringSubmatch("no port here") // nil
 The parts are always strings. Turn digits into an `int` with `strconv.Atoi`,
 as in *Type conversion*.
 
+### Named groups
+
 Counting groups gets error-prone in long patterns. Name them with
 `(?P<name>...)` and look up the index with `SubexpIndex`:
 
@@ -92,15 +98,14 @@ Counting groups gets error-prone in long patterns. Name them with
 var hostPort = regexp.MustCompile(`^(?P<host>[a-z0-9.-]+):(?P<port>\d+)$`)
 
 m := hostPort.FindStringSubmatch("db-1.internal:5432")
-host := m[hostPort.SubexpIndex("host")] // "db-1.internal"
+port := m[hostPort.SubexpIndex("port")] // "5432"
 ```
 
-A long pattern can be split into pieces joined with `+`, one piece per line.
+A long pattern can be split into pieces joined with `+`, one per line.
 
-Go's regexp engine is called *RE2*. It skips a few features of other regex
-engines (such as backreferences), and in return a match always runs in time
-proportional to the length of the input, so a bad pattern can't hang your
-service.
+Go's engine (*RE2*) skips a few features of other engines, such as
+backreferences. In return, a match always runs in time proportional to the
+input, so a bad pattern can't hang your service.
 
 ## Your task
 
@@ -109,33 +114,38 @@ recognise both.
 
 ### 1. Recognise release tags
 
-A release tag is a lowercase `v`, then three numbers separated by dots, with
-nothing before or after. Each number is one or more digits.
+**Goal:** replace the placeholder `^v$` in `semverTag` so it matches release
+tags like `v1.4.2`.
 
-In `exercise.go`, replace the placeholder pattern `^v$` in `semverTag` with
-the real pattern. `IsSemverTag` already returns `semverTag.MatchString(tag)`,
-so it starts working as soon as the pattern is right.
+A release tag is: a lowercase `v`, then three numbers separated by dots,
+nothing before or after. Each number is one or more digits. `IsSemverTag`
+already calls `semverTag.MatchString(tag)`, so only the pattern changes.
 
 ```go
 IsSemverTag("v1.4.2")      // => true
 IsSemverTag("v10.0.15")    // => true
 IsSemverTag("1.4.2")       // => false (no "v")
 IsSemverTag("v1.4")        // => false (only two numbers)
+IsSemverTag("v1.4.x")      // => false (not a number)
 IsSemverTag("v1.4.2-rc.1") // => false (text after the tag)
 IsSemverTag("xv1.4.2")     // => false (text before the tag)
 IsSemverTag("v1x4x2")      // => false (the separators must be dots)
 IsSemverTag("")            // => false
 ```
 
+**Think it through:**
+- Write the tag's pieces in order (start, `v`, number, dot, …, end), then
+  find each one in the table.
+- A plain `.` would accept `v1x4x2`. Which table row is a real dot?
+
 ### 2. Parse release tags
 
-Add a capture group around each of the three numbers in `semverTag`.
-`MatchString` ignores groups, so task 1 keeps passing.
+**Goal:** `ParseSemver(tag)` returns the three numbers as a `Version` and
+`true`, or `Version{}` and `false` when `tag` isn't a release tag.
 
-Then implement `ParseSemver`. Use `FindStringSubmatch`. If it returns `nil`,
-return `Version{}, false`. Otherwise convert the three groups with
-`strconv.Atoi` (add `"strconv"` to the imports) and return the `Version` and
-`true`.
+First add a capture group around each number in `semverTag`. `MatchString`
+ignores groups, so task 1 keeps passing. Then use `FindStringSubmatch` and
+`strconv.Atoi` (add `"strconv"` to the imports).
 
 ```go
 ParseSemver("v1.4.2")   // => Version{Major: 1, Minor: 4, Patch: 2}, true
@@ -143,7 +153,15 @@ ParseSemver("v10.0.15") // => Version{Major: 10, Minor: 0, Patch: 15}, true
 ParseSemver("latest")   // => Version{}, false
 ```
 
+**Think it through:**
+- What does `FindStringSubmatch` return for `"latest"`? Check that first.
+- Which indexes hold the three numbers? (Index 0 is the whole tag.)
+- `strconv.Atoi` returns two values. What do you do with the error?
+
 ### 3. Parse log lines
+
+**Goal:** finish `ParseLogLine` so it fills each `LogLine` field from its
+named group, or returns an error when the line doesn't match.
 
 Your services log lines like this:
 
@@ -151,18 +169,17 @@ Your services log lines like this:
 2026-10-11T09:14:03Z ERROR [payments] connection refused
 ```
 
-The pattern `logLine` is already written for you. Piece by piece:
+The pattern `logLine` is already written. Piece by piece:
 
 | Piece | Matches |
 |---|---|
 | `^(?P<time>\S+) ` | the timestamp: everything up to the first space |
 | `(?P<level>[A-Z]+) ` | the level: uppercase letters, then a space |
-| `\[(?P<service>[a-z0-9-]+)\] ` | the service in square brackets (`\[` is a literal `[`), then a space |
+| `\[(?P<service>[a-z0-9-]+)\] ` | the service in square brackets (`\[` is a literal `[`) |
 | `(?P<message>.*)$` | the message: everything else to the end |
 
-Finish `ParseLogLine`. It already calls `logLine.FindStringSubmatch(line)`.
-Fill each `LogLine` field from the group with the same name, using
-`logLine.SubexpIndex("time")` and so on.
+Group names `time`, `level`, `service`, `message` fill the fields `Time`,
+`Level`, `Service`, `Message`.
 
 ```go
 ParseLogLine("2026-10-11T09:14:03Z ERROR [payments] connection refused")
@@ -170,17 +187,22 @@ ParseLogLine("2026-10-11T09:14:03Z ERROR [payments] connection refused")
 //            Service: "payments", Message: "connection refused"}, nil
 ```
 
-When the line does not match, return an empty `LogLine` and the error
-`not a log line: "<line>"`, with the line in double quotes. Use
-`fmt.Errorf("not a log line: %q", line)`.
+When the line doesn't match, return an empty `LogLine` and the error
+`not a log line: "<line>"`: that fixed text, then the line in double quotes.
 
 ```go
 ParseLogLine("hello world")
 // => LogLine{}, error `not a log line: "hello world"`
 
 ParseLogLine("2026-10-11T09:14:03Z error [payments] connection refused")
-// => error, because the level must be uppercase
+// => error: the level must be uppercase
 ```
+
+**Think it through:**
+- The starter already handles `m == nil` but with the wrong message. Which
+  `fmt` verb puts double quotes around a string?
+- Look at the *Named groups* example: how do you get one field's text out of
+  `m`?
 
 ## Learn more
 

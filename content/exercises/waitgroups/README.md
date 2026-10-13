@@ -1,9 +1,11 @@
 # WaitGroups
 
 A `sync.WaitGroup` answers one question: "have all my goroutines finished
-yet?" You met `wg.Go` in *Goroutines*. This exercise shows the counter
-underneath it, the older `Add`/`Done` style you'll still see in existing code,
-and why `wg.Go` is the safer choice.
+yet?" You met `wg.Go` in *Goroutines*. Here you see the counter underneath it,
+the older `Add`/`Done` style you'll find in existing code, and how to share
+one WaitGroup with a helper.
+
+**New here:** `wg.Wait`, `wg.Add`/`wg.Done`, passing `*sync.WaitGroup`.
 
 ## Learn
 
@@ -18,99 +20,126 @@ A WaitGroup holds a counter:
 
 ```go
 var wg sync.WaitGroup
-for _, region := range regions {
+for _, svc := range services {
 	wg.Go(func() {
-		deploy(region)
+		restart(svc)
 	})
 }
-wg.Wait() // counter is 0: every deploy has finished
+wg.Wait() // counter is 0: every restart has finished
 ```
 
 ```text
 counter:  0 ─Go─▶ 1 ─Go─▶ 2 ─Go─▶ 3 ···done▶ 2 ···done▶ 1 ···done▶ 0
-main:     start  start  start  Wait ······ blocked ··········· ▶ carries on
+caller:   start  start  start  Wait ······ blocked ··········· ▶ carries on
 ```
+
+> **Why is it written like this?** `var wg sync.WaitGroup` with no value is
+> enough: Go guarantees the zero value is a ready, empty counter.
+> `func() { … }` is a function with no name, written right where it's used;
+> `wg.Go` requires a `func()` with no parameters and no results. Calling
+> `wg.Wait()` **after** the loop, not inside it, is what lets the goroutines
+> run at the same time.
 
 ### The older Add/Done form
 
-`wg.Go` is new (Go 1.25). You'll see this in existing code, and it does the
-same thing by hand:
+`wg.Go` is new (Go 1.25). Older code does the same by hand:
 
 ```go
 wg.Add(1) // one more goroutine to wait for
 go func() {
 	defer wg.Done() // subtract 1 when this goroutine finishes
-	deploy(region)
+	restart(svc)
 }()
 ```
 
-Your editor suggests rewriting it as `wg.Go`, and for good reason. `wg.Add(1)`
-must happen **before** `go`. If it runs inside the new goroutine, `main` can
-reach `Wait` while the counter is still 0, and `Wait` returns while the
-deploys are still running. That bug *usually* works on your laptop and fails
-in production. `wg.Go` can't have it, so use `wg.Go` in new code.
+`wg.Add(1)` must run **before** `go`. If it runs inside the goroutine, the
+caller can reach `Wait` while the counter is still 0 and return too early.
+`wg.Go` can't have that bug, so use it in new code.
 
 ### Pass a WaitGroup by pointer
 
-A WaitGroup must not be copied after you start using it. If a helper function
-needs one, pass a pointer:
+A WaitGroup must not be copied once in use. A helper that starts goroutines
+for someone else's WaitGroup takes a *pointer*, `*sync.WaitGroup`:
 
 ```go
-func startDeploy(wg *sync.WaitGroup, region string) {
+func startScan(wg *sync.WaitGroup, dir string) {
 	wg.Go(func() {
-		deploy(region)
+		scan(dir)
 	})
 }
+
+startScan(&wg, "/var/log") // & passes the address of the caller's wg
 ```
 
-If you pass `sync.WaitGroup` by value, the helper adds to a copy, and your
-`Wait` never sees it. `go vet` reports this as `passes lock by value`.
+> **Why is it written like this?** Go requires the `*` in the parameter type
+> and the `&` at the call. You still write `wg.Go(...)` on a pointer: Go
+> follows the pointer for you. Passing a copy compiles, but the helper counts
+> on a copy the caller's `Wait` never sees; `go vet` reports it as `passes
+> lock by value`.
 
 ### Results by index
 
-As in *Goroutines: fix the maintenance script*, give each goroutine its own
-slot in a slice made before the loop. After `Wait`, every slot is filled in,
-in the same order as the input, however the goroutines finished.
+As in *Goroutines: fix the maintenance script*, make a slice before the loop
+and let each goroutine write only its own slot `results[i]`. After `Wait`, the
+slots are in input order, however the goroutines finished.
 
 ## Your task
 
-You're writing a multi-region deploy tool. Every deploy, DNS lookup or backup
-in the tests takes 1 to 3 (fake) seconds.
+You're writing a multi-region deploy tool. In the tests every deploy, lookup
+or backup takes 1 to 3 (fake) seconds, and each function must take only as
+long as the slowest one.
 
 ### 1. Deploy every region at once
 
-`DeployAll(regions, deploy)` should call `deploy(region)` for every region at
-the same time and return once all of them have finished. Use `wg.Go` and
-`wg.Wait`.
+**Goal:** make `DeployAll(regions, deploy)` run `deploy(region)` for every
+region at the same time, and return only once all of them have finished.
 
 ```go
 DeployAll([]string{"us-east-1", "eu-west-1", "ap-south-1"}, deploy)
-// returns after ~1s, once all three deploys are done
+// returns after 1s (not 3s), once all three deploys are done
 ```
+
+**Think it through:**
+- Where does the WaitGroup need to be declared so the loop and the line after
+  it can both use it?
+- Which call goes inside the loop, and which goes after it?
 
 ### 2. Resolve hostnames in order
 
-`ResolveAll(hosts, resolve)` should resolve every host at the same time and
-return the addresses in the **same order as `hosts`**, even though the lookups
-finish in a different order.
+**Goal:** make `ResolveAll(hosts, resolve)` resolve every host at the same
+time and return the addresses in the **same order as `hosts`**.
+
+The lookups finish in a different order from `hosts`, but the result must not.
 
 ```go
+// api.internal takes 3s, db.internal takes 1s
 ResolveAll([]string{"api.internal", "db.internal"}, resolve)
-// => []string{"10.0.1.5", "10.0.2.9"}
+// => []string{"10.0.1.5", "10.0.2.9"}, after 3s
 ```
+
+**Think it through:**
+- The slice `addrs` already has one slot per host. Which slot does each
+  goroutine write?
+- What must happen before `return addrs`, so every slot is filled in?
 
 ### 3. Start a backup from a helper
 
-`BackupAll` is written for you. It calls `startBackup(&wg, db, backup)` for
+**Goal:** make `startBackup(wg, db, backup)` run `backup(db)` in a new
+goroutine that `BackupAll`'s `wg.Wait()` waits for.
+
+`BackupAll` is written for you: it calls `startBackup(&wg, db, backup)` for
 each database, then `wg.Wait()`. The starter `startBackup` counts the backup
-in `wg` but runs it right away, so the backups happen one after another. Fix
-it: start `backup(db)` in a new goroutine that `wg.Wait()` waits for, using
-the `wg` pointer it receives.
+but runs it right away, so the backups happen one after another.
 
 ```go
 BackupAll([]string{"orders", "users"}, backup)
-// returns after ~1s, once both backups are done
+// returns after 1s (not 2s), once both backups are done
 ```
+
+**Think it through:**
+- `wg` here is a pointer to `BackupAll`'s WaitGroup. Which of its methods
+  starts *and* counts a goroutine?
+- Which of the three starter lines does that one call replace?
 
 ## Learn more
 

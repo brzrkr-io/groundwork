@@ -1,15 +1,16 @@
 # Config precedence: defaults, file, env and flags
 
-Real services read their settings from several places at once: built-in
-defaults, a config file, environment variables and command-line flags. In
-this exercise you merge all four in the right order, and record where each
-final value came from, so "why is it listening on 9000?" has an answer.
+Real services read settings from several places at once. You'll merge four
+layers in the right order and record where each value came from, so "why is
+it listening on 9000?" has an answer.
+
+**New here:** `os.LookupEnv`, JSON pointer fields, `flag.FlagSet.Visit`.
 
 ## Learn
 
 ### The precedence ladder
 
-Each layer overrides the one before it:
+Each layer overrides the one above it:
 
 | Layer | Who sets it | Example |
 |---|---|---|
@@ -18,143 +19,153 @@ Each layer overrides the one before it:
 | 3. environment | Kubernetes, systemd, CI | `APP_PORT=9100` |
 | 4. flags | a human, right now | `-port 9200` |
 
-The order runs from "most general" to "most specific". The image ships with
-sane defaults. A team mounts a shared file. The deployment tweaks one value
-per environment. Someone debugging at 3am types a flag, and that flag must
-win. The "twelve-factor app" guidelines popularised this style.
-
 The key rule: **a layer only overrides the settings it actually mentions.**
-A config file with just `log_level` must leave the port alone.
+A file with just `log_level` leaves the port alone.
 
-### "Not set" versus "empty" or "zero"
+So every layer needs a way to tell "missing" apart from "zero" or "empty".
 
-That rule means each layer must tell "missing" apart from "zero". Each layer
-has its own way.
+### Environment: `LookupEnv`
 
-**Environment variables.** `os.Getenv("APP_REGION")` returns `""` both when
-the variable is unset and when it's set to the empty string. `os.LookupEnv`
-also tells you whether it was set:
+`os.Getenv` returns `""` both when a variable is unset and when it's set to
+`""`. `os.LookupEnv` returns a second value, `ok`, that says whether it's set:
 
 ```go
-v, ok := os.LookupEnv("APP_REGION")
-// unset:           v == "", ok == false
-// APP_REGION="":   v == "", ok == true
+v, ok := os.LookupEnv("HOME")
+// unset:      v == "", ok == false
+// HOME="":    v == "", ok == true
 ```
 
-To keep tests away from the real environment, the code here takes the lookup
-function as a parameter, as in *Fakes and dependency injection*. `main`
-passes `os.LookupEnv` itself. Tests pass a closure over a map:
+Here the lookup function is a *parameter* called `lookup`, as in *Fakes and
+dependency injection*. Real code passes `os.LookupEnv`; tests pass a fake
+backed by a map. You call it the same way: `lookup("SOME_NAME")`.
+
+Environment values are always strings. `strconv.Atoi` turns `"42"` into `42`,
+or returns an error.
+
+> **Why is it written like this?** `if v, ok := lookup("X"); ok { … }` is one
+> line in two parts. Before the `;` you create `v` and `ok`; after it is the
+> condition. Go allows this short statement (Go requires the `;`). The names
+> `v` and `ok` are convention, not rules.
+
+### JSON: pointer fields
+
+When a key is missing, `json.Unmarshal` leaves the field at its zero value.
+With a plain `int`, `{"port": 0}` and `{}` look the same. A *pointer* field
+(`*int`) stays `nil` when the key is absent:
 
 ```go
-env := map[string]string{"APP_REGION": "eu-west-1"}
-lookup := func(key string) (string, bool) {
-	v, ok := env[key]
-	return v, ok
+type cache struct {
+	Size *int `json:"size"`
 }
+// {}            -> Size == nil
+// {"size": 0}   -> Size != nil, *Size == 0
 ```
 
-Environment values are always strings. Turn a number into an `int` with
-`strconv.Atoi`, as in earlier exercises.
+`*c.Size` (star in front) reads the value the pointer points at. Only do that
+after checking it isn't `nil`.
 
-**JSON files.** When a key is missing, `json.Unmarshal` leaves the field at
-its zero value. So with a plain `int` field, `{"port": 0}` and `{}` look the
-same. Make the field a *pointer* instead. It stays `nil` when the key is
-absent:
+### Flags: `Visit`
 
-```go
-type fileSettings struct {
-	Port *int `json:"port"`
-}
-// {}            -> Port == nil
-// {"port": 0}   -> *Port == 0
-```
-
-**Flags.** After `fs.Parse(args)`, a flag that wasn't given still holds its
-default value. `fs.Visit` calls your function once for each flag that was
-**actually set** on the command line, and skips the rest:
+After `fs.Parse(args)`, a flag nobody typed still holds its default value.
+`fs.Visit` calls your function once for each flag that was **actually typed**,
+and skips the rest:
 
 ```go
 fs.Visit(func(f *flag.Flag) {
 	switch f.Name {
-	case "port":
-		s.Port = cli.port // the variable fs.IntVar wrote into
+	case "timeout":
+		fmt.Println("you set -timeout")
 	}
 })
 ```
 
 `f.Name` is the flag's name without the dash. (`fs.VisitAll` visits every
-flag, set or not. Don't use it here.)
+flag, typed or not. Don't use it here.)
+
+> **Why is it written like this?** `Visit` wants a function, so you write one
+> inline: `func(f *flag.Flag) { … }`. Go requires that exact parameter type;
+> the name `f` is your choice. The function can change variables outside it,
+> like `s`.
 
 ### Recording the source
 
-`Settings.Source` maps each setting key (`"port"`, `"log_level"`,
-`"region"`) to the layer its value came from: `"default"`, `"file"`, `"env"`
-or `"flag"`. Every time you override a value, update its source too:
-
-```go
-s.Port = *f.Port
-s.Source["port"] = "file"
-```
+`Settings.Source` is a map from setting key to the layer that set it. Each
+time you change a setting, change its entry too. Keys: `"port"`,
+`"log_level"`, `"region"`. Values: `"default"`, `"file"`, `"env"`, `"flag"`.
 
 ## Your task
 
-The `ingest` service needs its settings loaded properly. `Defaults` and the
-`fileSettings` type are written for you, and so is most of `Load`.
+The `ingest` service needs its settings loaded properly. `Defaults`, the
+`fileSettings` type and most of `Load` are written for you.
 
 ### 1. Apply the config file
 
-Complete `ApplyFile`. It already decodes the JSON and applies `port`. Apply
-`log_level` and `region` the same way: only when present, setting the source
-to `"file"`.
+**Goal:** finish `ApplyFile` so `log_level` and `region` from the JSON override
+the settings, with source `"file"`.
+
+Only override a setting when its key is present. The `f.Port` block that's
+already there is the pattern. Invalid JSON returns an error (already done).
 
 ```go
 s := Defaults()
 s.ApplyFile([]byte(`{"log_level": "debug"}`))
-// s.Port == 8080,     s.Source["port"] == "default"
+// s.Port == 8080,        s.Source["port"] == "default"
 // s.LogLevel == "debug", s.Source["log_level"] == "file"
 ```
 
-`{"port": 0}` sets the port to `0`, with source `"file"`. Invalid JSON
-returns an error (the starter already does this).
+`{"port": 0}` still counts as present: port `0`, source `"file"`.
+
+**Think it through:**
+- Which fields of `fileSettings` are you handling, and how do you know one is missing?
+- Which two things change for each present key?
 
 ### 2. Apply the environment
 
-Complete `ApplyEnv`. For each variable that `lookup` reports as set, override
-the setting and set its source to `"env"`:
+**Goal:** finish `ApplyEnv` so each variable that `lookup` reports as set
+overrides its setting, with source `"env"`.
 
-| Variable | Setting |
-|---|---|
-| `APP_PORT` | `Port`, converted with `strconv.Atoi` |
-| `APP_LOG_LEVEL` | `LogLevel` |
-| `APP_REGION` | `Region` |
+| Variable | Setting | Source key |
+|---|---|---|
+| `APP_PORT` | `Port`, converted with `strconv.Atoi` | `"port"` |
+| `APP_LOG_LEVEL` | `LogLevel` | `"log_level"` |
+| `APP_REGION` | `Region` | `"region"` |
 
-If `APP_PORT` isn't a whole number, return an error that contains
-`APP_PORT`, for example `invalid APP_PORT "eighty": ...`. Add `"fmt"` and
-`"strconv"` to the imports.
+Unset variables change nothing. If `APP_PORT` isn't a whole number (`"eighty"`,
+`"80a"`), return an error whose text contains `APP_PORT`, for example
+`invalid APP_PORT "eighty": ...`. Return `nil` when all went well. Add `"fmt"`
+and `"strconv"` to the imports.
 
 ```go
+// lookup knows APP_PORT=9100 and APP_REGION=eu-west-1
 s := Defaults()
-s.ApplyEnv(lookup) // with APP_PORT=9100 and APP_REGION=eu-west-1
+s.ApplyEnv(lookup)
 // s.Port == 9100, s.Region == "eu-west-1", s.LogLevel == "info"
 ```
 
+**Think it through:**
+- Which of `lookup`'s two results tells you "set"?
+- The variable name is fixed text in quotes; the value comes back from `lookup`.
+
 ### 3. Let flags have the final say
 
-`Load(args, lookup)` defines the flags `-config`, `-port`, `-log-level` and
-`-region`, then applies defaults, the file named by `-config` (if any) and
-the environment. `fs.StringVar` and `fs.IntVar` store the parsed flag values
-in the `cli` struct (`cli.port`, `cli.logLevel`, `cli.region`). Finish
-`Load`: after the environment, use `fs.Visit` to apply each flag that was
-set, with source `"flag"`. Note that the flag is named `log-level` while the
-source key is `log_level`.
+**Goal:** at the `TODO(3)` in `Load`, use `fs.Visit` to apply every flag that
+was typed, with source `"flag"`.
+
+`Load` already defines `-config`, `-port`, `-log-level` and `-region`, then
+applies defaults, the file and the environment. The parsed flag values sit in
+`cli.port`, `cli.logLevel` and `cli.region`.
 
 ```go
 Load([]string{"-config", "ingest.json", "-port", "9200"}, lookup)
-// Port 9200 from "flag", everything else from the file, env or defaults
+// Port 9200 from "flag"; everything else from the file, env or defaults
 ```
 
-A flag wins even when its value equals the default: `-log-level info` gives
-log level `"info"` with source `"flag"`.
+A typed flag wins even when its value equals the default: `-log-level info`
+gives `"info"` with source `"flag"`. `-port 0` gives port `0` from `"flag"`.
+
+**Think it through:**
+- Flag *names* (`log-level`, dash) and source *keys* (`log_level`, underscore) differ.
+- Where does each typed value live: in `f`, or in `cli`?
 
 ## Learn more
 

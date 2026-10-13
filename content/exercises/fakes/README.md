@@ -1,9 +1,11 @@
 # Fakes and dependency injection
 
 A disk-space check that pages the on-call engineer is only useful if the page
-really goes out, and goes out only when it should. But a test that pages a
-real person every time it runs is a disaster. This exercise shows how to test
-code like that without sending anything: hand it a *fake*.
+really goes out, and only when it should. But a test that pages a real person
+on every run is a disaster. This exercise shows how to test such code without
+sending anything: you hand it a *fake*.
+
+**New here:** dependency injection, writing a fake that records calls.
 
 ## Learn
 
@@ -24,61 +26,67 @@ func CheckDisk(n Notifier, host string, usedPercent int) {
 ```
 
 `CheckDisk` doesn't know *how* alerts are sent. It only knows that `n` has a
-`Notify` method, because `Notifier` is an interface (as in *Interfaces*). The
-caller decides what `n` is. In production that is a type that posts to Slack
-or PagerDuty. Passing in the things a function depends on, instead of having
-the function create them itself, is called *dependency injection*. It sounds
-fancy, but it is just a parameter.
+`Notify` method, because `Notifier` is an interface (as in *Interfaces*).
+The caller decides what `n` really is: in production, a type that posts to
+Slack or PagerDuty.
 
-If `CheckDisk` called a Slack client directly, every test run would post to
-Slack, need the network and a token, and you still couldn't easily check what
-it sent. With an interface parameter, a test can pass in something else.
+Passing in the things a function depends on, instead of letting it create
+them, is called *dependency injection*. It sounds fancy, but it is just a
+parameter. And because it's a parameter, a test can pass in something else.
 
 ### A fake that records calls
 
-A *fake* is a small, simple type that implements the interface for tests.
-Instead of doing the real work, this one writes down what it was asked to do:
+A *fake* is a small type that implements the interface for tests. Instead of
+doing the real work, it writes down what it was asked to do. Here is one for
+a different interface, a `Logger` with a `Log(line string)` method:
 
 ```go
-type fakeNotifier struct {
-	messages []string
+type fakeLogger struct {
+	lines []string
 }
 
-func (f *fakeNotifier) Notify(message string) {
-	f.messages = append(f.messages, message)
+func (l *fakeLogger) Log(line string) {
+	l.lines = append(l.lines, line)
 }
 ```
 
-The test then runs the code with the fake and looks at what was recorded:
+A test runs the code with the fake, then looks inside it:
 
 ```go
-f := &fakeNotifier{}
-CheckDisk(f, "web-1", 93)
-// f.messages is now []string{"disk on web-1 is 93% full"}
+l := &fakeLogger{}
+Deploy(l, "api")
+// l.lines now holds every line Deploy logged
 ```
 
-Nobody gets paged, nothing touches the network, and you can check the exact
-messages, and how many there were.
+Nothing touches the network, and you can check the exact text and how many
+calls there were.
+
+> **Why is it written like this?** Go requires the method's name, parameter
+> types and result types to match the interface exactly, or the type doesn't
+> implement it. The struct name, the field name and the receiver name (`l`)
+> are your choice. Starting fake types with `fake` is convention.
 
 ### Why the pointer receiver matters
 
-`Notify` changes the fake, so it needs a pointer receiver, as in *Pointer
-receivers*. With `func (f fakeNotifier) Notify(...)`, each call would append
-to a copy, and `f.messages` would stay empty in your test.
+The method changes the fake, so it needs a pointer receiver (`*fakeLogger`),
+as in *Pointer receivers*. With a plain receiver, each call appends to a
+*copy*, and the slice in your test stays empty.
 
-With a pointer receiver, only `*fakeNotifier` has the `Notify` method, so only
-a pointer satisfies `Notifier`. That is why the test creates the fake with
-`&fakeNotifier{}`. If you pass a plain `fakeNotifier`, the compiler stops you
-with a message like `fakeNotifier does not implement Notifier (method Notify
-has pointer receiver)`. Use a fresh fake for each check, so messages from one
-check don't leak into the next.
+With a pointer receiver, only the pointer type has the method. So you create
+the fake with `&` in front. Forget it, and the compiler says something like
+`fakeLogger does not implement Logger (method Log has pointer receiver)`.
+That error points at the call, but the fix is the `&` where you created the
+fake.
+
+Use a fresh fake for each check, so messages from one check don't leak into
+the next.
 
 ### Grading
 
-As in *Your first test*, `TestGrader` re-runs your `TestCheckDisk` against the
-real `CheckDisk`, where it must pass, and against *mutants* with one bug each,
-where it must fail. It names any bug your test missed. The `checkDisk`
-variable in `exercise.go` is how it swaps them in; leave it alone.
+As in *Your first test*, `TestGrader` re-runs your `TestCheckDisk` against
+the real `CheckDisk`, where it must pass, and against *mutants* with one bug
+each, where it must fail. The `checkDisk` variable in `exercise.go` is how it
+swaps them in; leave it alone.
 
 ## Your task
 
@@ -96,27 +104,46 @@ CheckDisk(n, "web-1", 50) // no call to n.Notify
 
 ### 1. Write the fake
 
-In `exercise_test.go`, declare `fakeNotifier` as a struct with one field,
-`messages []string`. Then add a `Notify` method with a pointer receiver that
-appends `message` to `f.messages`. Now `*fakeNotifier` is a `Notifier`.
+**Goal:** declare a `fakeNotifier` struct with one field, `messages
+[]string`, and a `Notify` method that appends each message to it.
+
+Use a pointer receiver. When you're done, `*fakeNotifier` is a `Notifier`.
+
+**Think it through:**
+- What exact method line does `Notifier` ask for? Copy its name and
+  parameter.
+- Which field should each message go into?
 
 ### 2. Check that a full disk sends one alert
 
-In `TestCheckDisk`, create a fake with `&fakeNotifier{}`, call
-`CheckDisk(f, "web-1", 93)`, and check that:
+**Goal:** check that a full disk produces exactly one message with the right
+text.
 
-- `f.messages` has exactly 1 message (fail with `t.Fatalf` if not, because
-  there is no message to look at),
-- that message is exactly `"disk on web-1 is 93% full"`.
+Use a fresh fake (made with `&`) for each call:
 
-Then do the same with a fresh fake for `CheckDisk(f, "db-2", 90)`, which must
-send `"disk on db-2 is 90% full"`. 90 is exactly the threshold, where a bug
-like `>` instead of `>=` hides.
+| Call | Expected messages |
+| --- | --- |
+| `CheckDisk(f, "web-1", 93)` | exactly `"disk on web-1 is 93% full"` |
+| `CheckDisk(f, "db-2", 90)` | exactly `"disk on db-2 is 90% full"` |
+
+First check there is exactly 1 message, and stop with `t.Fatalf` if not,
+because there is no message to look at. Then check its text. 90 is exactly
+the threshold, where a bug like `>` instead of `>=` hides.
+
+**Think it through:**
+- After the call, where does the fake keep what it received?
+- Why must you check the count before reading the first message?
 
 ### 3. Check that a healthy disk sends nothing
 
-With a fresh fake each time, check that `CheckDisk(f, "web-1", 50)` and
-`CheckDisk(f, "web-1", 89)` send no messages at all (`len(f.messages)` is 0).
+**Goal:** check that `CheckDisk(f, "web-1", 50)` and `CheckDisk(f, "web-1",
+89)` send no messages at all.
+
+Use a fresh fake for each call, and fail if its `messages` isn't empty.
+
+**Think it through:**
+- What length does an empty slice have?
+- Could a loop over the two percentages save you repeating code?
 
 The exercise is done when `TestCheckDisk` passes and `TestGrader` reports that
 every mutant was caught.

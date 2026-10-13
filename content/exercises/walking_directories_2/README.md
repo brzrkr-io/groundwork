@@ -4,20 +4,22 @@ A teammate started a tool that tidies the backup volume on a database host.
 It walks the real disk with `filepath.WalkDir`, and it has two bugs and one
 missing function.
 
+**New here:** `filepath.WalkDir`, `filepath.Rel`, `strings.Cut`, adding up values in a map.
+
 ## Learn
 
 ### Recap
 
-`fs.WalkDir(fsys, ".", fn)` calls `fn(p, d, err)` once for every entry under
-the root. Check `err` first, because `d` can be `nil` when reading fails.
-Return `nil` to keep going, `fs.SkipDir` to stay out of a directory, or any
-other error to stop the walk. `d.Info()` gives you an `fs.FileInfo` with the
-size.
+- `fs.WalkDir(fsys, ".", fn)` calls `fn(p, d, err)` once per entry.
+- Check `err` first: `d` can be `nil` when reading fails.
+- Return `nil` to keep going, `fs.SkipDir` to stay out of a directory, any
+  other error to stop.
+- `d.Info()` gives an `fs.FileInfo` with `Size()` and `ModTime()`.
 
 ### filepath.WalkDir: walking the real disk
 
-`path/filepath` has a twin of `fs.WalkDir` that takes a directory path
-instead of an `fs.FS`. The callback is exactly the same:
+`path/filepath` has a twin of `fs.WalkDir` that takes a directory path instead
+of an `fs.FS`. The callback has exactly the same shape:
 
 ```go
 err := filepath.WalkDir("/srv/backups", func(p string, d fs.DirEntry, err error) error {
@@ -26,64 +28,92 @@ err := filepath.WalkDir("/srv/backups", func(p string, d fs.DirEntry, err error)
 })
 ```
 
-The paths start with the root you passed in and use the operating system's
-separator (`\` on Windows). To report a path relative to the root, use
-`filepath.Rel`, then `filepath.ToSlash` so it reads the same on every system:
+Paths start with the root you passed in and use the OS separator (`\` on
+Windows). If the root doesn't exist, the very first callback gets
+`p == root`, `d == nil` and a non-nil `err`.
+
+### Relative paths
+
+`filepath.Rel(base, target)` cuts `base` off the front of `target`.
+`filepath.ToSlash` then turns `\` into `/`, so results read the same
+everywhere:
 
 ```go
-rel, err := filepath.Rel("/srv/backups", "/srv/backups/db/mon.sql.gz")
-// rel == "db/mon.sql.gz" (on Windows: `db\mon.sql.gz`)
-rel = filepath.ToSlash(rel) // always "db/mon.sql.gz"
+rel, err := filepath.Rel("/home", "/home/ana/notes.txt")
+// rel == "ana/notes.txt" (on Windows: `ana\notes.txt`)
+rel = filepath.ToSlash(rel) // always "ana/notes.txt"
 ```
 
-If the root itself doesn't exist, the very first callback gets `p == root`,
-`d == nil` and a non-nil `err`.
+### Splitting at the first separator: strings.Cut
 
-### Modification times
-
-`info.ModTime()` is the `time.Time` the file was last written. To ask "how
-old is it?", subtract it from the current time:
+`strings.Cut(s, sep)` splits `s` at the **first** `sep`. It returns the part
+before, the part after, and `found` (false when `sep` isn't in `s`; then
+`before` is all of `s`):
 
 ```go
-age := now.Sub(info.ModTime()) // a time.Duration
+user, host, found := strings.Cut("ana@web01", "@") // "ana", "web01", true
+user, host, found = strings.Cut("ana", "@")        // "ana", "", false
 ```
 
-The functions here take `now` as a parameter instead of calling
-`time.Now()`. That way tests can pick a fixed "now" and set file times with
-`os.Chtimes(name, accessTime, modTime)`, and the results never depend on the
-clock.
+> **Why is it written like this?** Go requires one variable per returned
+> value; use `_` for one you don't need. The names are your choice.
+
+### Adding up into a map
+
+A map must be created with `make` before you write to it. A missing key reads
+as `0`, so `+=` works on the first visit too:
+
+```go
+counts := make(map[string]int)
+counts["web"] += 3 // was 0, now 3
+counts["web"] += 2 // now 5
+```
+
+> **Why is it written like this?** Go requires `make` (or a `{}` literal):
+> writing to a `nil` map crashes. Reading a missing key giving zero is a Go
+> rule, which is why no "does it exist yet?" check is needed.
+
+### Modification times and `now`
+
+`info.ModTime()` is when the file was last written. `now.Sub(t)` gives the
+age as a `time.Duration`. The functions take `now` as a parameter instead of
+calling `time.Now()`, so tests can pick a fixed time and set file times with
+`os.Chtimes`.
 
 ### Tests on the real disk
 
-`t.TempDir()` gives each test a fresh, empty directory that is deleted when
-the test ends. The tests in this exercise build small trees in it with
-`os.MkdirAll` and `os.WriteFile`.
+`t.TempDir()` gives each test a fresh directory that is deleted afterwards.
+The tests build small trees in it with `os.MkdirAll` and `os.WriteFile`.
 
 ## Your task
 
 Backups live under a root directory, one folder per database. Folders named
 `pinned` hold backups that must never be deleted.
 
-### 1. Don't crash on a missing root
-
 `StaleFiles(root, now, maxAge)` returns the files under `root` that are
 **more than** `maxAge` old (`now.Sub(modTime) > maxAge`), as sorted
-forward-slash paths relative to `root`. When `root` doesn't exist, it
-panics with a nil pointer error. Fix the callback so it returns the walk's
-error instead (wrapping it with `%w` is fine). The tests check it with
-`errors.Is(err, fs.ErrNotExist)`.
+forward-slash paths relative to `root`. A file exactly `maxAge` old is not
+stale yet. That logic already works; tasks 1 and 2 fix the rest.
+
+### 1. Don't crash on a missing root
+
+**Goal:** when `root` doesn't exist, `StaleFiles` returns an error instead of panicking.
+
+- Return the walk's own error (wrapping it with `%w` is fine).
+- The tests check it with `errors.Is(err, fs.ErrNotExist)`.
 
 ```go
 StaleFiles("/no/such/dir", now, 24*time.Hour)
 // => nil, error (no panic)
 ```
 
-A file exactly `maxAge` old is not stale yet.
+**Think it through:**
+- Which callback parameter holds the problem? Where is it checked right now?
+- Which line crashes when `d` is `nil`? Your check must come before it.
 
 ### 2. Really skip pinned folders
 
-`StaleFiles` is meant to leave directories named `pinned` out of the
-results, but old files inside them still show up. Fix it.
+**Goal:** files inside any directory named `pinned`, at any depth, never appear in `StaleFiles`' results.
 
 ```go
 // root/db/old.sql.gz         (10 days old)
@@ -92,14 +122,19 @@ StaleFiles(root, now, 7*24*time.Hour)
 // => ["db/old.sql.gz"]
 ```
 
+**Think it through:**
+- The code already spots `pinned`. What does its `return` value tell the
+  walk to do?
+- Which return value from the table in the recap means "don't go inside"?
+
 ### 3. Total the size of each folder
 
-Write `DirSizes(root)`, a small `du`. It returns a map from each top-level
-folder under `root` to the total size in bytes of all the files inside it, at
-any depth. Files directly in `root` are added up under the key `"."`.
-Folders that contain no files don't appear in the map. `pinned` folders are
-counted like any other. You'll need `filepath.Rel`, `filepath.ToSlash` and
-`strings.Cut` (add `"strings"` to the imports).
+**Goal:** `DirSizes(root)` returns a map from each top-level folder under `root` to the total bytes of all files inside it, at any depth.
+
+- Files directly in `root` are added up under the key `"."`.
+- Folders containing no files don't appear in the map.
+- `pinned` folders are counted like any other.
+- Add `"strings"` to the imports.
 
 ```go
 // root/notes.txt             (10 bytes)
@@ -110,8 +145,15 @@ DirSizes(root)
 // => map[".":10 "db":500 "redis":50]
 ```
 
+**Think it through:**
+- For `db/pinned/gold.sql.gz`, the key is `db`: the part before the first
+  `/` of the relative path. What if there is no `/`?
+- What should the callback do when `d` is a directory? Only files have sizes
+  worth adding.
+
 ## Learn more
 
 - [Package path/filepath: WalkDir](https://pkg.go.dev/path/filepath#WalkDir)
 - [Package path/filepath: Rel](https://pkg.go.dev/path/filepath#Rel)
+- [Package strings: Cut](https://pkg.go.dev/strings#Cut)
 - [Package os: Chtimes](https://pkg.go.dev/os#Chtimes)

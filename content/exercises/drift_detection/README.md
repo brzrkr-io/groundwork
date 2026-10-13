@@ -1,72 +1,67 @@
 # Drift detection: a tiny terraform plan
 
-Someone "just quickly" fixed something in the AWS console, and now production no
-longer matches what your team wrote down. In this exercise you build a tiny
-`terraform plan`: it compares the infrastructure you declared with what really
-exists in AWS and reports the differences.
+Someone "just quickly" fixed something in the AWS console, and now production
+no longer matches what your team wrote down. You build a tiny `terraform plan`:
+it compares what you declared with what really exists in AWS and reports the
+differences.
+
+**New here:** desired vs actual state (drift), plan exit codes, reading a JSON
+file into a slice of structs.
 
 ## Learn
 
-### Infrastructure as Code
+### Desired state, actual state, drift
 
-With *Infrastructure as Code* (IaC) you describe your buckets, servers and
-networks in files, keep those files in git, and let a tool create the real
-thing. Terraform and AWS CloudFormation are the best-known tools. The files
-are the *desired state*: what should exist. What AWS really has right now is
-the *actual state*.
+With *Infrastructure as Code* (IaC) you describe buckets and servers in files
+kept in git, and a tool such as Terraform creates them. Those files are the
+*desired state*. What AWS really has right now is the *actual state*.
 
-When the two disagree, you have *drift*. Typical causes:
+When the two disagree, you have *drift*:
 
-| What happened | What the tool sees |
+| What happened | Action the plan reports |
 |---|---|
-| Someone deleted a bucket by hand | in desired, missing in AWS: **create** |
-| Someone edited a tag in the console, or added `hotfix=true` during an incident | tags differ: **update** |
-| Someone launched a debug server and forgot it | in AWS, not desired: **delete** |
+| Someone deleted a bucket by hand (desired, missing in AWS) | **create** |
+| Someone edited a tag, or added `hotfix=true` during an incident | **update** |
+| Someone launched a debug server and forgot it (in AWS, not desired) | **delete** |
 
-This is the same desired-vs-actual comparison as in *Reconcile loops: desired vs actual*. The
-difference: a controller fixes drift straight away, while a *plan* only
-reports it, so a human can review it first.
+It is the same comparison as in *Reconcile loops: desired vs actual*. A
+controller fixes drift straight away; a *plan* only reports it, so a human can
+review it first.
 
-### `terraform plan -detailed-exitcode`
+### Exit codes that mean something
 
-Drift checks usually run in CI every night. The CI job only looks at the exit
-code, so Terraform has a flag that gives the code a meaning:
+Drift checks run in CI every night, and CI only looks at the exit code.
+`terraform plan -detailed-exitcode` gives each code a meaning:
 
 | Exit code | Meaning |
 |---|---|
-| 0 | Success, no changes. AWS matches the desired state. |
-| 1 | Error. The check itself failed (bad file, AWS refused a call). |
-| 2 | Success, but there are changes: drift was found. |
+| 0 | No changes. AWS matches the desired state. |
+| 1 | Error. The check itself failed. |
+| 2 | Changes found: there is drift. |
 
-Your `Plan` returns the report text and this exit code.
+Your `Plan` returns the report text **and** this code.
 
-### The pieces in this exercise
+### Reading a JSON file into structs
 
-A resource is identified by its kind and name. `ID()` joins them:
-
-```go
-r := Resource{Kind: "bucket", Name: "acme-logs", Tags: map[string]string{"Env": "prod"}}
-r.ID() // => "bucket/acme-logs"
-```
-
-`aws.go` is already complete. Its `Actual` function gathers the actual state
-with the calls you know from *Paginators: walk every page* and *Tag compliance: audit and fix instance tags*: `ListBuckets`
-plus `GetBucketTagging` for each bucket (the error code `NoSuchTagSet` just
-means "no tags"), and the `DescribeInstances` paginator for instances. An
-instance's name comes from its `Name` tag, so `Name` is not in its `Tags`. The
-tests pass fakes for both clients, so nothing talks to real AWS.
-
-`exercise.go` also gives you two helpers. `byID(rs)` returns a
-`map[string]Resource` keyed by `r.ID()`. `changedKeys(want, got)` returns the
-sorted tag keys whose values differ, including keys only one side has, or nil
-when the tags match:
+Reading a file is two steps: get the bytes, then decode them. Both can fail.
+Here is the same idea with a different type and prefix:
 
 ```go
-changedKeys(map[string]string{"Env": "prod"}, map[string]string{"Env": "dev", "hotfix": "true"})
-// => []string{"Env", "hotfix"}
+data, err := os.ReadFile("hosts.json")
+if err != nil {
+	return nil, fmt.Errorf("read hosts: %w", err)
+}
+var hosts []Host
+err = json.Unmarshal(data, &hosts) // & so Unmarshal can fill hosts
 ```
 
-The desired state is a JSON file, `testdata/desired.json`:
+> **Why is it written like this?** Go requires the `&`: `Unmarshal` must change
+> your variable, so it needs its address. Checking `err` right after each call
+> is convention. The prefix text (`read hosts: `) is the author's choice, but
+> here the tests fix it.
+
+The `json:"kind"` tags on `Resource` say which JSON key fills which field, as in
+*Encoding JSON: a deployment status report*. The desired file looks like this:
 
 ```json
 [
@@ -74,8 +69,51 @@ The desired state is a JSON file, `testdata/desired.json`:
 ]
 ```
 
-The `json:"kind"` struct tags on `Resource` tell `encoding/json` which field
-each key goes into, as in *Encoding JSON: a deployment status report*.
+### "Is this key in the map?"
+
+A map lookup can return a second value, `ok`, that says whether the key exists:
+
+```go
+if _, ok := stock["apples"]; !ok {
+	fmt.Println("out of apples")
+}
+```
+
+> **Why is it written like this?** The two-value form is Go syntax. `_` throws
+> away the value you don't need (Go requires every variable to be used). The
+> name `ok` is convention.
+
+### Building text line by line
+
+A `strings.Builder` collects text; `fmt.Fprintf(&b, ...)` writes into it.
+`strings.Join` glues a slice together with a separator:
+
+```go
+var b strings.Builder
+fmt.Fprintf(&b, "* %s\n", "disk full")
+strings.Join([]string{"a", "b", "c"}, " | ") // => "a | b | c"
+b.String()                                    // => "* disk full\n"
+```
+
+### What is already done
+
+| File | What it holds |
+|---|---|
+| `aws.go` | Complete. `Actual` gathers buckets (`ListBuckets` + `GetBucketTagging`; `NoSuchTagSet` means "no tags") and instances (the `DescribeInstances` paginator). Terminated instances are skipped. An instance's name comes from its `Name` tag, so `Name` is not in its `Tags`. |
+| `exercise.go` | `Resource`, `ID()`, `Change`, and the helpers `byID` and `changedKeys`. You fill in the TODOs. |
+| `testdata/` | `desired.json` (4 resources) and `broken.json` (invalid JSON). |
+
+`r.ID()` joins kind and name: `Resource{Kind: "bucket", Name: "acme-logs"}.ID()`
+is `"bucket/acme-logs"`. `byID(rs)` returns a `map[string]Resource` keyed by
+`ID()`. `changedKeys(want, got)` returns the sorted tag keys that differ
+(including keys only one side has), or nil:
+
+```go
+changedKeys(map[string]string{"Env": "prod"}, map[string]string{"Env": "dev", "hotfix": "true"})
+// => []string{"Env", "hotfix"}
+```
+
+The tests use fake S3 and EC2 clients, so nothing talks to real AWS.
 
 ## Your task
 
@@ -84,36 +122,41 @@ Finish `exercise.go`.
 
 ### 1. Load the desired state
 
-Implement `LoadDesired(path)`. Read the file with `os.ReadFile` and decode it
-with `json.Unmarshal` into a `[]Resource`. Wrap any error (from either call) with
-`%w` and the prefix `load desired state: `:
+**Goal:** `LoadDesired(path)` reads the JSON file at `path` and returns its
+resources as a `[]Resource`.
 
-```go
-fmt.Errorf("load desired state: %w", err)
-```
-
-Add the imports `encoding/json`, `fmt` and `os`.
+- Read the file with `os.ReadFile`, decode with `json.Unmarshal`.
+- If **either** step fails, return `nil` and the error wrapped with `%w`,
+  prefixed with exactly `load desired state: `.
+- Add the imports `encoding/json`, `fmt` and `os`.
 
 ```go
 LoadDesired("testdata/desired.json")
 // => 4 resources: bucket/acme-artifacts, bucket/acme-logs, instance/web-1, instance/web-2
 LoadDesired("testdata/missing.json")
 // => error "load desired state: open testdata/missing.json: no such file or directory"
+LoadDesired("testdata/broken.json")
+// => error starting with "load desired state: " (wrapping a *json.SyntaxError)
 ```
+
+**Think it through:**
+- Which two calls can fail, and where does each `if err != nil` go?
+- In the Learn example, which part is the prefix you must change?
 
 ### 2. Find the differences
 
-Finish `Diff(desired, actual)`. The "update" loop and the final sort are
-already there: for every ID in both `want` and `got`, the update loop calls
-`changedKeys(w.Tags, g.Tags)` and appends
-`Change{Action: "update", ID: id, Keys: keys}` when any keys differ. Add:
+**Goal:** `Diff(desired, actual)` also reports **create** and **delete**
+changes, not only updates.
 
-- **create**: for every ID in `want` that is not in `got`, append
-  `Change{Action: "create", ID: id}`.
-- **delete**: for every ID in `got` that is not in `want`, append
-  `Change{Action: "delete", ID: id}`.
+The starter already builds `want` and `got` (maps by ID), has the update loop,
+and sorts everything by ID at the end. Fill in the two `TODO(2)` spots:
 
-When nothing differs, `Diff` returns an empty (or nil) slice.
+- **create**: every ID in `want` that is not in `got` →
+  `Change{Action: "create", ID: id}` (no `Keys`).
+- **delete**: every ID in `got` that is not in `want` →
+  `Change{Action: "delete", ID: id}` (no `Keys`).
+
+When nothing differs, return an empty or nil slice.
 
 ```go
 desired: bucket/acme-logs {Env: prod}, instance/web-2 {Env: prod, Owner: web}
@@ -121,32 +164,30 @@ actual:  instance/web-2 {Env: staging, Owner: alice}, bucket/old-tmp {}
 // => [{create bucket/acme-logs []} {delete bucket/old-tmp []} {update instance/web-2 [Env Owner]}]
 ```
 
+**Think it through:**
+- Which map do you loop over for "create", and which one do you look the ID up in?
+- The update loop already looks up an ID in `got`. What does it do with `ok`?
+
 ### 3. Render the plan
 
-Finish `Plan`. It already loads the desired state and turns a load error into
-`"Error: <err>\n"` with exit code 1.
+**Goal:** `Plan` returns the report text and the exit code 0, 1 or 2.
 
-- If `Actual` returns an error, return `"Error: " + err.Error() + "\n"` and **1**
-  from the `if err != nil` block that is already there.
-- If `Diff` finds no changes, return exactly this and **0**:
+Loading errors are already handled. Fill in the rest:
 
-  ```text
-  No changes. AWS matches the desired state.
-  ```
+1. **`Actual` fails:** return `"Error: " + <the error's text> + "\n"` and **1**,
+   exactly like the `LoadDesired` error just above it.
+2. **No changes:** return exactly `"No changes. AWS matches the desired state.\n"` and **0**.
+3. **Changes:** one line per change, in the order `Diff` returned them, then a
+   summary line. Return **2**.
 
-- Otherwise write one line per change, in the order `Diff` returned them, then
-  a summary line, and return **2**:
+| Action | Line |
+|---|---|
+| create | `+ <id>` |
+| update | `~ <id> (tags: <keys joined with ", ">)` |
+| delete | `- <id>` |
 
-  | Action | Line |
-  |---|---|
-  | create | `+ <id>` |
-  | update | `~ <id> (tags: <keys joined with ", ">)` |
-  | delete | `- <id>` |
-
-  The summary counts each action: `Plan: <creates> to add, <updates> to change, <deletes> to destroy.`
-
-Every line, including the last one, ends with `\n`. For the drifted account in
-the tests:
+Summary: `Plan: <creates> to add, <updates> to change, <deletes> to destroy.`
+Every line, including the last, ends with `\n`.
 
 ```text
 + bucket/acme-artifacts
@@ -155,12 +196,23 @@ the tests:
 Plan: 1 to add, 1 to change, 1 to destroy.
 ```
 
-A `strings.Builder` with `fmt.Fprintf(&b, ...)` and `strings.Join(c.Keys, ", ")`
-make this short. Add the `strings` import.
+Only a `hotfix` tag added to web-1:
+
+```text
+~ instance/web-1 (tags: hotfix)
+Plan: 0 to add, 1 to change, 0 to destroy.
+```
+
+Add the `strings` import.
+
+**Think it through:**
+- Which field of a `Change` decides the line's first character?
+- You need three counts for the summary. When do you add 1 to each?
+- Which text is fixed (`+ `, ` (tags: `, `)`) and which comes from the change?
 
 ## Learn more
 
 - [Terraform: `terraform plan` and `-detailed-exitcode`](https://developer.hashicorp.com/terraform/cli/commands/plan)
 - [AWS CloudFormation: Detect drift](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-drift.html)
-- [aws-sdk-go-v2 ec2.NewDescribeInstancesPaginator](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/ec2#NewDescribeInstancesPaginator)
 - [encoding/json.Unmarshal](https://pkg.go.dev/encoding/json#Unmarshal)
+- [strings.Builder](https://pkg.go.dev/strings#Builder)

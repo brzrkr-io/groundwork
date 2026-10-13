@@ -4,82 +4,82 @@ Ops code is full of things that change: a counter of failed health checks, a
 server that takes new connections, a node that's being drained. A method that
 changes its value needs a *pointer receiver*.
 
+**New here:** pointer receivers `(x *T)`, choosing value or pointer receiver.
+
 ## Learn
 
 ### The bug: a value receiver changes a copy
 
-In *Methods* every method only read its fields. Watch what happens when a
-method with a value receiver tries to change one:
+So far every method only read its fields. Watch what happens when a method
+with a value receiver tries to change one:
 
 ```go
-type Counter struct {
-	Count int
+type Disk struct {
+	UsedGB int
 }
 
-func (c Counter) Inc() {
-	c.Count++ // changes the copy, not the caller's counter
+func (d Disk) Write(gb int) {
+	d.UsedGB += gb // changes the copy, not the caller's disk
 }
 
-var hits Counter
-hits.Inc()
-hits.Inc()
-fmt.Println(hits.Count) // 0
+var sda Disk
+sda.Write(5)
+fmt.Println(sda.UsedGB) // 0
 ```
 
-`(c Counter)` gives the method its own copy of `hits`. `c.Count++` really does
-add one, but to the copy, and the copy is thrown away when `Inc` returns.
-There's no error and no warning. The change just silently disappears.
+`(d Disk)` gives the method its own copy of `sda`. The `+=` really happens,
+but to the copy, which is thrown away when `Write` returns. No error, no
+warning: the change just disappears.
 
 ### The fix: a pointer receiver
 
 Put a `*` in front of the type in the receiver:
 
 ```go
-func (c *Counter) Inc() {
-	c.Count++ // changes the caller's counter
+func (d *Disk) Write(gb int) {
+	d.UsedGB += gb // changes the caller's disk
 }
 
-var hits Counter
-hits.Inc()
-hits.Inc()
-fmt.Println(hits.Count) // 2
+var sda Disk
+sda.Write(5)
+fmt.Println(sda.UsedGB) // 5
 ```
 
-Now `c` is a pointer to `hits`, so `c.Count++` changes `hits` itself. As in
-*Pointers*, you write `c.Count`, not `(*c).Count`: Go follows the pointer for
-you when you use a field.
+Now `d` points at `sda`, so the change lands on `sda` itself. The body did
+not change at all: only the receiver line did.
+
+> **Why is it written like this?** Go requires the `*` to go on the type
+> (`*Disk`), not the name. You still write `d.UsedGB`, not `(*d).UsedGB`: as
+> in *Pointers*, Go follows the pointer for you when you use a field.
 
 ### Go adds the `&` for you
 
-`Inc` wants a `*Counter`, but `hits` is a plain `Counter`. When you call a
-pointer method on a variable, Go quietly rewrites `hits.Inc()` as
-`(&hits).Inc()`. If you already hold a pointer, it works directly:
+`Write` wants a `*Disk`, but `sda` is a plain `Disk`. When you call a pointer
+method on a variable, Go quietly rewrites `sda.Write(5)` as
+`(&sda).Write(5)`. If you already hold a pointer, it works directly:
 
 ```go
-p := &Counter{}     // p is a *Counter
-p.Inc()             // no rewrite needed
-fmt.Println(p.Count) // 1
+p := &Disk{}  // p is a *Disk
+p.Write(2)    // no rewrite needed
 ```
 
-So callers write `x.Method()` either way. Only the method declaration decides
-whether the original value changes.
+So callers write `x.Method()` either way. Only the method's receiver line
+decides whether the original changes.
 
 ### Value or pointer receiver?
 
-| | Value receiver `(c Counter)` | Pointer receiver `(c *Counter)` |
+| | Value receiver `(d Disk)` | Pointer receiver `(d *Disk)` |
 |---|---|---|
 | The method gets | a copy of the value | a pointer to the original |
 | Changes to fields | lost when the method returns | kept |
 | Good for | small types whose methods only read | methods that change fields, big structs |
 
-Three rules of thumb:
+Rules of thumb:
 
-1. If the method changes a field, it **must** have a pointer receiver.
-2. If the struct is big, a pointer receiver avoids copying all of it on every
-   call.
-3. Be consistent. If one method of a type needs a pointer receiver, give
-   every method of that type a pointer receiver, even the ones that only
-   read. Mixing the two is a common source of the bug above.
+1. If the method changes a field, it **must** have a pointer receiver (Go
+   accepts a value receiver, but your change is lost).
+2. Be consistent: if one method of a type needs a pointer receiver, give
+   every method of that type one. This is Go convention.
 
 ## Your task
 
@@ -88,9 +88,11 @@ methods were written with value receivers, so none of their changes stick.
 
 ### 1. Make the counter count
 
-`Inc` should add one to `Count`, and `Reset` should set `Count` back to `0`.
-Both bodies are already right, but their changes are lost. Change both
-receivers to pointer receivers.
+**Goal:** make `Inc` and `Reset` change the caller's `Counter` by changing
+only their receiver lines.
+
+`Inc` adds one to `Count`; `Reset` sets `Count` back to `0`. Both bodies are
+already right. Don't touch them.
 
 ```go
 var c Counter
@@ -103,13 +105,19 @@ c.Reset()
 // c.Count == 0
 ```
 
+**Think it through:**
+- Compare the `Disk` receiver before and after the fix. Which one character
+  changed?
+- Where in the receiver does that character go: next to the name or next to
+  the type?
+
 ### 2. Accept a connection
 
-Complete `Accept` and give it a pointer receiver (`*Server`).
+**Goal:** `Accept` takes a new connection and returns `true`, unless the
+server is draining. Give it a pointer receiver (`*Server`).
 
-- If the server is draining (`Draining` is `true`), it refuses: return `false`
-  and leave `Connections` unchanged.
-- Otherwise add one to `Connections` and return `true`.
+- If `Draining` is `true`: return `false` and leave `Connections` unchanged.
+- Otherwise: add one to `Connections` and return `true`.
 
 ```go
 s := &Server{Name: "web-1", Connections: 4}
@@ -121,15 +129,21 @@ d.Accept()
 // => false, and d.Connections == 3
 ```
 
+**Think it through:**
+- Which case do you check first, so you can return early?
+- Which field changes, and only in which case?
+
 ### 3. Drain the server
 
-Before a deploy you *drain* a server: stop sending it new work and close what
-it has. Complete `Drain` (it already has a pointer receiver) so it:
+**Goal:** `Drain` marks the server as draining, closes all its connections
+and returns how many it closed. It already has a pointer receiver.
 
-- sets `Draining` to `true`,
-- sets `Connections` to `0`,
-- returns how many connections it closed, which is the value `Connections`
-  had **before** you set it to `0`.
+Before a deploy you *drain* a server: stop sending it new work and close what
+it has. `Drain` must:
+
+- set `Draining` to `true`,
+- set `Connections` to `0`,
+- return the value `Connections` had **before** you set it to `0`.
 
 ```go
 s := &Server{Name: "web-1", Connections: 7}
@@ -139,6 +153,10 @@ s.Drain()
 s.Accept()
 // => false, because the server is draining
 ```
+
+**Think it through:**
+- Once `Connections` is `0`, the old number is gone. Where can you keep it
+  first?
 
 ## Learn more
 

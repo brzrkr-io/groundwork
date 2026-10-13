@@ -36,7 +36,9 @@ var goplsSettings = map[string]any{
 // show because they point straight at the bug the learner is there to fix.
 // Solutions may show nothing at all.
 var starterDiagnostics = map[string][]string{
+	"reading_go":            {"compiler"},
 	"variables_2":           {"compiler", "nonewvars"},
+	"compiler_errors":       {"compiler"},
 	"constants":             {"compiler"},
 	"constants_2":           {"compiler"},
 	"string_formatting_2":   {"printf"},

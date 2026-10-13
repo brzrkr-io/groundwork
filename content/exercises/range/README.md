@@ -1,50 +1,51 @@
 # Looping with range
 
 Monitoring data comes in lists: one latency per host, one health check per
-node. `for ... range` walks a slice element by element without you managing an
+node. `for ... range` walks a slice element by element, so you don't manage an
 index by hand.
+
+**New here:** `for ... range` over slices and strings, the blank identifier `_`.
 
 ## Learn
 
 ### range over a slice
 
 So far you looped with `for i := range len(s)` and read `s[i]`. Ranging over
-the slice itself gives you both the index and the element:
+the slice itself hands you the index **and** the element:
 
 ```go
-hosts := []string{"web-1", "web-2", "db-1"}
-for i, host := range hosts {
-	fmt.Println(i, host)
+zones := []string{"eu-1", "us-1", "ap-1"}
+for i, zone := range zones {
+	fmt.Println(i, zone)
 }
-// 0 web-1
-// 1 web-2
-// 2 db-1
+// 0 eu-1
+// 1 us-1
+// 2 ap-1
 ```
 
-On each pass, `i` is the index and `host` is `hosts[i]`. You pick the names.
-If the slice is empty or `nil`, the loop body never runs.
+Each pass, `i` is the index and `zone` is `zones[i]`. If the slice is empty or
+`nil`, the body never runs.
+
+> **Why is it written like this?** `for`, `range`, `:=` and the comma are
+> required. The order is fixed: index first, element second. The names `i` and
+> `zone` are your choice; `i` is a convention.
 
 ### Skip what you don't need
 
 Go refuses to compile a variable you never use. If you only need the element,
-put the *blank identifier* `_` where the index would go:
+put the *blank identifier* `_` where the index goes:
 
 ```go
-total := 0
-for _, ms := range latencies {
-	total += ms
+longest := 0
+for _, name := range zones {
+	if len(name) > longest {
+		longest = len(name)
+	}
 }
 ```
 
-If you only need the index, leave out the second variable:
-
-```go
-for i := range hosts {
-	fmt.Println(i) // 0, 1, 2
-}
-```
-
-Careful: with one variable you get the **index**, not the element.
+If you only need the index, write just one variable. Careful: one variable
+means the **index**, not the element.
 
 | Loop | You get |
 |---|---|
@@ -52,40 +53,37 @@ Careful: with one variable you get the **index**, not the element.
 | `for _, v := range s` | element only |
 | `for i := range s` | index only |
 
+> **Why is it written like this?** `_` is required when you skip the index,
+> because the position decides the meaning. It is Go's "throw this away" name.
+
 ### The element is a copy
 
-`v` is a copy of `s[i]`. Assigning to `v` changes the copy, not the slice:
+`v` is a copy of `s[i]`. Assigning to `v` changes only the copy. To change the
+slice, assign through the index: `s[i] = ...`.
 
 ```go
-ms := []int{120, 900}
-for _, v := range ms {
-	v = 0 // only changes the copy
+sizes := []int{3, 9}
+for _, v := range sizes {
+	v = 0 // changes the copy only
 }
-// ms is still [120 900]
-
-for i := range ms {
-	ms[i] = 0 // changes the slice
-}
-// ms is now [0 0]
+// sizes is still [3 9]
 ```
-
-To change the slice, assign through the index: `s[i] = ...`.
 
 ### Two slices, one index
 
-Sometimes two slices line up: `hosts[i]` has latency `ms[i]`. Range over one
-and use the index to read the other:
+Sometimes two slices line up: `zones[i]` belongs with `owners[i]`. Range over
+one and use the index to read the other:
 
 ```go
-for i, host := range hosts {
-	fmt.Println(host, ms[i])
+for i, zone := range zones {
+	fmt.Println(zone, owners[i])
 }
 ```
 
 ### range over a string
 
-`range` also works on strings. It gives the byte position and the character
-(called a *rune*):
+`range` also works on strings. It gives the byte position and the character,
+called a *rune*:
 
 ```go
 for i, r := range "db-1" {
@@ -107,8 +105,9 @@ check result per host. Write three helpers for the dashboard.
 
 ### 1. Add up the latencies
 
-`TotalLatency(ms)` returns the sum of all values in `ms`. An empty slice gives
-0.
+**Goal:** make `TotalLatency(ms)` return the sum of every value in `ms`.
+
+An empty or `nil` slice gives 0.
 
 ```go
 TotalLatency([]int{120, 80, 300})
@@ -118,13 +117,19 @@ TotalLatency(nil)
 // => 0
 ```
 
+**Think it through:**
+- Do you need the index, the element, or both?
+- `total` already exists in the starter. What happens to it each pass?
+
 ### 2. Find the slowest host
 
-`Slowest(hosts, ms)` returns the host with the highest latency and that
-latency. `hosts[i]` has latency `ms[i]`; both slices always have the same
-length and latencies are never negative.
+**Goal:** make `Slowest(hosts, ms)` return the host with the highest latency,
+and that latency.
 
-- If two hosts tie, return the one that comes first.
+- `hosts[i]` has latency `ms[i]`. Both slices always have the same length.
+- Latencies are never negative.
+- On a tie, return the host that comes first.
+- If every latency is 0, the first host still wins.
 - If `hosts` is empty, return `""` and `0`.
 
 ```go
@@ -141,12 +146,19 @@ Slowest(nil, nil)
 // => "", 0
 ```
 
+**Think it through:**
+- `slowest` and `worst` hold the best so far. When should they be replaced?
+- Which comparison keeps the first host on a tie: "greater" or "greater or equal"?
+- With all zeros, nothing is greater than 0. How does the first host get picked?
+
 ### 3. List the unhealthy hosts
 
-`Unhealthy(hosts, healthy)` returns the hosts whose health check failed
-(`healthy[i]` is `false`), in their original order. Both slices have the same
-length. If every host is healthy, return a slice with no elements (`nil` is
-fine).
+**Goal:** make `Unhealthy(hosts, healthy)` return the hosts whose check failed,
+in their original order.
+
+- A check failed when `healthy[i]` is `false`; that is host `hosts[i]`.
+- Both slices have the same length.
+- If every host is healthy, return a slice with no elements (`nil` is fine).
 
 ```go
 Unhealthy([]string{"web-1", "web-2", "db-1"}, []bool{true, false, false})
@@ -155,6 +167,10 @@ Unhealthy([]string{"web-1", "web-2", "db-1"}, []bool{true, false, false})
 Unhealthy([]string{"web-1"}, []bool{true})
 // => []
 ```
+
+**Think it through:**
+- Which slice do you range over, and which do you read with the index?
+- How do you test that a `bool` is `false`?
 
 ## Learn more
 

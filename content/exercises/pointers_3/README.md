@@ -1,22 +1,24 @@
 # Pointers: optional config fields
 
 How does a config tell "replicas: 0" apart from "replicas not set"? Kubernetes
-answers with pointers: a `nil` pointer means "not set". In this exercise you
-use the same pattern to apply defaults and layer config overrides.
+answers with pointers: a `nil` pointer means "not set". Here you use the same
+pattern to apply defaults and layer config overrides.
+
+**New here:** pointer fields as "optional" values, `new(value)`, checking for `nil` before reading.
 
 ## Learn
 
 ### Recap
 
-As in *Pointers*, `*int` is a pointer to an `int`, `nil` is the zero value of
+As in *Pointers*: `*int` is a pointer to an `int`, `nil` is the zero value of
 every pointer type, and `*p` reads the value `p` points to. Reading `*p` when
-`p` is `nil` crashes, so check `p != nil` first.
+`p` is `nil` **crashes** the program, so check `p != nil` first.
 
 ### The problem with zero values
 
-A plain `int` field is always set to *something*. If a user leaves `Replicas`
-out, it is `0`. If they write `replicas: 0` to scale a service down, it is
-also `0`. The code can't tell the two apart.
+A plain `int` field is always *something*. Leave `Replicas` out and it is `0`.
+Write `replicas: 0` to scale down and it is also `0`. The code can't tell
+them apart.
 
 A pointer field has a third state, `nil`:
 
@@ -26,54 +28,65 @@ A pointer field has a third state, `nil`:
 | points at `0` | set, and the value is `0` |
 | points at `5` | set, and the value is `5` |
 
-Kubernetes does exactly this. A Deployment's `Replicas` field has type
-`*int32`, and when it is `nil` Kubernetes uses 1 replica.
+Kubernetes does exactly this: a Deployment's `Replicas` has type `*int32`,
+and `nil` means 1 replica.
 
 ```go
-type DeploymentSpec struct {
-	Name     string
-	Replicas *int // nil means "use the default"
+type Probe struct {
+	Path           string
+	TimeoutSeconds *int // nil means "not set"
 }
 
-func describe(spec DeploymentSpec) string {
-	if spec.Replicas == nil {
-		return "replicas not set"
+func describe(p Probe) string {
+	if p.TimeoutSeconds == nil {
+		return p.Path + ": no timeout"
 	}
-	return fmt.Sprintf("replicas = %d", *spec.Replicas)
+	return fmt.Sprintf("%s: %ds timeout", p.Path, *p.TimeoutSeconds)
 }
 ```
+
+> **Why is it written like this?** Go requires the `*` to read the `int`
+> behind the pointer. Checking `nil` first and returning early is convention
+> (it keeps the "normal" path unindented). The names are the author's choice.
 
 ### Making a pointer to a value
 
 You can't take the address of a literal: `&5` does not compile. Since Go
-1.26, the built-in `new` does it for you. `new(value)` makes a brand-new
-variable holding `value` and returns a pointer to it:
+1.26, the built-in `new(value)` makes a brand-new variable holding `value` and
+returns a pointer to it:
 
 ```go
-p := new(5)         // p is an *int, and *p == 5
-s := new("web:2.0") // s is a *string
-
-o := Overrides{Image: new("web:2.0"), Replicas: new(3)}
+port := new(8080)      // port is an *int, and *port == 8080
+tag := new("v1.4")     // tag is a *string
+p := Probe{Path: "/healthz", TimeoutSeconds: new(5)}
 ```
 
-The type comes from the value: `new(5)` is an `*int`, `new(true)` a `*bool`.
-Every call makes a new variable, so `new(5) == new(5)` is `false`: two
-different pointers that happen to point at equal values. `new(n)` with a
-variable `n` copies its current value, so changing `n` later doesn't change
-`*p`.
+- The type comes from the value: `new(5)` is an `*int`, `new(true)` a `*bool`.
+- Every call makes a **new** variable, so `new(5) == new(5)` is `false`: two different pointers to equal values.
+- `new(x)` with a variable `x` copies its current value; changing `x` later doesn't change what the pointer sees.
 
-You'll see an older style in existing code, from before Go 1.26: a tiny helper
-that returns the address of its parameter, such as `func StrPtr(s string)
-*string { return &s }`, or Kubernetes' `ptr.To(...)`. They do the same as
-`new(...)`, and your editor offers to replace them with it.
+Older code (before Go 1.26) uses a tiny helper instead, like
+`func StrPtr(s string) *string { return &s }` or Kubernetes' `ptr.To(...)`.
+They do the same thing as `new(...)`.
+
+### Changing a struct parameter
+
+Go passes a struct by value, so a struct parameter is already the
+function's own copy. You can set its fields and return it; the caller's
+original is untouched:
+
+```go
+func WithPath(p Probe, path string) Probe {
+	p.Path = path
+	return p
+}
+```
 
 ## Your task
 
 Your platform team deploys services from a base config plus layers of
-overrides (team defaults, then the environment, then a one-off command-line
-flag). Write the helpers that resolve the final values.
-
-The exercise uses these types:
+overrides (team defaults, then the environment, then a one-off flag). Write
+the helpers that resolve the final values. The exercise uses these types:
 
 ```go
 const DefaultReplicas = 1
@@ -98,10 +111,11 @@ type Overrides struct {
 
 ### 1. Write WithReplicas
 
-Change `WithReplicas(spec DeploymentSpec, n int) DeploymentSpec` so it
-returns a copy of `spec` whose `Replicas` points at a new `int` holding `n`.
-`spec` is already a copy (Go passes structs by value), so set its field and
-return it. Every call must make a new pointer, even for the same `n`.
+**Goal:** make `WithReplicas(spec DeploymentSpec, n int)` return `spec` with its `Replicas` field pointing at a new `int` holding `n`.
+
+- `Name` stays as it was.
+- Every call makes a **new** pointer, even for the same `n` (so two calls never return the same address).
+- Any `n` works, including `0` and negatives.
 
 ```go
 s := WithReplicas(DeploymentSpec{Name: "api"}, 3)
@@ -112,11 +126,16 @@ WithReplicas(spec, 3).Replicas == WithReplicas(spec, 3).Replicas
 // => false (two different pointers)
 ```
 
+**Think it through:**
+- The field's type is `*int` but `n` is an `int`. Which built-in turns a value into a pointer to a fresh copy of it?
+- The `return spec` line is already there. What do you set just before it?
+
 ### 2. Write EffectiveReplicas
 
-Change `EffectiveReplicas` so it returns the replica count `spec` asks for.
-When `spec.Replicas` is `nil`, return `DefaultReplicas` (which is `1`). A
-`Replicas` pointing at `0` means "scale to zero", so it returns `0`.
+**Goal:** make `EffectiveReplicas(spec DeploymentSpec) int` return the replica count `spec` asks for, or `DefaultReplicas` when it isn't set.
+
+- `spec.Replicas` is `nil` → return the constant `DefaultReplicas` (which is `1`).
+- Otherwise → return the `int` it points to. Pointing at `0` means "scale to zero", so return `0`.
 
 ```go
 EffectiveReplicas(DeploymentSpec{Name: "api"})
@@ -127,16 +146,18 @@ EffectiveReplicas(DeploymentSpec{Name: "batch", Replicas: new(0)})
 // => 0
 ```
 
+**Think it through:**
+- Which case must you handle first so you never read through a `nil` pointer?
+- In the other case, `spec.Replicas` is an address. What symbol gets you the number?
+
 ### 3. Write Merge
 
-Change `Merge(base Config, layers ...Overrides) Config` so it starts from
-`base` and applies each layer in order:
+**Goal:** make `Merge(base Config, layers ...Overrides) Config` start from `base` and apply each layer in order.
 
-- For each field, a non-`nil` pointer in the layer replaces the value in the
-  result with the value it points to.
+- For each field, a non-`nil` pointer in a layer replaces that field in the result with the value it points to.
 - A `nil` field leaves the value as it is.
 - Later layers win over earlier ones.
-- With no layers, `Merge` returns `base` unchanged.
+- With no layers (or only empty layers), `Merge` returns `base` unchanged.
 
 ```go
 base := Config{Image: "web:1.0", Replicas: 3, Debug: true}
@@ -150,6 +171,11 @@ Merge(base,
 )
 // => Config{Image: "web:2.0", Replicas: 2, Debug: false}
 ```
+
+**Think it through:**
+- `layers` is a slice (as in *Variadic functions*). Which loop visits each layer in order?
+- You need a result variable that starts as a copy of `base`. Each of the three fields then needs its own `nil` check.
+- `Config` fields are plain values, `Overrides` fields are pointers. Which side needs the `*`?
 
 ## Learn more
 

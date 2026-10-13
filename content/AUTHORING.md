@@ -41,18 +41,31 @@ exercises/variables/
 
 ## README.md
 
+The learner has ADHD and is new to programming. They lose track in long text,
+so a README must be easy to scan, and every task should read like a short
+checklist. They also want to understand **why** Go code looks the way it
+does: what Go requires, what is convention, and what is their own choice.
+Teach that reasoning. Don't give away the answer.
+
 ```markdown
 # Title
 
 One or two sentences: what this is and why an ops engineer cares.
 
+**New here:** `const`, constant expressions.   (or: **New here:** nothing; practice)
+
 ## Learn
 
-The concept, taught from zero, with short ```go examples. Explain every piece
-of syntax or API the task needs that earlier exercises did not cover. Use
-tables when comparing options. About 200–600 words for concept exercises.
-Practice exercises recap briefly. Projects describe the architecture and
-include a file map.
+The concept, taught from zero, in short sections (### headings), each with a
+small ```go example. Explain every piece of syntax or API the task needs that
+earlier exercises did not cover. About 200–600 words for concept exercises;
+practice exercises recap in a few lines; projects describe the architecture
+and include a file map.
+
+> **Why is it written like this?** One short note per new piece of syntax:
+> what Go requires (the compiler rejects anything else), what is convention
+> (gofmt or the community expects it), and what is the author's choice
+> (names, order, line breaks).
 
 ## Your task
 
@@ -60,13 +73,18 @@ A one- or two-sentence scenario.
 
 ### 1. Imperative task title
 
-Which function to change and the exact expected behaviour, followed by a worked
-example:
+**Goal:** one sentence: which function, and what it must return or do.
+
+The exact expected behaviour, followed by a worked example:
 
     ```go
     ServiceLabel("api", "production")
     // => "production/api"
     ```
+
+**Think it through:**
+- 1–3 short questions or steps that point at *what to look at* (which
+  parameters, which fixed text, which operator), never the code itself.
 
 ### 2. …
 
@@ -81,11 +99,21 @@ Rules:
 - **No hidden requirements.** Every string, format, edge case and error
   condition the tests check is stated in the README. A learner who reads the
   README carefully never has to reverse-engineer the tests.
-- Tasks go from easiest to hardest. Task numbers match the `TODO(n)` markers.
+- **Don't give the answer away.** The README shows the result and teaches the
+  syntax with *different* examples, never the line the learner must write.
+  Solutions live in the hints' Answer level.
+- **Easy to scan.** Short paragraphs of 1–3 sentences. Put each new term in
+  *italics* or `code` the first time. Use tables to compare options. Keep the
+  details below the **Goal** line, so a learner who only reads the Goal and
+  the example knows what to do.
+- **Name the parts.** When a task builds something from pieces, say in words
+  which pieces come from parameters or constants and which are fixed text.
+  When a task changes a value, say which line or name holds it.
+- Tasks go from easiest to hardest. Task numbers match the `TODO(n)` markers,
+  and task titles match hints.md exactly.
 - Write in the second person. Be friendly, direct and concrete. No filler and
   no marketing.
 - Refer to earlier exercises by title ("as in *Slices*"), never by number.
-- Introduce a new term in *italics* the first time it appears.
 
 ## hints.md
 

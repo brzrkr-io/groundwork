@@ -1,95 +1,107 @@
 # The strings package
 
-Ops work is full of text: URLs, label lists, command lines, config lines. The
-`strings` package has a small set of functions that handle most of it. Learn
-these and you can take apart (and put back together) nearly any line a tool
-hands you.
+Ops work is full of text: URLs, label lists, command lines. The `strings`
+package has a small set of functions that take apart, and put back together,
+nearly any line a tool hands you.
+
+**New here:** `strings.Split`, `Fields`, `Join`, `Cut`, `TrimPrefix`,
+`TrimSuffix`, `TrimSpace`, `SplitSeq`, `strings.Builder` in a loop.
 
 ## Learn
 
-You met `strings.Contains`, `strings.HasPrefix` and `strings.ToUpper` in
-*Strings*. Here are the rest of the everyday tools. All of them return new
-values; Go strings never change in place.
+### The everyday tools
+
+You met `Contains`, `HasPrefix` and `ToUpper` in *Strings*. All of these
+return a **new** value; Go strings never change in place.
 
 | Function | What it does | Example | Result |
 |---|---|---|---|
-| `Split(s, sep)` | cut `s` at every `sep` | `Split("a,b,c", ",")` | `["a" "b" "c"]` |
-| `Fields(s)` | split on runs of spaces, tabs and newlines | `Fields("  a   b ")` | `["a" "b"]` |
-| `Join(parts, sep)` | glue a slice back together | `Join([]string{"a", "b"}, "/")` | `"a/b"` |
-| `Cut(s, sep)` | split at the **first** `sep` only | `Cut("k=v=1", "=")` | `"k", "v=1", true` |
-| `Index(s, sub)` | position of the first `sub`, or `-1` | `Index("api/v1", "/")` | `3` |
-| `TrimPrefix(s, p)` | drop `p` from the start, if it is there | `TrimPrefix("v1.2", "v")` | `"1.2"` |
-| `TrimSuffix(s, p)` | drop `p` from the end, if it is there | `TrimSuffix("app.log", ".log")` | `"app"` |
-| `TrimSpace(s)` | drop spaces, tabs and newlines at both ends | `TrimSpace("  web \n")` | `"web"` |
-| `EqualFold(a, b)` | equal, ignoring upper/lower case | `EqualFold("Prod", "PROD")` | `true` |
-
-A few details are worth knowing:
+| `Split(s, sep)` | cut at every `sep` | `Split("a,b,c", ",")` | `["a" "b" "c"]` |
+| `Fields(s)` | split on runs of whitespace | `Fields("  a   b ")` | `["a" "b"]` |
+| `Join(parts, sep)` | glue a slice together | `Join([]string{"a", "b"}, "/")` | `"a/b"` |
+| `Cut(s, sep)` | split at the **first** `sep` | `Cut("k=v=1", "=")` | `"k", "v=1", true` |
+| `Index(s, sub)` | position of `sub`, or `-1` | `Index("api/v1", "/")` | `3` |
+| `TrimPrefix(s, p)` | drop `p` from the start | `TrimPrefix("v1.2", "v")` | `"1.2"` |
+| `TrimSuffix(s, p)` | drop `p` from the end | `TrimSuffix("app.log", ".log")` | `"app"` |
+| `TrimSpace(s)` | drop whitespace at both ends | `TrimSpace("  web \n")` | `"web"` |
+| `EqualFold(a, b)` | equal, ignoring case | `EqualFold("Prod", "PROD")` | `true` |
 
 - `Split` keeps empty pieces: `Split("a,,b", ",")` is `["a" "" "b"]`, and
-  `Split("", ",")` is `[""]`, a slice with one empty string.
-- `TrimPrefix` and `TrimSuffix` do nothing when the prefix or suffix isn't
-  there, so you can call them without checking first.
+  `Split("", ",")` is `[""]`.
+- `TrimPrefix`/`TrimSuffix` do nothing if the text isn't there, so no check
+  is needed first.
 
-### Looping over the pieces: `SplitSeq` and `FieldsSeq`
+Because they return a new string, keep the result: `name = strings.TrimSpace(name)`.
+Calling `strings.TrimSpace(name)` on its own line throws the result away.
 
-When you only want to loop over the pieces, use `strings.SplitSeq` instead of
-`Split` (and `strings.FieldsSeq` instead of `Fields`). They hand you the
-pieces one at a time without building a slice first. Range over them with a
-single loop variable, the piece itself:
+> **Why is it written like this?** `strings.` in front is required: it names
+> the package the function lives in. The argument order (text first, then
+> separator) is fixed by the package.
+
+### Looping over pieces: `SplitSeq`
+
+`strings.SplitSeq` gives the same pieces as `Split`, one at a time, without
+building a slice. Range over it with one loop variable, the piece:
 
 ```go
-for host := range strings.SplitSeq("web-1,web-2", ",") {
+for host := range strings.SplitSeq("web-1;web-2", ";") {
 	fmt.Println(host) // web-1, then web-2
 }
 ```
 
-They give exactly the same pieces as `Split` and `Fields`. Use
-`Split` or `Fields` when you need an actual slice, for example to check its
-length or index into it. Your editor suggests the `Seq` version when you range
-over `Split` directly.
+Use `Split` when you need a real slice (to check its length or index it).
+
+> **Why is it written like this?** One loop variable is required here; there
+> is no index. The name `host` is your choice. Your editor suggests
+> `SplitSeq` when you range over `Split`.
 
 ### `strings.Cut`
 
-`Cut` returns three values: the part *before* the separator, the part *after*
-it, and a `bool` that says whether the separator was found at all.
+`Cut` returns three values: the text *before* the separator, the text
+*after* it, and a `bool` saying whether the separator was found.
 
 ```go
-key, value, found := strings.Cut("env=prod", "=")
-// key == "env", value == "prod", found == true
+user, domain, found := strings.Cut("ops@example.com", "@")
+// "ops", "example.com", true
 
-key, value, found = strings.Cut("debug", "=")
-// key == "debug", value == "", found == false
+user, domain, found = strings.Cut("root", "@")
+// "root", "", false
 ```
 
-Use the `_` blank identifier for a value you don't need, as in
-`before, _, _ := strings.Cut(s, "/")`.
+Write `_` for a value you don't need: `user, _, _ := strings.Cut(s, "@")`.
+
+> **Why is it written like this?** Go requires one name (or `_`) for each
+> returned value. `:=` creates new names; `=` reuses existing ones.
 
 ### `strings.Builder`
 
-You met `strings.Builder` in *For loops: backoff and progress bars*. It is the
-standard way to assemble a string piece by piece:
+You met it in *For loops: backoff and progress bars*. `WriteString` adds to
+the end; `String` returns everything written.
 
 ```go
-var b strings.Builder   // ready to use, no setup needed
-b.WriteString("kubectl")
-b.WriteString(" ")
-b.WriteString("get")
-cmd := b.String()       // "kubectl get"
+var b strings.Builder
+b.WriteString("ls")
+b.WriteString(" -la")
+out := b.String() // "ls -la"
 ```
 
-`WriteString` adds text to the end. `String` gives you everything written so
-far. Prefer it to `s += ...` in a loop, which copies the whole string every
-time.
+### Quotes inside a string
+
+Inside `"..."`, write a double quote as `\"`. So `"\""` is a string holding
+one `"` character, and `"say \"hi\""` is `say "hi"`. A *raw string* in
+backticks, like `` `say "hi"` ``, takes everything literally.
 
 ## Your task
 
-You're writing helpers for a deploy tool that reads service URLs and labels and
-prints the `kubectl` commands it runs.
+You're writing helpers for a deploy tool that reads service URLs and labels
+and prints the `kubectl` commands it runs.
 
 ### 1. Get the host from a URL
 
-Change `HostFromURL` to remove a leading `"https://"` or `"http://"`, and then
-everything from the first `"/"` onwards.
+**Goal:** make `HostFromURL` return just the host part of `url`.
+
+Remove a leading `"https://"` or `"http://"`, then drop everything from the
+first `"/"` onwards.
 
 ```go
 HostFromURL("https://api.example.com/health")  // => "api.example.com"
@@ -98,17 +110,21 @@ HostFromURL("https://grafana.internal")        // => "grafana.internal"
 HostFromURL("db.internal/admin")               // => "db.internal"
 ```
 
+**Think it through:**
+- Which tool removes text from the start only if it's there?
+- Which tool keeps only the part before the first `"/"`?
+- Are you keeping each result, or throwing it away?
+
 ### 2. Parse a label list
 
-Change `ParseLabels` to turn a string like `"app=web,env=prod"` into a map.
+**Goal:** make `ParseLabels` turn `"app=web,env=prod"` into a map of keys to
+values.
 
-- Split the string on `","` to get the pairs. Loop over them with
-  `strings.SplitSeq`.
-- Split each pair at the **first** `"="`. The part before is the key, the part
-  after is the value, so `"selector=a=b"` gives key `"selector"` and value
-  `"a=b"`.
-- Trim spaces from both the key and the value.
-- Skip any pair without an `"="`.
+- Pairs are separated by `","`. Loop over them with `strings.SplitSeq`.
+- Split each pair at the **first** `"="`: before is the key, after is the
+  value. `"selector=a=b"` gives key `"selector"`, value `"a=b"`.
+- Trim spaces from both key and value.
+- Skip any pair without `"="`.
 - An empty string gives an empty map.
 
 ```go
@@ -119,13 +135,18 @@ ParseLabels("team=core,canary,selector=a=b")
 // => map[selector:a=b team:core]
 ```
 
+**Think it through:**
+- The map `labels` already exists; you only fill it.
+- Which of `Cut`'s three results tells you to skip a pair?
+
 ### 3. Build a command line
 
-Change `BuildCommand` to return `binary` followed by each argument, with a
-single space before each argument. Wrap any argument that contains a space in
-double quotes (`strings.Contains(arg, " ")` tells you whether it does). With no
-arguments, return just `binary`. Inside a Go string, a double quote is written
-`\"`, so `"\""` is a string holding one double quote.
+**Goal:** make `BuildCommand` return `binary`, then each argument with one
+space before it, quoting arguments that contain a space.
+
+- Wrap an argument in double quotes if it contains a space
+  (`strings.Contains(arg, " ")` tells you).
+- No arguments: return just `binary`.
 
 ```go
 BuildCommand("kubectl", []string{"get", "pods", "-l", "app=web tier"})
@@ -135,9 +156,13 @@ BuildCommand("uptime", nil)
 // => "uptime"
 ```
 
-The backticks in the first result (and in the tests) make a *raw string*:
-everything between them is taken literally, so the double quotes inside need
-no `\`.
+The backticks in the first result are a raw string; the result itself
+contains the double quotes, not the backticks.
+
+**Think it through:**
+- The loop already writes `arg`. What must be written before it, every time?
+- When quoting, which three pieces make the new argument: fixed text,
+  the variable, fixed text?
 
 ## Learn more
 

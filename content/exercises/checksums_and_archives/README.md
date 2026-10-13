@@ -1,66 +1,60 @@
 # Checksums and archives: verify and extract safely
 
 Install scripts download a release, check it hasn't been tampered with, and
-unpack it. Here you build those three steps in Go, including the safety check
-that stops a malicious archive from overwriting files elsewhere on a host.
+unpack it. You'll build those three steps, including the check that stops a
+malicious archive from writing files outside the install folder.
+
+**New here:** `crypto/sha256`, `encoding/hex`, `archive/tar`, `compress/gzip`, `filepath.IsLocal`.
 
 ## Learn
 
 ### Checksums
 
-A *checksum* is a short fingerprint of a file's bytes. Change one byte and the
-fingerprint changes completely. Releases publish a checksums file in the
-format the `sha256sum` tool prints: 64 hex characters, **two spaces**, then
+A *checksum* is a short fingerprint of a file's bytes. Change one byte and
+the fingerprint changes completely. Releases publish a `SHA256SUMS` file in
+the format the `sha256sum` tool prints: 64 hex characters, **two spaces**,
 the file name:
 
 ```text
 5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03  app.tar.gz
 ```
 
-On the command line, `sha256sum -c SHA256SUMS` re-hashes each listed file and
-reports `OK` or `FAILED`.
+### Hashing in Go
 
-### Hashing a file in Go
-
-`sha256.New()` (package `crypto/sha256`) returns a `hash.Hash`. A hash is an
-`io.Writer`: every byte you write is fed into the fingerprint. So `io.Copy`
-can stream a 2 GB file into it a chunk at a time, without loading the whole
-file into memory:
+A hash (`hash.Hash`) is an `io.Writer`: every byte written into it feeds the
+fingerprint. So `io.Copy` can stream any reader into it, a chunk at a time,
+without loading a 2 GB file into memory. Here with MD5 and a string, to show
+the shape:
 
 ```go
-h := sha256.New()
-if _, err := io.Copy(h, f); err != nil { // f is an *os.File
-	return "", err
-}
-sum := h.Sum(nil)               // the raw 32 bytes
-text := hex.EncodeToString(sum) // "5891b5b5...", lowercase hex
+h := md5.New()
+io.Copy(h, strings.NewReader("hi"))
+raw := h.Sum(nil)              // the finished hash as raw bytes
+text := hex.EncodeToString(raw) // "49f68a5c8493ec2c0bf489821c21fc3b"
 ```
 
-`h.Sum(nil)` returns the finished hash. `hex.EncodeToString` (package
-`encoding/hex`) turns the bytes into the familiar text form.
+`sha256.New()` (package `crypto/sha256`) works the same way.
+`hex.EncodeToString` (package `encoding/hex`) gives lowercase hex.
+
+> **Why is it written like this?** `h.Sum(nil)` takes a slice to append the
+> hash to; `nil` means "start a fresh one". That's the API's design, and
+> `nil` is what almost everyone passes.
 
 ### tar and gzip
 
-A `.tar.gz` file is two formats stacked. *tar* bundles many files into one
-stream: each file gets a *header* (name, size, mode, type), followed by its
-contents. *gzip* compresses that stream. In Go each layer wraps the one
-below, just as `bufio.Scanner` wraps a reader:
+A `.tar.gz` is two formats stacked. *tar* bundles files: each entry has a
+*header* (name, size, mode, type) then its contents. *gzip* compresses the
+whole stream. In Go each layer wraps the one below:
 
 ```go
-gz, err := gzip.NewReader(r) // r is the compressed .tar.gz bytes
-// handle err, then: defer gz.Close()
-tr := tar.NewReader(gz)      // reads tar entries out of the gzip stream
-for {
-	hdr, err := tr.Next() // move to the next entry
-	if err == io.EOF {
-		break // no more entries
-	}
-	if err != nil {
-		return err
-	}
-	// hdr.Name is the entry's path; reading from tr reads its contents.
-}
+gz, err := gzip.NewReader(r) // r is the compressed bytes
+tr := tar.NewReader(gz)      // reads entries out of the gzip stream
+hdr, err := tr.Next()        // move to the next entry; io.EOF = no more
+// hdr.Name is its path; reading from tr reads its contents
 ```
+
+`Extract` in `exercise.go` already has this loop. `Create` is a complete,
+commented example of *writing* a `.tar.gz`; the tests use it.
 
 `hdr.Typeflag` says what an entry is:
 
@@ -70,22 +64,16 @@ for {
 | `tar.TypeReg` | a regular file |
 | `tar.TypeSymlink` and others | links and special files |
 
-`hdr.FileInfo().Mode().Perm()` gives the file's permission bits, such as
-`0o755` for an executable.
-
-Read `Create` in `exercise.go`: it is a complete, commented example of
-*writing* a `.tar.gz`. The tests use it to build archives for you to extract.
+`hdr.FileInfo().Mode().Perm()` gives the permission bits, such as `0o755`.
 
 ### Zip slip
 
-An archive entry's name is just a string chosen by whoever made the archive.
-A malicious one might be called `../../etc/cron.d/evil` or `/etc/passwd`.
-Join that onto your target directory and you write outside it. This attack is
-called *zip slip*.
+An entry's name is just a string the archive's author chose. A malicious one
+might be `../../etc/cron.d/evil` or `/etc/passwd`. Join that onto your target
+folder and you write outside it. This attack is called *zip slip*.
 
-`filepath.IsLocal(name)` reports whether a path stays inside the directory it
-is joined to: it must be relative, must not be empty, and must not climb out
-with `..`.
+`filepath.IsLocal(name)` reports whether a path stays inside the folder it's
+joined to (relative, not empty, no climbing out with `..`):
 
 | Name | `filepath.IsLocal` |
 |---|---|
@@ -94,61 +82,86 @@ with `..`.
 | `../evil.txt` | `false` |
 | `/abs.txt` | `false` |
 
-Check every name **before** you create anything.
+Check every name **before** creating anything.
 
 ## Your task
 
-Your team's installer downloads `app.tar.gz` and a `SHA256SUMS` file. Make it
-hash, verify and safely unpack the release.
+Your installer downloads `app.tar.gz` and `SHA256SUMS`. Make it hash, verify
+and safely unpack the release.
 
 ### 1. Hash a file
 
-Write `SHA256File(path)`. Open the file, `io.Copy` it into `sha256.New()`, and
-return the hash as lowercase hex. Return the error if the file can't be opened.
+**Goal:** write `SHA256File(path)` to return the file's SHA-256 as lowercase
+hex.
+
+Open the file, stream it into `sha256.New()` with `io.Copy`, return the hex
+string and `nil`. If the file can't be opened (or read), return `""` and the
+error. Add `"crypto/sha256"` and `"encoding/hex"` to the imports.
 
 ```go
 SHA256File("hello.txt") // file contains "hello\n"
 // => "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03", nil
 ```
 
+An empty file hashes to `"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"`.
+
+**Think it through:**
+- Which value do you open: the parameter `path`, or the literal word `"path"`?
+- Close the file when done. Which keyword runs that at the end?
+
 ### 2. Verify against a checksums file
 
-Write `Verify(sumsPath, filePath)`. Read the checksums file line by line with
-`bufio.Scanner`. Split each line with `strings.Fields`; a valid line has two
-fields, the hash and a name. Find the line whose name is exactly
-`filepath.Base(filePath)` (`app.tar` must not match `app.tar.gz`).
+**Goal:** write `Verify(sumsPath, filePath)`: return `nil` when the file's
+hash matches its line in the checksums file.
 
-| Situation | Return |
+- Read `sumsPath` line by line with `bufio.Scanner`.
+- Split each line with `strings.Fields`. A valid line has 2 fields: hash, name.
+- The right line's name equals `filepath.Base(filePath)` **exactly**
+  (`app.tar` must not match `app.tar.gz`).
+
+| Situation | Return (exact text) |
 |---|---|
-| Hash matches | `nil` |
-| No line for the name | an error wrapping `ErrNoChecksum`: `no checksum found for app.tar.gz` |
-| Hash differs | an error wrapping `ErrChecksumMismatch`: `checksum mismatch for app.tar.gz: got <hex>, want <hex>` |
+| hash matches | `nil` |
+| no line for the name | wraps `ErrNoChecksum`: `no checksum found for app.tar.gz` |
+| hash differs | wraps `ErrChecksumMismatch`: `checksum mismatch for app.tar.gz: got <hex>, want <hex>` |
 
-`got` is the file's actual hash and `want` is the one from the checksums file.
-Wrap with `fmt.Errorf("%w for %s", ErrNoChecksum, name)` and similar. Return
-any error from opening or hashing as it is.
+`got` is the file's actual hash; `want` is the one from the checksums file.
+Build the messages with `%w` first, then the rest, e.g. `"%w for %s"`.
+Errors from opening or hashing are returned unchanged. Add `"bufio"`, `"fmt"`
+and `"strings"` to the imports.
+
+**Think it through:**
+- Find the expected hash first. Only then hash the file and compare.
+- After the loop, how do you know no line matched?
 
 ### 3. Extract safely
 
-`Extract` already loops over the entries and calls `extractEntry` for each
-one. Right now `extractEntry` writes every entry as a regular file, wherever
-its name points: a directory entry fails, a symlink becomes a plain file, and
-`../evil.txt` lands outside `dst`. Rewrite it to handle one entry like this:
+**Goal:** rewrite `extractEntry` so it rejects unsafe names, creates
+directories, writes regular files and skips everything else.
 
-1. If `filepath.IsLocal(hdr.Name)` is false, return an error wrapping
-   `ErrUnsafePath` with the name quoted:
-   `unsafe path in archive: "../evil.txt"` (use `%w: %q`).
-2. Build the target path with `filepath.Join(dst, hdr.Name)`.
-3. `tar.TypeDir`: create it with `os.MkdirAll(target, 0o755)`.
-4. `tar.TypeReg`: create its parent directory with `os.MkdirAll`, then call
-   `writeFile(target, tr, hdr.FileInfo().Mode().Perm())`.
-5. Any other type (symlinks, devices): skip it and return `nil`.
+Right now it writes every entry as a file wherever its name points. Do this,
+in order:
+
+1. If `hdr.Name` isn't local, return an error wrapping `ErrUnsafePath` with
+   the name in quotes: `unsafe path in archive: "../evil.txt"` (format
+   `%w: %q`).
+2. The target path is `dst` joined with `hdr.Name`.
+3. `tar.TypeDir`: create the target folder with `os.MkdirAll(…, 0o755)`.
+4. `tar.TypeReg`: create the target's **parent** folder, then call
+   `writeFile` with the target, `tr` and the entry's permission bits.
+5. Any other type (symlinks, devices): do nothing, return `nil`.
 
 ```go
 Extract(archive, "/opt/app")
-// bin/web          => /opt/app/bin/web, mode 0755
-// ../evil.txt      => error: unsafe path in archive: "../evil.txt"
+// bin/web          => /opt/app/bin/web, executable
+// tmp/cache/       => an empty folder /opt/app/tmp/cache
+// ../evil.txt      => error: unsafe path in archive: "../evil.txt", nothing written
 ```
+
+**Think it through:**
+- Step 1 must come before anything touches the disk. Why?
+- `hdr.Typeflag` has three outcomes. Which Go statement picks between several values?
+- `filepath.Dir` gives a path's parent folder.
 
 ## Learn more
 

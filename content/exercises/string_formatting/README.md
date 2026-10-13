@@ -4,24 +4,34 @@ Gluing strings with `+` works until numbers turn up. Deploy bots, CLIs and
 reports all print lines that mix text and numbers, often lined up in columns.
 `fmt.Sprintf` does that in one call.
 
+**New here:** `fmt.Sprintf`, verbs (`%s %d %q %v %.1f %%`), width, raw strings.
+
 ## Learn
 
 ### fmt.Sprintf
 
 The `fmt` package formats values. `fmt.Sprintf` takes a *format string* with
-placeholders called *verbs*, followed by one value per verb. It fills each
-verb with the next value and returns the result as a string:
+placeholders called *verbs*, then one value per verb. It fills each verb with
+the next value and returns the result as a string:
 
 ```go
 import "fmt"
 
-fmt.Sprintf("%s has %d replicas", "api", 3)
-// => "api has 3 replicas"
+fmt.Sprintf("%s has %d jobs queued", "backup", 7)
+// => "backup has 7 jobs queued"
 ```
 
-The values fill the verbs in order: `"api"` goes into `%s`, `3` goes into
-`%d`. (`fmt.Println`, which you may have seen elsewhere, *prints* instead of
-returning a string. Here you only need `Sprintf`.)
+The values fill the verbs in order: `"backup"` goes into `%s`, `7` into `%d`.
+Everything else in the format string is fixed text, copied as it is.
+
+> **Why is it written like this?**
+> - **Go requires** the format string to be a string, so it's in quotes. The
+>   verbs live **inside** the quotes; the values come **after** it, outside,
+>   separated by commas.
+> - **Convention:** use `Sprintf` when a line mixes text and numbers. `+`
+>   only joins strings; it can't join a string and an `int`.
+> - `fmt.Println` *prints* instead of returning a string. Here you only need
+>   `Sprintf` (the S is for "string").
 
 ### Verbs
 
@@ -40,23 +50,28 @@ cut off: `%.1f` turns `0.96` into `1.0`.
 ### Width and alignment
 
 A number between `%` and the verb sets a minimum *width*. Shorter values are
-padded with spaces. Numbers are right-aligned by default, and a `-` aligns to
-the left instead:
+padded with spaces. Values are right-aligned by default; a `-` aligns left:
 
 ```go
-fmt.Sprintf("[%5d]", 42)    // => "[   42]"
+fmt.Sprintf("[%5d]", 42)     // => "[   42]"
 fmt.Sprintf("[%-6s]", "api") // => "[api   ]"
 fmt.Sprintf("[%6s]", "api")  // => "[   api]"
 ```
 
-A value longer than the width is never cut. It just takes up more room. This
-is how tools like `kubectl get pods` line up their columns.
+A value longer than the width is never cut. It just takes more room. This is
+how tools like `kubectl get pods` line up their columns.
+
+### Raw strings
+
+Text between backticks is a *raw string*: Go takes every character literally,
+so `` `say "hi"` `` is the same as `"say \"hi\""`. Some results below contain
+double quotes, so they're written in backticks. The tests do the same.
 
 ### When the verbs don't match
 
-If a verb doesn't fit its value, for example `%d` with a string, or there are
-more verbs than values, `go vet` reports it. Gopherlings runs `go vet` along
-with the tests, so you'll see a message such as:
+If a verb doesn't fit its value (say `%d` with a string), or there are more
+verbs than values, `go vet` reports it. Gopherlings runs `go vet` with the
+tests, so you'll see a message such as:
 
 ```text
 fmt.Sprintf format %d has arg name of wrong type string
@@ -65,12 +80,12 @@ fmt.Sprintf format %d has arg name of wrong type string
 ## Your task
 
 Format the messages for your team's deploy bot. Start by adding
-`import "fmt"` under the `package` line.
+`import "fmt"` on line 4, where `TODO(1)` says.
 
 ### 1. Write the status line
 
-Change `StatusLine` to return the service, a colon and a space, then the
-replica count and `replicas ready`:
+**Goal:** make `StatusLine` return the service, `: `, the replica count, then
+` replicas ready`.
 
 ```go
 StatusLine("api", 3)
@@ -80,10 +95,14 @@ StatusLine("billing", 12)
 // => "billing: 12 replicas ready"
 ```
 
+**Think it through:**
+- Which two pieces change? Those become verbs; the rest is fixed text.
+- `service` is a string and `replicas` an `int`. Which verb fits each?
+
 ### 2. Report rollout progress
 
-Change `RolloutProgress` to return the service name in double quotes and the
-percentage with exactly one digit after the point, followed by `%`:
+**Goal:** make `RolloutProgress` return `rollout `, the service in double
+quotes, the percentage with exactly one decimal and a `%`, then ` complete`.
 
 ```go
 RolloutProgress("api", 42.5)
@@ -96,14 +115,13 @@ RolloutProgress("auth", 33.333)
 // => `rollout "auth" 33.3% complete`
 ```
 
-These results contain double quotes, so they are written between backticks.
-Text in backticks is a *raw string*: Go takes every character literally,
-so `` `say "hi"` `` is the same as `"say \"hi\""`. The tests use raw strings
-for these cases too.
+**Think it through:**
+- Which verb adds the double quotes for you?
+- Which verb gives one decimal, and how do you print a `%` after it?
 
 ### 3. Line up a table row
 
-Change `TableRow` to return:
+**Goal:** make `TableRow` return these five pieces in order:
 
 1. the service name, left-aligned in 10 characters,
 2. ` | ` (space, bar, space),
@@ -123,6 +141,9 @@ TableRow("notification-svc", 120, "Running")
 ```
 
 The last name is longer than 10 characters, so it isn't padded at all.
+
+**Think it through:**
+- Where does the width number go in a verb? Where does the `-` go?
 
 ## Learn more
 

@@ -2,118 +2,129 @@
 
 Ops tools constantly run other tools: `systemctl`, `kubectl`, `git`,
 `terraform`. Go's `os/exec` package starts a program, collects what it prints
-and tells you how it exited, all without a shell in between.
+and tells you how it exited, with no shell in between.
+
+**New here:** `os/exec`, exit codes, `*exec.ExitError`, a timeout recipe with `context`.
 
 ## Learn
 
 ### Starting a program
 
 ```go
-cmd := exec.Command("systemctl", "is-active", "nginx")
+cmd := exec.Command("git", "rev-parse", "HEAD")
 out, err := cmd.Output()
 ```
 
-`exec.Command(name, args...)` describes the program and its arguments. Nothing
-runs until you call a method such as `Output`. Go starts the program
-*directly*, without a shell. Each argument reaches the program exactly as you
-wrote it, so `*` is never expanded and a hostname like `web-1; rm -rf /` stays
-one harmless argument. Never build a command by joining strings.
+`exec.Command(name, args...)` only *describes* the program. Nothing runs
+until you call a method:
 
 | Method | Runs the program and returns |
 |---|---|
 | `cmd.Run()` | only the error |
 | `cmd.Output()` | stdout as `[]byte`, and the error |
-| `cmd.CombinedOutput()` | stdout and stderr mixed together, and the error |
+| `cmd.CombinedOutput()` | stdout and stderr mixed, and the error |
 
-The output is a `[]byte` that usually ends in `"\n"`, so convert it with
-`string(out)` and tidy it with `strings.TrimSpace`.
+Output is a `[]byte` that usually ends in `"\n"`. `string(out)` turns it into
+a string; `strings.TrimSpace` removes the spaces and newlines around it.
 
-### Exit codes and errors
+> **Why is it written like this?** Go starts the program *directly*, with no
+> shell. Each argument arrives exactly as written, so `*` is never expanded
+> and `"web-1; rm -rf /"` stays one harmless argument. That's why arguments
+> are separate strings, never one joined command line.
 
-A program reports success or failure with its *exit code*: `0` means success,
-anything else is a failure. Scripts rely on this. `systemctl is-active nginx`
-prints `inactive` and exits with code `3` when nginx is stopped.
+### Exit codes
 
-When a program exits with a non-zero code, the error is an `*exec.ExitError`.
-Use `errors.AsType` (from *Wrapping errors*) to get it:
+A program reports success with its *exit code*: `0` means success, anything
+else is failure. `systemctl is-active nginx` prints `inactive` and exits
+with `3` when nginx is stopped.
+
+A non-zero exit gives an error of type `*exec.ExitError`. Get it with
+`errors.AsType`, as in *Wrapping errors*:
 
 ```go
-if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-	fmt.Println("exit code:", exitErr.ExitCode()) // 3
+if e, ok := errors.AsType[*exec.ExitError](err); ok {
+	fmt.Println("exit code:", e.ExitCode()) // 3
 }
 ```
 
-With `Output`, whatever the program wrote to stderr ends up in
-`exitErr.Stderr`. If the program could not be started at all, for example
-because no such file exists, the error is a different type, and there is no
-exit code to report.
+If the program couldn't start at all (no such file), the error is a
+different type, and there's no exit code.
 
-### Directory, environment and timeouts
+### Directory and environment
 
 ```go
-cmd.Dir = "/srv/app"                                      // run in this directory
-cmd.Env = append(os.Environ(), "DEPLOY_ENV=staging")      // our variables plus one more
+cmd.Dir = "/srv/app"                                 // run in this directory
+cmd.Env = append(os.Environ(), "LANG=C", "TZ=UTC")   // ours plus two more
 ```
 
-`os.Environ()` returns our own environment as `"KEY=value"` strings. If you
-leave `cmd.Env` as `nil`, the program inherits it all. If you set `cmd.Env`
-**without** starting from `os.Environ()`, the program loses `PATH`, `HOME` and
-everything else, and tools break in confusing ways.
+`os.Environ()` is our own environment as `"KEY=value"` strings. Leave
+`cmd.Env` as `nil` and the program inherits everything. Set it **without**
+`os.Environ()` and the program loses `PATH`, `HOME` and the rest.
 
-To stop a program that hangs, use this recipe. A *context* carries a deadline.
-You'll learn contexts properly in the Concurrency module.
+> **Why is it written like this?** `append(list, a, b)` returns a new list,
+> so you must store the result (Go requires using it). To append a whole
+> slice, put `...` after it: `append(list, more...)`.
+
+### Timeouts
+
+A *context* carries a deadline (the Concurrency module covers it properly).
+Here's the recipe, with different names than you'll use:
 
 ```go
-ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-defer cancel()
+ctx, stop := context.WithTimeout(context.Background(), 30*time.Second)
+defer stop()
 cmd := exec.CommandContext(ctx, "terraform", "plan")
-out, err := cmd.Output()
-if ctx.Err() != nil {
-	// the deadline passed and the program was killed
-	return fmt.Errorf("timed out after %v: %w", 5*time.Second, ctx.Err())
-}
 ```
 
-When the deadline passes, Go kills the program and `err` just says
-`signal: killed`. `ctx.Err()` returns `context.DeadlineExceeded`, which tells
-you *why*. Wrap it with `%w` so callers can check it with `errors.Is`.
+When the deadline passes, Go kills the program and the error just says
+`signal: killed`. Afterwards `ctx.Err()` is `context.DeadlineExceeded`, which
+tells you *why*. Wrap it with `%w` so callers can check it with `errors.Is`.
+
+> **Why is it written like this?** `WithTimeout` returns a cancel function,
+> and `go vet` warns if you don't call it; `defer` is the convention. The name
+> (`cancel`, `stop`) is your choice.
 
 ### How the tests fake a tool
 
-The tests can't rely on `systemctl` being installed, so they use the *helper
-process* pattern, like the tests of `os/exec` itself. The test file has a
-`TestMain` function that runs before any test. If the environment variable
-`RUNCMD_HELPER=1` is set, the test binary behaves like a small fake tool
-instead of running tests. Each test sets that variable and runs `os.Args[0]`,
-which is the test binary itself. Look at `fakeToolMain` in
-`exercise_test.go` to see the fake commands (`echo`, `exit`, `pwd`, `getenv`,
-`sleep`). The child only sees `RUNCMD_HELPER=1` because it inherits our
-environment, which is one more reason to start `cmd.Env` from `os.Environ()`.
+The tests can't rely on real tools, so the test binary pretends to be one.
+`TestMain` in `exercise_test.go` checks for `RUNCMD_HELPER=1`; if set, it
+runs `fakeToolMain` instead of tests. The fake commands are `echo`, `exit`,
+`pwd`, `getenv` and `sleep`. The child only sees `RUNCMD_HELPER=1` if it
+inherits our environment.
 
 ## Your task
 
 You're writing the helpers a deploy tool uses to run other programs. In the
-examples, `tool` is the fake tool from the tests (`os.Args[0]`).
+examples, `tool` is the fake tool (`os.Args[0]`).
 
 ### 1. Capture stdout
 
-Fix `Output` so it runs the program with `cmd.Output()` and returns stdout
-with surrounding whitespace trimmed, plus the error. Stderr is not included.
-A non-zero exit returns an error.
+**Goal:** make `Output` return the program's stdout, trimmed, plus the error.
+
+Switch from `cmd.Run()` to `cmd.Output()`. Stderr is not included. A
+non-zero exit returns an error.
 
 ```go
 Output(tool, "echo", "  nginx is running  ")
 // => "nginx is running", nil
 ```
 
+**Think it through:**
+- `Output()` returns two things. Which goes back as the string?
+- What turns `[]byte` into a string, and what trims it?
+
 ### 2. Report the exit code
 
-Finish `ExitStatus`. It already runs the program with `CombinedOutput`.
+**Goal:** make `ExitStatus` return the exit code and trimmed combined output,
+with a `nil` error whenever the program ran.
 
-- If the program ran (whatever its exit code), return the exit code, the
-  trimmed combined output and a `nil` error. A non-zero exit is not an error
-  here; the caller reads the code.
-- If the program could not be started, return `-1`, `""` and the error.
+It already runs `CombinedOutput`. Three cases:
+
+| What happened | Return |
+|---|---|
+| ran, exit `0` | `0`, trimmed output, `nil` |
+| ran, non-zero exit | that exit code, trimmed output, `nil` |
+| couldn't start | `-1`, `""`, the error |
 
 ```go
 ExitStatus(tool, "exit", "3", "inactive", "")
@@ -122,16 +133,25 @@ ExitStatus("/no/such/tool", "status")
 // => -1, "", <error>
 ```
 
+Add `"errors"` to the imports.
+
+**Think it through:**
+- Which error type means "it ran but failed"? Check for that one first.
+- After that check, what does any other non-`nil` error mean?
+
 ### 3. Directory, environment and timeout
 
-Finish `Run`, which returns trimmed stdout like `Output`.
+**Goal:** make `Run` use `opts.Dir`, `opts.Env` and `opts.Timeout`, and
+return trimmed stdout.
 
-- Use `context.WithTimeout` with `opts.Timeout` and `exec.CommandContext`.
-- Set `cmd.Dir` to `opts.Dir`.
-- Set `cmd.Env` to `os.Environ()` plus `opts.Env`.
-- If `cmd.Output()` fails and `ctx.Err()` is not `nil`, return
-  `fmt.Errorf("timed out after %v: %w", opts.Timeout, ctx.Err())`. The tests
-  check it with `errors.Is(err, context.DeadlineExceeded)`.
+- Make a context that times out after `opts.Timeout`; build the command with
+  `exec.CommandContext`.
+- `cmd.Dir` is `opts.Dir`.
+- `cmd.Env` is our environment plus every entry of `opts.Env`.
+- If `cmd.Output()` fails **and** `ctx.Err()` isn't `nil`, return `""` and
+  `fmt.Errorf("timed out after %v: %w", opts.Timeout, ctx.Err())`.
+
+Add `"context"`, `"os"` and `"fmt"` to the imports.
 
 ```go
 Run(Options{Env: []string{"DEPLOY_ENV=staging"}, Timeout: 5 * time.Second}, tool, "getenv", "DEPLOY_ENV")
@@ -140,8 +160,12 @@ Run(Options{Timeout: 50 * time.Millisecond}, tool, "sleep")
 // => "", timed out after 50ms: context deadline exceeded
 ```
 
-The fake `sleep` lasts 2 seconds. If the timeout test takes that long and
-fails, the timeout isn't wired up yet.
+The fake `sleep` lasts 2 seconds. If the timeout test takes that long, the
+timeout isn't wired up yet.
+
+**Think it through:**
+- Which line in `Run` creates `cmd`? That's the one to replace.
+- `opts.Env` is already a slice. How do you append a whole slice?
 
 ## Learn more
 

@@ -1,83 +1,88 @@
 # Subcommands: a command table and generated help
 
-A `switch` is fine for three commands. Real tools have dozens, and each one
-needs a line in the help text. Here you drive a tool from a *command table*,
-so adding a command means adding one entry.
+A `switch` is fine for three commands. Real tools have dozens, and each needs
+a line in the help text. Here you drive a tool from a *command table*, so
+adding a command means adding one entry.
+
+**New here:** functions stored in struct fields, map lookup for dispatch, sorted map keys, `%-9s` padding.
 
 ## Learn
 
-**Recap.** `Run` receives `os.Args[1:]`, so `args[0]` names the command and
-`args[1:]` belongs to it. Each command parses its own arguments with its own
-`flag.FlagSet`. Help that was asked for goes to stdout with exit code `0`.
-Usage errors go to stderr with exit code `2`.
+### Recap
+
+As in *Subcommands: dispatching git-style commands*: `Run` receives
+`os.Args[1:]`, so `args[0]` names the command and `args[1:]` belongs to it.
+Each command parses its own arguments with its own `flag.FlagSet`. Asked-for
+help goes to stdout with exit `0`; usage errors go to stderr with exit `2`.
 
 ### A table of commands
 
-Instead of a `switch`, keep the commands in a map from name to a struct. A
-struct field can hold a function, as long as the function's signature matches
-the field's type:
+Instead of a `switch`, keep commands in a map from name to a struct. A struct
+field can hold a function, if the function's signature matches the field's
+type:
 
 ```go
-type command struct {
-	summary string
-	run     func(args []string, stdout, stderr io.Writer) int
+type tool struct {
+	about string
+	do    func(n int) int
 }
 
-var commands = map[string]command{
-	"cordon": {summary: "stop scheduling new pods on a node", run: runCordon},
+var tools = map[string]tool{
+	"double": {about: "multiply by two", do: double},
+}
+
+t, ok := tools["double"]
+if ok {
+	fmt.Println(t.do(21)) // 42
 }
 ```
 
-Dispatch is then a map lookup, and calling the stored function looks like any
-other call:
-
-```go
-cmd, ok := commands[args[0]]
-if !ok {
-	// unknown command
-}
-return cmd.run(args[1:], stdout, stderr)
-```
+> **Why is it written like this?** Go requires the signatures to match
+> exactly, or it won't compile. `v, ok := m[key]` is Go's built-in way to ask
+> "is it there?". Naming them `cmd`/`ok` is convention.
 
 ### Help text from the table
 
-The same table can generate the help text, so the help never forgets a
-command. There is a catch: **map order is random**, and it changes from run to
-run. Help text that shuffles itself is confusing and breaks tests. As in
-*Sorting*, loop over `slices.Sorted(maps.Keys(commands))` to get the names in
+The table can also generate the help text, so help never forgets a command.
+The catch: **map order is random**, and changes between runs. As in
+*Sorting*, loop over `slices.Sorted(maps.Keys(m))` to get keys in
 alphabetical order.
 
-To line the summaries up in a column, pad the name with `%-9s`. The `9` is a
-minimum width and the `-` puts the padding on the right:
+### Padding with %-9s
+
+To line text up in a column, give a verb a width. `9` is a minimum width;
+`-` puts the padding on the right:
 
 ```go
-fmt.Printf("[%-9s]\n", "drain") // [drain    ]
+fmt.Printf("[%-6s]\n", "cat") // [cat   ]
+fmt.Printf("[%6s]\n", "cat")  // [   cat]
 ```
 
 ### Duration flags
 
-`runDrain` uses `fs.Duration` (seen in *Flags: parsing options with a FlagSet*). It accepts values like `90s` or
-`2m`, and a `time.Duration` prints itself with `%s` as `30s`, `2m0s` or
+`runDrain` uses `fs.Duration` (as in *Flags: parsing options with a
+FlagSet*). It accepts `90s` or `2m`, and prints with `%s` as `30s`, `2m0s`,
 `1m30s`.
 
 ## Your task
 
-`nodectl` is a small helper for Kubernetes node maintenance. Before you patch
-a node, you *cordon* it (no new pods), *drain* it (move its pods elsewhere),
-and afterwards *uncordon* it. The commands only print what they would do. Do
-the tasks in order: the help test expects all three commands.
+`nodectl` helps with Kubernetes node maintenance. Before patching a node you
+*cordon* it (no new pods), *drain* it (move its pods), then *uncordon* it.
+Commands only print what they would do. Do the tasks in order: the help test
+expects all three commands.
 
 ### 1. Fix the dispatch bug
 
-Someone reported this:
+**Goal:** make `Run` hand each command only its own arguments, not its name.
+
+Someone reported:
 
 ```text
 $ nodectl drain node-7
 nodectl: drain needs exactly one NODE
 ```
 
-`Run` hands each command the wrong slice, so the FlagSet sees `drain` as a
-positional argument. Fix it so that:
+The FlagSet sees `drain` as a positional argument. After the fix:
 
 ```text
 $ nodectl drain node-7
@@ -88,13 +93,19 @@ $ nodectl cordon node-3
 cordoning node-3
 ```
 
+**Think it through:**
+- For `nodectl drain node-7`, what's in `args`, index by index?
+- Which part of `args` should the command see?
+
 ### 2. Add the uncordon command
 
-Write `runUncordon` with the same signature as `runCordon`, and register it in
-`commands` under the name `"uncordon"` with the summary
-`allow new pods on a node again`. It takes no flags (still give it a FlagSet
-named `"uncordon"`, so `-h` works and unknown flags are rejected) and exactly
-one NODE:
+**Goal:** write `runUncordon` and register it in `commands` as `"uncordon"`.
+
+- Same signature as `runCordon`.
+- Summary: `allow new pods on a node again`.
+- No flags, but still give it a FlagSet named `"uncordon"`, so `-h` works and
+  unknown flags are rejected.
+- Exactly one NODE.
 
 | Command line | stdout | stderr | Exit |
 |---|---|---|---|
@@ -102,12 +113,17 @@ one NODE:
 | `nodectl uncordon` | | `nodectl: uncordon needs exactly one NODE` | `2` |
 | `nodectl uncordon node-3 node-4` | | `nodectl: uncordon needs exactly one NODE` | `2` |
 
+**Think it through:**
+- `runCordon` is almost the same. Which words change?
+- In the map entry, `run:` gets the function's name, without `()`. Why?
+
 ### 3. Generate the help text
 
-Finish `writeUsage`. After the three header lines it already writes, write one
-line per command, sorted by name: two spaces, the name padded with `%-9s`, a
-space, and the summary. With all three commands registered, `nodectl help`
-prints exactly:
+**Goal:** finish `writeUsage` so it lists every command, sorted by name.
+
+After the three header lines it already writes, write one line per command:
+two spaces, the name padded with `%-9s`, a space, then the summary, then a
+newline. With all three commands, `nodectl help` prints exactly:
 
 ```text
 usage: nodectl <command> [flags] NODE
@@ -118,15 +134,19 @@ commands:
   uncordon  allow new pods on a node again
 ```
 
-`Run` already uses `writeUsage` for `help`, `-h`, `--help` (stdout, exit `0`),
-for no arguments (stderr, exit `2`), and after the
-`nodectl: unknown command "reboot"` line (stderr, exit `2`). The test calls
-each one 20 times, so a loop straight over the map will be caught. Add
-`"maps"` and `"slices"` to the imports.
+`Run` already uses `writeUsage` for `help`, `-h`, `--help` (stdout, exit
+`0`), for no arguments (stderr, exit `2`), and after the
+`nodectl: unknown command "reboot"` line (stderr, exit `2`). The test runs
+each 20 times, so looping straight over the map gets caught. Add `"maps"` and
+`"slices"` to the imports.
+
+**Think it through:**
+- Write `w` (the parameter), not `stdout`: who decides where help goes?
+- Loop over sorted names, then look up each summary by name.
 
 ## Learn more
 
 - [Go by Example: Command-Line Subcommands](https://gobyexample.com/command-line-subcommands)
-- [maps.Keys](https://pkg.go.dev/maps#Keys) and [slices.Sorted](https://pkg.go.dev/slices#Sorted)
-- [fmt: width and padding](https://pkg.go.dev/fmt#hdr-Printing)
+- [pkg.go.dev: maps.Keys](https://pkg.go.dev/maps#Keys) and [slices.Sorted](https://pkg.go.dev/slices#Sorted)
+- [pkg.go.dev: fmt width and padding](https://pkg.go.dev/fmt#hdr-Printing)
 - [Kubernetes: Safely drain a node](https://kubernetes.io/docs/tasks/administer-cluster/safely-drain-node/)

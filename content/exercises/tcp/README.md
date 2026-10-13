@@ -1,18 +1,21 @@
 # TCP: a line-based control protocol
 
-Databases, Redis, SSH, and HTTP itself all talk over TCP. In this exercise you
-build both ends of a tiny text protocol, so the next time a health check says
+Databases, Redis, SSH, and HTTP itself all talk over TCP. Here you build both
+ends of a tiny text protocol, so the next time a health check says
 "connection refused" you know what happened underneath.
+
+**New here:** `net.Listen`, `net.Conn`, `net.DialTimeout`, deadlines, `strings.CutPrefix`.
 
 ## Learn
 
 ### What TCP is
 
-*TCP* gives two programs a reliable two-way stream of bytes. Whatever one side
-writes, the other side reads, in the same order, with nothing lost. A program
-is reached at an *address* written `host:port`, such as `127.0.0.1:6379`
-(Redis on this machine) or `db.internal:5432` (Postgres). The *port* is a
-number from 1 to 65535 that picks one program on that host.
+*TCP* gives two programs a reliable two-way stream of bytes: what one side
+writes, the other reads, in order, nothing lost.
+
+A program is reached at an *address* written `host:port`, such as
+`127.0.0.1:6379` (Redis on this machine). The *port* (1–65535) picks one
+program on that host.
 
 The *server* listens on a port and waits. The *client* dials the server's
 address. Once connected, both sides hold a `net.Conn`.
@@ -24,61 +27,76 @@ ln, err := net.Listen("tcp", "127.0.0.1:7000") // start listening
 conn, err := ln.Accept()                       // wait for one client
 ```
 
-The starter's `Serve` function already does this in a loop. For each client
-it runs `go HandleConn(conn)`. The `go` keyword runs `HandleConn` in the
-background so `Serve` can accept the next client straight away; the
-Concurrency module covers this properly.
+The starter's `Serve` already does this in a loop. For each client it runs
+`go HandleConn(conn)`. The `go` keyword runs `HandleConn` in the background,
+so `Serve` can accept the next client at once (the Concurrency module covers
+this properly).
 
 ### A connection is a reader and a writer
 
-`net.Conn` has a `Read` and a `Write` method, so it works anywhere an
-`io.Reader` or `io.Writer` does. That means tools you already know work on a
-network connection:
+`net.Conn` has `Read` and `Write` methods, so tools you used on files work on
+a connection too:
 
 ```go
-scanner := bufio.NewScanner(conn) // read the client's lines, as with a file
+scanner := bufio.NewScanner(conn)
 for scanner.Scan() {
-	line := scanner.Text() // the line without its "\n"
-	fmt.Fprintf(conn, "you said %s\n", line) // write a line back
-}
-if err := scanner.Err(); err != nil {
-	fmt.Fprintf(os.Stderr, "reading from %s: %v\n", conn.RemoteAddr(), err)
+	word := scanner.Text()               // one line, without its "\n"
+	fmt.Fprintf(conn, "%d\n", len(word)) // write a line back
 }
 ```
 
-`scanner.Scan()` waits until a whole line arrives. It returns `false` when
-the other side closes the connection, and also when the connection breaks.
-`scanner.Err()` tells the two apart, just as with a file. The starter's
-`HandleConn` already reports such errors on stderr.
+`scanner.Scan()` waits for a whole line. It returns `false` when the other
+side closes or the connection breaks. The starter's `HandleConn` already
+reports broken connections on stderr.
 
-Every connection must be closed when you're done with it, or it stays open
-and the client keeps waiting. `defer conn.Close()` at the top of a function
-closes it however the function returns.
+### Closing with `defer`
+
+Every connection must be closed, or the client keeps waiting. `defer` runs a
+call when the surrounding function returns, *however* it returns:
+
+```go
+func readConfig(f *os.File) {
+	defer f.Close() // runs at the end, even after an early return
+	// ...
+}
+```
+
+> **Why is it written like this?** Go requires `defer` to be followed by a
+> function call. Putting it right after you get the thing to close is
+> convention: readers see the open and the close together.
 
 ### The client side
 
 ```go
-conn, err := net.DialTimeout("tcp", "127.0.0.1:7000", 2*time.Second)
+c, err := net.DialTimeout("tcp", "db.internal:5432", 5*time.Second)
 if err != nil {
-	return "", err // for example "connection refused"
+	return err // for example "connection refused"
 }
-defer conn.Close()
 ```
 
-`DialTimeout` gives up if connecting takes longer than the timeout. Once
-connected, a slow server could still keep you waiting forever, so set a
-*deadline*: a point in time after which reads and writes fail with an error.
+`DialTimeout` gives up if connecting takes too long. A slow server could
+still keep you waiting forever once connected, so set a *deadline*: a moment
+after which reads and writes fail with an error.
 
 ```go
-conn.SetDeadline(time.Now().Add(2 * time.Second))
+c.SetDeadline(time.Now().Add(30 * time.Second)) // 30 seconds from now
 ```
 
-To read one reply line, wrap the connection in a `bufio.Reader`.
-`ReadString('\n')` reads up to and including the next `"\n"`:
+> **Why is it written like this?** `5*time.Second` is how Go writes a
+> duration: a number times a unit. The unit is required in practice; a plain
+> `5` means 5 nanoseconds. Whether there are spaces around `*` is decided by
+> gofmt, so don't worry about it.
+
+### Reading one reply line
+
+Wrap the connection in a `bufio.Reader`. `ReadString('\n')` reads up to and
+including the next newline. Note the single quotes: `'\n'` is one character
+(a *rune*), not a string.
 
 ```go
-line, err := bufio.NewReader(conn).ReadString('\n') // "PONG\n"
-line = strings.TrimSuffix(line, "\n")                // "PONG"
+r := bufio.NewReader(os.Stdin)
+answer, err := r.ReadString('\n')         // "yes\n"
+answer = strings.TrimSuffix(answer, "\n") // "yes"
 ```
 
 ### Splitting off a prefix
@@ -87,15 +105,14 @@ line = strings.TrimSuffix(line, "\n")                // "PONG"
 `s` started with it:
 
 ```go
-rest, ok := strings.CutPrefix("ECHO hi there", "ECHO ") // "hi there", true
-rest, ok = strings.CutPrefix("PING", "ECHO ")           // "PING", false
+rest, ok := strings.CutPrefix("SET color blue", "SET ") // "color blue", true
+rest, ok = strings.CutPrefix("GET color", "SET ")       // "GET color", false
 ```
 
 ## Your task
 
-Your team wants a tiny line-based control protocol for an internal agent.
-The client sends one command per line; the server answers each one with one
-line.
+Your team wants a tiny control protocol for an internal agent. The client
+sends one command per line; the server answers each with one line.
 
 | Client sends | Server replies |
 |---|---|
@@ -104,16 +121,17 @@ line.
 | `QUIT` | `BYE`, then closes the connection |
 | anything else | `ERR unknown command` |
 
-Commands are case-sensitive: `ping` is an unknown command. `ECHO` needs a
-space after it, so a bare `ECHO` is unknown too. Every line on the wire, in
-both directions, ends with `"\n"`.
+- Commands are case-sensitive: `ping` is unknown.
+- `ECHO` needs a space after it, so a bare `ECHO` is unknown.
+- Every line on the wire, both directions, ends with `"\n"`.
 
 ### 1. Answer one command
 
-`Respond(line)` returns the reply for one command line (without the `"\n"`)
-and whether the connection should close afterwards. Only `QUIT` closes. The
-starter handles `PING`; add the other rows of the table. You need to add the
-`strings` import.
+**Goal:** make `Respond(line)` return the reply from the table and whether to close afterwards.
+
+- The reply has no `"\n"`; the second value is `true` only for `QUIT`.
+- The starter handles `PING`. Add the other rows.
+- Add the `strings` import.
 
 ```go
 Respond("PING")           // => "PONG", false
@@ -123,16 +141,19 @@ Respond("RESTART")        // => "ERR unknown command", false
 Respond("ECHO")           // => "ERR unknown command", false
 ```
 
+**Think it through:**
+- Copy the shape of the `PING` check. Which rows are exact matches, and which one starts with fixed text?
+- What should the very last `return` give back when nothing matched?
+
 ### 2. Serve one connection
 
-`HandleConn(conn)` reads the client's lines one by one. Right now it writes
-each line straight back. Change it to:
+**Goal:** make `HandleConn(conn)` answer each line with `Respond` instead of echoing it.
 
-- write the reply from `Respond`, followed by `"\n"`
-- stop after replying to `QUIT`
-- close `conn` when `HandleConn` returns, however that happens
+- Write the reply followed by `"\n"`.
+- Stop after replying to `QUIT`.
+- Close `conn` when `HandleConn` returns, however that happens.
 
-A session looks like this (`>` is what the client sends):
+A session (`>` is what the client sends):
 
 ```text
 > PING
@@ -144,29 +165,39 @@ BYE
 (connection closed)
 ```
 
+**Think it through:**
+- `Respond` returns two values. Where do you keep each one?
+- Which of those two values tells you to leave the loop?
+
 ### 3. Send a command as a client
 
-`SendCommand(addr, cmd)` connects to the server at `addr`, sends `cmd`
-followed by `"\n"`, and returns the first line of the reply without its
-`"\n"`.
+**Goal:** make `SendCommand(addr, cmd)` send `cmd` to the server and return the first reply line.
 
-- Dial with `net.DialTimeout` and a 2-second timeout.
-- Close the connection when you're done.
-- Set a deadline 2 seconds from now before you write.
-- Return any error from dialing, writing or reading, with `""`.
+- Dial with `net.DialTimeout`, timeout 2 seconds.
+- Close the connection when done.
+- Before writing, set a deadline 2 seconds from now.
+- Send `cmd` followed by `"\n"`.
+- Return the reply line without its `"\n"`.
+- On any error from dialing, the deadline, writing or reading, return `""` and the error.
+- Add the `strings` and `time` imports.
 
 ```go
 SendCommand("127.0.0.1:7000", "PING") // => "PONG", nil
 SendCommand("127.0.0.1:1", "PING")    // => "", error (connection refused)
 ```
 
-The test for this task runs its own small server, so it works even if task 2
-is not done yet. That server answers every command with `got <command>`, so
-`SendCommand(addr, "PING")` returns `"got PING"` there. You need to add the
-`strings` and `time` imports.
+The test runs its own small server, so this works even before task 2 is done.
+That server replies `got <command>`, so there `SendCommand(addr, "PING")`
+returns `"got PING"`.
+
+**Think it through:**
+- Which parameter is the address and which is the text to send?
+- The steps above are in order. Which ones return an error you must check?
+- If the test reports "EOF", did the server ever see the end of your line?
 
 ## Learn more
 
 - [net package](https://pkg.go.dev/net)
 - [Go by Example: Line filters (bufio.Scanner)](https://gobyexample.com/line-filters)
 - [bufio.Reader.ReadString](https://pkg.go.dev/bufio#Reader.ReadString)
+- [Go by Example: Defer](https://gobyexample.com/defer)

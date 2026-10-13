@@ -1,20 +1,29 @@
 # Errors from goroutines: stop on first failure
 
-When a multi-region deploy fails in one region, you usually want to stop the
-others straight away instead of finishing a doomed rollout. In this exercise
-you build a small *group*: run tasks together, keep the first error, and
-cancel everyone else. Real projects use `golang.org/x/sync/errgroup` for this.
-After building one yourself, you'll know exactly what it does.
+When a multi-region deploy fails in one region, you want to stop the others
+straight away instead of finishing a doomed rollout. Here you build a small
+*group*: run tasks together, keep the first error, and cancel everyone else.
+Real projects use `golang.org/x/sync/errgroup`; after this you'll know what
+it does.
+
+**New here:** a cancel-on-first-error group, `sync.Once` for "only the first".
 
 ## Learn
 
 ### Recap
 
-Collect errors by giving each goroutine its own slot, then `errors.Join`
-them after `wg.Wait()`. A context created with `context.WithCancel` tells
-every goroutine watching `ctx.Done()` to stop when you call `cancel()`.
-`sync.Once` runs a function exactly once, even when many goroutines call `Do`
-at the same time.
+- `context.WithCancel(parent)` returns a child context and a `cancel`
+  function. Calling `cancel()` closes `ctx.Done()`, so everyone watching stops.
+  Cancelling the parent cancels the child too.
+- `sync.Once` runs a function exactly once, even when many goroutines call
+  `Do` at the same time:
+
+```go
+var once sync.Once
+for range 3 {
+	go once.Do(func() { fmt.Println("printed once") })
+}
+```
 
 ### The plan
 
@@ -28,38 +37,40 @@ g.Go(task C) ──▶ goroutine ── sees ctx.Done() ──▶ returns early
 g.Wait() ──▶ wg.Wait(), cancel(), return the first error
 ```
 
-The pieces:
+The `Group` struct is already written for you:
 
-```go
-type Group struct {
-	cancel context.CancelFunc // cancels the group's ctx
-	wg     sync.WaitGroup     // counts running tasks
-	once   sync.Once          // makes sure only the first error is kept
-	err    error              // the first error
-}
-```
+| Field | Job |
+|---|---|
+| `cancel` | cancels the group's `ctx` |
+| `wg` | counts running tasks |
+| `once` | makes sure only the first error is kept |
+| `err` | the first error |
 
-- **Only the first error.** After the first failure, the other tasks usually
-  fail with `context.Canceled`. That error is noise. `once.Do` makes sure
-  only the first one is saved, and that it is saved safely when several tasks
-  fail at once.
-- **Cancel on failure.** The same `once.Do` also calls `g.cancel()`, so every
-  task watching the group's `ctx` stops early.
-- **Cancel in Wait too.** Once everything is done, the context is no longer
-  needed, so `Wait` cancels it to release its resources (like `defer
-  cancel()` usually does).
+- **Only the first error.** After the first failure, the others usually
+  fail with `context.Canceled`. That's noise, so `once.Do` saves only the
+  first, safely, even if several fail together.
+- **Cancel on failure.** The same `once.Do` also calls `g.cancel()`.
+- **Cancel in Wait too.** When everything is done the context is no longer
+  needed, so `Wait` cancels it to release it (like `defer cancel()`).
 - `g.err` is written inside `once.Do` and read only after `wg.Wait()`, so it
   needs no mutex.
+
+> **Why is it written like this?**
+> - **Go requires** a pointer receiver (`g *Group`) here: `WaitGroup` and
+>   `Once` must never be copied, and methods must change the real group.
+> - **Convention:** constructors that also give a context return it last, and
+>   the caller usually *shadows* its `ctx` with it: `g, ctx := WithContext(ctx)`.
+> - **Author's choice:** the field names, copied from `errgroup`.
 
 ## Your task
 
 ### 1. Create the group and wait for it
 
-`WithContext(ctx)` should create a cancelable child of `ctx`, and return a
-`*Group` holding its `cancel` function, plus the child context.
+**Goal:** `WithContext(ctx)` returns a `*Group` and a cancelable child of `ctx`; `g.Wait()` waits, cancels, and returns the first error.
 
-`g.Wait()` should wait for every task started with `g.Go`, then call
-`g.cancel()`, then return `g.err`.
+`WithContext` stores the child's cancel function in the `cancel` field.
+`Wait` does three things in order: wait for every task, call `g.cancel()`,
+return `g.err`. Both have a `TODO(1)`.
 
 ```go
 g, ctx := WithContext(context.Background())
@@ -68,11 +79,16 @@ g.Wait()   // => nil (no tasks)
 ctx.Err()  // => context.Canceled: Wait cancelled it
 ```
 
+**Think it through:**
+- Which `context` function gives you both a child and a cancel function?
+- How do you build a `&Group{...}` with only one field set?
+
 ### 2. Run tasks and keep the first error
 
-`g.Go(f)` should run `f` in a new goroutine that `g.Wait()` waits for. If
-`f` returns an error, use `g.once.Do` to save it in `g.err` and call
-`g.cancel()`. Only the first error is kept.
+**Goal:** `g.Go(f)` runs `f` in a new goroutine that `g.Wait()` waits for, and saves only the first error.
+
+On an error, use `g.once.Do` to set `g.err` and call `g.cancel()`. Three
+1-second tasks must finish together in 1 second.
 
 ```go
 g, ctx := WithContext(context.Background())
@@ -81,18 +97,27 @@ g.Go(failsAfter2sWith(errB))
 g.Wait() // => errA (the first failure), after 2s
 ```
 
+**Think it through:**
+- The starter calls `f()` directly. Which field can start a goroutine *and* count it?
+- What two things go inside the function you pass to `once.Do`?
+
 ### 3. Deploy every region, stop on the first failure
 
-`DeployRegions(ctx, regions, deploy)` should deploy to every region at the
-same time using your group. Pass each `deploy` call the **group's** context,
-so the remaining deploys are cancelled as soon as one fails. Return the first
-error, or `nil`.
+**Goal:** `DeployRegions(ctx, regions, deploy)` deploys every region at once with your group and returns the first error, or `nil`.
+
+Pass each `deploy` call the **group's** context, not the caller's, so the
+other deploys are cancelled as soon as one fails. If the caller cancels its
+`ctx`, `DeployRegions` returns `context.Canceled` right away.
 
 ```go
 // eu-west-1 fails after 1s; the others take 5s but watch ctx
 DeployRegions(ctx, []string{"us-east-1", "eu-west-1", "ap-south-1"}, deploy)
 // => the eu-west-1 error, after 1s; the other two deploys were cancelled
 ```
+
+**Think it through:**
+- Use the three pieces you built: which comes first, which in a loop, which last?
+- `g.Go` wants a `func() error`, but `deploy` takes two arguments. How do you wrap it?
 
 ## Learn more
 

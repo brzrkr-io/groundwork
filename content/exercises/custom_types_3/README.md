@@ -4,48 +4,72 @@ Kubernetes writes memory as *quantities* like `512Mi` and `2Gi`. In this
 exercise you give memory sizes their own type, parse quantities, and check
 whether a set of pods fits on a node.
 
+**New here:** constants built from constants, `strings.CutSuffix`, mixing a custom type with `int` and `float64`.
+
 ## Learn
 
 ### Recap
 
 As in *Custom types and enums*, `type Bytes int64` declares a new type with
-underlying type `int64`. You convert to and from it with the type name:
-`Bytes(n)` and `int64(b)`.
+underlying type `int64`. You convert with the type name: `Bytes(n)` turns a
+number into `Bytes`, `int64(b)` turns it back.
 
 ### Constants built from constants
 
-A constant of a custom type can be built from another one. Because `KiB` is
-a `Bytes`, so are `MiB` and `GiB`:
+A constant can be built from another one. If the first has a custom type,
+the ones built from it get that type too:
 
 ```go
+type Duration int64
+
 const (
-	KiB Bytes = 1024
-	MiB       = 1024 * KiB // 1,048,576 bytes
-	GiB       = 1024 * MiB // 1,073,741,824 bytes
+	Second Duration = 1
+	Minute          = 60 * Second // also a Duration
+	Hour            = 60 * Minute // also a Duration
 )
 ```
 
-Kubernetes uses these powers of 1024: `Ki`, `Mi` and `Gi`.
+`exercise.go` builds `KiB`, `MiB` and `GiB` the same way, with powers of
+1024 (the units Kubernetes calls `Ki`, `Mi`, `Gi`).
+
+> **Why is it written like this?** Go requires a type on the first constant
+> to make it a `Duration`; the rest pick it up from the expression. Lining up
+> the `=` signs is gofmt's doing, not yours.
 
 ### Mixing types needs a conversion
 
 Go never mixes two different types in one calculation, even if both are
 numbers underneath. `strconv.Atoi` gives you an `int`, so convert it before
-multiplying by a `Bytes` constant:
+using it with a custom type:
 
 ```go
-n := 512 // an int, for example from strconv.Atoi
+n := 3 // an int, for example from strconv.Atoi
 
-size := n * MiB        // compile error: mismatched types int and Bytes
-size := Bytes(n) * MiB // OK: Bytes * Bytes
+d := n * Hour           // compile error: mismatched types int and Duration
+d := Duration(n) * Hour // OK: Duration * Duration
 ```
 
-To print a fraction, convert both sides to `float64` first, as in
-*Type conversion*:
+Dividing two integers drops the fraction (`3 / 2` is `1`). To get `1.5`,
+convert both sides to `float64` first, as in *Type conversion*:
 
 ```go
-b := Bytes(1536)
-float64(b) / float64(KiB) // 1.5
+total, parts := 3, 2
+float64(total) / float64(parts) // 1.5
+```
+
+> **Why is it written like this?** The conversion is required by Go: it has
+> no automatic number conversion. Where you put it (on the number, not on
+> the result) decides whether the fraction survives.
+
+### Formatting with one decimal
+
+In `fmt.Sprintf`, `%.1f` prints a `float64` with exactly one decimal place,
+rounding if needed. `%d` prints a whole number.
+
+```go
+fmt.Sprintf("%.1f s", 2.0)  // "2.0 s"
+fmt.Sprintf("%.1f s", 2.25) // "2.2 s" or "2.3 s" (rounded)
+fmt.Sprintf("%d items", 7)  // "7 items"
 ```
 
 ### Removing a suffix with strings.CutSuffix
@@ -55,18 +79,19 @@ float64(b) / float64(KiB) // 1.5
 without the suffix, and whether the suffix was there:
 
 ```go
-number, found := strings.CutSuffix("512Mi", "Mi")
-// number == "512", found == true
+name, found := strings.CutSuffix("report.csv", ".csv")
+// name == "report", found == true
 
-number, found = strings.CutSuffix("2Gi", "Mi")
-// number == "2Gi", found == false
+name, found = strings.CutSuffix("report.txt", ".csv")
+// name == "report.txt", found == false
 ```
 
 ## Your task
 
 Your cluster capacity tool reads pod memory requests and node sizes. The
-`Bytes` type and its constants are in `exercise.go`. You'll need `fmt`,
-`strconv` and `strings`, so add them:
+`Bytes` type and its constants `KiB`, `MiB`, `GiB` are in `exercise.go`.
+You'll need `fmt`, `strconv` and `strings`, so add them below the `package`
+line:
 
 ```go
 import (
@@ -78,8 +103,7 @@ import (
 
 ### 1. Print a size for humans
 
-Complete `Human` so it formats `b` with the largest unit that `b` is at
-least one of:
+**Goal:** make `Human` return `b` as text, using the largest unit that `b` is at least one of.
 
 | When `b` is | Format | Example |
 |---|---|---|
@@ -88,20 +112,28 @@ least one of:
 | at least `KiB` | `%.1f KiB` | `"1.5 KiB"` |
 | less than `KiB` | `%d B` | `"900 B"` |
 
-For the first three rows, divide `b` by the unit as `float64`s. `%.1f`
-rounds to one decimal place. `b` is never negative.
+For the first three rows, the number shown is `b` divided by that unit, with
+the fraction kept. Note the single space before the unit. `b` is never
+negative.
 
 ```go
-Bytes(900).Human()   // => "900 B"
+Bytes(0).Human()     // => "0 B"
+Bytes(1023).Human()  // => "1023 B"
+Bytes(1024).Human()  // => "1.0 KiB"
 Bytes(1536).Human()  // => "1.5 KiB"
 (256 * MiB).Human()  // => "256.0 MiB"
 (1536 * MiB).Human() // => "1.5 GiB"
 ```
 
+**Think it through:**
+- In which order must you check the units so the largest one wins?
+- Which two values do you convert to `float64` before dividing?
+
 ### 2. Parse a quantity
 
-Complete `ParseMemory` so it turns a quantity into `Bytes`. A quantity is a
-whole number, optionally followed by one unit suffix:
+**Goal:** make `ParseMemory` turn a quantity like `"512Mi"` into `Bytes` and a `nil` error.
+
+A quantity is a whole number, optionally followed by one unit suffix:
 
 | Suffix | Multiply by | Example | Result |
 |---|---|---|---|
@@ -110,28 +142,33 @@ whole number, optionally followed by one unit suffix:
 | `Gi` | `GiB` | `"2Gi"` | `2147483648` |
 | none | `1` | `"1000"` | `1000` |
 
-Return `0` and an error (made with `fmt.Errorf` or `errors.New`) when:
+`"0"` is valid and gives `0`. Return `0` and a non-`nil` error when:
 
-- the number part is not a whole number (`"lotsMi"`, `"1.5Gi"`, `"Mi"`, `""`)
-- the number is negative (`"-5Mi"`)
-- the suffix is anything else (`"2G"`, `"512MB"`): the number part then
+- the number part is not a whole number: `"lotsMi"`, `"1.5Gi"`, `"Mi"`, `""`
+- the number is negative: `"-5Mi"`
+- the suffix is anything else: `"2G"`, `"512MB"`. The number part then
   isn't a number, so `strconv.Atoi` already catches this.
 
-The tests only check that an error is returned, not its message. A helpful
-one is `invalid memory quantity "lotsMi"`.
+Make the error with `fmt.Errorf` or `errors.New`. The tests only check that
+there is one, not its text; `invalid memory quantity "lotsMi"` is helpful.
 
 ```go
 ParseMemory("512Mi") // => 536870912, nil
 ParseMemory("2G")    // => 0, error
 ```
 
+**Think it through:**
+- Split it in two steps: find and remove the suffix (remembering its unit), then turn the rest into a number.
+- If no suffix matches, what is the number part and what is the unit?
+- `strconv.Atoi` returns an `int`. What must happen before you multiply it by a unit?
+
 ### 3. Check whether pods fit on a node
 
-Complete `FitsOnNode`. Parse every quantity in `requests` with
-`ParseMemory`, add them up, and return `true` if the total is less than or
-equal to `free`. An empty list always fits.
+**Goal:** make `FitsOnNode` return `true, nil` if all the `requests` added together are less than or equal to `free`.
 
-If any request fails to parse, return `false` and that error straight away.
+- Parse each string in `requests` with your `ParseMemory`.
+- If any request fails to parse, return `false` and that error straight away.
+- An empty list always fits.
 
 ```go
 FitsOnNode([]string{"512Mi", "1Gi"}, 2*GiB) // => true, nil
@@ -139,6 +176,10 @@ FitsOnNode([]string{"1Gi", "1Gi"}, 2*GiB)   // => true, nil  (exactly full)
 FitsOnNode([]string{"3Gi"}, 2*GiB)          // => false, nil
 FitsOnNode([]string{"1Gi", "huge"}, 2*GiB)  // => false, error
 ```
+
+**Think it through:**
+- You need a running total. What type should it be, and where does it start?
+- Compare with `free` only after the loop. Which operator includes "exactly equal"?
 
 ## Learn more
 

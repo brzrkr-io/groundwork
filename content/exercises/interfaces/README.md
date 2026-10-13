@@ -4,21 +4,29 @@ When something breaks, the on-call bot tells people through Slack, email and
 PagerDuty. An *interface* lets one piece of code send to all of them without
 caring which is which.
 
+**New here:** `interface` types, satisfying an interface, slices of an interface type, `any`.
+
 ## Learn
 
 ### Describing what a value can do
 
 A struct describes what data a value *holds*. An interface describes what a
-value can *do*. It is a list of method signatures:
+value can *do*. It is a list of method signatures, with no bodies:
 
 ```go
-type Notifier interface {
-	Notify(a Alert) string
+type Pinger interface {
+	Ping(host string) bool
 }
 ```
 
-Read it as: "a `Notifier` is anything that has a method called `Notify` that
-takes an `Alert` and returns a `string`."
+Read it as: "a `Pinger` is anything with a method called `Ping` that takes a
+`string` and returns a `bool`."
+
+> **Why is it written like this?** `type Name interface { ... }` is required
+> syntax. Each line inside is a method name, its parameters and its result,
+> exactly as in a `func` line but without `func`, receiver or body. The name
+> `Pinger` is the author's choice; ending one-method interfaces in `-er` is
+> convention.
 
 ### Satisfying an interface
 
@@ -27,16 +35,30 @@ has every method the interface lists, with exactly the same name, parameters
 and results. Nobody has to declare it.
 
 ```go
-type Webhook struct {
-	URL string
+type ICMP struct {
+	Timeout int
 }
 
-func (w Webhook) Notify(a Alert) string {
-	return "webhook " + w.URL + ": " + a.Message
+func (c ICMP) Ping(host string) bool {
+	return host != ""
 }
 ```
 
-`Webhook` has a `Notify(a Alert) string` method, so `Webhook` is a `Notifier`.
+`ICMP` has a `Ping(host string) bool` method, so `ICMP` is a `Pinger`.
+
+### The parts of a method line
+
+| Part | In the example | Required? |
+|---|---|---|
+| `func` | `func` | Go requires it |
+| receiver in `( )` | `(c ICMP)` | required for a method; the name `c` is your choice (one short letter is convention) |
+| method name | `Ping` | must match the interface exactly |
+| parameters in `( )` | `(host string)` | types must match; the name `host` is your choice |
+| result type | `bool` | must match the interface |
+| body in `{ }` | `{ return ... }` | required; a `return` gives back a value, without types |
+
+> **Why is it written like this?** The result type goes on the `func` line
+> only. Inside the body, `return` is followed by just the value.
 
 ### Interface values
 
@@ -44,40 +66,36 @@ A variable whose type is an interface can hold any value that satisfies it.
 Calling a method on it runs the method of the value stored inside:
 
 ```go
-var n Notifier = Webhook{URL: "https://hooks.example.com"}
-fmt.Println(n.Notify(Alert{Service: "api", Message: "disk full"}))
-// webhook https://hooks.example.com: disk full
+var p Pinger = ICMP{Timeout: 2}
+fmt.Println(p.Ping("db-1")) // true
 ```
 
 If a type is missing the method, the compiler refuses to store it:
 
 ```go
-var n Notifier = Alert{}
-// error: Alert does not implement Notifier (missing method Notify)
+var p Pinger = Alert{}
+// error: Alert does not implement Pinger (missing method Ping)
 ```
 
 ### Slices of an interface type
 
-Different types that satisfy the same interface can sit in one slice:
+Different types that satisfy the same interface can sit in one slice, and one
+loop can call the method on each:
 
 ```go
-notifiers := []Notifier{
-	Slack{Channel: "ops"},
-	Email{To: "oncall@example.com"},
-}
-for _, n := range notifiers {
-	fmt.Println(n.Notify(alert))
+pingers := []Pinger{ICMP{Timeout: 2}, TCP{Port: 22}}
+for _, p := range pingers {
+	fmt.Println(p.Ping("db-1"))
 }
 ```
 
-The loop doesn't know or care which type each element is. To add Microsoft
-Teams later, you write one new type with a `Notify` method. The loop never
-changes.
+The loop doesn't know or care which type each element is. To add a new kind
+later, you write one new type with the method. The loop never changes.
 
 ### Small interfaces
 
-Most Go interfaces have just one or two methods. The standard library is full
-of them, and you'll meet these two again soon:
+Most Go interfaces have just one or two methods. You'll meet these two again
+soon:
 
 | Interface | Method | Satisfied by |
 |---|---|---|
@@ -87,40 +105,50 @@ of them, and you'll meet these two again soon:
 ### `any`
 
 An interface with no methods is written `interface{}`, or by its short name
-`any`. Every type satisfies it, because every type has at least zero methods.
-So a variable of type `any` can hold any value at all. The test for task 3
-uses it.
+`any`. Every type satisfies it, so an `any` variable can hold any value. The
+test for task 3 uses it.
 
 ## Your task
 
-Every line the on-call bot sends follows the pattern
-`<where>: [<Service>] <Message>`. Finish the three notifiers and the function
-that uses them.
+Every line the on-call bot sends follows the same pattern:
+
+```
+<where>: [<Service>] <Message>
+```
+
+`<where>` comes from the notifier (the receiver). `Service` and `Message` come
+from the `Alert` parameter `a`. The colon, the square brackets and the two
+single spaces (after `:` and after `]`) are fixed text.
 
 ### 1. Fill in Slack and Email
 
-`Slack.Notify` returns `slack #<Channel>: [<Service>] <Message>`. `Channel`
-holds just the name, so `Notify` adds the `#`:
+**Goal:** make `Slack.Notify` and `Email.Notify` return the full line for the alert `a`.
+
+| Notifier | `<where>` part | Notes |
+|---|---|---|
+| `Slack` | `slack #<Channel>` | `Channel` is just the name, so `Notify` adds the `#` |
+| `Email` | `email <To>` | |
 
 ```go
 Slack{Channel: "ops"}.Notify(Alert{Service: "api", Message: "disk full"})
 // => "slack #ops: [api] disk full"
-```
 
-`Email.Notify` returns `email <To>: [<Service>] <Message>`:
-
-```go
 Email{To: "oncall@example.com"}.Notify(Alert{Service: "api", Message: "disk full"})
 // => "email oncall@example.com: [api] disk full"
 ```
 
-There is exactly one space after the colon and one after the `]`.
+`Slack.Notify` already returns the start of its line; finish it.
+
+**Think it through:**
+- Which value comes from the receiver, and which two come from `a`?
+- Write the expected line out, then mark which bits are fixed text and which are values.
 
 ### 2. Notify everyone
 
-`NotifyAll(ns []Notifier, a Alert) []string` calls `Notify` on every notifier
-in `ns`, in order, and returns the lines in a slice in the same order. With no
-notifiers it returns an empty slice (`nil` is fine).
+**Goal:** make `NotifyAll` call `Notify` on every notifier in `ns`, in order, and return the lines in a slice.
+
+The slice keeps the same order as `ns`. With no notifiers, return an empty
+slice (`nil` is fine).
 
 ```go
 NotifyAll([]Notifier{Slack{Channel: "ops"}, Email{To: "oncall@example.com"}},
@@ -130,11 +158,16 @@ NotifyAll([]Notifier{Slack{Channel: "ops"}, Email{To: "oncall@example.com"}},
 
 The test uses `Slack` and `Email`, so finish task 1 first.
 
+**Think it through:**
+- You need a slice to collect lines in. Where does it start, and how does it grow (as in *Slices*)?
+- Each element of `ns` is a `Notifier`. What method can you call on it?
+
 ### 3. Make PagerDuty a Notifier
 
-`PagerDuty` has no methods yet. Write a `Notify` method for it, from scratch,
-so that it satisfies `Notifier`. It returns
-`pagerduty <ServiceKey>: [<Service>] <Message>`:
+**Goal:** write a brand-new `Notify` method for `PagerDuty` so it satisfies `Notifier`.
+
+It returns `pagerduty <ServiceKey>: [<Service>] <Message>`. Put it where the
+`TODO(3)` comment is, below the `PagerDuty` struct.
 
 ```go
 PagerDuty{ServiceKey: "key-123"}.Notify(Alert{Service: "api", Message: "disk full"})
@@ -142,16 +175,19 @@ PagerDuty{ServiceKey: "key-123"}.Notify(Alert{Service: "api", Message: "disk ful
 ```
 
 The test can't write `var n Notifier = PagerDuty{...}`: while the method is
-missing, that line would stop the whole file from compiling. Instead it does
-this:
+missing, that line would stop the whole file from compiling. Instead it asks
+"does this value satisfy `Notifier`?" with a *type assertion*:
 
 ```go
 n, ok := any(PagerDuty{ServiceKey: "key-123"}).(Notifier)
 ```
 
-It puts the value into an `any`, then asks "does this value satisfy
-`Notifier`?" If it does, `ok` is `true` and `n` is the value as a `Notifier`.
-This is a *type assertion*; a later exercise covers it properly.
+If it does, `ok` is `true`. A later exercise covers type assertions properly.
+
+**Think it through:**
+- Look at the `Notifier` interface. Which parts of your method line must match it exactly?
+- Which parts of the line can you choose yourself? (See *The parts of a method line*.)
+- The other two `Notify` methods are a model for the shape; only the receiver type and the `<where>` part differ.
 
 ## Learn more
 

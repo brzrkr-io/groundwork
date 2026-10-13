@@ -2,14 +2,14 @@
 
 A node agent pre-pulls container images with a small worker pool, so it
 doesn't hammer the registry. The pool has the two most common worker-pool
-bugs. Find and fix them.
+bugs. You find and fix them.
+
+**New here:** nothing; practice. You fix a pool that hangs, then one that
+returns results in the wrong order.
 
 ## Learn
 
-### Recap
-
-A worker pool is a `jobs` channel, `n` worker goroutines that `range` over
-it, and a `results` channel:
+### Recap: the shape of a pool
 
 ```text
 feeder ──▶ jobs ──▶ [worker × n] ──▶ results ──▶ collector
@@ -17,44 +17,87 @@ feeder ──▶ jobs ──▶ [worker × n] ──▶ results ──▶ collec
  after the last job            closes results after wg.Wait()
 ```
 
-- The feeder closes `jobs` when every job is sent, so the workers' loops end.
-- A separate goroutine waits for the workers' WaitGroup, then closes
-  `results`, so the collector's loop ends.
-- Results arrive in **finish** order. Carry an index with each job and
-  place results by index to get input order back.
+- The *feeder* closes `jobs` after the last job, so the workers' `range` loops end.
+- A *closer* goroutine waits for the workers, then closes `results`, so the
+  collector's `range` loop ends.
+- Results arrive in **finish** order, not input order.
+
+### Why the closer is its own goroutine
+
+`wg.Wait()` blocks until every worker is done. But a worker is only done
+after its last send on `results` is received, and the collector is the one
+receiving. So waiting *before* the collector loop means everyone waits for
+everyone: a deadlock. Waiting *in a separate goroutine* lets the collector
+run at the same time.
+
+```go
+// A different example: close done once both downloads finish.
+go func() {
+	downloads.Wait()
+	close(done)
+}()
+```
+
+> **Why is it written like this?** `go func() { ... }()` is required syntax:
+> `go` needs a function *call*, so the trailing `()` must be there. Closing a
+> channel only from the side that sends (or knows sending is over) is
+> convention; Go lets anyone call `close`, but closing twice panics.
+
+### Putting results back in order
+
+Each job carries its `index` (its position in the input). To restore order,
+make the output slice full-length first, then write into a slot instead of
+appending:
+
+```go
+names := make([]string, 3) // 3 empty slots: "", "", ""
+names[2] = "c"             // fills slot 2, whatever order you do it in
+```
+
+> **Why is it written like this?** `make([]T, n)` with a length is required
+> if you want to assign `s[i]`; assigning past the length panics. `append`
+> always adds at the end, so it can't place things by index.
 
 ### Symptom → cause
 
 | Symptom | Usual cause |
 |---|---|
-| hangs after the last result | nobody closes `results`, so the collector's `range` waits forever |
-| deadlock right away | `wg.Wait()` is called before anyone receives results |
+| hangs after the last result | nobody closes `results` |
+| deadlock right away | `wg.Wait()` runs before anyone receives results |
 | hangs with idle workers | nobody closes `jobs` |
 | results in a random order | appended in finish order instead of placed by index |
 
 ## Your task
 
 `PullAll(images, workers, pull)` pulls every image with `workers`
-goroutines and returns one `Result` per image: the image name and the error
-from `pull` (`nil` on success).
+goroutines and returns one `Result` per image: the image name (`Image`) and
+the error from `pull` (`Err`, `nil` on success). The tests fail if
+`PullAll` hasn't returned after 1 second.
 
 ### 1. Fix the hang
 
-`PullAll` pulls every image, then hangs forever. Close `results` once every
-worker has finished, without blocking the collector. Use one extra goroutine,
-as in the recap.
+**Goal:** make `PullAll` return, by closing `results` once every worker has finished.
+
+Right now every image is pulled, then `PullAll` hangs forever. Add the
+close where `TODO(1)` is, without blocking the collector loop below it.
 
 ```go
 // pull fails for "redis:7" with "manifest unknown"
 PullAll([]string{"nginx:1.27", "redis:7"}, 2, pull)
-// => two Results (task 2 fixes the order)
+// => two Results, one per image (task 2 fixes the order)
 ```
+
+**Think it through:**
+- Which variable knows when all the workers are done?
+- If you wait for it right here, who is left to receive from `results`?
 
 ### 2. Keep the input order
 
-Results come back in the order the pulls finish, so a slow first image ends
-up last. Store each result at its index, so that `PullAll` returns results in
-the same order as `images`.
+**Goal:** `PullAll` returns the results in the same order as `images`.
+
+Results come back in the order the pulls finish, so a slow first image
+ends up last. Each `pulled` value `p` has `p.index` (the image's position in
+`images`) and `p.result`. Store each result at its index.
 
 ```go
 PullAll([]string{"postgres:16", "nginx:1.27", "redis:7"}, 2, pull)
@@ -65,6 +108,10 @@ PullAll([]string{"postgres:16", "nginx:1.27", "redis:7"}, 2, pull)
 //    }
 // even when postgres:16 finishes last
 ```
+
+**Think it through:**
+- How many results will there be? Use that to size `out` before the loop.
+- Which field of `p` says where its result belongs?
 
 ## Learn more
 

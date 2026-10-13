@@ -1,37 +1,46 @@
 # Pipelines
 
-A *pipeline* is a chain of *stages* connected by channels. Each stage
-receives values, does one small job, and sends the results to the next stage,
-just like `cat app.log | grep ERROR | cut -d' ' -f2-` in a shell. All the
-stages run at the same time, each in its own goroutine.
+A *pipeline* is a chain of *stages* connected by channels. Each stage does
+one small job and passes its results on, like `cat app.log | grep ERROR` in
+a shell. All the stages run at the same time, each in its own goroutine.
+
+**New here:** pipeline stages, receive-only channel types (`<-chan T`),
+`strings.Cut`.
 
 ## Learn
 
 ### A stage
 
-Every stage has the same shape: take an input channel, return an output
-channel, and do the work in a goroutine:
+Every stage has the same shape: take an input, return an output channel, and
+do the work in a goroutine.
 
 ```go
 // Upper sends every string from in, upper-cased.
 func Upper(in <-chan string) <-chan string {
 	out := make(chan string)
 	go func() {
-		defer close(out) // when in is closed and drained, close out
+		defer close(out) // runs when the goroutine ends
 		for s := range in {
 			out <- strings.ToUpper(s)
 		}
 	}()
-	return out // return straight away; the goroutine keeps working
+	return out // returns straight away; the goroutine keeps working
 }
 ```
 
-- The stage **owns** `out`: it makes it, it is the only one that sends on it,
-  and it closes it when its input runs out.
-- It returns `<-chan string` (receive only), so callers can't send on it or
-  close it by mistake.
-- `defer close(out)` at the top of the goroutine means `out` is closed
-  however the goroutine ends.
+Read it in three steps:
+
+1. Make the output channel.
+2. Start a goroutine that loops, sends, and closes the channel at the end.
+3. Return the channel **immediately**. Don't wait for the goroutine.
+
+> **Why is it written like this?**
+> - **Go requires** `defer close(out)` *or* some close, if receivers use
+>   `range`: a `range` over a channel only ends when it is closed.
+> - **Convention:** the stage that makes `out` is the only one that sends on
+>   it and closes it. The return type `<-chan string` (receive only) lets the
+>   compiler stop callers from sending or closing.
+> - **Author's choice:** the names `in` and `out`.
 
 ### Connecting stages
 
@@ -45,47 +54,64 @@ for line := range Upper(Generate(lines)) {
 
 ```text
 Generate ──chan string──▶ Parse ──chan Entry──▶ OnlyLevel ──chan Entry──▶ range
- goroutine                goroutine             goroutine
 ```
 
-Values flow through one at a time. While `Parse` works on line 2,
-`OnlyLevel` can already be filtering line 1. Closing also flows down the
-chain: `Generate` closes its channel, so `Parse`'s `range` ends and `Parse`
-closes its channel, and so on, until the final `range` loop ends.
+Closing flows down the chain: `Generate` closes, so `Parse`'s `range` ends and
+`Parse` closes, and so on.
 
-### Splitting a line with strings.Cut
+### Looping over a slice vs a channel
 
-`strings.Cut(s, sep)` splits `s` around the **first** `sep`:
+| Looping over | Syntax | Gives you |
+|---|---|---|
+| a slice | `for i, v := range items` | index and value (use `_` to skip the index) |
+| a channel | `for v := range ch` | one value per receive, until closed |
+
+### Splitting with strings.Cut
+
+`strings.Cut(s, sep)` splits `s` around the **first** `sep` and returns
+three values:
 
 ```go
-before, after, found := strings.Cut("ERROR disk full", " ")
-// before = "ERROR", after = "disk full", found = true
+before, after, found := strings.Cut("key=value=x", "=")
+// before = "key", after = "value=x", found = true
 
-before, after, found = strings.Cut("HEARTBEAT", " ")
-// before = "HEARTBEAT", after = "", found = false
+before, after, found = strings.Cut("novalue", "=")
+// before = "novalue", after = "", found = false
 ```
+
+> **Why is it written like this?** Go requires you to accept all three
+> results or skip one with `_`. Using `strings` requires adding `"strings"`
+> to the `import` list at the top of the file.
 
 ## Your task
 
 Build a three-stage pipeline that finds error lines in an application log.
-Each stage returns its output channel straight away, does its work in a
-goroutine, and closes its output channel when it has finished.
+Each stage returns its channel straight away, works in a goroutine, and
+closes its channel when finished. The tests fail if a stage returns `nil` or
+never closes its channel.
 
 ### 1. Generate
 
-`Generate(lines)` returns a channel that carries every line, in order, and
-is then closed.
+**Goal:** `Generate(lines)` returns a channel that carries every line, in order, then is closed.
+
+The values come from the `lines` slice, not from a channel. An empty slice
+gives a channel that is just closed.
 
 ```go
 Generate([]string{"INFO started", "ERROR disk full"})
 // carries "INFO started", "ERROR disk full", then is closed
 ```
 
+**Think it through:**
+- Follow the three steps of `Upper`. What type of value does the channel carry?
+- What do you `range` over here: a slice or a channel?
+
 ### 2. Parse
 
-`Parse(in)` turns each line from `in` into an `Entry`. `Level` is the text
-before the first space, and `Message` is everything after it. A line with no
-space is all `Level`, with an empty `Message`.
+**Goal:** `Parse(in)` turns each line from `in` into an `Entry`.
+
+`Level` is the text before the first space; `Message` is everything after
+it. A line with no space is all `Level`, with `Message` `""`.
 
 ```go
 // in carries "ERROR disk full", "HEARTBEAT"
@@ -93,16 +119,26 @@ Parse(in)
 // carries Entry{"ERROR", "disk full"}, Entry{"HEARTBEAT", ""}, then is closed
 ```
 
+**Think it through:**
+- This channel carries `Entry`, not `string`. Which type goes in `make`?
+- What separator do you cut on? Which of the three results do you need?
+
 ### 3. Filter by level
 
-`OnlyLevel(in, level)` passes on only the entries whose `Level` equals
-`level`, in order.
+**Goal:** `OnlyLevel(in, level)` passes on only the entries whose `Level` equals `level`, in order.
+
+Entries that don't match are not sent at all. If none match, the channel
+is just closed.
 
 ```go
 lines := []string{"INFO started", "ERROR disk full", "WARN slow", "ERROR timeout"}
 OnlyLevel(Parse(Generate(lines)), "ERROR")
 // carries Entry{"ERROR", "disk full"}, Entry{"ERROR", "timeout"}, then is closed
 ```
+
+**Think it through:**
+- You compare a field of each entry with the `level` parameter. Which field?
+- The send only happens sometimes. What wraps it?
 
 ## Learn more
 

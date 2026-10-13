@@ -1,66 +1,82 @@
 # The clientset: updates and create-or-update
 
-Reading and creating objects is half the job. Day-to-day automation mostly
-*changes* objects that already exist: scale an app, roll out new config. Here
-you fix and finish two functions that do that.
+Day-to-day automation mostly *changes* objects that already exist: scale an
+app, roll out new config. Here you fix and finish two functions that do that.
+
+**New here:** `Update`, read-modify-write, `apierrors.IsAlreadyExists`, `maps.Equal`.
 
 ## Learn
 
 ### Recap
 
-The clientset groups typed clients by API group and version:
-`cs.AppsV1().Deployments(ns)` and `cs.CoreV1().ConfigMaps(ns)`. Each call
-takes `ctx` first and a `metav1` options struct last. Your functions accept
-`kubernetes.Interface`, so the tests can pass `fake.NewClientset(objs...)`,
-and `apierrors.IsNotFound(err)` tells you that an object is missing.
+As in *The clientset: get, create and delete*: `cs.AppsV1().Deployments(ns)`
+and `cs.CoreV1().ConfigMaps(ns)` are typed clients. Each call takes `ctx`
+first and a `metav1` options struct last. Tests pass `fake.NewClientset(...)`,
+and `apierrors.IsNotFound(err)` spots a missing object.
 
 ### Update replaces the whole object
 
-`Update` is an HTTP `PUT`: you send the complete object, and it replaces
-what is stored. Any field you leave empty is stored as empty. So the safe
-pattern is always *read, modify, write*:
+`Update` is an HTTP `PUT`. You send the complete object and it replaces what
+is stored. Any field you leave empty is stored as empty.
+
+So the safe pattern is *read, modify, write*: `Get` the object, change one
+field on that same value, and pass it to `Update`.
 
 ```go
-d, err := cs.AppsV1().Deployments("shop").Get(ctx, "web", metav1.GetOptions{})
+svc, err := cs.CoreV1().Services("shop").Get(ctx, "cart", metav1.GetOptions{})
 if err != nil {
 	return err
 }
-d.Spec.Replicas = new(int32(4)) // change only what you mean to change
-_, err = cs.AppsV1().Deployments("shop").Update(ctx, d, metav1.UpdateOptions{})
+svc.Spec.Type = corev1.ServiceTypeNodePort // change only what you mean to
+_, err = cs.CoreV1().Services("shop").Update(ctx, svc, metav1.UpdateOptions{})
 ```
 
+> **Why is it written like this?** `err =` (not `:=`) on the last line is
+> required: `err` already exists, and `:=` needs at least one new name on the
+> left. The `_` is required too: `Update` returns two values, and Go makes you
+> say what to do with each.
+
 The object from `Get` also carries `metadata.resourceVersion`. If someone
-else changed the object between your `Get` and your `Update`, a real API
-server rejects the write with a *Conflict* error instead of silently
-overwriting their change. Real controllers then simply try again. You don't
-need to handle that here.
+else changed it between your `Get` and `Update`, a real API server rejects
+the write with a *Conflict* error instead of overwriting their change. You
+don't need to handle that here.
+
+### Pointer fields and `new`
+
+`Spec.Replicas` is a `*int32`, a pointer, so "not set" (nil) differs from 0.
+`new(value)` makes a pointer to a copy of a value:
+
+```go
+var limit int32 = 3
+p := new(limit) // p is a *int32 pointing at 3
+```
 
 ### Create or update
 
-`Create` fails if the name is taken. `apierrors.IsAlreadyExists(err)`
-recognises that error. A *create-or-update* helper uses it like this:
+`Create` fails if the name is taken, and `apierrors.IsAlreadyExists(err)`
+recognises that error. A *create-or-update* helper:
 
 1. Try `Create`. If it works, you're done.
 2. If the error is AlreadyExists, `Get` the existing object, change it and
    `Update` it.
-3. Any other error is returned.
+3. Return any other error.
 
-Why try `Create` first, instead of `Get` first and then `Create` only on
-NotFound? Both work, but with `Get` first another program can still create
-the object between your `Get` and your `Create`, and you'd get AlreadyExists
-anyway. Starting with `Create` makes AlreadyExists the one signal you rely
-on, and a brand-new object costs a single request.
+Why `Create` first? With `Get` first, another program could create the object
+between your `Get` and your `Create`. Starting with `Create` makes
+AlreadyExists the one signal you rely on.
 
 ### Skip writes that change nothing
 
-Every write wakes up every controller watching that object. If the stored
-data already matches, don't send an `Update`. `maps.Equal(a, b)` from the
-standard `maps` package reports whether two maps hold the same keys and
-values.
+Every write wakes every controller watching that object. If the stored data
+already matches, don't send an `Update`. `maps.Equal(a, b)` (package `maps`)
+reports whether two maps hold the same keys and values:
 
-The fake clientset records every request it receives. The last test reads
-that list with `cs.Actions()` and counts the requests whose verb is
-`"update"`.
+```go
+maps.Equal(map[string]string{"a": "1"}, map[string]string{"a": "1"}) // => true
+```
+
+The fake clientset records every request. The last test reads them with
+`cs.Actions()` and counts the `"update"` requests.
 
 ## Your task
 
@@ -69,28 +85,36 @@ client code has a bug and an unfinished function.
 
 ### 1. Fix `ScaleDeployment`
 
-`ScaleDeployment` should change only the replica count. Right now it builds
-a brand-new Deployment for `Update`, which wipes out the labels and
-containers. Use the object returned by `Get`, set its `Spec.Replicas` with
-`new(replicas)`, and update that:
+**Goal:** make `ScaleDeployment` change only the replica count of the Deployment `namespace/name`, keeping its labels and containers.
+
+Right now it throws away the result of `Get` and sends a brand-new, nearly
+empty Deployment to `Update`, which wipes out the labels and containers.
 
 ```go
 ScaleDeployment(ctx, cs, "shop", "web", 5)
 // => nil; shop/web now has 5 replicas, with the same labels and containers
 ```
 
-If `Get` fails, return its error unchanged, so a missing Deployment gives a
-NotFound error. Once the fix is done, `appsv1` is no longer used in
-`exercise.go`. Delete that import.
+- Set the replicas from the `replicas` parameter (it may be `0`).
+- If `Get` fails, return its error unchanged, so a missing Deployment gives a
+  NotFound error.
+- After the fix, `appsv1` is unused in `exercise.go`. Delete that import (Go
+  refuses to compile unused imports).
+
+**Think it through:**
+- Which value already holds the full Deployment, labels and all? Right now it is thrown away with `_`.
+- Which field holds the replica count, and what type is it?
 
 ### 2. Finish `ApplyConfigMap`
 
-`ApplyConfigMap` already tries `Create`. Finish the create-or-update steps
-above. When `Create` fails with AlreadyExists, `Get` the existing ConfigMap,
-set its `Data` to `data`, `Update` it, and return what `Update` returns. Keep
-the existing object's other fields: the tests check that its `team` label
-survives. Return any other error unchanged. Add
-`apierrors "k8s.io/apimachinery/pkg/api/errors"` to the imports.
+**Goal:** when `Create` fails because the ConfigMap already exists, make `ApplyConfigMap` update the existing one to hold `data` and return what `Update` returns.
+
+- AlreadyExists: `Get` the existing ConfigMap, set its `Data` to the `data`
+  parameter, `Update` it, and return both results of `Update`.
+- Keep the existing object's other fields: the tests check that its `team`
+  label survives.
+- Any other error from `Create` (or from `Get`): return `nil` and the error.
+- Add `apierrors "k8s.io/apimachinery/pkg/api/errors"` to the imports.
 
 ```go
 // payments/gateway-config holds {"currency": "EUR"}
@@ -98,17 +122,24 @@ ApplyConfigMap(ctx, cs, "payments", "gateway-config", map[string]string{"currenc
 // => the ConfigMap with data {"currency": "GBP"}, nil
 ```
 
+**Think it through:**
+- After `Create` fails, which question do you ask about `err` first?
+- Why update the object from `Get` instead of `desired`? (Hint: labels.)
+
 ### 3. Skip no-op updates
 
-If the existing ConfigMap's `Data` already equals `data`, return the
-existing ConfigMap and `nil` without calling `Update`. Add `"maps"` to the
-imports.
+**Goal:** if the existing ConfigMap's `Data` already equals `data`, make `ApplyConfigMap` return the existing ConfigMap and `nil` without calling `Update`.
+
+Add `"maps"` to the imports.
 
 ```go
 // payments/gateway-config holds {"currency": "EUR"}
 ApplyConfigMap(ctx, cs, "payments", "gateway-config", map[string]string{"currency": "EUR"})
 // => the existing ConfigMap, nil, and no update request was sent
 ```
+
+**Think it through:**
+- The comparison must happen *before* you overwrite the existing `Data`. Where is that in your code?
 
 ## Learn more
 

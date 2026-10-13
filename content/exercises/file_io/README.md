@@ -1,84 +1,101 @@
 # Files: read, scan and write
 
 Ops tools live on files: host lists, login banners, inventories, generated
-configs. In this exercise you read a whole file, read a file line by line, and
-write a file safely, using the `os` package.
+configs. Here you read a whole file, read a file line by line, and write a
+file safely, using the `os` package.
+
+**New here:** `os.ReadFile`, `os.Open`, `os.Create`, `defer`, `fs.ErrNotExist`, permission bits.
 
 ## Learn
 
-### Small files: os.ReadFile and os.WriteFile
+### Small files: read it all at once
 
-For a small file, read or write it all in one call:
+`os.ReadFile` returns the whole file as a `[]byte` (raw bytes) and an error:
 
 ```go
-data, err := os.ReadFile("/etc/motd") // data is a []byte
+data, err := os.ReadFile("/etc/hostname")
 if err != nil {
 	return err
 }
-text := string(data)
-
-err = os.WriteFile("/tmp/notes.txt", []byte("hello\n"), 0o644)
+name := string(data) // bytes -> string
 ```
 
-`os.WriteFile` creates the file if it is missing and replaces its contents if
-it exists. The last argument is the permission for a new file (see below).
+> **Why is it written like this?** Go requires you to handle (or explicitly
+> ignore) the second return value. `string(data)` is a *conversion*: Go
+> requires it because `[]byte` and `string` are different types.
 
 ### A missing file is often not a real error
 
-When a file doesn't exist, the error matches `fs.ErrNotExist` (from the
-`io/fs` package). Check it with `errors.Is`, as in *Wrapping errors*:
+When a file doesn't exist, the error matches `fs.ErrNotExist` (package
+`io/fs`). Check it with `errors.Is`, as in *Wrapping errors*:
 
 ```go
-data, err := os.ReadFile(path)
+cfg, err := os.ReadFile(path)
 if errors.Is(err, fs.ErrNotExist) {
-	// no file: use a default
+	// no file: fall back to something sensible
 }
 ```
 
-Any other error, such as "permission denied" or "is a directory", is a real
-problem. Return it.
+Other errors, such as "permission denied" or "is a directory", are real
+problems. Return them.
+
+> **Why is it written like this?** Order matters (Go runs `if`s top to
+> bottom): check the special case *before* the general `err != nil`, or the
+> general one catches it first.
 
 ### Big files: open, defer Close, scan
 
 `os.Open` opens a file for reading and returns an `*os.File`. A file is an
-`io.Reader`, so the `bufio.Scanner` from *Reading input line by line* works on
-it directly:
+`io.Reader`, so the `bufio.Scanner` from *Reading input line by line* works
+on it:
 
 ```go
-f, err := os.Open(path)
+f, err := os.Open("/var/log/app.log")
 if err != nil {
-	return nil, err
+	return 0, err
 }
-defer f.Close() // runs when the function returns, on every path
+defer f.Close()
 
+count := 0
 sc := bufio.NewScanner(f)
 for sc.Scan() {
-	line := sc.Text()
-	// ...
+	count++
 }
-return lines, sc.Err()
+return count, sc.Err()
 ```
 
-Every file you open uses an operating system *file descriptor*, and a process
-gets a limited number. `defer f.Close()` right after the error check means you
-can't forget to give it back.
+`defer f.Close()` runs `f.Close()` when the function returns, on every path.
+Each open file uses an OS *file descriptor*, and a process only gets so many.
+
+> **Why is it written like this?** `defer` is Go syntax. Putting it right
+> after the error check is convention: you can't forget it, and you never
+> close a file that failed to open.
+
+### Skipping lines in a loop
+
+`continue` jumps straight to the next loop round:
+
+```go
+if strings.HasPrefix(line, "//") {
+	continue // ignore this line
+}
+```
 
 ### Writing: os.Create truncates
 
-`os.Create(path)` opens a file for writing. If the file exists, it is
-**truncated** (emptied) first. If it doesn't exist, it is created. A file is
-also an `io.Writer`, so `fmt.Fprintln(f, "web01")` writes a line to it.
+`os.Create(path)` opens a file for writing. If it exists, it is
+**truncated** (emptied) first; if not, it is created. A file is also an
+`io.Writer`, so `fmt.Fprintln(f, x)` writes `x` and a newline to it.
 
-When you *write*, `Close` matters. The OS may hold your data in a buffer and
-report a failure (such as a full disk) only when you close. So for written
-files, return the error from `Close` instead of deferring it:
+When you *write*, `Close` matters: the OS may only report a failure (like a
+full disk) when you close. So return Close's error instead of deferring it:
 
 ```go
-f, err := os.Create(path)
+f, err := os.Create("/tmp/report.txt")
 if err != nil {
 	return err
 }
-if _, err := fmt.Fprintln(f, "web01"); err != nil {
+if _, err := fmt.Fprintln(f, "all good"); err != nil {
 	f.Close() // already failing; ignore this second error
 	return err
 }
@@ -87,8 +104,9 @@ return f.Close()
 
 ### Permission bits
 
-`0o644` is an octal (base 8) number. Each digit is the permissions for one
-group of users: read = 4, write = 2, execute = 1, added together.
+`os.WriteFile(path, data, 0o644)` also writes a whole file. `0o644` is an
+octal (base 8) number: one digit each for owner, group and others, adding
+read = 4, write = 2, execute = 1.
 
 | Mode | Owner | Group | Others | Typical use |
 |---|---|---|---|---|
@@ -96,25 +114,29 @@ group of users: read = 4, write = 2, execute = 1, added together.
 | `0o600` | read, write | none | none | secrets, keys, tokens |
 | `0o755` | read, write, enter | read, enter | read, enter | directories, scripts |
 
-The process's *umask* then removes some bits, so a requested `0o666` usually
-ends up as `0o644`. `os.Create` uses `0o666` before the umask.
+The process *umask* removes some bits, so `os.Create`'s `0o666` usually ends
+up as `0o644`.
 
 ### Test files: t.TempDir
 
-The tests call `t.TempDir()`, which gives each test its own empty directory
-and deletes it when the test ends. Your code never touches real system files.
+The tests use `t.TempDir()`: a fresh empty directory per test, deleted
+afterwards. Your code never touches real system files.
 
 ## Your task
 
-You're building a small host-maintenance tool. It shows a login banner, reads
-the list of hosts to work on, and writes the list back out. Add the imports you
-need (`bufio`, `errors`, `fmt`, `io/fs`, `os`, `strings`) as you go.
+You're building a small host-maintenance tool: it shows a login banner,
+reads the hosts to work on, and writes the list back out. The starter has no
+imports; add the ones you need (`bufio`, `errors`, `fmt`, `io/fs`, `os`,
+`strings`) as you go.
 
 ### 1. Load the login banner
 
-`LoadBanner(path)` returns the whole file as a string, unchanged. If the file
-does not exist, return `DefaultBanner` and a `nil` error. Return any other
-error as it is (with `""`), for example when `path` is a directory.
+**Goal:** `LoadBanner(path)` returns the whole file as a string, unchanged.
+
+- File missing (or its directory missing): return `DefaultBanner` and a `nil`
+  error.
+- Any other error (for example, `path` is a directory): return `""` and the
+  error.
 
 ```go
 LoadBanner("banner.txt") // file holds "Maintenance tonight 22:00 UTC\n"
@@ -123,12 +145,19 @@ LoadBanner("missing.txt")
 // => DefaultBanner, nil
 ```
 
+**Think it through:**
+- Which `os` function reads a whole file in one call?
+- Which check must come first: "missing" or "any error"?
+
 ### 2. Read the host list
 
-`ReadHosts(path)` opens the file and returns one host per line. Trim spaces
-from each line with `strings.TrimSpace`, and skip blank lines and lines that
-start with `#`. If the file can't be opened, return `nil` and the error
-unchanged, so `errors.Is(err, fs.ErrNotExist)` still works for a missing file.
+**Goal:** `ReadHosts(path)` returns one host per line of the file.
+
+- Trim spaces from each line with `strings.TrimSpace`.
+- Skip blank lines and lines starting with `#`.
+- A last line without `"\n"` still counts.
+- If the file can't be opened, return `nil` and the error unchanged, so
+  `errors.Is(err, fs.ErrNotExist)` still works for a missing file.
 
 ```text
 # web tier
@@ -142,18 +171,27 @@ ReadHosts("hosts.txt")
 // => []string{"web01", "web02"}, nil
 ```
 
+**Think it through:**
+- Open, make sure it gets closed, then scan: which three steps from *Learn*?
+- Trim first, then decide: keep the line or `continue`?
+
 ### 3. Write the host list
 
-`WriteHosts(path, hosts)` creates (or truncates) the file with `os.Create` and
-writes each host followed by `"\n"`. An empty list gives an empty file. Return
-any error, including the one from `Close`.
+**Goal:** `WriteHosts(path, hosts)` writes each host plus `"\n"` to the file.
+
+- Use `os.Create`, so an existing file is replaced, not appended to.
+- An empty list gives an empty file.
+- Return any error: from `os.Create` (for example, the parent directory
+  doesn't exist), from a write, or from `Close`.
 
 ```go
 WriteHosts("hosts.txt", []string{"db01", "db02"})
 // file now holds "db01\ndb02\n"
 ```
 
-If the parent directory doesn't exist, `os.Create` fails. Return that error.
+**Think it through:**
+- Which `fmt` function writes a value plus a newline to a writer?
+- Why should the last line return `Close`'s error instead of using `defer`?
 
 ## Learn more
 

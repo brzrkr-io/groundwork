@@ -4,109 +4,114 @@ Every Kubernetes object, from a Pod to a Service, carries the same metadata: a
 name, a namespace and labels. Go lets you write that shared part once and
 *embed* it in every object type.
 
+**New here:** embedded fields, promoted fields and methods, overriding a promoted method.
+
 ## Learn
 
 ### Embedding a struct
 
-To embed a struct, list its type name inside another struct, with no field
-name in front:
+To embed a struct, write its type name inside another struct, with **no field
+name** in front:
 
 ```go
-type Metadata struct {
-	Name      string
-	Namespace string
+type Owner struct {
+	Team  string
+	Email string
 }
 
-type Pod struct {
-	Metadata        // embedded: no field name, just the type
-	Image    string
+type Job struct {
+	Owner         // embedded: just the type, no field name
+	Schedule string
 }
 ```
 
-A `Pod` now contains a whole `Metadata` value. The embedded field is named
-after its type, so you can reach it as `p.Metadata`.
+A `Job` now contains a whole `Owner`. The embedded field is named after its
+type, so you reach it as `j.Owner`.
+
+> **Why is it written like this?**
+> - **Go requires** a type with no name in front. `Owner Owner` would be a normal field, not an embedded one.
+> - **Convention:** embedded fields go first, on their own line.
+> - **Author's choice:** which structs you embed.
 
 ### Promoted fields
 
-The fields of the embedded struct are *promoted*: you can use them as if they
-belonged to `Pod` itself.
+The embedded struct's fields are *promoted*: you can use them as if they
+belonged to `Job`.
 
 ```go
-var p Pod
-p.Name = "api"            // short for p.Metadata.Name
-fmt.Println(p.Metadata.Name) // api
+var j Job
+j.Team = "sre"          // short for j.Owner.Team
+fmt.Println(j.Owner.Team) // sre
 ```
 
-Both spellings reach the same field. The short one is what you will use most
-of the time.
+Both spellings reach the **same** field.
 
-### Writing the embedded struct in a literal
+### Embedded structs in a literal
 
 Promotion works for reading and assigning, but **not** in a struct literal.
-In a literal, you fill in the embedded struct by its type name, like any other
-field:
+There you fill in the embedded struct by its type name, like any field:
 
 ```go
-p := Pod{
-	Metadata: Metadata{Name: "api", Namespace: "default"},
-	Image:    "nginx:1.27",
+j := Job{
+	Owner:    Owner{Team: "sre", Email: "sre@example.com"},
+	Schedule: "@daily",
 }
-// Pod{Name: "api"} does not compile.
+// Job{Team: "sre"} does not compile.
 ```
+
+> **Why is it written like this?**
+> - **Go requires** `Owner: Owner{...}` in a literal. The left `Owner` is the field name, the right `Owner{...}` is the value.
 
 ### Promoted methods
 
-Methods are promoted too. A method declared on `Metadata` can be called on a
-`Pod`:
+Methods are promoted too. A method on `Owner` can be called on a `Job`:
 
 ```go
-func (m Metadata) Key() string {
-	return m.Namespace + "/" + m.Name
+func (o Owner) Contact() string {
+	return o.Team + " <" + o.Email + ">"
 }
 
-p.Key() // "default/api", short for p.Metadata.Key()
+j.Contact() // "sre <sre@example.com>", short for j.Owner.Contact()
 ```
 
-When Go runs `p.Key()`, it really calls `p.Metadata.Key()`. Inside `Key`, `m`
-is the `Metadata`, not the `Pod`, so the method cannot see `p.Image`.
+Inside `Contact`, `o` is only the `Owner`. It cannot see `j.Schedule`.
 
 ### Overriding a promoted method
 
-If the outer type declares a method with the same name, the outer one wins.
-You can still call the inner one by naming the embedded field:
+If the outer type declares a method with the **same name**, the outer one
+wins. You still reach the inner one through the embedded field:
 
 ```go
-func (p Pod) Key() string {
-	return "pod:" + p.Metadata.Key() // calls Metadata's Key
+func (j Job) Contact() string {
+	return "job owner: " + j.Owner.Contact() // calls Owner's Contact
 }
 ```
 
-Writing `p.Key()` inside this method would call the `Pod` version again, which
-calls itself forever. Always go through `p.Metadata`.
+Writing `j.Contact()` inside this method would call the `Job` version again,
+which calls itself forever. Go through `j.Owner`.
 
 ### Embedding is not inheritance
 
-If you have used other languages, embedding may look like inheritance. It
-isn't. A `Pod` *has* a `Metadata`; it *is not* one.
+A `Job` *has* an `Owner`; it *is not* one.
 
 | You might expect | What Go does |
 |---|---|
-| A `Pod` can be passed where a `Metadata` is wanted | No. Pass `p.Metadata` instead. |
-| `Metadata`'s methods see the `Pod` | No. They only see the `Metadata` part. |
-| Fields and methods are copied into `Pod` | They are reachable by a shorter name. |
+| A `Job` can be passed where an `Owner` is wanted | No. Pass `j.Owner`. |
+| `Owner`'s methods see the `Job` | No. They see only the `Owner` part. |
+| Fields and methods are copied into `Job` | They are just reachable by a shorter name. |
 
 ## Your task
 
-You are writing a tiny model of Kubernetes objects for a deploy tool. `Pod`
-and `Service` both embed `Metadata`.
+You are modelling Kubernetes objects for a deploy tool. `Pod` and `Service`
+both embed `Metadata` (fields `Name`, `Namespace`, `Labels`).
 
 ### 1. Build a pod
 
-Finish `NewPod` so it returns a `Pod` with:
+**Goal:** finish `NewPod` so the returned `Pod` has its name, namespace, labels and image filled in.
 
-- `Name` and `Namespace` set from the arguments,
-- `Labels` holding exactly one label, `"app"`, set to the pod's name,
-- `Image` set from the argument.
+- `Name` and `Namespace` come from the parameters `name` and `namespace`.
+- `Labels` holds exactly **one** label: key `"app"`, value = the pod's name.
+- `Image` comes from the parameter `image` (already done).
 
 ```go
 p := NewPod("api", "default", "nginx:1.27")
@@ -116,22 +121,21 @@ p.Labels["app"] // => "api"
 p.Image         // => "nginx:1.27"
 ```
 
-The tests read the promoted fields (`p.Name`), so the values must live inside
-the embedded `Metadata`.
+**Think it through:**
+- `Name`, `Namespace` and `Labels` live in `Metadata`. How do you fill an embedded struct inside a literal?
+- `Labels` is a map. How do you write a map literal with one key?
+- `"app"` is fixed text; the value comes from a parameter.
 
 ### 2. Describe the metadata
 
-Finish the `Describe` method on `Metadata`. It returns the namespace, a slash
-and the name:
+**Goal:** finish `Metadata`'s `Describe` so it returns the namespace, a slash, then the name.
 
 ```go
-m := Metadata{Name: "api", Namespace: "default"}
-m.Describe()
+Metadata{Name: "api", Namespace: "default"}.Describe()
 // => "default/api"
 ```
 
-`Service` does not declare `Describe`, so it gets this method through
-promotion:
+`Service` has no `Describe` of its own, so it gets this one by promotion:
 
 ```go
 s := Service{Metadata: Metadata{Name: "web", Namespace: "prod"}, Port: 80}
@@ -139,10 +143,13 @@ s.Describe()
 // => "prod/web"
 ```
 
+**Think it through:**
+- Which receiver name does the method use? Read its fields through that.
+- Namespace comes first. The `/` is fixed text.
+
 ### 3. Override Describe for pods
 
-Finish the `Describe` method on `Pod`. It returns `pod `, then the metadata
-description from task 2, then the image in parentheses:
+**Goal:** finish `Pod`'s `Describe` so it returns `pod `, the metadata description, then the image in parentheses.
 
 ```go
 p := Pod{
@@ -153,8 +160,10 @@ p.Describe()
 // => "pod default/api (nginx:1.27)"
 ```
 
-Reuse `Metadata`'s `Describe` instead of building `default/api` again.
-If you use `fmt.Sprintf`, add `import "fmt"` below the `package` line.
+**Think it through:**
+- Reuse `Metadata`'s `Describe` instead of building `default/api` again. How do you call the inner one, not this one?
+- Fixed text: `pod ` (with a space), ` (` and `)`.
+- If you use `fmt.Sprintf`, add `import "fmt"` below the `package` line.
 
 ## Learn more
 

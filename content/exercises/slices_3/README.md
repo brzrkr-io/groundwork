@@ -5,33 +5,60 @@ keeps serving traffic. Kubernetes Deployments and most CI/CD tools work this
 way. You will write the part of a deploy tool that splits the host list into
 batches.
 
+**New here:** slices of slices (`[][]string`), rounding up with integer
+division, the built-in `min`.
+
 ## Learn
 
-Recap from *Slices*: `hosts[a:b]` is the hosts from index `a` up to, but not
-including, `b`, and both bounds must stay between `0` and `len(hosts)`.
+### Recap
+
+`hosts[a:b]` is the hosts from index `a` up to, but not including, `b`. Both
+bounds must stay between `0` and `len(hosts)`, or the program panics.
 `make([]T, n)` creates a slice of `n` zero values that you fill by index.
 
-### New: a slice of slices
+### A slice of slices
 
-The elements of a slice can be anything, including other slices. `[][]string`
-is a slice where each element is a `[]string`:
+A slice can hold anything, including other slices. `[][]string` is a slice
+where each element is a `[]string`:
 
 ```go
-plan := make([][]string, 2) // two batches, both nil for now
-plan[0] = []string{"web-1", "web-2"}
-plan[1] = []string{"web-3"}
-len(plan)    // 2 (batches)
-len(plan[0]) // 2 (hosts in the first batch)
-plan[1][0]   // "web-3"
+shifts := make([][]string, 2) // two shifts, both nil for now
+shifts[0] = []string{"ana", "bo"}
+shifts[1] = []string{"cy"}
+len(shifts)    // 2 (shifts)
+len(shifts[0]) // 2 (people in the first shift)
+shifts[1][0]   // "cy"
 ```
 
-### New: dividing and rounding up
+> **Why is it written like this?** Go requires one `[]` per level: `[]string`
+> is a list of strings, `[][]string` a list of those lists. The names are the
+> author's choice.
 
-Integer division in Go rounds down: `5 / 2` is `2`. To round up instead, add
-`size - 1` before dividing: `(5 + 2 - 1) / 2` is `3`.
+### Rounding up when dividing
 
-The built-in `min(a, b)` returns the smaller of two numbers, which is handy
-for keeping a slice bound from running past the end: `min(10, len(hosts))`.
+Dividing two `int`s in Go drops the remainder: `7 / 3` is `2`. To round up
+instead, add "divisor minus one" before dividing:
+
+```go
+pods, perNode := 7, 3
+(pods + perNode - 1) / perNode // (7 + 2) / 3 = 3 nodes
+```
+
+The extra `perNode - 1` pushes any leftover into one more group, but is not
+enough to add a group when there is no leftover (`6` pods still gives `2`).
+
+### min keeps a bound in range
+
+The built-in `min(a, b)` returns the smaller number. Use it to stop a bound
+from running past the end:
+
+```go
+end := min(10, len(logs)) // 10, or fewer if logs is shorter
+first := logs[:end]       // never panics
+```
+
+> **Why is it written like this?** `min` is built into Go (since Go 1.21), so
+> it needs no import. Clamping bounds like this is a common convention.
 
 ## Your task
 
@@ -41,9 +68,11 @@ Don't use `append` yet.
 
 ### 1. Count the batches
 
-Change `BatchCount(hosts []string, size int) int` so it returns how many
-batches are needed to cover every host. The last batch may be smaller than
-`size`. No hosts means `0` batches.
+**Goal:** make `BatchCount(hosts, size)` return how many batches it takes to
+cover every host.
+
+The last batch may be smaller than `size`. No hosts (empty or `nil`) means `0`
+batches. A `size` bigger than the host count means `1` batch.
 
 ```go
 BatchCount([]string{"web-1", "web-2", "web-3", "web-4", "web-5"}, 2) // => 3
@@ -51,12 +80,17 @@ BatchCount([]string{"web-1", "web-2", "web-3", "web-4"}, 2)          // => 2
 BatchCount([]string{}, 3)                                            // => 0
 ```
 
+**Think it through:**
+- Which number is divided, and by which? (`hosts` is a slice, not a number.)
+- Does the result need rounding down or up?
+
 ### 2. Pick one batch
 
-Change `Batch(hosts []string, size, n int) []string` so it returns batch
-number `n`: the hosts from index `n*size` up to `size` hosts later. The last
-batch stops at the end of `hosts`, and a batch number past the end returns an
-empty result (length `0`). `n` is never negative.
+**Goal:** make `Batch(hosts, size, n)` return batch number `n`.
+
+Batch `n` starts at index `n*size` and holds up to `size` hosts. The last batch
+stops at the end of `hosts`. A batch number past the end returns an empty
+slice (length `0`), not a panic. `n` is never negative.
 
 ```go
 hosts := []string{"web-1", "web-2", "web-3", "web-4", "web-5"}
@@ -65,10 +99,16 @@ Batch(hosts, 2, 2) // => []string{"web-5"}
 Batch(hosts, 2, 3) // => []string{}
 ```
 
+**Think it through:**
+- Work out the start and end index first, each on its own line.
+- Either bound can go past `len(hosts)`. What keeps each one in range?
+
 ### 3. Plan the whole rollout
 
-Change `Plan(hosts []string, size int) [][]string` so it returns every batch,
-in order. Use `make` with the number of batches, then fill each element. An
+**Goal:** make `Plan(hosts, size)` return every batch, in order, as a
+`[][]string`.
+
+Use `make` with the number of batches, then fill each element by index. An
 empty host list gives an empty plan.
 
 ```go
@@ -79,8 +119,13 @@ Plan([]string{"web-1", "web-2"}, 5)
 // => [][]string{{"web-1", "web-2"}}
 ```
 
+**Think it through:**
+- Which of your two functions says how long the plan is?
+- Which one gives you the batch for each position?
+
 ## Learn more
 
 - [Go by Example: Slices](https://gobyexample.com/slices)
 - [Go spec: Slice expressions](https://go.dev/ref/spec#Slice_expressions)
+- [Go spec: Min and max](https://go.dev/ref/spec#Min_and_max)
 - [Kubernetes: Rolling update deployment](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#rolling-update-deployment)

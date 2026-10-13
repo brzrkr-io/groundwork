@@ -1,75 +1,92 @@
 # Flags: repeatable and validated flags
 
 During an incident you silence noisy alerts, for example everything with
-`team=sre` and `alertname=DiskFull` in `prod`, for two hours. A `silence` tool
-needs flags that can repeat and flags that only accept certain values.
+`team=sre` in `prod`, for two hours. A `silence` tool needs flags that can
+repeat and flags that only accept certain values.
+
+**New here:** `fs.Func`, `strings.Cut`, reading pointers at the right time.
 
 ## Learn
 
-Recap from *Flags: parsing options with a FlagSet*: create a flag set with
-`flag.NewFlagSet(name, flag.ContinueOnError)` and `fs.SetOutput(stderr)`.
-`fs.String`, `fs.Duration` and friends return pointers that `fs.Parse` fills
-in. When parsing fails, `flag` prints the error and usage text itself, and
-`Parse` returns an error.
+### Recap
+
+As in *Flags: parsing options with a FlagSet*: `flag.NewFlagSet(name,
+flag.ContinueOnError)` plus `fs.SetOutput(stderr)`. `fs.String`,
+`fs.Duration` and friends return pointers that `fs.Parse` fills in. On a bad
+value, `flag` prints the error and usage text itself, and `Parse` returns an
+error.
 
 ### Read pointers after Parse, not before
 
-`*p` copies the value the pointer points at **at that moment**. Copy it before
-`Parse` and you get the default, and later changes are lost:
+`*p` copies the value **at that moment**. Copy it before `Parse` and you get
+the default forever:
 
 ```go
-author := fs.String("author", "oncall", "who created it")
-name := *author   // "oncall", copied too early
-fs.Parse([]string{"-author", "pat"})
-fmt.Println(name) // still "oncall"
+color := fs.String("color", "blue", "paint color")
+c := *color        // "blue", copied too early
+fs.Parse([]string{"-color", "red"})
+fmt.Println(c)     // still "blue"
+fmt.Println(*color) // "red"
 ```
+
+> **Why is it written like this?** Go requires this behaviour: `*p` reads the
+> value once, it doesn't stay linked. Where you put the line is your choice,
+> so put it after `Parse`.
 
 ### fs.Func: your own flag logic
 
-`fs.Func(name, usage, fn)` defines a flag without a built-in type. Every time
-the flag appears on the command line, `Parse` calls your function `fn` with
-the text. If `fn` returns an error, `Parse` treats it like any other bad value:
+`fs.Func(name, usage, fn)` defines a flag with no built-in type. Each time
+the flag appears, `Parse` calls `fn` with its text. If `fn` returns an error,
+`Parse` treats it as a bad value:
 
 ```go
-level := "info"
-fs.Func("level", "log level", func(s string) error {
-	if s != "info" && s != "debug" {
-		return errors.New("level must be info or debug")
+size := "m"
+fs.Func("size", "shirt size: s, m or l", func(s string) error {
+	if s != "s" && s != "m" && s != "l" {
+		return errors.New("size must be s, m or l")
 	}
-	level = s
+	size = s
 	return nil
 })
 ```
 
-The function is a *closure*, as in *Functions as values*: it updates `level`, a variable
-outside it. The variable's starting value is the default. On
-`-level trace`, `flag` prints this, then the usage text:
+On `-size xl`, `flag` prints this line, then the usage text:
 
 ```text
-invalid value "trace" for flag -level: level must be info or debug
+invalid value "xl" for flag -size: size must be s, m or l
 ```
 
-Because `fn` runs once per occurrence, `fs.Func` is also how you build a
-*repeatable flag*: `-label team=sre -label tier=web` calls it twice.
+> **Why is it written like this?** `fn` must have exactly the type
+> `func(string) error`: Go requires it. Writing the function inline is a
+> *closure* (as in *Functions as values*), so it can change `size`, a
+> variable outside it. The variable's starting value is the default (author's
+> choice: `fs.Func` has no default argument).
 
-`strings.Cut(s, "=")` splits a string at the first `=`. It returns the part
-before, the part after, and whether `=` was found:
+Because `fn` runs once per occurrence, `fs.Func` also builds a *repeatable
+flag*: `-tag a -tag b` calls it twice.
+
+### strings.Cut
+
+`strings.Cut(s, sep)` splits at the **first** `sep`. It returns the part
+before, the part after, and whether `sep` was found:
 
 ```go
-strings.Cut("team=sre", "=") // "team", "sre", true
-strings.Cut("team", "=")     // "team", "", false
+strings.Cut("host:8080", ":") // "host", "8080", true
+strings.Cut("a:b:c", ":")     // "a", "b:c", true
+strings.Cut("host", ":")      // "host", "", false
 ```
 
 ## Your task
 
 `ParseArgs` in `exercise.go` turns the `silence` arguments into an `Options`
-struct.
+struct. You'll need `"errors"` and `"strings"` in the imports.
 
 ### 1. Fix the defaults bug
 
-`-for` and `-author` are defined, but their values are always the defaults
-(`1h` and `oncall`), whatever you pass. Fix it so the parsed values end up in
-`Options`.
+**Goal:** make `-for` and `-author` values reach `Options` (today they're always the defaults).
+
+The defaults are `1h` and `oncall`. Find where `opts` is built and compare it
+with where `fs.Parse` runs.
 
 ```go
 ParseArgs([]string{"-for", "30m", "-author", "pat"}, stderr)
@@ -78,12 +95,17 @@ ParseArgs([]string{}, stderr)
 // => For: time.Hour, Author: "oncall"
 ```
 
+**Think it through:**
+- When does `*duration` get read, before or after parsing?
+- What has to move, and to where?
+
 ### 2. Add a repeatable -label flag
 
-Each `-label` takes `key=value` and adds that pair to `Options.Labels`. Split
-at the first `=` only, so the value may contain more `=` signs. When there's
-no `=`, or the key or the value is empty, return the error
-`label must look like key=value`. With no `-label` flags, `Labels` is empty.
+**Goal:** each `-label key=value` adds that pair to `Options.Labels`.
+
+Split at the first `=` only, so `query=a=b` gives key `query`, value `a=b`.
+If there's no `=`, or the key or the value is empty, return the error
+`label must look like key=value`. With no `-label`, `Labels` is empty.
 
 ```go
 ParseArgs([]string{"-label", "team=sre", "-label", "alertname=DiskFull"}, stderr)
@@ -94,11 +116,18 @@ ParseArgs([]string{"-label", "team"}, stderr)
 // invalid value "team" for flag -label: label must look like key=value
 ```
 
+`=sre` and `team=` are bad too.
+
+**Think it through:**
+- Where does the map live so the function can add to it and `Options` can use it?
+- Which of `strings.Cut`'s three results tells you `=` was missing?
+
 ### 3. Add a validated -env flag
 
-`-env` must be exactly `dev`, `staging` or `prod`, and defaults to `dev`.
-Anything else returns the error `env must be dev, staging or prod`. Store it in
-`Options.Env`.
+**Goal:** `-env` accepts only `dev`, `staging` or `prod`, defaults to `dev`, and goes in `Options.Env`.
+
+Anything else (including `PROD` and the empty string) returns the error
+`env must be dev, staging or prod`.
 
 ```go
 ParseArgs([]string{"-env", "prod"}, stderr) // => Env: "prod"
@@ -108,6 +137,10 @@ ParseArgs([]string{"-env", "production"}, stderr)
 // => error; stderr starts with:
 // invalid value "production" for flag -env: env must be dev, staging or prod
 ```
+
+**Think it through:**
+- Where does the default come from with `fs.Func`?
+- A `switch` with one `case` listing several values is one tidy way to check.
 
 ## Learn more
 

@@ -1,23 +1,41 @@
 # The strings package: which pods are broken?
 
-`kubectl get pods` prints a table. Scripts and chat bots often read that text
-to answer one question: which pods need attention? In this exercise you write
-that check.
+`kubectl get pods` prints a table. Chat bots and scripts read that text to
+answer one question: which pods need attention? Here you write that check.
+
+**New here:** nothing; practice with `strings` and `slices`.
 
 ## Learn
 
 ### Recap
 
-Loop over the lines of some text with
-`for line := range strings.SplitSeq(output, "\n")`, and break a line into
-columns with `strings.Fields(line)`, which ignores however many spaces line
-the columns up. `strings.Cut(s, "/")` splits at the first `"/"`, and
-`strings.Join(names, ", ")` glues a slice back into one string. Sort your
-result with `slices.Sort`, as in *Sorting*.
+| Tool | Does |
+|---|---|
+| `strings.SplitSeq(text, "\n")` | loop over lines |
+| `strings.Fields(line)` | split into columns, any amount of spacing |
+| `strings.Cut(s, "/")` | before, after, found |
+| `strings.Join(names, ", ")` | glue a slice into one string |
+| `slices.Sort(s)` | sort in place, as in *Sorting* |
+
+### Picking columns by position
+
+`Fields` returns a slice; index it from `0`. Check the length first, because
+indexing past the end panics.
+
+```go
+cols := strings.Fields("eth0  up  1500")
+if len(cols) >= 2 {
+	fmt.Println(cols[1]) // "up": the 2nd column is index 1
+}
+```
+
+> **Why is it written like this?** Go requires indexes to start at `0`. The
+> length check is not required by the compiler, but without it a short line
+> crashes the program.
 
 ### The input
 
-Here is a typical `kubectl get pods` output. It always ends with a newline.
+A typical `kubectl get pods` output. It always ends with a newline.
 
 ```text
 NAME                     READY   STATUS             RESTARTS      AGE
@@ -27,21 +45,21 @@ migrate-db-4xk2p         0/1     Completed          0             1d
 cache-0                  1/2     Running            0             3h
 ```
 
-`READY` reads "ready containers / total containers". A pod is ready when the
-two numbers are equal. A pod whose `STATUS` is `Completed` was a one-off job
-that finished, so it is fine even though it shows `0/1`.
+`READY` means "ready containers / total containers"; a pod is ready when the
+two numbers are equal. `Completed` means a one-off job that finished, so it's
+fine even at `0/1`.
 
 ## Your task
 
 Your team's chat bot runs `kubectl get pods` and posts a one-line health
-summary. You write the parsing. Add `"slices"` and `"strings"` to the imports
-in `exercise.go`.
+summary. Add `"slices"` and `"strings"` to the imports in `exercise.go`.
 
 ### 1. Read the READY column
 
-Change `IsReady` to report whether a READY value like `"2/3"` means all
-containers are ready: there is a `"/"`, and the text before it equals the
-text after it.
+**Goal:** make `IsReady` return `true` when a value like `"2/3"` has a `"/"`
+and the text before it equals the text after it.
+
+No `"/"` at all (like `"1"` or `""`) means `false`.
 
 ```go
 IsReady("1/1")  // => true
@@ -51,39 +69,52 @@ IsReady("1/2")  // => false
 IsReady("")     // => false
 ```
 
+**Think it through:**
+- Which tool gives you the two sides *and* whether `"/"` was there?
+- Both conditions must be true. Which operator joins them?
+
 ### 2. Find the pods that are not ready
 
-Change `NotReadyPods` to take the whole `kubectl get pods` output and return
-the names of the pods that need attention, in alphabetical order. For each
-line:
+**Goal:** make `NotReadyPods` return the names of pods that need attention,
+sorted alphabetically.
+
+For each line of `output`:
 
 - Split it into columns with `strings.Fields`.
-- Skip lines with fewer than 3 columns (such as the empty string after the
-  last newline).
-- Skip the header line: its first column is `"NAME"`.
-- The pod needs attention when its READY column (the 2nd) is not ready **and**
-  its STATUS column (the 3rd) is not `"Completed"`.
-
-For the example output above:
+- Skip lines with fewer than 3 columns (like the empty piece after the last
+  newline).
+- Skip the header: its first column is `"NAME"`.
+- The pod needs attention when its READY column (2nd) is not ready **and**
+  its STATUS column (3rd) is not `"Completed"`.
 
 ```go
-NotReadyPods(output)
+NotReadyPods(output) // the example above
 // => ["cache-0" "web-5f6b8d7c9-k8s2m"]
 ```
 
-When every pod is fine, or there are no pods, return an empty slice.
+No pods, or all fine: return an empty slice.
+
+**Think it through:**
+- The pod name is the 1st column. What index is that?
+- You already wrote a function that checks READY. Reuse it.
+- Sort once, after the loop.
 
 ### 3. Write the summary
 
-Change `Report` to return:
+**Goal:** make `Report` return a one-line summary built from `NotReadyPods`.
 
-- `"all pods ready"` when `NotReadyPods` finds nothing.
-- Otherwise `"not ready: "` followed by the pod names, separated by `", "`.
+- Nothing needs attention: `"all pods ready"`.
+- Otherwise: the fixed text `"not ready: "` (note the space after the
+  colon), then the pod names separated by `", "`.
 
 ```go
 Report(output)
 // => "not ready: cache-0, web-5f6b8d7c9-k8s2m"
 ```
+
+**Think it through:**
+- How do you check that a slice is empty?
+- Which part is fixed text, and which part comes from the slice?
 
 ## Learn more
 

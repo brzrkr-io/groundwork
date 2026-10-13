@@ -4,27 +4,26 @@ Before a tool can talk to Kubernetes it has to know *which* cluster to talk to
 and who you are. That information lives in a kubeconfig file. In this
 exercise you read one with client-go, the same way `kubectl` does.
 
+**New here:** kubeconfig files, `clientcmd.Load`, the `clientcmdapi.Config` maps.
+
 ## Learn
 
 ### What a kubeconfig is
 
-As you saw in *Kubernetes objects: building a Deployment*, everything you do in a cluster goes
-through its API server, the cluster's front door. To knock on that door you
-need two things: the server's address, and something that proves who you are.
+Everything you do in a cluster goes through its API server (as in
+*Kubernetes objects: building a Deployment*). To talk to it you need its
+address and something that proves who you are.
 
-Ops engineers rarely have just one cluster. A typical laptop can reach
-staging, production in Europe, production in the US, and a local test
-cluster. A *kubeconfig* is a YAML file that lists all of them. It has three
+Ops engineers often reach several clusters: staging, production EU,
+production US. A *kubeconfig* is a YAML file listing all of them, with three
 lists and one pointer:
 
 | Section | What each entry holds |
 |---|---|
-| `clusters` | A cluster's API server URL (`server`) and the *CA* certificate used to check that the server is genuine. |
+| `clusters` | The API server URL (`server`) and the *CA* certificate that proves the server is genuine. |
 | `users` | *Credentials*: a token, a client certificate, or a command that fetches a token. |
 | `contexts` | A named pair of cluster + user, plus an optional default namespace. |
-| `current-context` | The name of the context to use when you don't say otherwise. |
-
-Here is a small one:
+| `current-context` | The context to use when you don't say otherwise. |
 
 ```yaml
 apiVersion: v1
@@ -46,83 +45,101 @@ contexts:
       namespace: shop
 ```
 
-A context only *refers* to a cluster and a user by name. To find the server
-for a context, you look up the context first, then look up its cluster.
+A context only *refers* to a cluster by name. To find a context's server,
+look up the context first, then look up its cluster. The context name and
+the cluster name may differ.
 
-`kubectl` reads `~/.kube/config` unless the `KUBECONFIG` environment variable
-names other files. Switching clusters means changing the current context:
-
-```text
-kubectl config get-contexts          # list contexts
-kubectl config current-context       # print the current one
-kubectl config use-context prod-eu   # switch
-```
-
-A kubeconfig holds real credentials, so treat it like a password. The one in
-`testdata/` is made up.
+`kubectl` reads `~/.kube/config` unless `KUBECONFIG` names other files.
+`kubectl config use-context prod-eu` changes the current context. Treat a
+kubeconfig like a password; the one in `testdata/` is made up.
 
 ### Reading a kubeconfig in Go
 
-The package `k8s.io/client-go/tools/clientcmd` parses kubeconfig files.
-`clientcmd.Load` takes the file's bytes, and `clientcmd.LoadFromFile` takes a
-path. Both return a `*clientcmdapi.Config` (package
-`k8s.io/client-go/tools/clientcmd/api`):
+Package `k8s.io/client-go/tools/clientcmd` parses kubeconfigs:
+
+| Function | Takes | Returns |
+|---|---|---|
+| `clientcmd.Load(data)` | the file's bytes (`[]byte`) | `*clientcmdapi.Config`, `error` |
+| `clientcmd.LoadFromFile(path)` | a file path | `*clientcmdapi.Config`, `error` |
+
+`clientcmdapi` is the import name for `k8s.io/client-go/tools/clientcmd/api`.
+The YAML key `current-context` becomes the field `CurrentContext`.
 
 ```go
-cfg, err := clientcmd.Load(data)
+cfg, err := clientcmd.LoadFromFile("/tmp/ci.kubeconfig")
 if err != nil {
-	return "", err
+	return err
 }
-cfg.CurrentContext                // "staging"
-cfg.Contexts["staging"].Cluster  // "staging"
-cfg.Clusters["staging"].Server   // "https://staging.k8s.example.com:6443"
+fmt.Println(len(cfg.AuthInfos), "users")
 ```
 
-`Clusters`, `AuthInfos` (the users) and `Contexts` are maps from name to a
-pointer (`map[string]*clientcmdapi.Context` and so on). Use the comma-ok form
-to check whether a name exists:
+> **Why is it written like this?**
+> - **Go requires** you to handle both return values: `cfg, err :=` names them.
+> - **Convention:** check `err` right away and return early; the happy path
+>   stays at the left edge.
+> - **Convention:** import `.../clientcmd/api` as `clientcmdapi`, because its
+>   real package name, `api`, is too vague.
+
+### The three maps
+
+`Clusters`, `AuthInfos` (the users) and `Contexts` are maps from a name to a
+pointer, for example `map[string]*clientcmdapi.Context`. The *comma-ok* form
+tells you whether a name exists:
 
 ```go
-ctx, ok := cfg.Contexts[name]
+user, ok := cfg.AuthInfos["deploy-bot"]
 if !ok {
-	// no context with that name
+	// no user with that name
 }
+fmt.Println(user.Token)
 ```
+
+A `Context` has fields `Cluster`, `AuthInfo` and `Namespace`. A `Cluster`
+has a field `Server`.
 
 ### Sorted map keys
 
-Go maps have no order. Ranging over the same map twice can give two different
-orders, so tests and humans can't rely on it. To get the keys in a stable
-order, collect them and sort them:
+Map order is random, so tests and humans can't rely on it. To get the keys
+in a stable order, `maps.Keys(m)` hands out the keys and `slices.Sorted(...)`
+collects them into a sorted slice:
 
 ```go
-names := slices.Sorted(maps.Keys(cfg.Contexts))
+sizes := map[string]int{"xl": 4, "m": 2, "s": 1}
+slices.Sorted(maps.Keys(sizes)) // []string{"m", "s", "xl"}
 ```
 
-`maps.Keys` hands out the keys one at a time, and `slices.Sorted` collects
-them into a new slice and sorts it. A `for name := range cfg.Contexts` loop
-that appends to a slice, followed by `slices.Sort`, works just as well.
+A `for` loop that appends each key, followed by `slices.Sort`, works too.
 
 ## Your task
 
 You are writing a small "which cluster am I on?" helper for your team's
-deploy scripts. The tests use `testdata/kubeconfig.yaml`. Open it and look
-around first.
+deploy scripts. The tests use `testdata/kubeconfig.yaml`. Open it first.
 
 ### 1. Read the current context
 
-Make `CurrentContext` parse `data` with `clientcmd.Load` and return the
-config's `CurrentContext`. If `Load` returns an error, return it. Add the
-import `"k8s.io/client-go/tools/clientcmd"`.
+**Goal:** make `CurrentContext(data)` parse the kubeconfig bytes and return its current context name.
+
+- Parse `data` with `clientcmd.Load`.
+- If it returns an error, return `""` and that error.
+- Otherwise return the config's `CurrentContext` and `nil`.
+
+Add the import `"k8s.io/client-go/tools/clientcmd"`.
 
 ```go
 CurrentContext(contentsOfTestdataFile)
 // => "staging", nil
+CurrentContext([]byte("apiVersion: v1\nkind: Config\ncurrent-context: prod-eu\n"))
+// => "prod-eu", nil
 ```
+
+**Think it through:**
+- `data` is bytes, not a path. Which of the two functions takes bytes?
+- Two return values each time: what goes in each on the error path?
 
 ### 2. List the contexts in order
 
-Make `ContextNames` return the names of all contexts, sorted alphabetically.
+**Goal:** make `ContextNames(cfg)` return the names of all contexts, sorted alphabetically.
+
 Add the imports `"maps"` and `"slices"`. A config with no contexts gives an
 empty slice.
 
@@ -131,15 +148,23 @@ ContextNames(cfg)
 // => []string{"old-dev", "prod-eu", "prod-us", "staging"}
 ```
 
+**Think it through:**
+- Which map on `cfg` holds the contexts? Are the names its keys or its values?
+
 ### 3. Find the server for a context
 
-Make `ServerFor` follow the context to its cluster and return the cluster's
-`Server`. It returns these errors (use `fmt.Errorf` with `%q`):
+**Goal:** make `ServerFor(cfg, contextName)` follow the context to its cluster and return that cluster's `Server`.
+
+1. Look up `contextName` in `cfg.Contexts`. Missing → error.
+2. Look up the context's `Cluster` name in `cfg.Clusters`. Missing → error.
+3. Return the cluster's `Server` and `nil`.
+
+On error return `""`. Build errors with `fmt.Errorf` and `%q`:
 
 | Problem | Exact error text |
 |---|---|
 | No context called `contextName` | `context "prod" not found` |
-| The context names a cluster that isn't in `Clusters` | `cluster "dev" not found for context "old-dev"` |
+| The context names a cluster not in `Clusters` | `cluster "dev" not found for context "old-dev"` |
 
 ```go
 ServerFor(cfg, "prod-us")
@@ -149,6 +174,10 @@ ServerFor(cfg, "prod")
 ServerFor(cfg, "old-dev")
 // => "", error `cluster "dev" not found for context "old-dev"`
 ```
+
+**Think it through:**
+- Use comma-ok twice. Which key do you use for the second lookup: `contextName`, or a field of the context you found?
+- In the second error, which value is the cluster name and which is the context name?
 
 ## Learn more
 

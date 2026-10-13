@@ -4,70 +4,86 @@ A cache in front of DNS lookups, with a stale-read bug to fix and a
 `GetOrLoad` method that makes sure a popular key is looked up only once, even
 when hundreds of requests want it at the same moment.
 
+**New here:** loader functions, cache stampedes, request collapsing with a closed channel, `synctest.Wait`.
+
 ## Learn
 
 ### Recap
 
 As in *TTL caching: expire on read*, each entry stores its value and an
-`expiresAt` time, set to `now + ttl` by `Set`. An entry is **expired once
-now >= expiresAt**, so `c.now().Before(e.expiresAt)` means "still fresh". The
-clock is injected as `now func() time.Time`, and every method locks `c.mu`.
+`expiresAt` time (`now + ttl`). An entry is **expired once now is at or after
+`expiresAt`**. The clock is `c.now`, and every method locks `c.mu`.
+
+`t.After(u)` is the mirror of `t.Before(u)`: `true` only when `t` is
+**strictly** later. Neither one is true when the two times are equal.
 
 ### Load on a miss
 
-Callers usually don't want "get, and if it's missing, look it up, then set".
-`GetOrLoad` does all three. You pass it a *loader*, a function that fetches
-the real value:
+Callers usually don't want "get; if missing, look it up; then set".
+`GetOrLoad` does all three. You pass it a *loader*: a function that fetches
+the real value.
 
 ```go
-ip, err := c.GetOrLoad("db.internal", func(host string) (string, error) {
-	return lookupIP(host) // the slow DNS call
+port, err := ports.GetOrLoad("ssh", func(name string) (int, error) {
+	return lookupPort(name) // the slow call
 })
 ```
 
-Only successful results go in the cache. If the lookup fails and you cache
-the failure, every caller gets the error for the whole TTL, even after DNS
-recovers a second later.
+Only **successful** results go in the cache. If you cache a failure, every
+caller gets the error for the whole TTL, even after DNS recovers a second
+later.
+
+> **Why is it written like this?** The `func(K) (V, error)` parameter type is
+> required by `GetOrLoad`'s signature. Returning `(value, error)` with the
+> error last is a Go convention. Writing the loader inline (instead of naming
+> it) is the caller's choice.
 
 ### The cache stampede
 
 `db.internal` is used by every request. Its entry expires. In the next
-millisecond, 500 requests miss the cache at once, and all 500 call DNS. The
-cache was protecting DNS from exactly this load, and it vanished at the worst
-moment. This is a *cache stampede*.
+millisecond 500 requests miss at once, and all 500 call DNS. The cache
+existed to protect DNS from exactly this. That's a *cache stampede*.
 
-The fix is *request collapsing* (Go's `golang.org/x/sync/singleflight`
-package does this): the first caller to miss becomes the *leader* and runs
-the loader. Callers that arrive while the load is running don't start their
-own. They wait for the leader and share its result.
+The fix is *request collapsing* (what `golang.org/x/sync/singleflight` does):
+the first caller to miss becomes the *leader* and runs the loader. Callers
+that arrive while it runs don't load. They wait and share the leader's result.
 
 ```text
 caller 1 ── miss ── startCall: leader ── load(k) ──────── finishCall ── 10.0.0.7
-caller 2 ── miss ── startCall: wait ─── <-cl.done ...... woken ──────── 10.0.0.7
-caller 3 ── miss ── startCall: wait ─── <-cl.done ...... woken ──────── 10.0.0.7
+caller 2 ── miss ── startCall: wait ─── blocked on done .. woken ─────── 10.0.0.7
+caller 3 ── miss ── startCall: wait ─── blocked on done .. woken ─────── 10.0.0.7
 ```
 
-A running load is a `call`. Waiters block on its `done` channel. Closing a
-channel wakes **every** goroutine receiving from it, so after the leader
-stores `val` and `err` and closes `done`, all the waiters can read the result.
-`c.inflight` maps each key to its running call, and `finishCall` (already
-written) does the storing, the closing and the cleanup. If the leader never
-calls `finishCall`, the waiters wait forever.
+### How waiting works
 
-### Testing it with synctest.Wait
+A running load is a `call`. It has a `done` channel plus `val` and `err`
+fields. `c.inflight` maps each key to its running call.
 
-You've seen `testing/synctest` give tests a fake clock. The collapsing test
-also uses `synctest.Wait()`. It blocks until every other goroutine in the
-test's bubble is *durably blocked*: stuck on a channel operation that only
-another goroutine in the bubble can finish. The test starts 10 callers with a
-loader that blocks on a `release` channel, calls `synctest.Wait()`, and then
-checks the loader ran exactly once. A caller that is briefly waiting for
-`c.mu` isn't durably blocked, so `Wait` keeps waiting until it gets the lock
-and reaches `<-cl.done` or the loader. Then the test closes `release` and
-checks every caller got the same answer.
+Receiving from a channel blocks until something is sent **or the channel is
+closed**. Closing wakes **every** receiver at once:
 
-The tests count loader calls with an `atomic.Int32` from `sync/atomic`:
-`calls.Add(1)` and `calls.Load()` are safe from many goroutines.
+```go
+<-ready // blocks here until someone runs close(ready)
+```
+
+`finishCall` (already written) stores `val` and `err`, removes the call from
+`c.inflight`, and closes `done`. So after a waiter wakes up, the result is
+already sitting in the call's fields.
+
+> **Why is it written like this?** `<-ch` on its own line (ignoring the
+> value) is plain Go: a receive is an expression you may discard. Using
+> `close` as a broadcast is a Go convention. `chan struct{}` is convention
+> for "signal only, no data".
+
+### Reading the tests
+
+`synctest.Wait()` blocks until every other goroutine in the test is *durably
+blocked*: stuck on a channel that only another goroutine in the test can
+release. The collapsing test starts 10 callers whose loader blocks on a
+`release` channel, calls `Wait`, checks the loader ran **once**, then closes
+`release` and checks all 10 got the same answer.
+
+`atomic.Int32` counts loader calls safely: `calls.Add(1)`, `calls.Load()`.
 
 ## Your task
 
@@ -76,27 +92,31 @@ Fix it and stop it from stampeding DNS.
 
 ### 1. Fix the stale read
 
-`Get` still returns an entry at the exact moment it expires. With a 30s TTL
-and a `Set` at 09:00:00:
+**Goal:** make `Get` report a miss at the exact moment an entry expires.
+
+With a 30s TTL and a `Set` at 09:00:00:
 
 ```text
 Get at 09:00:29.999999999  => "10.0.0.7", true
 Get at 09:00:30            => "", false   (currently returns the stale value)
 ```
 
-Fix the comparison in `Get`.
+**Think it through:**
+- Read the `if` in `Get`. At exactly 09:00:30, is now *after* `expiresAt`?
+- You want "expired" to include "equal". Which method is `true` for "still
+  fresh", and how do you flip it?
 
 ### 2. Load on a miss, but don't cache errors
 
-`GetOrLoad(k, load)` always calls `load` right now, and never caches anything.
-(Ignore `startCall`, `leader` and `finishCall` for now: they are for task 3.)
-Fix it:
+**Goal:** make `GetOrLoad` return a fresh cached value without loading, and cache only successful loads.
+
+Ignore `startCall`, `leader` and `finishCall` for now: they're for task 3.
 
 - If `Get(k)` finds a fresh value, return it and a `nil` error. Don't call
   `load`, and don't call `startCall`.
-- Otherwise, after `load(k)` returns a `nil` error, `Set` the value.
-- Return exactly what `load` returned (the loaders in the tests return `""`
-  with their errors).
+- Otherwise, run `load(k)`. If its error is `nil`, `Set` the value.
+- Return exactly what `load` returned (the test loaders return `""` with
+  their errors).
 
 ```go
 c.GetOrLoad("db.internal", resolve)   // calls resolve => "10.0.0.7", nil
@@ -104,22 +124,31 @@ c.GetOrLoad("db.internal", resolve)   // cached        => "10.0.0.7", nil
 c.GetOrLoad("cache.internal", broken) // => "", errDNS, and nothing is cached
 ```
 
+**Think it through:**
+- The cache check must come first, above the line that calls `startCall`.
+- After `load` returns in the leader path, where do you check `err` before saving?
+
 ### 3. Collapse concurrent loads
 
-`GetOrLoad` already registers its load with `startCall(k)` and publishes the
-result with `c.finishCall(k, cl, v, err)`. But `startCall` always creates a
-new call, so every caller becomes the leader and loads.
+**Goal:** make concurrent `GetOrLoad` calls for the same key run the loader only once and share its result.
 
-First fix `startCall(k)`. If `c.inflight[k]` already holds a call, return it
-and `false`. Otherwise keep the existing code: create a call, store it in
-`c.inflight[k]`, and return it and `true`.
+Two places change:
 
-Then, in `GetOrLoad`, fix the `!leader` branch. Someone else is loading, so
-don't call `load`: wait with `<-cl.done`, then return `cl.val, cl.err`.
+- **`startCall(k)`**: if `c.inflight[k]` already holds a call, return that
+  call and `false`. Otherwise keep the existing code (create, store, return
+  it and `true`).
+- **The `!leader` branch in `GetOrLoad`**: someone else is loading, so don't
+  call `load`. Wait until that call is finished, then return the value and
+  error stored on it.
 
-Ten concurrent `GetOrLoad("db.internal", ...)` calls must run the loader
-**once**, and all ten get its value, or all ten get its error. Different keys
-still load separately (in parallel).
+Ten concurrent `GetOrLoad("db.internal", ...)` calls run the loader **once**.
+All ten get its value, or all ten get its error. Different keys still load
+separately.
+
+**Think it through:**
+- In `startCall`, use the two-value map lookup (`value, ok := m[key]`).
+- In the waiter branch: which field of `cl` do you receive from to wait, and
+  which two fields hold the result?
 
 ## Learn more
 

@@ -4,6 +4,8 @@ A *map* looks things up by a key: the port for a service, the owner of a
 host, the number of errors per region. Service registries, config files and
 label sets are all maps, so you'll use them constantly.
 
+**New here:** maps, `make`, `delete`, comma ok on maps, `range` over a map.
+
 ## Learn
 
 ### Creating a map
@@ -12,60 +14,68 @@ The type `map[string]int` means "keys are strings, values are ints". You can
 write a map out with a *map literal*:
 
 ```go
-ports := map[string]int{
-	"api":   8080,
-	"redis": 6379,
+replicas := map[string]int{
+	"web":    3,
+	"worker": 5,
 }
 ```
-
-Note the comma after the last entry. Go requires it when the closing `}` is
-on its own line.
 
 To start with an empty map, use `make`:
 
 ```go
-ports := make(map[string]int)
+replicas := make(map[string]int)
 ```
+
+> **Why is it written like this?** `map[KeyType]ValueType` is required
+> syntax. The comma after the last entry is required when the closing `}` is
+> on its own line. Lining up the values is gofmt's convention; the names are
+> your choice.
 
 ### Setting, reading, deleting
 
 ```go
-ports["postgres"] = 5432 // add a key, or replace its value
-p := ports["api"]        // p is 8080
-delete(ports, "redis")   // remove a key
-n := len(ports)          // number of keys: 2
+replicas["cron"] = 1     // add a key, or replace its value
+r := replicas["web"]     // r is 3
+delete(replicas, "cron") // remove a key
+n := len(replicas)       // number of keys: 2
 ```
 
-Deleting a key that isn't there is fine. It does nothing.
+Deleting a key that isn't there is fine. It does nothing, and it doesn't
+tell you whether the key was there.
 
 ### Missing keys and comma ok
 
-Reading a key that isn't in the map does **not** fail. It gives you the zero
-value of the value type, as in *Zero values*:
+Reading a missing key does **not** fail. It gives you the zero value of the
+value type, as in *Zero values*:
 
 ```go
-p := ports["nginx"] // p is 0: there is no "nginx" key
+r := replicas["batch"] // r is 0: there is no "batch" key
 ```
 
-So is `0` a missing service, or a service on port 0? To tell the difference,
-ask for a second value. It's `true` when the key exists. This is the same
-*comma ok* pattern you met in *Multiple return values*:
+So is `0` a missing key, or a key whose value really is `0`? Ask for a second
+value. It's `true` only when the key exists. This is the *comma ok* pattern
+from *Multiple return values*:
 
 ```go
-p, ok := ports["nginx"]
-if !ok {
-	// no such service
+owner, found := owners["db-7"]
+if !found {
+	// nobody owns db-7
 }
 ```
 
+If you only need the `true`/`false`, throw the value away with `_`.
+
+> **Why is it written like this?** The two-value form is built into Go. The
+> name `ok` for the second value is convention; `found` works just as well.
+
 ### Counting
 
-Because missing keys read as `0`, counting needs no special case:
+Because missing keys read as `0`, you can add to a key that isn't there yet:
 
 ```go
-counts := make(map[string]int)
-counts["error"]++ // 0 + 1: counts["error"] is now 1
-counts["error"]++ // now 2
+errors := make(map[string]int)
+errors["timeout"] += 2 // 0 + 2: errors["timeout"] is now 2
+errors["timeout"]++    // now 3
 ```
 
 ### Looping over a map
@@ -73,31 +83,30 @@ counts["error"]++ // now 2
 `range` works on maps too, giving each key and value:
 
 ```go
-for service, port := range ports {
-	fmt.Println(service, port)
+for name, count := range replicas {
+	fmt.Println(name, count)
 }
 ```
 
-The order is **random**, and changes from run to run. Never rely on it. (A
-later exercise, *Sorting*, shows how to visit keys in order.)
+The order is **random**, and changes from run to run. Never rely on it.
+(*Sorting* shows how to visit keys in order.)
 
 ### Maps are shared, nil maps are read-only
 
 When you pass a map to a function, the function works on the *same* map, not
-a copy. If the function deletes a key, the caller's map loses it too. (This is
-different from arrays in *Arrays*, which are copied.)
+a copy. If the function deletes a key, the caller's map loses it too. (Arrays
+in *Arrays* are copied instead.)
 
 A map variable declared without a value is `nil`:
 
 ```go
 var m map[string]int // m is nil
 fmt.Println(m["x"])  // fine: 0
-fmt.Println(len(m))  // fine: 0
 m["x"] = 1           // panic: assignment to entry in nil map
 ```
 
-Reading a nil map is fine. Writing to one crashes your program, so create
-maps with `make` or a literal before you put anything in them.
+Reading a nil map is fine. Writing to one crashes, so create maps with `make`
+or a literal before you put anything in them.
 
 ## Your task
 
@@ -106,9 +115,7 @@ Write the functions that work with it.
 
 ### 1. Look up a port
 
-Change `PortFor` so it returns the port for `service` and `true`. If the
-service is not in the map, return `0, false`. A service may really be
-registered on port `0`, and then the answer is `0, true`.
+**Goal:** make `PortFor` return the port for `service` and whether `service` is in `ports`.
 
 ```go
 ports := map[string]int{"api": 8080, "redis": 6379, "sidecar": 0}
@@ -118,11 +125,17 @@ PortFor(ports, "sidecar") // => 0, true
 PortFor(ports, "nginx")   // => 0, false
 ```
 
+- Registered service: its port and `true`.
+- Missing service: `0, false`.
+- A service really registered on port `0` gives `0, true`.
+
+**Think it through:**
+- Why isn't the port alone enough to tell `"sidecar"` and `"nginx"` apart?
+- Which form of map lookup gives you two values?
+
 ### 2. Remove a service
 
-Change `Deregister` so it deletes `service` from `ports`. Return `true` if the
-service was registered (and is now gone), or `false` if it wasn't there to
-begin with. The caller's map must change.
+**Goal:** make `Deregister` delete `service` from `ports` and return whether it was registered.
 
 ```go
 ports := map[string]int{"api": 8080, "redis": 6379}
@@ -131,11 +144,17 @@ Deregister(ports, "redis") // => true,  ports is now {"api": 8080}
 Deregister(ports, "redis") // => false, ports is unchanged
 ```
 
+- Return `true` if the service was there (even on port `0`), `false` if not.
+- The caller's map must change. Change `ports` itself; don't make a new map.
+
+**Think it through:**
+- `delete` doesn't report anything. When must you check whether the key
+  exists: before or after deleting?
+- Do you need the port value, or only the `true`/`false`?
+
 ### 3. Count hosts per region
 
-`CountByRegion` gets the region of every host in the fleet, one entry per
-host. Return a map from each region to how many hosts are in it. With no
-hosts, return an empty map.
+**Goal:** make `CountByRegion` return a map from each region to how many times it appears in `regions`.
 
 ```go
 CountByRegion([]string{"eu-west-1", "us-east-1", "eu-west-1"})
@@ -145,8 +164,15 @@ CountByRegion(nil)
 // => map[string]int{}
 ```
 
+`regions` holds one entry per host. The starter already creates the empty
+`counts` map and returns it; with no hosts it stays empty.
+
 The tests compare maps with `maps.Equal`, which checks that two maps hold the
 same keys and values, in any order.
+
+**Think it through:**
+- What do you loop over, and which part of each entry is the map key?
+- What does a region you haven't seen yet read as?
 
 ## Learn more
 

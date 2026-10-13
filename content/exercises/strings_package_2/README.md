@@ -1,41 +1,62 @@
 # The strings package: fix the bootstrap parser
 
 A server bootstrap script reads a few config lines before it starts any
-services. Its parsing helpers each have one bug, and every bug comes from
+services. Each of its parsing helpers has one bug, and every bug comes from
 picking the wrong `strings` function.
+
+**New here:** nothing; practice choosing the right `strings` function.
 
 ## Learn
 
 ### Recap
 
-`strings.Split` cuts at **every** separator, while `strings.Cut` cuts at the
-**first** one only. `strings.Fields` splits on runs of whitespace and never
-gives you empty pieces. `strings.TrimSpace` drops whitespace at both ends, and
-`strings.EqualFold` compares two strings ignoring upper and lower case.
+| Function | Good for |
+|---|---|
+| `strings.Split(s, sep)` | cutting at **every** `sep` |
+| `strings.Cut(s, sep)` | cutting at the **first** `sep` only |
+| `strings.Fields(s)` | splitting on runs of whitespace; never empty pieces |
+| `strings.TrimSpace(s)` | dropping whitespace at both ends |
+| `strings.EqualFold(a, b)` | comparing, ignoring upper/lower case |
 
 ### Why `Split(line, " ")` breaks on real files
 
-Config files are written by people, and people line things up with extra
-spaces or tabs. `Split` treats every single space as a separator:
+People line config up with extra spaces or tabs. `Split` treats every single
+space as a separator:
 
 ```go
-strings.Split("10.0.0.5   db", " ")
-// => ["10.0.0.5" "" "" "db"]
+strings.Split("eth0   up", " ")
+// => ["eth0" "" "" "up"]
 
-strings.Fields("10.0.0.5   db")
-// => ["10.0.0.5" "db"]
+strings.Fields("eth0   up")
+// => ["eth0" "up"]
 ```
+
+### Calls inside calls
+
+You can pass one function's result straight into another. The inner call
+runs first:
+
+```go
+strings.HasPrefix(strings.ToLower(name), "web")
+// lowercase name first, then check the prefix
+```
+
+> **Why is it written like this?** Go requires the inner call to return the
+> type the outer one expects (here a `string`). Nesting versus a temporary
+> variable is your choice.
 
 ## Your task
 
-Each function has one bug. Find it, fix it, and keep the rest of the code.
+Each function has one bug. Find it and fix it; keep the rest of the code.
 
 ### 1. Recognise production, however it is typed
 
-`IsProduction` should report whether `env` names the production environment.
-It must match `"production"` in any mix of upper and lower case, and ignore
-spaces, tabs and newlines around it. Right now only the exact lowercase word
-matches.
+**Goal:** make `IsProduction` return `true` for `"production"` in any case,
+with any whitespace around it.
+
+Right now only the exact lowercase word matches. Spaces, tabs and newlines
+around it must be ignored. Other words, including `"prod"` and `""`, give
+`false`.
 
 ```go
 IsProduction("production")      // => true
@@ -45,12 +66,17 @@ IsProduction("staging")         // => false
 IsProduction("prod")            // => false
 ```
 
+**Think it through:**
+- Two problems: the whitespace and the case. Which tool fixes each?
+- Which one has to happen to `env` first?
+
 ### 2. Keep the whole value of an env line
 
-`ParseEnvLine` reads an environment file line like `PORT=8080`. It returns the
-key, the value and `true`, with spaces trimmed from the key and value. A line
-without `"="` returns `"", "", false`. The bug: values that contain `"="`
-themselves get chopped off.
+**Goal:** make `ParseEnvLine` keep a value whole even when it contains `"="`.
+
+It returns the key, the value and `true`, with spaces trimmed from key and
+value. A line without `"="` returns `"", "", false`. An empty value is fine:
+`"PROXY="` gives `"PROXY", "", true`.
 
 ```go
 ParseEnvLine("PORT=8080")
@@ -66,14 +92,20 @@ ParseEnvLine("DEBUG")
 // => "", "", false
 ```
 
+**Think it through:**
+- Count the `"="` in the URL line. What does `Split` do with each one?
+- Which tool cuts at the first one only, and how does it tell you "not
+  found"?
+
 ### 3. Read `/etc/hosts` lines with any spacing
 
-`ParseHostsLine` reads one line of an `/etc/hosts` file: an IP address
-followed by one or more host names. It returns the IP, the names and `true`.
-Anything after a `#` is a comment and is ignored. If what's left has fewer
-than two words (a blank line, or a comment-only line), it returns
-`"", nil, false`. The bug: lines that use several spaces, tabs, or leading
-spaces come out wrong.
+**Goal:** make `ParseHostsLine` work no matter how many spaces or tabs
+separate the words.
+
+A line is an IP address followed by one or more host names. It returns the
+IP, the names and `true`. Anything after `#` is a comment (the code already
+removes it). If fewer than two words are left (blank line, comment only, IP
+only), it returns `"", nil, false`.
 
 ```go
 ParseHostsLine("127.0.0.1   localhost  localhost.localdomain")
@@ -85,6 +117,10 @@ ParseHostsLine("\t10.0.0.5\tdb   # primary database")
 ParseHostsLine("# managed by ansible")
 // => "", nil, false
 ```
+
+**Think it through:**
+- Look at the line that makes `words`. What does it produce for two spaces
+  in a row, or a tab?
 
 ## Learn more
 

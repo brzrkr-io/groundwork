@@ -1,17 +1,18 @@
 # Tag compliance: audit and fix instance tags
 
 An AWS account fills up with servers fast, and soon nobody knows who owns
-`i-0b2f...` or whether it is safe to turn off. Tags answer that. In this
-exercise you write a small audit tool that finds untagged EC2 instances and
-prepares the fix, carefully.
+`i-0b2f...` or whether it is safe to turn off. Tags answer that. Here you
+write an audit tool that finds untagged EC2 instances and prepares the fix,
+carefully.
+
+**New here:** EC2 tags (`types.Tag`), `strings.Compare`, `CreateTags` requests with `DryRun`.
 
 ## Learn
 
 ### What a tag is
 
-A *tag* is a key/value label you attach to an AWS resource: an instance, a
-bucket, a load balancer. AWS doesn't care what the tags say. They are for
-you:
+A *tag* is a key/value label on an AWS resource. AWS doesn't care what tags
+say; they are for you:
 
 | Key | Example value | Answers the question |
 |---|---|---|
@@ -19,14 +20,13 @@ you:
 | `Env` | `prod` | Can I restart it on a Tuesday afternoon? |
 | `CostCenter` | `CC-1042` | Whose budget pays for it? |
 
-Most companies make some tags mandatory. *Tag policies* in AWS Organizations
-can enforce allowed values, and the monthly *cost report* groups the bill by
-tag, so an untagged server's cost lands in "unknown". Finance chases the
-platform team about it, and the platform team writes an audit tool like this
-one. Tag keys are **case-sensitive**: `owner` and `Owner` are two different
-tags.
+Companies make some tags mandatory, and the monthly *cost report* groups the
+bill by tag. An untagged server's cost lands in "unknown". Tag keys are
+**case-sensitive**: `owner` and `Owner` are two different tags.
 
-In the SDK an EC2 tag is a `types.Tag` from
+### Tags in the SDK
+
+An EC2 tag is a `types.Tag` from
 `github.com/aws/aws-sdk-go-v2/service/ec2/types`. Like everything in the SDK,
 its fields are pointers (see *SDK clients: small interfaces and fakes*):
 
@@ -37,75 +37,69 @@ type Tag struct {
 }
 ```
 
-An instance's tags are a `[]types.Tag` in `inst.Tags`. The easiest way to
-look one up is to copy them into a map first. `aws.ToString` turns a `nil`
-pointer into `""`, so a missing value is safe:
+An instance's tags are a `[]types.Tag` in `inst.Tags`. To look one up, copy
+them into a map first. `aws.ToString` turns a `nil` pointer into `""`:
 
 ```go
 have := make(map[string]string, len(inst.Tags))
 for _, t := range inst.Tags {
 	have[aws.ToString(t.Key)] = aws.ToString(t.Value)
 }
-have["Owner"] // "" if the tag is absent OR set to ""
+have["Team"] // "" if the tag is absent OR set to ""
 ```
+
+> **Why is it written like this?** Reading a map key that isn't there is
+> allowed in Go and gives the *zero value*, `""` for strings. That is a Go
+> rule, and it lets one check cover "absent" and "empty".
 
 ### Recap: every instance, every page
 
 As in *Paginators: walk every page*, `DescribeInstances` returns instances a
-page at a time, grouped into *reservations*. The paginator loop reads all of
-them:
+page at a time, grouped into *reservations*. The starter's `Audit` already
+has the loop: pages, then reservations, then instances.
+
+### Sorting by a string field
+
+Pages arrive in whatever order AWS likes, so sort a report before showing it,
+as in *Sorting*. `strings.Compare(a, b)` works like `cmp.Compare` for
+strings: negative, zero or positive.
 
 ```go
-p := ec2.NewDescribeInstancesPaginator(api, &ec2.DescribeInstancesInput{})
-for p.HasMorePages() {
-	page, err := p.NextPage(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("describe instances: %w", err)
-	}
-	for _, r := range page.Reservations {
-		for _, inst := range r.Instances {
-			// inst.InstanceId, inst.Tags ...
-		}
-	}
+type Volume struct {
+	Name   string
+	SizeGB int
 }
-```
 
-Pages arrive in whatever order AWS likes, so sort the report before you show
-it, as in *Sorting*. `strings.Compare(a, b)` works like `cmp.Compare` for
-strings:
-
-```go
-slices.SortFunc(findings, func(a, b Finding) int {
-	return strings.Compare(a.InstanceID, b.InstanceID)
+slices.SortFunc(vols, func(a, b Volume) int {
+	return strings.Compare(a.Name, b.Name)
 })
 ```
 
-### Fixing tags: `CreateTags`, with a dry run first
+> **Why is it written like this?** The compare function's shape,
+> `func(a, b T) int`, is required by `slices.SortFunc`. The names `a` and `b`
+> are convention.
 
-`CreateTags` adds tags to one or more resources (it overwrites a tag with the
-same key). You describe the change with an `*ec2.CreateTagsInput`:
+### Fixing tags: CreateTags, with a dry run first
+
+`CreateTags` adds tags to resources (overwriting a tag with the same key).
+You describe the change with an `*ec2.CreateTagsInput`:
 
 ```go
 in := &ec2.CreateTagsInput{
-	Resources: []string{"i-0b2"},
+	Resources: []string{"vol-0f9"},
 	Tags: []types.Tag{
-		{Key: aws.String("Owner"), Value: aws.String("platform-team")},
+		{Key: aws.String("Team"), Value: aws.String("storage")},
 	},
-	DryRun: aws.Bool(true),
+	DryRun: aws.Bool(false),
 }
 // later: client.CreateTags(ctx, in)
 ```
 
-`DryRun` is built into most EC2 calls that change things. With
-`aws.Bool(true)`, EC2 checks that you are allowed to make the change and
-then changes **nothing**. It answers with a `DryRunOperation` error, which
-here means "this would have worked" (as in *AWS API errors: EC2 dry-run
-permission checks*).
-
-Any tool that changes infrastructure should work this way: show the plan,
-run it as a dry run, and only apply it when someone asks for that. Building
-the requests in a separate function, as you will, also makes that function
-easy to test without AWS.
+With `DryRun` set to `aws.Bool(true)`, EC2 checks you're allowed and changes
+**nothing** (as in *AWS API errors: EC2 dry-run permission checks*). Tools
+that change infrastructure should show the plan, dry-run it, and only apply
+on request. Building requests in their own function also makes them easy to
+test without AWS.
 
 ## Your task
 
@@ -114,25 +108,37 @@ Your team must tag every instance with `CostCenter`, `Env` and `Owner`
 
 ### 1. Find missing tags
 
-Change `MissingTags` to return the keys from `RequiredTags` that are not in
-`tags`, or that are there with an empty value. Keep `RequiredTags` order. A
-compliant instance gives an empty result (`nil` is fine). The map `have` is
-already built for you.
+**Goal:** `MissingTags(tags)` returns the required keys that are absent or empty, in `RequiredTags` order.
+
+- A key counts as missing if it isn't in `tags`, or is there with an empty
+  (or `nil`) value.
+- Keys are case-sensitive: `owner` does not count as `Owner`.
+- A compliant instance gives an empty result (`nil` is fine).
+
+The map `have` is already built for you.
 
 ```go
 MissingTags(/* Env=prod, owner=payments, CostCenter="" */)
 // => ["CostCenter" "Owner"]   ("owner" is not "Owner")
 ```
 
+**Think it through:**
+- Which list do you loop over: the instance's tags, or `RequiredTags`?
+- What does `have` give you for a key that isn't there?
+
 ### 2. Audit every instance
 
-`Audit` already pages through all instances and wraps API errors with
-`describe instances: `. Change it to:
+**Goal:** `Audit` returns one `Finding` per non-compliant instance, sorted by `InstanceID`.
 
-- add a `Finding` only for instances where `MissingTags(inst.Tags)` returns
-  at least one key, with that result as `Missing`;
-- sort the findings by `InstanceID` before returning them. Add `"slices"`
-  and `"strings"` to the imports.
+It already pages through all instances and wraps API errors as
+`describe instances: <err>`. Change it to:
+
+- add a `Finding` only when `MissingTags` returns at least one key for the
+  instance, and put that result in `Missing`;
+- sort the findings by `InstanceID` before returning. Add `"slices"` and
+  `"strings"` to the imports.
+
+On an API error it returns `nil` findings (already done).
 
 ```go
 // page 1: i-0c3 (no Owner), i-0a1 (all tags)
@@ -141,17 +147,24 @@ Audit(ctx, api)
 // => [{i-0b2 [CostCenter Env Owner]} {i-0c3 [Owner]}]
 ```
 
+**Think it through:**
+- Which instances should be skipped, and how do you know from `MissingTags`'s result?
+- Does sorting happen inside the paginator loop, or after it?
+
 ### 3. Build the fixes
 
-Change `BuildFixes` to make one `*ec2.CreateTagsInput` per finding:
+**Goal:** `BuildFixes` returns one `*ec2.CreateTagsInput` per finding it can fix, with defaults filled in.
 
-- `Resources` is `[]string{finding.InstanceID}` (already done);
-- `Tags` holds one `types.Tag` for every key in `finding.Missing` that has an
-  entry in `defaults`, in `Missing` order, with the default as its value;
-- `DryRun` is `aws.Bool(dryRun)`.
+For each finding:
 
-Skip a finding when none of its missing keys has a default. Nobody can guess
-an owner, so a human has to deal with it.
+- `Resources` holds the finding's instance ID (already done).
+- `Tags` holds one `types.Tag` for each key in the finding's `Missing` that
+  has an entry in `defaults`, in `Missing` order. The tag's value is that
+  default.
+- `DryRun` is set from the `dryRun` parameter.
+
+Skip a finding when none of its missing keys has a default: nobody can guess
+an owner, so a human must deal with it. No fixable findings gives `nil`.
 
 ```go
 BuildFixes(
@@ -162,6 +175,10 @@ BuildFixes(
 // => one request: Resources=[i-01]
 //    Tags=[CostCenter=CC-1000 Owner=platform-team] DryRun=true
 ```
+
+**Think it through:**
+- How does a two-value map lookup (`value, ok`) tell "no default" apart from a default?
+- After the inner loop, how do you know no tag was added?
 
 ## Learn more
 

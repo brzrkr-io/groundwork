@@ -5,13 +5,15 @@ registry, waiting for a load balancer to answer. A good retry waits longer
 after each failure. Testing that for real would make your test sit and wait,
 so this time you fake time itself.
 
+**New here:** faking time, counting calls with a closure, comparing `time.Duration` slices.
+
 ## Learn
 
 ### Recap: inject the dependency, fake it in tests
 
 As in *Fakes and dependency injection*, the code takes its dependency as an
-interface parameter, and the test passes in a fake that records what happened.
-Here the dependency is waiting:
+interface parameter, and the test passes in a fake that records what
+happened. Here the dependency is *waiting*:
 
 ```go
 type Sleeper interface {
@@ -19,40 +21,62 @@ type Sleeper interface {
 }
 ```
 
-In production you pass `RealSleeper{}`, whose `Sleep` calls `time.Sleep`. In
-your tests you pass a fake whose `Sleep` only appends `d` to a slice. The test
-finishes instantly, and you can check every wait. Never pass `RealSleeper` in a
-test: these tests would then really wait for seconds.
+In production you pass `RealSleeper{}`, whose `Sleep` calls `time.Sleep`.
+In your tests you pass a fake that only records `d`. The test finishes
+instantly, and you can check every wait.
+
+Never pass `RealSleeper` in a test: it would really wait for seconds.
+
+### Counting calls with a closure
+
+A *closure* is a function literal that uses a variable from outside it, as in
+*Functions as values*. It can change that variable, and the change sticks:
+
+```go
+pings := 0
+ping := func() bool {
+	pings++
+	return pings > 1 // false the first time, true after that
+}
+ping()
+ping()
+// pings is now 2
+```
+
+> **Why is it written like this?** `func() bool { ... }` is a function
+> literal; Go requires the `func` keyword, the parameter list (empty here)
+> and the result type, the same parts as a named function minus the name.
+> The counter must be declared *before* the closure so the closure can see
+> it. The names `pings` and `ping` are your choice.
 
 ### Comparing durations
 
 As in *Subtests and helpers*, compare slices with `slices.Equal`. It works on
-a slice of `time.Duration` just as well as on strings:
+`[]time.Duration` just like on strings:
 
 ```go
-want := []time.Duration{time.Second, 2 * time.Second}
+want := []time.Duration{500 * time.Millisecond, time.Minute}
 if !slices.Equal(got, want) {
-	t.Errorf("slept %v, want %v", got, want) // prints [1s 2s]
+	t.Errorf("waited %v, want %v", got, want) // prints [500ms 1m0s]
 }
 ```
 
-To count how often `fn` is called, use a closure that changes a variable
-outside it, as in *Functions as values*.
+`time.Second` is one second; `3 * time.Second` is three.
 
 Grading works as in *Your first test*: `TestGrader` runs your two tests
-against mutants of `Retry` and names any bug they missed.
+against *mutants* of `Retry` and names any bug they missed.
 
 ## Your task
 
-`Retry` in `exercise.go` is correct:
+`Retry(s, attempts, fn)` in `exercise.go` is correct:
 
 - it calls `fn` up to `attempts` times and returns `nil` as soon as `fn`
   returns `nil`,
-- between attempts it sleeps through the `Sleeper`: `1s`, then `2s`, then
+- between attempts it sleeps through the `Sleeper` `s`: `1s`, then `2s`, then
   `4s`, doubling each time,
 - it never sleeps after the last attempt,
-- if every attempt fails, it returns a non-nil error (fn's last error, wrapped
-  as `gave up after 3 attempts: connection refused`).
+- if every attempt fails, it returns a non-nil error (fn's last error,
+  wrapped as `gave up after 3 attempts: connection refused`).
 
 ```go
 Retry(RealSleeper{}, 3, pullImage)
@@ -64,29 +88,48 @@ Add the imports you need (`errors`, `slices`, `time`) to `exercise_test.go`.
 
 ### 1. Write a fake sleeper
 
-Declare a `fakeSleeper` struct type with a `slept []time.Duration` field, and
-give it a `Sleep(d time.Duration)` method with a pointer receiver that appends
-`d` to `slept`. Pass it to `Retry` as `&fakeSleeper{}`.
+**Goal:** declare a `fakeSleeper` struct with a field `slept
+[]time.Duration`, and a `Sleep` method that appends each duration to it
+instead of waiting.
+
+Use a pointer receiver, and pass the fake to `Retry` with `&` in front.
+
+**Think it through:**
+- What exact method does `Sleeper` require? Match its name and parameter.
+- Which shape from *Fakes and dependency injection* can you reuse?
 
 ### 2. Test a call that succeeds on the third try
 
-In `TestRetrySucceedsOnThirdTry`, write an `fn` that returns
-`errors.New("connection refused")` on its first two calls and `nil` on the
-third. Call `Retry(s, 5, fn)` and check that:
+**Goal:** in `TestRetrySucceedsOnThirdTry`, check that `Retry(s, 5, fn)`
+stops as soon as `fn` succeeds.
+
+Write an `fn` that returns `errors.New("connection refused")` on its first
+two calls and `nil` on the third. Then check:
 
 - the error is `nil`,
-- `fn` was called exactly 3 times (with attempts 5, a `Retry` that keeps
-  going after success would call it more),
+- `fn` was called exactly 3 times (a `Retry` that keeps going after success
+  would call it more),
 - the fake slept exactly `[1s 2s]`, compared with `slices.Equal`.
+
+**Think it through:**
+- Where does the call counter live so that both `fn` and your checks can see
+  it?
+- What does the counter's value tell `fn` about whether to fail or succeed?
 
 ### 3. Test giving up
 
-In `TestRetryGivesUp`, write an `fn` that always returns an error. Call
-`Retry(s, 3, fn)` with a fresh fake and check that:
+**Goal:** in `TestRetryGivesUp`, check that `Retry(s, 3, fn)` with an `fn`
+that always fails gives up properly.
 
-- the error is not `nil`,
+Use a fresh fake, then check:
+
+- the error is **not** `nil`,
 - `fn` was called exactly 3 times,
 - the fake slept exactly `[1s 2s]`, with no sleep after the last attempt.
+
+**Think it through:**
+- What changes from task 2: the `fn`, the attempts, and which error result
+  counts as correct?
 
 The exercise is done when both tests pass and `TestGrader` reports that every
 mutant was caught.

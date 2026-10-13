@@ -4,137 +4,162 @@ Some data comes in a fixed number of pieces: seven days in a week, three
 availability zones in a cloud region, 24 hours in a day. An *array* holds
 exactly that many values of one type, side by side.
 
+**New here:** array types like `[3]string`, array literals, indexing with
+`a[i]`, `len`, arrays being copied.
+
 ## Learn
 
 ### Declaring an array
 
-The type `[3]string` means "an array of exactly 3 strings". The length is part
-of the type, so `[3]string` and `[4]string` are different types.
+`[3]string` means "an array of exactly 3 strings". The length is part of the
+type, so `[3]string` and `[4]string` are different types.
 
 ```go
-var zones [3]string // ["" "" ""]
-var errors [7]int   // [0 0 0 0 0 0 0]
-var healthy [3]bool // [false false false]
+var racks [4]string // ["" "" "" ""]
+var retries [5]int  // [0 0 0 0 0]
+var online [2]bool  // [false false]
 ```
 
-A freshly declared array is filled with the *zero value* of its element type,
-just like a plain variable: `""` for strings, `0` for numbers, `false` for
-bools.
+A new array is filled with the *zero value* of its element type: `""` for
+strings, `0` for numbers, `false` for bools.
+
+> **Why is it written like this?** Go requires the brackets *before* the
+> element type: `[3]string`, never `string[3]`. The number must be a constant
+> the compiler knows. The variable name is your choice.
 
 ### Array literals
 
-To fill an array as you create it, write an *array literal*: the type followed
-by the values in braces.
+To fill an array as you create it, write the type, then the values in braces:
 
 ```go
-zones := [3]string{"eu-west-1a", "eu-west-1b", "eu-west-1c"}
+disks := [3]string{"sda", "sdb", "sdc"}
 ```
 
-If you write `[...]` instead of a number, Go counts the values for you:
+Write `[...]` instead of a number and Go counts the values for you:
 
 ```go
-days := [...]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-// days has type [7]string
+months := [...]string{"Jan", "Feb", "Mar"} // type [3]string
 ```
 
-### Reading and writing elements
+> **Why is it written like this?** The braces and the commas between values
+> are required. Spaces after commas are convention (gofmt adds them).
 
-Each value has an *index*, its position, counting from `0`. Use `a[i]` to read
-or change one element. `len(a)` gives the number of elements.
+### Reading and writing one element
+
+Each element has an *index*, its position, counting from `0`. `a[i]` reads
+or changes one element. `len(a)` gives the number of elements.
 
 ```go
-zones[0]            // "eu-west-1a" (the first element)
-zones[2]            // "eu-west-1c" (the last element is at len-1)
-zones[1] = "eu-west-1z"
-len(zones)          // 3
+disks[0]          // "sda", the first element
+disks[2]          // "sdc", the last one is at len-1
+disks[1] = "nvme0" // change one element
+len(disks)        // 3
 ```
 
-Index `3` does not exist in a `[3]string`. If you write `zones[3]`, the
-compiler stops you. If the index is in a variable and is out of range when the
-program runs, the program crashes with an "index out of range" error.
+`disks[3]` does not exist. With a plain number the compiler stops you; with
+an index from a variable, the running program crashes with "index out of
+range".
+
+> **Why is it written like this?** Counting from `0` is required by Go (and
+> most languages). `a[i] = value` changes the element in place; no `:=`,
+> because the array already exists.
 
 ### Looping over an array
 
-Combine `len` with the loops from *For loops*:
+Combine `len` with the loops from *For loops*. `i` takes every index in turn:
 
 ```go
-counts := [3]int{4, 0, 2}
-for i := range len(counts) {
-	fmt.Println(i, counts[i]) // 0 4, then 1 0, then 2 2
+temps := [3]int{21, 25, 19}
+for i := range len(temps) {
+	fmt.Println(i, temps[i]) // 0 21, then 1 25, then 2 19
 }
 ```
 
-`for i := 0; i < len(counts); i++ { ... }` does the same thing.
+`for i := 0; i < len(temps); i++ { ... }` does the same thing.
 
-### Arrays are values
+### Arrays are copied
 
-When you assign an array to another variable, or pass it to a function, Go
-copies *every element*. The two arrays are independent afterwards:
+Assigning an array, or passing it to a function, copies *every element*:
 
 ```go
 a := [3]int{1, 2, 3}
 b := a    // b is a copy
-b[0] = 99
-// a is still [1 2 3], b is [99 2 3]
+b[0] = 99 // a is still [1 2 3], b is [99 2 3]
 ```
 
-The same happens with function parameters. A function that changes its array
-parameter only changes its own copy. To hand the change back, it must
-`return` the array.
+So a function that changes its array parameter only changes its own copy. To
+hand the change back to the caller, it must `return` the array.
 
 ### Comparing arrays
 
-Two arrays of the same type can be compared with `==` and `!=`. They are equal
-when every element is equal:
+Two arrays of the same type can be compared with `==`. They are equal when
+every element is equal. The tests use this to check your results.
 
 ```go
-[3]int{1, 2, 3} == [3]int{1, 2, 3} // true
-[3]int{1, 2, 3} == [3]int{1, 2, 4} // false
+[2]int{1, 2} == [2]int{1, 2} // true
+[2]int{1, 2} == [2]int{1, 3} // false
 ```
-
-The tests in this exercise use `==` to check your arrays.
 
 ## Your task
 
-Your team runs a service in three availability zones of one cloud region and
-keeps a week of error counts. Write three small helpers for the on-call
-dashboard.
+Your service runs in three availability zones of one cloud region, and you
+keep a week of error counts. Write three helpers for the on-call dashboard.
 
 ### 1. Add up a week of errors
 
-Change `WeeklyTotal(daily [7]int) int` so it returns the sum of all seven daily
-error counts. Use a loop over the indexes.
+**Goal:** make `WeeklyTotal` return the sum of all seven numbers in `daily`.
+
+Use a loop over the indexes. An all-zero week returns `0`.
 
 ```go
 WeeklyTotal([7]int{3, 0, 1, 4, 0, 0, 2})
 // => 10
 ```
 
+**Think it through:**
+- The starter already has `total` and returns it. What must happen to
+  `total` once for each day?
+- How many times should the loop run, and which index does it start at?
+
 ### 2. Name the zones of a region
 
-Change `ZoneNames(region string) [3]string` so it returns the region name with
-`"a"`, `"b"` and `"c"` added, in that order.
+**Goal:** make `ZoneNames` return an array of the three zone names for
+`region`.
+
+Each name is the `region` parameter followed by the fixed letter `"a"`, `"b"`
+or `"c"`, in that order. No space or dash in between.
 
 ```go
 ZoneNames("eu-west-1")
 // => [3]string{"eu-west-1a", "eu-west-1b", "eu-west-1c"}
 ```
 
+**Think it through:**
+- Which piece comes from the parameter, and which piece is fixed text in
+  quotes?
+- You can fill `zones` one index at a time, or build the whole array with a
+  literal. Either is fine.
+
 ### 3. Mark a zone as down
 
-`WithZoneDown(status [3]bool, zone int) [3]bool` takes the health of the three
-zones (`true` means healthy) and the index of a zone that just went down. Set
-that zone to `false` and return the updated array. `zone` is always `0`, `1`
-or `2`.
+**Goal:** make `WithZoneDown` return `status` with the element at index
+`zone` set to `false`.
+
+`status` holds the health of the three zones (`true` = healthy). `zone` is
+always `0`, `1` or `2`. Every other zone keeps its value, and a zone that is
+already `false` stays `false`.
 
 ```go
 WithZoneDown([3]bool{true, true, true}, 1)
 // => [3]bool{true, false, true}
 ```
 
-Because arrays are copied, the caller's array stays exactly as it was. The test
-checks that too. You get this for free, as long as you `return` the changed
-array.
+The test also checks that the caller's array did not change. Because arrays
+are copied, you get this for free, as long as you return the changed array.
+
+**Think it through:**
+- Which parameter says *where* to change, and which one is the array?
+- The starter already returns `status`. You only need one line before it.
 
 ## Learn more
 

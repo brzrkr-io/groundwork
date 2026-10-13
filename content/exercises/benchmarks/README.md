@@ -4,12 +4,13 @@ Tests tell you whether code is right. *Benchmarks* tell you how fast it is and
 how much memory it uses. When a function runs for every request or every log
 line, that is worth knowing before you try to speed it up.
 
+**New here:** `testing.B`, `b.Loop`, `b.ReportAllocs`, allocations, `strings.Builder` with `Grow`.
+
 ## Learn
 
 ### Writing a benchmark
 
-A benchmark lives in a `_test.go` file, next to your tests. Its name starts
-with `Benchmark`, and it takes a `*testing.B` instead of a `*testing.T`:
+A benchmark lives in a `_test.go` file, next to your tests:
 
 ```go
 func BenchmarkDouble(b *testing.B) {
@@ -21,27 +22,29 @@ func BenchmarkDouble(b *testing.B) {
 ```
 
 - `for b.Loop() { ... }` runs the body again and again until Go has a
-  stable timing. Anything before the loop is setup and isn't timed. `b.Loop`
-  also stops the compiler from optimizing away a call whose result you
-  ignore, which would otherwise make the benchmark measure nothing. It
-  arrived in Go 1.24. Older code writes `for i := 0; i < b.N; i++` instead,
-  and you'll still see that in the wild.
-- `b.ReportAllocs()` adds memory numbers to the result (more on those below).
+  stable timing. Code before the loop is setup and isn't timed.
+- `b.ReportAllocs()` adds memory numbers to the result.
+- `b` also has `Errorf` and `Fatalf`, just like `t`.
 
-`b` also has `Errorf` and `Fatalf`, just like `t`.
+> **Why is it written like this?** Go requires the name to start with
+> `Benchmark` and the only parameter to be `*testing.B`, or `go test` won't
+> find it. Naming the parameter `b` is convention. `b.Loop` arrived in Go
+> 1.24; older code writes `for i := 0; i < b.N; i++`, and you'll still see
+> that in the wild. `b.Loop` also stops the compiler from deleting a call
+> whose result you ignore.
 
 ### Running benchmarks
 
 `go test` skips benchmarks unless you ask for them with `-bench`, which takes
-a regular expression, like `-run` does:
+a pattern like `-run` does:
 
 ```text
 go test -bench=FormatTags              run tests, then matching benchmarks
 go test -run='^$' -bench=FormatTags    run only the benchmarks
 ```
 
-`-run='^$'` selects tests whose name is empty. No test has an empty name, so
-no tests run and the output shows only the benchmark.
+`-run='^$'` selects tests with an empty name. There are none, so only the
+benchmark runs.
 
 ### Reading the output
 
@@ -55,22 +58,23 @@ BenchmarkFormatTags-16    1232925    195.7 ns/op    216 B/op    7 allocs/op
 | `1232925` | How many times the loop body ran. |
 | `195.7 ns/op` | Nanoseconds per call. |
 | `216 B/op` | Bytes of memory allocated per call. |
-| `7 allocs/op` | *Allocations* per call: how often Go had to ask for new memory. |
+| `7 allocs/op` | *Allocations* per call: how often Go asked for new memory. |
 
-Your numbers will differ: they depend on the machine. Compare runs on the
-same machine, before and after a change.
+Your numbers depend on the machine. Compare runs on the same machine, before
+and after a change.
 
 ### Why allocations cost
 
-Each allocation is work for Go's memory allocator. Later, the garbage
-collector has to find and free that memory again. Fewer allocations usually
-means faster code.
+Each allocation is work, and later the garbage collector has to free it
+again. Fewer allocations usually means faster code.
 
-Strings in Go can't be changed. So `s += "x"` doesn't extend `s`. It
-allocates a new string, copies the old text and `"x"` into it, and throws
-the old one away. In a loop, that adds up.
+Go strings can't be changed. So `s += "x"` doesn't extend `s`: it allocates a
+new string, copies the old text and `"x"` into it, and throws the old one
+away. In a loop, that adds up.
 
-A `strings.Builder` collects text in one growing buffer instead:
+### `strings.Builder` and `Grow`
+
+A `strings.Builder` collects text in one growing buffer:
 
 ```go
 var b strings.Builder
@@ -81,19 +85,18 @@ b.WriteString("01")
 s := b.String()         // "web-01", no extra copy
 ```
 
-Without `Grow`, the builder still has to enlarge its buffer a few times as
-the text grows. If you tell `Grow` how many bytes you'll write, it allocates
-once and never again. `len(s)` gives you the length of a string in bytes.
+Without `Grow`, the builder enlarges its buffer a few times as text arrives.
+If you tell `Grow` the total number of bytes first, it allocates once.
+`len(s)` gives a string's length in bytes.
 
 ### How Gopherlings grades your benchmark
 
-`TestGrader` in `grader_test.go` re-runs `BenchmarkFormatTags` once (with
-`-test.benchtime=1x`). It must run, pass, and print `allocs/op`. Then it runs
-it again with a *mutant*, a copy of `FormatTags` that panics. Your benchmark
-must crash then, which proves it really calls `FormatTags`. For the speed-up,
-`TestFormatTagsAllocs` uses `testing.AllocsPerRun`, which calls a function
-many times and returns the average number of allocations per call.
-`TestFormatTags` checks that `FormatTags` still gives the right answer.
+- `TestGrader` runs `BenchmarkFormatTags` once. It must pass and print
+  `allocs/op`. Then it runs it with a *mutant* `FormatTags` that panics; your
+  benchmark must crash, which proves it really calls `FormatTags`.
+- `TestFormatTagsAllocs` uses `testing.AllocsPerRun`, which calls a function
+  many times and returns the average allocations per call.
+- `TestFormatTags` checks that `FormatTags` still gives the right answer.
 
 ## Your task
 
@@ -108,37 +111,43 @@ FormatTags([]Tag{
 // => "env=prod,team=sre,region=eu-west-1"
 ```
 
-Each tag becomes `key=value`, the tags are joined with commas in the order
-given, and no tags give `""`. It works, but it builds the text with `+=`.
+Each tag becomes `key=value`, tags are joined with commas in the order
+given, and no tags give `""`. It works, but builds the text with `+=`.
 Measure it, then make it allocate less.
 
 ### 1. Write BenchmarkFormatTags
 
-In `exercise_test.go`, fill in `BenchmarkFormatTags`:
+**Goal:** make `BenchmarkFormatTags` in `exercise_test.go` report
+allocations and call `FormatTags(sampleTags)` inside a `b.Loop` loop.
 
-- call `b.ReportAllocs()`,
-- move the starter's `FormatTags(sampleTags)` call inside a `for b.Loop()`
-  loop.
+The starter already has the call; it just isn't in a loop yet. When done,
+run `go test -run='^$' -bench=FormatTags` and note the `allocs/op` number.
 
-`TestGrader` passes when the benchmark runs on the real code, prints
-`allocs/op`, and crashes when `FormatTags` panics. Run
-`go test -run='^$' -bench=FormatTags` and note the `allocs/op` number.
+**Think it through:**
+- Which line must come before the loop, and which line goes inside it?
+- Compare with `BenchmarkDouble` above: what's different, apart from the
+  function being called?
 
 ### 2. Allocate once
 
-Rewrite `realFormatTags` in `exercise.go` with a `strings.Builder` (add
-`"strings"` to the imports):
+**Goal:** rewrite `realFormatTags` in `exercise.go` with a `strings.Builder`
+so that `FormatTags` makes **at most 1** allocation per call.
 
-1. Loop over the tags once to add up the length of the result. Each tag needs
-   `len(t.Key) + 1 + len(t.Value) + 1` bytes: the key, `=`, the value and a
-   comma. That is one comma too many in total, which is fine.
-2. Call `Grow` with that total.
+`TestFormatTagsAllocs` checks this with the four tags in `sampleTags`, and
+`TestFormatTags` must keep passing. Add `"strings"` to the imports. Steps:
+
+1. Loop over the tags once and add up the result's length. Each tag needs
+   its key, one `=`, its value and one comma. That counts one comma too
+   many in total, which is fine.
+2. Reserve that total with `Grow`.
 3. Loop again and write each tag, with a `,` before every tag except the
    first.
 
-`TestFormatTagsAllocs` passes when `FormatTags` makes **at most 1**
-allocation per call for the four tags in `sampleTags`. `TestFormatTags` must
-keep passing. Run the benchmark again and compare.
+Run the benchmark again and compare.
+
+**Think it through:**
+- Which pieces of each tag come from its fields, and which are fixed text?
+- How does the loop know it is on the first tag?
 
 The exercise is done when `TestGrader`, `TestFormatTags` and
 `TestFormatTagsAllocs` all pass.

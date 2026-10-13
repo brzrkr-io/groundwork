@@ -2,14 +2,18 @@
 
 A Go program compiles to a single binary. With `//go:embed`, files such as a
 default config or message templates go *inside* that binary. You copy one
-file into a container image and nothing can go missing at 3am.
+file into a container image, and nothing can go missing at 3am.
+
+**New here:** the `//go:embed` directive, `embed.FS`, blank imports,
+`template.ParseFS`, `strings.Builder`.
 
 ## Learn
 
 ### The go:embed directive
 
-Put a `//go:embed` line directly above a package-level variable. When the
-program is built, Go reads the file and stores its contents in the variable:
+A *directive* is a special comment that gives an instruction to the Go
+tools. `//go:embed` says: "when you build this program, read this file and
+store its contents in the variable on the next line".
 
 ```go
 import _ "embed"
@@ -18,8 +22,20 @@ import _ "embed"
 var motd string
 ```
 
-The path is relative to the folder of the `.go` file. Once the program is
-built, it no longer needs `motd.txt` on disk.
+Once the program is built, it no longer needs `motd.txt` on disk. The text is
+inside the binary, in `motd`.
+
+> **Why is it written like this?**
+> - **Go requires:** `//go:embed` with no space after `//`. It must sit
+>   directly above a `var` at package level (outside every function). Only
+>   ordinary `//` comment lines may come between them, never a blank line or
+>   other code.
+> - **Go requires:** the path is relative to the folder of the `.go` file. It
+>   can't use `..`, so you can only embed files from this package's folder and
+>   the folders inside it.
+> - **Author's choice:** the variable name (`motd`) and the file name.
+
+### What type to use
 
 The variable's type decides what you get:
 
@@ -31,58 +47,83 @@ The variable's type decides what you get:
 
 ### The import
 
-The directive only works in files that import the `embed` package. If you
-use `embed.FS`, a normal `import "embed"` covers it. If you only embed into
-a `string` or `[]byte`, nothing names the package, so you write a *blank
-import*: `import _ "embed"`. The `_` means "load the package, but I won't
-call it by name".
+The directive only works in a file that imports the `embed` package.
 
-### The rules
+- If you use `embed.FS`, you already write `embed.` in your code, so a normal
+  `import "embed"` covers it.
+- If you only embed into a `string` or `[]byte`, nothing in your code says
+  `embed.`. Go rejects imports you don't use, so you write a *blank import*:
+  `import _ "embed"`. The `_` means "load the package, but I won't call it
+  by name".
 
-- No space between `//` and `go:embed`. `// go:embed` is just a comment, and
-  the variable stays empty without any error.
-- The directive goes directly above the `var`, with nothing in between.
-- Paths can't use `..` and can't leave the module.
-- When you embed a folder, files starting with `.` or `_` are skipped.
+> **Why is it written like this?** The import is **required** by Go. The
+> `_` is how Go lets you keep an import you never name in your code.
+
+### The silent mistake
+
+```go
+// go:embed motd.txt
+var motd string
+```
+
+With a space after `//`, this is an ordinary comment. Go doesn't complain,
+and `motd` is just empty. If an embedded value is mysteriously empty, look
+for that space first.
 
 ### Embedding a folder
 
+Name a folder in the directive, and use `embed.FS`:
+
 ```go
-//go:embed templates
-var templates embed.FS
+//go:embed static
+var static embed.FS
 ```
 
-Paths inside an `embed.FS` always start with the folder name and use `/`:
+Files whose names start with `.` or `_` are skipped. Paths inside an
+`embed.FS` always start with the folder name and use `/`, on every
+operating system:
 
 ```go
-data, err := templates.ReadFile("templates/deploy.txt")
-entries, err := templates.ReadDir("templates") // sorted by file name
+data, err := static.ReadFile("static/index.html")
+entries, err := static.ReadDir("static") // sorted by file name
 for _, entry := range entries {
-	fmt.Println(entry.Name()) // "deploy.txt", ...
+	fmt.Println(entry.Name()) // "index.html", ...
 }
 ```
 
-`entry.Name()` is the file name only, without the folder.
+`entry.Name()` is only the file name, without the folder in front.
+
+### Cutting an ending off a name
+
+`strings.TrimSuffix(s, suffix)` returns `s` without `suffix` at the end. If
+`s` doesn't end with it, you get `s` back unchanged:
+
+```go
+strings.TrimSuffix("backup.tar.gz", ".gz") // => "backup.tar"
+```
 
 ### Templates from an embed.FS
 
-`text/template` can load templates straight from any file system, including
-an `embed.FS`:
+`text/template` can load a template straight from any file system,
+including an `embed.FS`. `Execute` fills it in and writes the result to a
+writer. A `strings.Builder` is a writer that collects everything written to
+it, and `b.String()` gives it back as one string:
 
 ```go
-tmpl, err := template.ParseFS(templates, "templates/deploy.txt")
+tmpl, err := template.ParseFS(static, "static/welcome.txt")
 if err != nil {
-	return "", err // for example, the file doesn't exist
+	return "", err // for example, no file matched that path
 }
 var b strings.Builder
-if err := tmpl.Execute(&b, data); err != nil {
+if err := tmpl.Execute(&b, user); err != nil {
 	return "", err
 }
 return b.String(), nil
 ```
 
-`strings.Builder` collects everything `Execute` writes, and `b.String()`
-returns it as one string.
+> **Why is it written like this?** `&b` is **required**: `Execute` must
+> change `b`, so it needs a pointer to it, as in *Pointers*. Returning
+> `"", err` the moment something fails is a Go **convention**.
 
 ## Your task
 
@@ -100,13 +141,16 @@ the binary. These files sit next to `exercise.go`:
     └── rollback.txt
 ```
 
-The tests first change to an empty folder (`t.Chdir`), so reading these
-files from disk won't work. Only embedded files will.
+The tests first move to an empty folder (`t.Chdir`), so reading these files
+from disk won't work. Only embedded files will.
 
 ### 1. Embed the default config
 
-Add a `//go:embed defaults.json` directive above `var defaultConfig []byte`.
-`DefaultConfig` already decodes it. `defaults.json` contains:
+**Goal:** fill the variable `defaultConfig` with the contents of
+`defaults.json`, so `DefaultConfig()` returns the settings below.
+
+`DefaultConfig` is already written: it decodes `defaultConfig` as JSON.
+`defaults.json` contains:
 
 ```json
 {
@@ -116,30 +160,42 @@ Add a `//go:embed defaults.json` directive above `var defaultConfig []byte`.
 }
 ```
 
-so `DefaultConfig()` should return
-`Config{Channel: "#deploys", Username: "deploy-bot", Retries: 3}` and a `nil`
-error. The file already imports `embed`, so you don't need a blank import.
+```go
+DefaultConfig()
+// => Config{Channel: "#deploys", Username: "deploy-bot", Retries: 3}, nil
+```
+
+**Think it through:**
+- Which line does the directive go above? Look for `TODO(1)`.
+- The file already imports `embed`. Do you still need a blank import?
 
 ### 2. Embed the templates folder
 
-Add a `//go:embed templates` directive above `var templates embed.FS`. Then
-finish `Kinds`. It lists the files in the `templates` folder and returns
-their names without the `.txt` ending, sorted. The starter already lists the
-folder with `templates.ReadDir`, but keeps the `.txt` ending:
+**Goal:** fill `templates` with the `templates` folder, and make `Kinds`
+return the template names without their `.txt` ending.
 
 ```go
 Kinds()
 // => []string{"deploy", "failed", "rollback"}, nil
 ```
 
-If reading the folder fails, it returns the error. Until the directive is in
-place, `templates` is empty, so that is what you'll see.
+The names come back sorted, because `ReadDir` sorts them. If reading the
+folder fails, `Kinds` returns the error (the starter already does this).
+Until the directive is in place, `templates` is empty, so that's what you'll
+see.
+
+**Think it through:**
+- This time the directive names a folder, not a file. Which variable has the
+  type for that?
+- The starter loop already appends `entry.Name()`. What should happen to
+  each name before it's appended?
 
 ### 3. Render a notification
 
-Finish `Render(kind string, d Deploy) (string, error)`. It loads
-`templates/<kind>.txt` from the embedded files, executes it with `d`, and
-returns the text. `templates/deploy.txt` is:
+**Goal:** make `Render(kind, d)` load `templates/<kind>.txt` from the
+embedded files, fill it in with `d`, and return the text.
+
+`templates/deploy.txt` is:
 
 ```text
 [deploy] {{.Service}} {{.Version}} is live in {{.Env}}.
@@ -148,14 +204,19 @@ Deployed by {{.User}}.
 
 ```go
 Render("deploy", Deploy{Service: "payments", Version: "v1.4.2", Env: "production", User: "alice"})
-// => "[deploy] payments v1.4.2 is live in production.\nDeployed by alice.\n"
+// => "[deploy] payments v1.4.2 is live in production.\nDeployed by alice.\n", nil
 ```
 
-The output ends with a newline, because the template file does. For an
-unknown kind such as `"party"`, `Render` returns `""` and a non-nil error.
-`template.ParseFS` already returns an error when no file matches.
+- The result ends with a newline, because the template file does.
+- For an unknown kind such as `"party"`, return `""` and a non-nil error.
+  `template.ParseFS` already returns an error when no file matches the path.
+- Add `"strings"` and `"text/template"` to the imports when you need them.
 
-Add `"strings"` and `"text/template"` to the imports when you need them.
+**Think it through:**
+- The path has three parts: the fixed text `templates/`, the parameter
+  `kind`, and the fixed text `.txt`. Which ones go in quotes?
+- There are two steps that can fail (load, then execute). What do you return
+  after each one fails?
 
 ## Learn more
 

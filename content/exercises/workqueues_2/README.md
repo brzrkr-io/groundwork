@@ -3,14 +3,18 @@
 A controller that can't reach an API retries, but not forever. Here you fix a
 worker that gets retries wrong in three different ways.
 
+**New here:** `AddRateLimited`, `NumRequeues`, `Forget`, per-key exponential backoff.
+
 ## Learn
 
 ### Recap
 
-Event handlers `Add` `"namespace/name"` keys to a workqueue. A worker loop
-calls `q.Get()`, does the work, and must call `q.Done(key)` afterwards. Until
-`Done`, a key that is added again only gets a "changed again" mark and never
-goes back into the queue.
+Event handlers `Add` `"namespace/name"` keys to a workqueue. A worker calls
+`q.Get()`, does the work, and must then call `q.Done(key)`.
+
+Until `Done`, adding the key again only sets a "changed again" mark; the key
+never goes back into the queue. `defer` is the usual way to make sure `Done`
+runs on every return path.
 
 ### Retrying with the rate limiter
 
@@ -22,10 +26,9 @@ The queue from `workqueue.NewTypedRateLimitingQueue` has three more methods:
 | `q.NumRequeues(key)` | How many failures are counted for `key` so far. |
 | `q.Forget(key)` | Reset the failure count for `key` to 0. It does **not** remove the key from the queue. |
 
-The delay comes from the *rate limiter* you pass to the constructor. The usual
-one backs off exponentially per key, as in *Retries: backoff and jitter*: 1st retry
-after the base delay, then twice that, then four times, up to a maximum. Each
-key has its own count, so one broken object doesn't slow down the others.
+The delay comes from the *rate limiter*. The usual one backs off
+exponentially per key, as in *Retries: backoff and jitter*: base delay, then
+twice that, then four times, up to a maximum.
 
 ```go
 limiter := workqueue.NewTypedItemExponentialFailureRateLimiter[string](
@@ -35,20 +38,38 @@ limiter := workqueue.NewTypedItemExponentialFailureRateLimiter[string](
 q := workqueue.NewTypedRateLimitingQueue(limiter)
 ```
 
-The tests pass in a limiter with a 1ms base and a 10ms maximum, so retries
-finish in milliseconds.
+Each key has its own count, so one broken object doesn't slow the others. The
+tests use a 1ms base and 10ms maximum, so retries finish in milliseconds.
 
-The rules a worker follows after each attempt:
+### The three outcomes
 
-- **Success:** call `Forget(key)`. Otherwise the old failures still count, and
-  the next time the object breaks it is dropped too early.
-- **Failure, retries left:** `AddRateLimited(key)`.
-- **Failure, no retries left:** `Forget(key)` and drop the key. Retrying
-  forever hammers a broken service and fills the queue with keys that will
-  never work. A later change to the object adds the key again anyway.
+After each attempt, a worker does exactly one of these:
+
+| Outcome | What to do | Why |
+|---|---|---|
+| Success | reset the failure count | otherwise old failures still count, and the next breakage is dropped too early |
+| Failure, retries left | add it back with a delay | the service may recover |
+| Failure, no retries left | reset the count and drop the key | retrying forever hammers a broken service; a later change to the object adds the key again anyway |
 
 `Done` is separate from all of these: it ends this turn of the key, whatever
 happened.
+
+### Comparing with a limit
+
+A limit like `MaxRetries` is usually a `const`. Compare it with `<` to ask
+"is there room left?":
+
+```go
+const MaxBackups = 5
+
+if len(backups) < MaxBackups {
+	// still room for another backup
+}
+```
+
+> **Why is it written like this?** Go requires the `if` condition to be a
+> `bool`, with no parentheses needed. An exported `MaxRetries` constant
+> (capital letter) is the author's choice, so tests and callers can read it.
 
 ## Your task
 
@@ -57,9 +78,10 @@ service that is sometimes down. Their worker in `exercise.go` has three bugs.
 
 ### 1. Let keys come back
 
-After a key's first turn, adding it again never puts it back in the queue.
-Fix `ProcessNextItem` so every key it takes from `q.Get()` is marked done,
-whichever way the function returns.
+**Goal:** fix `ProcessNextItem` so every key it takes from `q.Get()` is marked done, whichever way the function returns.
+
+Right now, after a key's first turn, adding it again never puts it back in
+the queue.
 
 ```go
 q.Add("monitoring/alert-rules")
@@ -68,25 +90,36 @@ q.Add("monitoring/alert-rules")
 q.Len() // => 1 (the buggy version gives 0)
 ```
 
+**Think it through:**
+- Which queue method ends a key's turn?
+- Where can you put it so it runs even on an early `return`?
+
 ### 2. Forget on success
 
-Fix `HandleResult` so that when `err` is `nil` it resets the key's failure
-count and returns `false`:
+**Goal:** fix `HandleResult` so that when `err` is `nil` it resets the key's failure count and returns `false`.
+
+Don't add the key back to the queue.
 
 ```go
 // "payments/alert-rules" has failed 3 times before
 HandleResult(q, "payments/alert-rules", nil) // => false
 q.NumRequeues("payments/alert-rules")        // => 0
+q.Len()                                      // => 0
 ```
+
+**Think it through:**
+- Look at the method table: which one resets the count?
+- Find the branch in `HandleResult` that runs when `err` is `nil`.
 
 ### 3. Give up after MaxRetries
 
-`HandleResult` retries every failure forever. Change it so that when `err` is
-not `nil`:
+**Goal:** make `HandleResult` stop retrying a failing key once it has failed `MaxRetries` times before.
 
-- if `q.NumRequeues(key) < MaxRetries`, call `q.AddRateLimited(key)` and
-  return `false`;
-- otherwise call `q.Forget(key)` and return `true`. `ProcessNextItem` then
+When `err` is not `nil`:
+
+- If the key's earlier failures are **fewer than** `MaxRetries`: add it back
+  with a delay and return `false`.
+- Otherwise: reset its failure count and return `true`. `ProcessNextItem` then
   logs a warning.
 
 With `MaxRetries = 3`, a key that always fails runs 4 times: the first try
@@ -101,6 +134,10 @@ plus 3 retries.
 
 The last test runs the whole worker against a sync that always fails and
 checks it is called exactly 4 times. It needs your fixes from tasks 1 and 3.
+
+**Think it through:**
+- Which method tells you the earlier failures, and which constant is the limit?
+- Which two methods from the table do the two branches need?
 
 ## Learn more
 

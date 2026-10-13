@@ -4,77 +4,82 @@ A `context.Context` carries a "stop now" signal through your program. When a
 user presses Ctrl+C, a request times out, or a deploy is aborted, the context
 is how every goroutine involved finds out it should give up.
 
+**New here:** `context.Context`, `WithCancel`, `WithTimeout`, `ctx.Done()`,
+`ctx.Err()`.
+
 ## Learn
 
 ### The shape of it
 
 ```go
-import "context"
-
 ctx, cancel := context.WithCancel(context.Background())
 defer cancel()
 
-go worker(ctx) // the worker watches ctx
+go watchLogs(ctx) // the goroutine watches ctx
 
-// later, when the work is no longer wanted:
-cancel() // every goroutine watching ctx is told to stop
+cancel() // later: everything watching ctx is told to stop
 ```
 
-- `context.Background()` is the empty starting context. It is never
-  cancelled. Use it in `main`, in tests, and at the top of a request.
-- `context.WithCancel(parent)` returns a new *child* context, plus a
-  `cancel` function that cancels it.
-- `context.WithTimeout(parent, d)` is the same, but it also cancels itself
-  after `d`.
-- Cancelling a parent cancels all its children:
+| Function | Gives you |
+|---|---|
+| `context.Background()` | the empty starting context; never cancelled. Use it in `main`, tests, and at the top of a request. |
+| `context.WithCancel(parent)` | a child context, plus a `cancel` function |
+| `context.WithTimeout(parent, d)` | the same, but it also cancels itself after `d` |
+
+Cancelling a parent cancels all its children:
 
 ```text
 Background
    └── WithTimeout(30s)          deploy
           ├── WithCancel         upload artifact
           └── WithTimeout(5s)    health check
-cancel the deploy ⇒ the upload and the health check are cancelled too
+cancel the deploy ⇒ the upload and the health check stop too
 ```
 
-Always `defer cancel()` right after creating a context, even with
-`WithTimeout`. It frees the context's timer as soon as you are done.
-`go vet` warns if you forget.
+> **Why is it written like this?** `WithCancel` and `WithTimeout` return two
+> values, so Go requires two names on the left: `ctx, cancel :=`. Calling
+> `defer cancel()` on the very next line is convention, even with
+> `WithTimeout`: it frees the timer as soon as you're done, and `go vet`
+> warns if you forget.
 
 ### Noticing cancellation
 
 | Method | Gives you |
 |---|---|
-| `ctx.Done()` | a channel that is **closed** when the context is cancelled |
+| `ctx.Done()` | a channel that is **closed** when the context ends |
 | `ctx.Err()` | `nil` while running, then why it ended: `context.Canceled` or `context.DeadlineExceeded` |
 
-`ctx.Done()` is just a channel, so it goes in a `select` next to your other
-cases:
+`ctx.Done()` is a channel, so it goes in a `select` next to other channels.
+`time.After(d)` is a channel that receives once, after `d`. Here a backup
+waits for a "ready" signal, but gives up after a minute or on cancel:
 
 ```go
 select {
-case <-time.After(d):
-	return nil // waited the full time
+case <-ready:
+	startBackup()
+case <-time.After(time.Minute):
+	return errors.New("never became ready")
 case <-ctx.Done():
-	return ctx.Err() // stopped early: Canceled or DeadlineExceeded
+	return ctx.Err()
 }
 ```
 
-Compare errors with `errors.Is(err, context.Canceled)`, as in *Wrapping
-errors*.
+A receive can also tell you whether a channel was closed:
+`msg, ok := <-ch` sets `ok` to `false` once `ch` is closed and empty.
+
+> **Why is it written like this?** `select` waits until *one* case is ready
+> and runs only that one; Go requires each `case` to be a channel send or
+> receive. The order of cases is your choice.
 
 ### Conventions
 
 - A function that might take a while takes `ctx context.Context` as its
   **first** parameter, named `ctx`.
-- Pass the context you were given down to the functions you call. Don't
-  store it in a struct.
-- When a context is cancelled, stop quickly and return `ctx.Err()` (or an
-  error that wraps it).
+- Pass the context you were given down. Don't store it in a struct.
+- When cancelled, stop quickly and return `ctx.Err()`.
 
-### About the tests
-
-The tests use `testing/synctest`, so timeouts fire instantly in real time
-while the fake clock still moves by the right amount.
+The tests use `testing/synctest`: timeouts fire instantly, but the fake clock
+still moves by the right amount.
 
 ## Your task
 
@@ -82,8 +87,8 @@ You're building the waiting and looping parts of a deploy agent.
 
 ### 1. Sleep, but wake up when cancelled
 
-`Sleep(ctx, d)` waits for `d` and returns `nil`. If `ctx` is cancelled first,
-it returns `ctx.Err()` straight away.
+**Goal:** make `Sleep(ctx, d)` wait for `d` and return `nil`, or return
+`ctx.Err()` straight away if `ctx` is cancelled first.
 
 ```go
 Sleep(context.Background(), 5*time.Second) // => nil, after 5s
@@ -93,13 +98,20 @@ ctx, cancel := context.WithCancel(context.Background())
 Sleep(ctx, 5*time.Second) // => context.Canceled, after 2s
 ```
 
+**Think it through:**
+- `time.Sleep` can't be interrupted. Which two channels are you waiting on?
+- What does each one return when it wins?
+
 ### 2. Stop a worker loop
 
-`RunWorker(ctx, jobs, handle)` calls `handle(job)` for each job it receives
-from `jobs`, in order. It stops in two ways:
+**Goal:** make `RunWorker(ctx, jobs, handle)` call `handle(job)` for each job
+from `jobs`, in order, until it has to stop.
+
+It stops in two ways:
 
 - `jobs` is closed: return `nil`.
-- `ctx` is cancelled: return `ctx.Err()` without waiting for more jobs.
+- `ctx` is cancelled: return `ctx.Err()` at once, without waiting for more
+  jobs.
 
 ```go
 // jobs carries "deploy api", "deploy web", then is closed
@@ -109,11 +121,17 @@ RunWorker(ctx, jobs, handle) // handles both, => nil
 RunWorker(ctx, jobs, handle) // handles both, => context.Canceled at 1s
 ```
 
+**Think it through:**
+- A `for range jobs` loop can't notice `ctx`. What loop runs until you
+  `return`?
+- How do you tell "got a job" apart from "`jobs` was closed"?
+
 ### 3. Give a check a deadline
 
-`CheckWithTimeout(timeout, check)` creates a context from
-`context.Background()` that times out after `timeout`, calls `check` with
-it, and returns whatever `check` returns. Cancel the context when you are
+**Goal:** make `CheckWithTimeout(timeout, check)` call `check` with a context
+that times out after `timeout`, and return what `check` returns.
+
+Build the context from `context.Background()`, and cancel it when you're
 done.
 
 ```go
@@ -123,6 +141,10 @@ CheckWithTimeout(3*time.Second, check) // => context.DeadlineExceeded, after 3s
 // check returns nil straight away
 CheckWithTimeout(3*time.Second, check) // => nil
 ```
+
+**Think it through:**
+- Which function in the first table cancels itself after a while?
+- What's the parent, and which of its two results do you pass to `check`?
 
 ## Learn more
 

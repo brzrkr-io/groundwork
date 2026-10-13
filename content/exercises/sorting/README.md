@@ -4,6 +4,8 @@ Reports are easier to read in a predictable order: hosts alphabetically, the
 noisiest services first. Go's `slices` package sorts for you. You only decide
 what "comes first" means.
 
+**New here:** `slices.Sort`, `slices.SortFunc`, `cmp.Compare`, `slices.Sorted` with `maps.Keys`.
+
 ## Learn
 
 ### Sorting a slice: `slices.Sort`
@@ -11,32 +13,36 @@ what "comes first" means.
 ```go
 import "slices"
 
-hosts := []string{"web-2", "db-1", "web-1"}
-slices.Sort(hosts)
-// hosts is now ["db-1" "web-1" "web-2"]
+scores := []int{40, 7, 19}
+slices.Sort(scores)
+// scores is now [7 19 40]
 ```
 
 `slices.Sort` puts numbers smallest first and strings in alphabetical order.
 It sorts *in place*: it returns nothing and rearranges the slice you hand it.
 
-### Leave the caller's slice alone: `slices.Clone` first
+> **Why is it written like this?** Because it returns nothing, Go rejects
+> `x := slices.Sort(s)`. Call it on its own line, then use the slice.
+
+### Leave the caller's slice alone
 
 A slice passed to a function still points at the caller's data. If you sort
 it, you reorder the caller's slice too, which is a nasty surprise for them.
-Sort a copy instead, using `slices.Clone` from *append and copy*:
+
+So sort a *copy*. `slices.Clone(s)` (from *append and copy*) returns a new
+slice with the same values. Changes to the clone don't touch `s`:
 
 ```go
-func Sorted(names []string) []string {
-	out := slices.Clone(names) // a new slice with the same values
-	slices.Sort(out)           // only out is reordered
-	return out
-}
+original := []int{3, 1, 2}
+mine := slices.Clone(original)
+mine[0] = 99
+// original is still [3 1 2]
 ```
 
 ### Your own order: `slices.SortFunc` and `cmp.Compare`
 
-`slices.SortFunc` takes a slice and a *comparison function*. The function gets
-two elements, `a` and `b`, and returns an `int`:
+`slices.SortFunc(s, fn)` takes a slice and a *comparison function*. The
+function gets two elements, `a` and `b`, and returns an `int`:
 
 | Return value | Meaning |
 |---|---|
@@ -45,9 +51,8 @@ two elements, `a` and `b`, and returns an `int`:
 | positive (like `1`) | `a` goes after `b` |
 
 You rarely work out that number yourself. `cmp.Compare(x, y)` from the `cmp`
-package returns `-1` if `x < y`, `0` if they are equal and `+1` if `x > y`.
-Compare the values you care about, in this case the error count of each
-service:
+package returns `-1` if `x < y`, `0` if equal, `+1` if `x > y`. Here, fruit
+sorted by price, cheapest first:
 
 ```go
 import (
@@ -55,57 +60,52 @@ import (
 	"slices"
 )
 
-errs := map[string]int{"api": 7, "db": 2, "web": 7}
-names := []string{"api", "db", "web"}
+price := map[string]int{"kiwi": 4, "fig": 9, "plum": 4}
+fruit := []string{"fig", "kiwi", "plum"}
 
-// Fewest errors first.
-slices.SortFunc(names, func(a, b string) int {
-	return cmp.Compare(errs[a], errs[b])
+slices.SortFunc(fruit, func(a, b string) int {
+	return cmp.Compare(price[a], price[b])
 })
 ```
 
-To **reverse** the order, swap the arguments: `cmp.Compare(errs[b], errs[a])`
-puts the most errors first.
+To **reverse** the order (dearest first), swap the arguments you give
+`cmp.Compare`.
+
+> **Why is it written like this?** Go requires the comparison function to
+> take two values of the slice's element type and return `int`; that's the
+> shape `SortFunc` expects. The names `a` and `b` are convention. Writing the
+> function right inside the call (a *function literal*) is common, not required.
 
 ### Breaking ties
 
-`api` and `web` both have 7 errors, so the comparison above returns `0` for
-them. `slices.SortFunc` may then put them in either order, and your report
-changes from run to run. Fix that with a *tie-break*: when the first
-comparison says "equal", compare something else.
+`kiwi` and `plum` both cost 4, so the comparison returns `0` for them.
+`SortFunc` may then put them in either order, and your output changes from
+run to run. Fix it with a *tie-break*: when the first comparison says
+"equal", compare something else.
+
+The pattern uses an `if` with a short statement in front:
 
 ```go
-slices.SortFunc(names, func(a, b string) int {
-	if c := cmp.Compare(errs[b], errs[a]); c != 0 {
-		return c // the counts differ, so they decide
-	}
-	return cmp.Compare(a, b) // same count: alphabetical
-})
-// names is now ["api" "web" "db"]
+if d := len(a) - len(b); d != 0 {
+	return d // lengths differ: they decide
+}
+// lengths are equal: fall through to the next comparison
 ```
 
-`if c := ...; c != 0` stores the comparison in `c` and then checks it, all in
-one line. `c` only exists inside that `if`.
+`if d := ...; d != 0` stores a value in `d` and then checks it. `d` only
+exists inside that `if`.
 
 ### Sorted map keys
 
-As you saw in *Maps*, ranging over a map visits the keys in a random order.
-To get the keys in order, write:
+As you saw in *Maps*, ranging over a map visits keys in random order.
+Two functions together give you sorted keys:
 
-```go
-import (
-	"maps"
-	"slices"
-)
+- `maps.Keys(m)` hands out the keys of `m` one at a time (it is not a slice).
+- `slices.Sorted(x)` collects those values into a brand new slice, sorts it
+  and returns it.
 
-names := slices.Sorted(maps.Keys(errs))
-// ["api" "db" "web"]
-```
-
-Read it from the inside out. `maps.Keys(errs)` hands out the keys of the map
-one at a time. `slices.Sorted` collects them into a brand new slice, sorts it
-and returns it. The map itself is not changed. For an empty map you get an
-empty slice.
+So you pass the result of one straight into the other, reading from the
+inside out. The map isn't changed. An empty map gives an empty slice.
 
 ## Your task
 
@@ -114,9 +114,10 @@ on-call engineer wants them in a sensible order.
 
 ### 1. Sort hosts without touching the input
 
-Change `SortedHosts` to return a **new** slice holding the hosts in
-alphabetical order. The `hosts` slice the caller passed in must keep its
-original order.
+**Goal:** make `SortedHosts` return a **new** slice with the hosts in alphabetical order.
+
+The `hosts` slice the caller passed in must keep its original order. An empty
+slice gives an empty slice.
 
 ```go
 hosts := []string{"web-2", "db-1", "web-1"}
@@ -125,32 +126,43 @@ SortedHosts(hosts)
 // hosts is still ["web-2" "db-1" "web-1"]
 ```
 
-An empty slice gives an empty slice.
+**Think it through:**
+- Right now it returns `hosts` itself. What do you need first so you don't sort the caller's slice?
+- `slices.Sort` returns nothing. Which name do you `return` after sorting?
 
 ### 2. List service names in order
 
-`ServiceNames` gets a map from service name to error count. Change it to return
-the service names (the map keys) in alphabetical order. Add `"maps"` to the
-imports at the top of the file.
+**Goal:** make `ServiceNames(errs)` return the map's keys (the service names) in alphabetical order.
+
+Add `"maps"` to the imports at the top of the file. An empty map gives an
+empty slice.
 
 ```go
 ServiceNames(map[string]int{"web": 3, "api": 9, "db": 0})
 // => ["api" "db" "web"]
 ```
 
-An empty map gives an empty slice.
+**Think it through:**
+- The values (error counts) don't matter here, only the keys.
+- Which two functions from *Sorted map keys* do you need, and which goes inside which?
 
 ### 3. Rank services by errors
 
+**Goal:** finish the comparison function in `RankByErrors` so **more** errors come first and ties are alphabetical.
+
 `RankByErrors` already gets the names in alphabetical order from
-`ServiceNames` and calls `slices.SortFunc`. Finish the comparison function so
-that services with **more** errors come first, and services with the **same**
-number of errors stay in alphabetical order. Add `"cmp"` to the imports.
+`ServiceNames` and calls `slices.SortFunc`. You only fill in the body of the
+comparison function. Add `"cmp"` to the imports.
 
 ```go
 RankByErrors(map[string]int{"web": 3, "api": 9, "db": 3, "cache": 0})
 // => ["api" "db" "web" "cache"]
 ```
+
+**Think it through:**
+- `a` and `b` are service *names*. Where do you look up their error counts?
+- "More first" is the reverse of what `cmp.Compare` does by default. What do you swap?
+- When the counts are equal, compare the names themselves.
 
 ## Learn more
 

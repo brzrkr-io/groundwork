@@ -5,14 +5,16 @@ rows of data and checks them all with one loop, so adding a case costs one
 line. Most Go tests you'll read at work, including Kubernetes', look like
 this.
 
+**New here:** anonymous structs, slices of test cases, boundary testing.
+
 ## Learn
 
 ### The problem with copy and paste
 
-In *Your first test*, every check repeated the same five lines with a
-different port. With ten cases that's fifty lines, and a typo in one copy is
-easy to miss. The only part that really changes is the data: the input and
-the answer you want.
+In *Your first test*, every check repeated the same lines with different
+values. With ten cases that's fifty lines, and a typo in one copy is easy to
+miss. The only part that really changes is the data: the input and the
+answer you want.
 
 ### A table of cases
 
@@ -21,20 +23,30 @@ Put the data in a slice of structs, one struct per case:
 ```go
 tests := []struct {
 	name string
-	port string
+	in   int
 	want int
 }{
-	{"ssh", "22", 22},
-	{"https", "443", 443},
+	{"small", 2, 4},
+	{"zero", 0, 0},
 }
 ```
 
-`struct { ... }` without a type name is an *anonymous struct*. You only need
-this type here, so it doesn't get a name. Each `{"ssh", "22", 22}` fills in
-the fields in order: `name`, `port`, `want`.
+Read it in two halves:
 
-The `name` field describes the case in a few words. It doesn't affect the
-check. It's there so a failure tells you which row broke.
+1. `[]struct { name string; in int; want int }` is the **type**: a slice
+   of structs with three fields.
+2. The `{ ... }` after it holds the **rows**. Each row like
+   `{"small", 2, 4}` fills the fields in order: `name`, `in`, `want`.
+
+`name` describes the case in a few words. It doesn't change the check; it
+tells you which row broke.
+
+> **Why is it written like this?** Go requires the type before the `{`
+> rows, and a comma after every row, even the last one when it ends a
+> line. A `struct` with no type name is an *anonymous struct*: you need
+> this type only here, so naming it is unnecessary. Calling the slice
+> `tests` and the fields `name`/`want` is convention; the other field
+> names (`in`) are your choice.
 
 ### One loop checks every row
 
@@ -47,37 +59,39 @@ for _, tc := range tests {
 }
 ```
 
-`tc` is short for "test case". It holds one row on each pass through the
-loop. Use `t.Errorf`, not `t.Fatalf`, so one bad row doesn't hide the rest.
-A failure then reads like this:
+`tc` ("test case") holds one row on each pass through the loop, and
+`tc.in` reads a field from it. Use `t.Errorf`, not `t.Fatalf`, so one bad
+row doesn't hide the rest. A failure reads like this:
 
 ```text
-warning starts: DiskAlert(80) = "ok", want "warning"
+small: Double(2) = 5, want 4
 ```
 
-Later, in *Subtests and helpers*, you'll give each row its own named subtest
-with `t.Run`. For now the name goes into the message.
+Later, in *Subtests and helpers*, each row gets its own named subtest. For
+now the name goes into the message.
+
+> **Why is it written like this?** `range` gives an index and a value; the
+> `_` throws the index away (Go rejects unused variables). The name `tc`
+> is convention, and `tt` is also common.
 
 ### Test both sides of every boundary
 
 Bugs gather at the edges. `>=` versus `>` changes the answer for exactly one
-value, so a test that only checks 50 and 95 can't tell them apart. For every
-limit in the rules, add the first value on each side:
+value, so a test that only checks values far from a limit can't tell them
+apart. For every limit, test the last value before it and the first value
+at it. For a rule like "adult from 18":
 
-| Rule | Rows to add |
+| Value | Why |
 |---|---|
-| warning from 80 | 79 and 80 |
-| critical from 90 | 89 and 90 |
-| valid from 0 to 100 | -1, 0, 100 and 101 |
+| 17 | last value before the limit |
+| 18 | first value at the limit |
 
 ### How Gopherlings grades your test
 
-As in *Your first test*, `TestGrader` in `grader_test.go` re-runs your
-`TestDiskAlert` against the real `DiskAlert`, where it must pass, and then
-against *mutants*, copies with one deliberate bug each. Your test must fail
-against every mutant. Any mutant that slips through is named in
-`TestGrader`'s output, for example "your tests didn't notice when
-DiskAlert(80) said "ok"".
+As in *Your first test*, `TestGrader` runs your test against the real code
+(it must pass) and against *mutants*, copies with one bug each (it must fail
+on every one). Any mutant that slips through is named in `TestGrader`'s
+output, such as "your tests didn't notice when DiskAlert(80) said "ok"".
 
 ## Your task
 
@@ -92,12 +106,13 @@ The code in `exercise.go` is correct:
 | 0 to 79 | `"ok"` |
 
 `TestDiskAlert` in `exercise_test.go` already has the table and the loop,
-with one row, `{"half full", 50, "ok"}`. You only add rows. Pick any names
-you like.
+with one row, `{"half full", 50, "ok"}`. You only add rows to the table;
+don't change the loop. Each row is name, `used`, `want`. Pick any names you
+like.
 
 ### 1. Add a row for each level
 
-Add these rows:
+**Goal:** add rows for `85` → `"warning"` and `95` → `"critical"`.
 
 | `used` | `want` |
 |---|---|
@@ -107,9 +122,13 @@ Add these rows:
 This catches mutants that never return `"warning"` or never return
 `"critical"`.
 
+**Think it through:**
+- Look at the existing row. Which of its three values is the name, the input, the answer?
+- Where do the new rows go: inside the type's `{ }` or the rows' `{ }`?
+
 ### 2. Add the boundary rows
 
-Add both sides of the warning and critical boundaries:
+**Goal:** add rows for both sides of the warning limit (80) and the critical limit (90).
 
 | `used` | `want` |
 |---|---|
@@ -121,7 +140,13 @@ Add both sides of the warning and critical boundaries:
 This catches mutants that use `>` instead of `>=`, or start a level one
 percent too early.
 
+**Think it through:**
+- For each value, find its line in the `DiskAlert` table above.
+- Does each row end with a comma?
+
 ### 3. Add the edges of the valid range
+
+**Goal:** add rows for the two ends of the valid range and the two values just outside it.
 
 | `used` | `want` |
 |---|---|
@@ -132,6 +157,9 @@ percent too early.
 
 This catches mutants that reject an empty or full disk, or accept `-1` or
 `101`.
+
+**Think it through:**
+- `used` is an `int`, and `want` is a `string`. Which one needs quotes?
 
 The exercise is done when `TestDiskAlert` passes and `TestGrader` reports
 that every mutant was caught.

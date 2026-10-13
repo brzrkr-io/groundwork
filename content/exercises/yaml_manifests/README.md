@@ -1,21 +1,17 @@
 # YAML manifests: reading them into Go
 
-Nobody types Kubernetes objects into Go by hand all day. Teams keep them in
-YAML files in Git and run `kubectl apply -f`. Platform tools (linters, CI
-checks, deploy bots) read those same files, so your Go code needs to read them too.
+Teams keep Kubernetes objects in YAML files in Git and run `kubectl apply -f`.
+Platform tools (linters, CI checks, deploy bots) read those same files, so
+your Go code needs to read them too.
+
+**New here:** YAML, `sigs.k8s.io/yaml`, `metav1.TypeMeta`, multi-document streams, `strings.SplitSeq`.
 
 ## Learn
 
 ### What a manifest is
 
 A *manifest* is a text file that describes one or more Kubernetes objects.
-You hand it to the cluster with:
-
-```text
-kubectl apply -f checkout.yaml
-```
-
-It has the same parts you built in Go in *Kubernetes objects: building a Deployment*:
+It has the parts you built in *Kubernetes objects: building a Deployment*:
 `apiVersion`, `kind`, `metadata` and `spec`.
 
 ```yaml
@@ -24,8 +20,6 @@ kind: Deployment
 metadata:
   name: checkout
   namespace: shop
-  labels:
-    app: checkout
 spec:
   replicas: 3
   template:
@@ -33,13 +27,11 @@ spec:
       containers:
         - name: checkout
           image: registry.example.com/shop/checkout:2.1.0
-          ports:
-            - containerPort: 8080
 ```
 
 ### YAML in five rules
 
-*YAML* holds the same data as JSON, but uses indentation instead of braces.
+*YAML* holds the same data as JSON, using indentation instead of braces.
 
 | YAML | JSON | Meaning |
 |---|---|---|
@@ -49,149 +41,148 @@ spec:
 | `replicas: 3` | `"replicas": 3` | numbers stay numbers |
 | `# note` | (none) | a comment |
 
-Indentation must use **spaces, never tabs**. Items in the same map must line
-up exactly. `containers:` above is a list holding one map, and that map has
-the keys `name`, `image` and `ports`.
+Indent with **spaces, never tabs**. Keys in the same map must line up
+exactly.
 
 ### Reading YAML into Go types
 
-The package `sigs.k8s.io/yaml` is the YAML library Kubernetes itself uses.
-Its `yaml.Unmarshal` works in two steps:
-
-1. It converts the YAML text to JSON.
-2. It calls `json.Unmarshal` (from *Decoding JSON*) on the result.
-
-So the Go types' `json` struct tags decide which key fills which field. That
-is why manifests use camelCase names such as `apiVersion` and
-`containerPort`: they are the `json` names of the Go fields.
+`sigs.k8s.io/yaml` is the YAML library Kubernetes itself uses.
+`yaml.Unmarshal` converts the YAML to JSON, then calls `json.Unmarshal` (as
+in *Decoding JSON*). So the Go types' `json` tags decide which key fills
+which field. Here it reads a Service:
 
 ```go
-import (
-	appsv1 "k8s.io/api/apps/v1"
-	"sigs.k8s.io/yaml"
-)
-
-var d appsv1.Deployment
-if err := yaml.Unmarshal(data, &d); err != nil {
-	return fmt.Errorf("read manifest: %w", err)
+var svc corev1.Service
+if err := yaml.Unmarshal(data, &svc); err != nil {
+	return fmt.Errorf("load service: %w", err)
 }
-fmt.Println(d.Name, *d.Spec.Replicas) // checkout 3
+fmt.Println(svc.Name, svc.Spec.Ports[0].Port) // checkout 80
 ```
 
-`data` is a `[]byte`, just like with `json.Unmarshal`. Keys that match no field
-are silently ignored, so a typo like `replica: 3` leaves `Replicas` as `nil`.
+`data` is a `[]byte`. Keys that match no field are silently ignored, so a
+typo like `replica: 3` leaves `Replicas` as `nil`.
+
+> **Why is it written like this?**
+> - **Go requires** `&svc`: `Unmarshal` must change your variable, so it
+>   needs its address.
+> - **Convention:** declare an empty `var` first, fill it, then return it
+>   (or `&` it if the function returns a pointer).
+> - **Author's choice:** the text before `%w` (`"load service: "`) is up to
+>   you; it tells the reader where the error came from.
 
 ### Peeking at the kind first
 
-A file could hold a Deployment, a Service or anything else, and each kind
-needs a different Go type. So tools first read only `apiVersion` and `kind`.
-The type `metav1.TypeMeta` (from `k8s.io/apimachinery/pkg/apis/meta/v1`) has
-exactly those two fields:
+A file could hold any kind, and each kind needs a different Go type. So
+tools first read only `apiVersion` and `kind`, using `metav1.TypeMeta`,
+which has exactly those two fields (`APIVersion`, `Kind`). Every other key is
+ignored. Then they unmarshal again into the right type.
 
-```go
-var tm metav1.TypeMeta
-err := yaml.Unmarshal(data, &tm) // every other key is ignored
-fmt.Println(tm.APIVersion, tm.Kind) // apps/v1 Deployment
-```
-
-Once you know the kind, you pick the right type and unmarshal again.
+A missing key leaves its field at the zero value, `""`. That is not an
+error to `Unmarshal`; you must check for it yourself.
 
 ### Many objects in one file
 
-One file often holds several objects, called *documents*, separated by a line
-that is exactly `---`:
+One file often holds several objects, called *documents*, separated by a
+line that is exactly `---`:
 
 ```yaml
 apiVersion: v1
 kind: Namespace
-metadata:
-  name: shop
 ---
 apiVersion: apps/v1
 kind: Deployment
-...
 ```
 
-`yaml.Unmarshal` reads only one document, so you split the stream first.
-These `strings` functions help:
+`yaml.Unmarshal` reads one document, so you split the stream first.
+`strings.SplitSeq` hands you one piece at a time in a `for range` loop:
 
 ```go
-strings.Split("a\nb", "\n")         // []string{"a", "b"}
-strings.Join([]string{"a", "b"}, "\n") // "a\nb"
-strings.TrimSpace("\n  hi \n")       // "hi"
-```
-
-When you only want to loop over the pieces, `strings.SplitSeq` is the
-better choice. It hands you one piece at a time in a `for range` loop
-instead of building the whole slice first:
-
-```go
-for line := range strings.SplitSeq("a\nb", "\n") {
-	fmt.Println(line) // "a", then "b"
+for word := range strings.SplitSeq("red,green,blue", ",") {
+	fmt.Println(word) // "red", then "green", then "blue"
 }
 ```
 
+> **Why is it written like this?** `SplitSeq` vs `strings.Split` is a
+> **convention**: `Split` builds a whole slice first; `SplitSeq` is preferred
+> when you only loop over the pieces.
+
 ## Your task
 
-You're writing the first pieces of `shiplint`, a tool that checks the
-manifests in your team's deploy repo before they reach the cluster.
+You're writing the first pieces of `shiplint`, a tool that checks manifests
+in your team's deploy repo before they reach the cluster.
 
 ### 1. Parse a Deployment
 
-Finish `ParseDeployment(data []byte) (*appsv1.Deployment, error)`. Unmarshal
-`data` into an `appsv1.Deployment` with `yaml.Unmarshal` and return a pointer
-to it. If unmarshalling fails, return `nil` and the error wrapped with `%w`
-and the prefix `parse deployment: `.
+**Goal:** make `ParseDeployment(data)` return a pointer to the `appsv1.Deployment` read from `data`.
+
+- Use `yaml.Unmarshal` into an `appsv1.Deployment`.
+- On success: return a pointer to it and `nil`.
+- On failure: return `nil` and the error wrapped with `%w`, prefix
+  `parse deployment: `. Add the `"fmt"` import.
 
 ```go
 d, err := ParseDeployment(checkoutYAML) // testdata/checkout.yaml
 // d.Name == "checkout", d.Namespace == "shop", *d.Spec.Replicas == 3
 
-_, err = ParseDeployment([]byte("replicas: [3"))
+_, err = ParseDeployment([]byte("spec:\n  replicas: three\n"))
 // err.Error() starts with "parse deployment: "
 ```
 
+**Think it through:**
+- Compare with the Service example above: what changes for a Deployment?
+- The function returns `*appsv1.Deployment`. How do you get a pointer to your variable?
+
 ### 2. Read the type
 
-`ReadType(data []byte) (metav1.TypeMeta, error)` already unmarshals `data`
-into a `metav1.TypeMeta` (look at it for a working `yaml.Unmarshal` call).
-Finish its error handling:
+**Goal:** finish the error handling in `ReadType`.
 
-- If unmarshalling fails, return the error wrapped with `%w` and the prefix
-  `read type: `, instead of returning it bare.
-- If the document has no `kind`, return the error `read type: missing kind`.
+`ReadType` already unmarshals into a `metav1.TypeMeta`. Change it so:
+
+- If unmarshalling fails, it returns the error wrapped with `%w` and the
+  prefix `read type: ` (not bare).
+- If `tm.Kind` is empty, it returns the error `read type: missing kind`
+  exactly.
+
+Add the `"errors"` import (or use `fmt.Errorf` without verbs).
 
 ```go
 ReadType(serviceYAML) // testdata/service.yaml
 // => metav1.TypeMeta{APIVersion: "v1", Kind: "Service"}, nil
 
-ReadType([]byte("metadata:\n  name: web\n"))
+ReadType([]byte("apiVersion: v1\n"))
 // => error "read type: missing kind"
 ```
 
+**Think it through:**
+- Which line returns the bare `err` now?
+- Where does the "missing kind" check go: before or after a successful unmarshal?
+
 ### 3. Split a stream into documents
 
-Finish `SplitDocuments(stream string) []string`:
+**Goal:** write the loop in `SplitDocuments` that splits `stream` on `---` lines.
 
-- A line that is exactly `---` separates two documents. Any other line
-  (for example `name: a---b`) is ordinary text.
-- Trim each document with `strings.TrimSpace`.
-- Skip documents that are empty after trimming (for example before a leading
-  `---`, or between two `---` lines).
+- Loop over the lines with `strings.SplitSeq(stream, "\n")`.
+- A line that is **exactly** `---` ends a document. Other lines, like
+  `name: a---b`, are ordinary text.
+- `addDocument(docs, current)` is written for you: it joins, trims, and
+  appends unless empty. Call it on each `---`, then start `current` fresh.
+- Any other line is appended to `current`.
 
-The helper `addDocument` is already written: it joins a document's lines,
-trims it, and appends it unless it is empty. The final call that adds the last
-document is in place too. You write the loop over the lines, using
-`strings.SplitSeq`.
+The final `addDocument` for the last document is already in place. Empty
+input or input of only `---` lines returns `nil`.
 
 ```go
 SplitDocuments("---\nkind: Namespace\n---\n\n---\nkind: Service\n")
 // => []string{"kind: Namespace", "kind: Service"}
 ```
 
+**Think it through:**
+- What two things happen on a `---` line? What happens on any other line?
+- How do you "start fresh" with a slice variable?
+
 ## Learn more
 
-- [Kubernetes: Objects in Kubernetes (describing an object)](https://kubernetes.io/docs/concepts/overview/working-with-objects/)
+- [Kubernetes: Objects in Kubernetes](https://kubernetes.io/docs/concepts/overview/working-with-objects/)
 - [Kubernetes: Managing resources (multiple resources in one file)](https://kubernetes.io/docs/concepts/workloads/management/)
-- [sigs.k8s.io/yaml on pkg.go.dev](https://pkg.go.dev/sigs.k8s.io/yaml)
-- [YAML in Y minutes](https://learnxinyminutes.com/docs/yaml/)
+- [pkg.go.dev: sigs.k8s.io/yaml](https://pkg.go.dev/sigs.k8s.io/yaml)
+- [pkg.go.dev: strings.SplitSeq](https://pkg.go.dev/strings#SplitSeq)

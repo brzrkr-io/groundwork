@@ -2,31 +2,65 @@
 
 A rolling deploy never touches every host at once. It deploys the canaries
 first, then the rest in small batches, so a bad release only hurts a few hosts.
-Here you build that plan with `append` and `copy`.
+
+**New here:** slices of slices (`[][]string`), stepping a loop by more than 1.
 
 ## Learn
 
 ### Recap
 
-Build results with `var out []T` and `out = append(out, v)` in a loop. Use
-`append(a, b...)` to add all of `b`. Use `slices.Clone(s)` (import `"slices"`)
-or `make` + `copy` when you need a copy that doesn't change with the original.
+- Grow a result in a loop: start with `var out []T`, then `out = append(out, v)`.
+- `slices.Clone(s)` (with `import "slices"`) makes a copy that does not change
+  when `s` changes.
+- `s[a:b]` cuts a piece of a slice, as in *Slices*. That piece **shares**
+  elements with `s`.
+
+> **Why is it written like this?** `out = append(out, v)` is required: `append`
+> returns the new slice, and Go rejects an `append` whose result you ignore.
+> The name `out` is your choice.
 
 ### A slice of slices
 
-The element type of a slice can be another slice. `[][]string` is a slice whose
-elements are `[]string` values. Each element is one batch of hosts:
+A slice's elements can themselves be slices. `[][]string` is a slice whose
+elements are `[]string` values:
 
 ```go
-batches := [][]string{
-	{"web-1", "web-2"}, // batches[0]
-	{"web-3"},          // batches[1]
+groups := [][]string{
+	{"eu-1", "eu-2"}, // groups[0]
+	{"us-1"},         // groups[1]
 }
-len(batches)    // 2
-batches[0][1]   // "web-2"
+len(groups)  // 2
+groups[0][1] // "eu-2": first pick the group, then the name in it
 
-var more [][]string
-more = append(more, []string{"db-1", "db-2"}) // append one whole batch
+var all [][]string
+all = append(all, []string{"ap-1", "ap-2"}) // adds one whole group
+```
+
+> **Why is it written like this?** Go requires the type to say both levels:
+> `[][]string` reads "slice of (slice of string)". Inside the `{ }` you may
+> drop the inner `[]string`, because Go already knows it.
+
+### A loop that jumps
+
+A three-part `for` loop can step by any amount, not only 1:
+
+```go
+for n := 0; n < 10; n += 4 {
+	fmt.Println(n) // 0, 4, 8
+}
+```
+
+> **Why is it written like this?** The three parts (start; keep going while;
+> step) and the semicolons are required syntax. The variable name is your
+> choice.
+
+### Don't run off the end
+
+Slicing past `len(s)` crashes the program. The built-in `min`, as in *For
+loops: plan a rollout*, picks the smaller number:
+
+```go
+min(7, 5) // 5
 ```
 
 ## Your task
@@ -36,9 +70,12 @@ hosts. The inventory export sometimes contains blank names (`""`).
 
 ### 1. Build the deploy plan
 
-`Plan(canaries, hosts)` returns one list: every canary in order, then every
-host in order, skipping blank names. If there is nothing left, return a slice
-with no elements.
+**Goal:** make `Plan(canaries, hosts)` return all canaries, then all hosts, with
+blank names left out.
+
+- Keep the order: canaries in their order first, then hosts in their order.
+- Skip every `""`, in either list.
+- If nothing is left, return a slice with no elements (`nil` is fine).
 
 ```go
 Plan([]string{"web-0"}, []string{"web-1", "", "web-2"})
@@ -48,15 +85,20 @@ Plan([]string{"", ""}, nil)
 // => []
 ```
 
+**Think it through:**
+- Which list do you walk first, so canaries end up at the front?
+- What check decides whether a name gets appended?
+
 ### 2. Split it into batches
 
-`Batches(hosts, size)` splits `hosts` into batches of `size` hosts each, in
-order. The last batch holds whatever is left, so it may be smaller.
+**Goal:** make `Batches(hosts, size)` split `hosts` into groups of `size`
+hosts, in order.
 
-- If `hosts` is empty, return no batches.
-- If `size` is less than 1, return no batches.
-- Each batch is its own copy: changing `hosts` afterwards must not change the
-  batches. The test checks this by editing `hosts` after the call.
+- The last batch holds whatever is left, so it may be smaller.
+- If `hosts` is empty, return no batches (`nil`).
+- If `size` is less than 1, return no batches (`nil`).
+- Each batch must be its own copy. The test changes `hosts` after the call and
+  checks that your batches did not change.
 
 ```go
 Batches([]string{"web-1", "web-2", "web-3", "web-4", "web-5"}, 2)
@@ -69,10 +111,10 @@ Batches([]string{"web-1"}, 0)
 // => []
 ```
 
-A plain three-part loop that jumps by `size` (`start += size`) and the slice
-expression `hosts[start:end]` from *Slices* do most of the work. Make sure
-`end` never goes past `len(hosts)`: the built-in `min`, as in *For loops: plan
-a rollout*, picks the smaller of `start + size` and `len(hosts)`.
+**Think it through:**
+- Where does each batch start, and by how much does that start move each time?
+- For the last batch, which is smaller: start + `size`, or `len(hosts)`?
+- A piece cut with `[a:b]` shares elements with `hosts`. What makes it a copy?
 
 ## Learn more
 

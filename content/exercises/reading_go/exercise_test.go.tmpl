@@ -1,0 +1,27 @@
+package anatomy
+
+import "testing"
+
+func TestShout(t *testing.T) {
+	if got := Shout("deploy"); got != "deploy!" {
+		t.Errorf(`Shout("deploy") = %q, want "deploy!"`, got)
+	}
+	if got := Shout("rollback"); got != "rollback!" {
+		t.Errorf(`Shout("rollback") = %q, want "rollback!"`, got)
+	}
+}
+
+func TestAnnounce(t *testing.T) {
+	if got := Announce("api"); got != "deploy api!" {
+		t.Errorf(`Announce("api") = %q, want "deploy api!"`, got)
+	}
+	if got := Announce("worker"); got != "deploy worker!" {
+		t.Errorf(`Announce("worker") = %q, want "deploy worker!"`, got)
+	}
+}
+
+func TestBanner(t *testing.T) {
+	if got := Banner(); got != "gopherlings v1.0.0" {
+		t.Errorf(`Banner() = %q, want "gopherlings v1.0.0"`, got)
+	}
+}

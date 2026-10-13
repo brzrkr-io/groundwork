@@ -1,15 +1,18 @@
 # Middleware: logging, request IDs and panics
 
-Every service needs the same chores on every request: log it, tag it with an
+Every service does the same chores on every request: log it, tag it with an
 ID you can search for later, and survive a bug without crashing. *Middleware*
 does those chores once, around all your handlers.
+
+**New here:** middleware, `http.HandlerFunc`, `next.ServeHTTP`, functions
+that return functions, `recover` in a handler.
 
 ## Learn
 
 ### A handler that wraps a handler
 
 Middleware is a function that takes a handler and returns a new handler. The
-new handler does something extra, and calls the original one (called `next`)
+new handler does something extra, then calls the original one (named `next`)
 to do the real work:
 
 ```go
@@ -17,7 +20,7 @@ to do the real work:
 type Middleware func(http.Handler) http.Handler
 ```
 
-Here is a complete middleware that adds a header to every response:
+A complete middleware that adds a header to every response:
 
 ```go
 func AddVersion(next http.Handler) http.Handler {
@@ -28,13 +31,16 @@ func AddVersion(next http.Handler) http.Handler {
 }
 ```
 
-- `http.HandlerFunc(func(w, r) {...})` turns an ordinary function into an
-  `http.Handler`. It's a conversion, like `int(x)`, not a call.
-- `next.ServeHTTP(w, r)` runs the wrapped handler. Code before it runs before
-  the handler, code after it runs after. If you never call it, the handler
-  never runs (that's how an auth check blocks a request).
-- The inner function is a *closure*, as in the functions-as-values
-  exercises: it can use `next` long after `AddVersion` has returned.
+- `http.HandlerFunc(func...)` turns an ordinary function into an
+  `http.Handler`. It's a *conversion*, like `int(x)`, not a call.
+- `next.ServeHTTP(w, r)` runs the wrapped handler. Code above it runs before
+  the handler; code below it runs after. Skip it, and the handler never runs.
+- The inner function is a *closure*, as in *Functions as values*: it can
+  still use `next` after `AddVersion` has returned.
+
+> **Why is it written like this?** Go requires a handler function to take
+> exactly `(w http.ResponseWriter, r *http.Request)`. The names `w`, `r` and
+> `next` are convention; Go would accept any names.
 
 ### Middleware with settings
 
@@ -50,56 +56,63 @@ func AddHeader(key, value string) Middleware {
 		})
 	}
 }
+
+h := AddHeader("X-Team", "platform")(mux)
 ```
 
-Read it from the outside in: `AddHeader("X-Version", "1.4.2")` gives you a
-`Middleware`. Calling that with a handler gives you the wrapped handler:
+Read `AddHeader("X-Team", "platform")(mux)` left to right: the first call
+gives a `Middleware`, and calling that with `mux` gives the wrapped handler.
 
-```go
-h := AddHeader("X-Version", "1.4.2")(mux)
-```
+All three functions in this exercise have this shape, and the starter already
+has the three layers. You only fill in the innermost function.
 
-All three functions in this exercise have exactly this shape, and the starter
-already has the three layers. You only fill in the middle.
+> **Why is it written like this?** The inner function uses `key` and `value`,
+> the outer function's *parameters*. Use those names, not the function's name
+> `AddHeader`. The three nested `return`s are required: each layer must hand
+> back the next one.
 
 ### Stacking middleware
 
-You wrap a handler several times. The **last** wrapper you apply is the
-**outermost** one, so it runs first:
+The **last** wrapper you apply is the **outermost**, so it runs first:
 
 ```go
 h := Recover(os.Stderr)(Logging(os.Stdout)(mux))
 // a request goes: Recover -> Logging -> mux
 ```
 
-Put `Recover` outermost, so it catches panics from everything inside it.
-
 ### Recovering from a panic
 
-A panic in a handler is a bug, but one bad request shouldn't take down a whole
-service. As in the panic and recover exercises, a deferred function can call
-`recover()`. It returns the panic value, or `nil` when there was no panic:
+One bad request shouldn't take down the whole service. As in *Panic and
+recover*, a deferred function can call `recover()`. It returns the panic
+value, or `nil` when nothing panicked:
 
 ```go
 defer func() {
 	if v := recover(); v != nil {
-		// v is whatever was passed to panic: a string, an error, ...
+		fmt.Println("caught:", v)
 	}
 }()
 ```
 
-`%v` formats any panic value for a log line.
+`%v` formats any panic value (a string, an error, ...) for a log line.
+
+> **Why is it written like this?** `defer func() { ... }()` defines a function
+> and calls it later. The final `()` is required: it's the call. `defer` must
+> run *before* the code that might panic.
 
 ## Your task
 
 Your team's services need three standard middlewares. Each test wraps a small
-handler with your middleware and checks the response.
+handler with yours and checks the response.
 
 ### 1. Log every request
 
-`Logging(out)` writes one line to `out` for every request: the method, a
-space, the path, and a newline. Use `r.Method` and `r.URL.Path` (the path
-without any `?query`). Then call the next handler as usual.
+**Goal:** `Logging(out)` writes `METHOD PATH` and a newline to `out`, then
+runs the next handler.
+
+The line is: the method, one space, the path, `\n`. The method is
+`r.Method`; the path is `r.URL.Path` (without any `?query`). Add the `"fmt"`
+import.
 
 ```text
 GET /healthz        logs "GET /healthz\n"
@@ -107,15 +120,20 @@ POST /deploys       logs "POST /deploys\n"
 GET /logs?limit=5   logs "GET /logs\n"
 ```
 
+**Think it through:**
+- Which `fmt` function writes formatted text to a writer like `out`?
+- Don't forget the space between the two parts, and the newline.
+
 ### 2. Tag every request with an ID
 
-`RequestID(newID)` makes sure each request has an `X-Request-ID`:
+**Goal:** `RequestID(newID)` makes sure the request and the response both
+carry the same `X-Request-ID`.
 
-- If the request already has an `X-Request-ID` header, keep it. Don't call
+- Request already has an `X-Request-ID` header: keep it, and **don't** call
   `newID`.
-- Otherwise call `newID()` once and set the result as the request's
-  `X-Request-ID` header (`r.Header.Set`), so the next handler can read it.
-- Either way, set the same ID as the response's `X-Request-ID` header, before
+- No header: call `newID()` once, and set the result on the request with
+  `r.Header.Set`, so the next handler can read it.
+- Either way: set the same ID as the response's `X-Request-ID` header, before
   calling the next handler.
 
 ```text
@@ -126,12 +144,20 @@ request with X-Request-ID: abc-123
 // next handler sees "abc-123"; response header X-Request-ID: abc-123
 ```
 
+**Think it through:**
+- What does `r.Header.Get` return when the header is missing?
+- `newID` is a parameter holding a function. You call it with `()`.
+
 ### 3. Recover from panics
 
-`Recover(out)` catches a panic from the next handler. When one happens:
+**Goal:** `Recover(out)` turns a panic in the next handler into a 500 response
+and a log line.
 
-- write `panic: <value>` and a newline to `out` (format the value with `%v`)
-- reply with `http.Error`, status 500 and the message `internal server error`
+When the next handler panics:
+
+- write `panic: <value>` and a newline to `out`, formatting the value with
+  `%v`
+- reply with `http.Error`, status 500, message `internal server error`
 
 When nothing panics, the response passes through unchanged and nothing is
 logged.
@@ -140,6 +166,10 @@ logged.
 handler panics with "boom"
 // 500, body "internal server error\n", log "panic: boom\n"
 ```
+
+**Think it through:**
+- Where must the `defer` go relative to `next.ServeHTTP`?
+- Which status constant means 500?
 
 ## Learn more
 

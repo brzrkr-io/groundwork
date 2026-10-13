@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -44,6 +45,9 @@ func TestPacks(t *testing.T) {
 			}
 			if !strings.Contains(readme, "\n## Your task") {
 				t.Error(`README.md has no "## Your task" section`)
+			}
+			for _, problem := range readmeStructure(readme) {
+				t.Error(problem)
 			}
 			if _, err := c.Tasks(e); err != nil {
 				t.Errorf("hints.md doesn't match the README's tasks:\n%v", err)
@@ -129,6 +133,33 @@ func goTest(dir string, race bool) (string, error) {
 		args = append(args, "-race")
 	}
 	return run(dir, "go", append(args, "./...")...)
+}
+
+// readmeStructure checks the scannable layout from AUTHORING.md: a
+// "**New here:**" line, and every task with a "**Goal:**" line and a
+// "**Think it through:**" list.
+func readmeStructure(readme string) []string {
+	var problems []string
+	if !strings.Contains(readme, "\n**New here:**") {
+		problems = append(problems, `README.md has no "**New here:**" line under the title`)
+	}
+	tasks := regexp.MustCompile(`(?m)^### (\d+)\. `).FindAllStringSubmatchIndex(readme, -1)
+	for i, m := range tasks {
+		end := len(readme)
+		if i+1 < len(tasks) {
+			end = tasks[i+1][0]
+		} else if j := strings.Index(readme[m[0]:], "\n## "); j >= 0 {
+			end = m[0] + j
+		}
+		section, n := readme[m[0]:end], readme[m[2]:m[3]]
+		if !strings.Contains(section, "\n**Goal:**") {
+			problems = append(problems, "README task "+n+` has no "**Goal:**" line`)
+		}
+		if !strings.Contains(section, "\n**Think it through:**") {
+			problems = append(problems, "README task "+n+` has no "**Think it through:**" list`)
+		}
+	}
+	return problems
 }
 
 // gofmt returns the unformatted files (or the parse errors) under dir.

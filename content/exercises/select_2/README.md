@@ -1,78 +1,82 @@
 # select: tickers and deadlines
 
 Agents, exporters and controllers all run loops like "every 10 seconds, do
-something, until told to stop". This exercise builds that loop with a ticker,
-and fixes a classic timeout bug.
+something, until told to stop". Here you build that loop with a *ticker*, and
+fix a classic timeout bug.
+
+**New here:** `time.NewTicker`, `ticker.C`, `ticker.Stop`, and creating a
+timer once, outside a loop.
 
 ## Learn
 
 ### Recap
 
-`select` waits on several channel operations and runs the first one that is
-ready. `time.After(d)` returns a channel that receives once, after `d`.
-`chan struct{}` is a signal channel; closing it wakes every receiver. The tests
-use `testing/synctest`, so timers fire instantly in real time while the fake
-clock still moves forward correctly.
+- `select` waits on several channel operations and runs the first one that
+  is ready.
+- `time.After(d)` returns a channel that receives one value after `d`.
+- Closing a `chan struct{}` wakes every receiver, and stays "ready" forever.
 
-### One timer, or a new timer every loop?
+The tests use `testing/synctest`: a fake clock, so a 10-second wait finishes
+instantly but still counts as 10 seconds.
 
-Each call to `time.After` creates a **new** timer. Inside a loop, that means
-the timeout starts again from zero on every pass:
+### One timer, or a new one every loop?
+
+Every **call** to `time.After` starts a **new** timer. Put the call inside a
+`select` in a loop, and the timer restarts from zero on every pass:
 
 ```go
 for {
 	select {
-	case e := <-events:
-		handle(e)
-	case <-time.After(5 * time.Second): // a fresh 5s timer every time round
+	case msg := <-alerts:
+		page(msg)
+	case <-time.After(30 * time.Second): // new 30s timer on every pass
 		return
 	}
 }
 ```
 
-This only ends after 5 *quiet* seconds. If an event arrives every second, it
-never ends. For an overall deadline, create the timer **once**, before the
-loop:
+That loop only ends after 30 *quiet* seconds. If an alert arrives every 10
+seconds, it never ends.
 
-```go
-deadline := time.After(5 * time.Second) // one timer for the whole loop
-for {
-	select {
-	case e := <-events:
-		handle(e)
-	case <-deadline:
-		return
-	}
-}
-```
+For one overall deadline, call `time.After` **once**, before the loop. Store
+the channel it returns in a variable, and receive from that variable in the
+`case`. A channel is a value like any other, so you can keep it in a variable.
+
+> **Why is it written like this?** Go requires `case <-ch:` to name a
+> channel; it can be any expression that gives one, a function call or a
+> variable. Where you create the timer is *your* choice, and it decides
+> what the timeout means.
 
 ### Tickers
 
-A *ticker* sends the current time on its channel `C` again and again, every
-interval. The first tick arrives after one interval, not straight away:
+A *ticker* sends on its channel `C` again and again, once per interval. The
+first tick comes after one interval, not straight away.
 
 ```go
-ticker := time.NewTicker(10 * time.Second)
-defer ticker.Stop() // release the ticker when the function returns
+ticker := time.NewTicker(time.Minute)
+defer ticker.Stop()
 
 for {
 	select {
 	case <-ticker.C:
-		scrapeMetrics()
-	case <-stop:
+		rotateLogs()
+	case <-quit:
 		return
 	}
 }
 ```
 
 ```text
-time:   0s ──── 10s ──── 20s ──── 25s
-ticks:          tick     tick      │
-stop:                              closed → return
+time:   0s ──── 1m ──── 2m ──── 2m30s
+ticks:          tick    tick     │
+quit:                            closed → return
 ```
 
-`ticker.Stop()` stops future ticks. Using `defer` means you can't forget it,
-whichever way the function returns.
+> **Why is it written like this?** `time.NewTicker` and the field name `C`
+> come from the `time` package (Go requires them as named). `defer
+> ticker.Stop()` straight after creating it is convention: it releases the
+> ticker however the function returns. The `for { select { … } }` shape is
+> the standard Go loop for "wait for whichever happens first, forever".
 
 ## Your task
 
@@ -80,16 +84,20 @@ You're working on a small monitoring agent.
 
 ### 1. Fix the collection window
 
-`CollectFor(events, window)` should collect events until `window` has passed
-since it was called, or until `events` is closed, whichever comes first. It
-returns the events in the order they arrived.
+**Goal:** make `CollectFor(events, window)` stop once `window` has passed
+since it was **called**, not since the last event.
 
-Right now, if an event arrives every second, `CollectFor` never stops early:
-its timeout starts again after every event. Fix it so `window` is measured
-from the start.
+It collects strings from `events`, in the order they arrive, and returns them
+when either:
+
+- `window` has passed since `CollectFor` started, or
+- `events` is closed (`ok` is `false`),
+
+whichever comes first. Right now its timeout restarts after every event, so a
+steady stream of events keeps it running forever.
 
 ```go
-// one event every second: "event 1", "event 2", ... "event 10", then closed
+// one event per second: "event 1", "event 2", ... "event 10", then closed
 CollectFor(events, 3500*time.Millisecond)
 // => []string{"event 1", "event 2", "event 3"}, returned after 3.5s
 
@@ -98,18 +106,34 @@ CollectFor(events, 5*time.Second)
 // => []string{"event 1", "event 2"}, returned after 2s
 ```
 
+**Think it through:**
+- Which line creates the timer, and how often does that line run?
+- Where could it run exactly once, and how will the `case` reach its channel?
+
 ### 2. Send heartbeats
 
-`Heartbeat(interval, stop, beat)` should call `beat()` once every `interval`
-using a `time.Ticker`, until `stop` is closed. Then it stops the ticker and
-returns how many times it called `beat`. The first beat happens after one
-`interval`, not straight away.
+**Goal:** make `Heartbeat(interval, stop, beat)` call `beat()` once every
+`interval` until `stop` is closed, then return how many times it called
+`beat`.
+
+- Use a `time.Ticker` with `interval`, and stop it with `defer`.
+- On every tick: call `beat()` and add 1 to `beats`.
+- When `stop` is closed: return `beats` straight away.
+- The first beat comes after one `interval`, so stopping early can return 0.
 
 ```go
 // stop is closed after 3.5s
 Heartbeat(time.Second, stop, beat)
 // beat is called at 1s, 2s and 3s; returns 3 at 3.5s
+
+// stop is closed after 4s
+Heartbeat(10*time.Second, stop, beat)
+// returns 0 at 4s
 ```
+
+**Think it through:**
+- Which two things can happen next? Each one is a `case`.
+- Compare with the ticker example in Learn: which names change?
 
 ## Learn more
 

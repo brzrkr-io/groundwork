@@ -1,108 +1,114 @@
 # HTTP servers: handlers and routes
 
-Nearly every service you run in production speaks HTTP: the load balancer
-calls its health check, Prometheus scrapes its metrics, and other services
-call its API. In this exercise you build a small service catalog server with
-nothing but Go's standard library.
+Nearly every service you run speaks HTTP: the load balancer calls its health
+check, Prometheus scrapes its metrics, other services call its API. Here you
+build a small service catalog server with only Go's standard library.
+
+**New here:** handlers, `http.ResponseWriter`, `http.Error`, `ServeMux` routing, path wildcards.
 
 ## Learn
 
 ### Handlers
 
-A web server receives *requests* and sends back *responses*. In Go, the code
-that answers a request is a *handler*. The simplest handler is a function with
+A server receives *requests* and sends back *responses*. The code that
+answers a request is a *handler*. The simplest handler is a function with
 exactly this shape:
 
 ```go
-func Hello(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "hello\n")
+func Version(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "1.0\n")
 }
 ```
 
-- `r *http.Request` is what the client sent: `r.Method` (`"GET"`, `"POST"`),
-  `r.URL.Path` (`"/healthz"`), the headers and the body.
-- `w http.ResponseWriter` is where you write your answer. It is an
-  `io.Writer`, so `fmt.Fprint(w, ...)` writes the response body, the same way
-  `fmt.Fprintf(conn, ...)` wrote to a connection in
-  *TCP: a line-based control protocol*.
+- `r *http.Request` is what the client sent: `r.Method` (`"GET"`),
+  `r.URL.Path` (`"/version"`), headers, body.
+- `w http.ResponseWriter` is where you write the answer. It is an
+  `io.Writer`, so `fmt.Fprint(w, ...)` writes the response body.
 
-Officially, a handler is anything with a `ServeHTTP(w, r)` method: the
-`http.Handler` interface. The type `http.HandlerFunc` turns a plain function
-with the shape above into an `http.Handler`. You won't need to write it
-yourself here, because `mux.HandleFunc` (below) does the conversion for you.
+> **Why is it written like this?** Go requires the parameter *types*
+> `http.ResponseWriter` then `*http.Request`, in that order, or the router
+> won't accept the function. The names `w` and `r` are convention. The
+> function name is your choice.
 
 ### Headers, then status, then body
 
-A response has three parts, and you must set them in this order:
+A response has three parts, set in this order:
 
-| Step | Code | If you skip it |
+| Step | Example | If you skip it |
 |---|---|---|
 | 1. Headers | `w.Header().Set("X-Region", "eu-west-1")` | no extra headers |
-| 2. Status code | `w.WriteHeader(http.StatusNotFound)` | 200 OK |
+| 2. Status code | `w.WriteHeader(http.StatusTeapot)` | 200 OK |
 | 3. Body | `fmt.Fprint(w, "...")` | empty body |
 
-The status line and headers travel before the body, so once you write the
-status or the first byte of the body, later header changes are ignored. If you
-never set `Content-Type`, Go guesses one from the first bytes of the body.
-Status codes have named constants: `http.StatusOK` (200),
-`http.StatusNotFound` (404), `http.StatusMethodNotAllowed` (405).
+Once the status or the first byte of body is written, later header changes
+are ignored. Status constants: `http.StatusOK` (200), `http.StatusNotFound`
+(404), `http.StatusMethodNotAllowed` (405).
 
-For an error reply, `http.Error` does all three steps in one call. It sets
-`Content-Type: text/plain; charset=utf-8`, writes the status, and writes your
-message followed by a newline:
+For an error reply, `http.Error(w, message, code)` does all three steps: it
+sets `Content-Type: text/plain; charset=utf-8`, writes the status, and writes
+your message plus a newline.
 
 ```go
-http.Error(w, "unknown service: billing", http.StatusNotFound)
-// status 404, body "unknown service: billing\n"
+http.Error(w, "disk full on "+host, http.StatusInsufficientStorage)
+// status 507, body "disk full on db1\n"
 ```
 
-Call `return` right after it, so the handler doesn't write anything else.
+Call `return` right after it, so the handler writes nothing else.
+
+### Looking up a map key, safely
+
+```go
+owner, ok := teams["search"]
+if !ok {
+	// "search" is not in the map
+}
+```
+
+> **Why is it written like this?** The two-value form `v, ok := m[key]` is Go
+> syntax; with one value you'd get `""` for a missing key and couldn't tell.
+> The name `ok` is convention.
 
 ### Routing with a ServeMux
 
 A *router* picks which handler answers each request. Go's router is the
-*ServeMux*. You register *patterns* made of a method and a path:
+*ServeMux*. You register a *pattern* (method, space, path) and a handler:
 
 ```go
 mux := http.NewServeMux()
-mux.HandleFunc("GET /healthz", Healthz)
-mux.HandleFunc("GET /services/{name}", catalog.ServeService)
+mux.HandleFunc("GET /version", Version)
+mux.HandleFunc("GET /teams/{team}/owner", t.ServeOwner)
 ```
 
-- `"GET /healthz"` matches GET requests (and HEAD, GET's body-less twin) for
-  exactly `/healthz`.
-- `{name}` is a *wildcard* that matches one path segment. Inside the handler,
-  `r.PathValue("name")` returns it: `"payments"` for `/services/payments`.
-- `catalog.ServeService` is a method used as a function value. It remembers
-  which `catalog` to use, like a closure.
+- `"GET /version"` matches GET (and HEAD) requests for exactly `/version`.
+- `{team}` is a *wildcard* for one path segment. In the handler,
+  `r.PathValue("team")` returns it, e.g. `"search"` for `/teams/search/owner`.
+- Pass the handler's **name** without `()`. With `()` you would call it now
+  instead of handing it to the router.
+- `t.ServeOwner` is a method used as a value; it remembers which `t` to use.
 
-The mux also answers some requests for you:
+The mux also answers some requests itself:
 
 | Request | Answer |
 |---|---|
-| No pattern matches the path (`GET /nope`) | 404 Not Found |
-| The path matches, the method doesn't (`POST /healthz`) | 405 Method Not Allowed, with an `Allow: GET, HEAD` header |
+| No pattern matches the path | 404 Not Found |
+| Path matches, method doesn't | 405 Method Not Allowed, with an `Allow: GET, HEAD` header |
 
-A real program would then start serving with
-`http.ListenAndServe(":8080", mux)`.
+A real program then starts with `http.ListenAndServe(":8080", mux)`.
 
 ### How the tests call your handlers
 
-The tests don't open a network port. They build a fake request with
-`httptest.NewRequest` and a *ResponseRecorder* with `httptest.NewRecorder`,
-then call the handler directly. The recorder remembers everything the
-handler wrote:
+The tests don't open a port. They make a fake request and a *ResponseRecorder*,
+then call the handler directly:
 
 ```go
-req := httptest.NewRequest("GET", "/healthz", nil)
+req := httptest.NewRequest("GET", "/version", nil)
 rec := httptest.NewRecorder()
-Healthz(rec, req)
-// rec.Code is the status, rec.Header() the headers, rec.Body.String() the body
+Version(rec, req)
+// rec.Code = status, rec.Header() = headers, rec.Body.String() = body
 ```
 
-The tests for task 2 call `req.SetPathValue("name", "payments")`, which fills
-in the wildcard the way the mux would, so task 2 works before you write task
-3. *Testing HTTP: recorders and fake servers* covers these tools properly.
+For task 2 the tests call `req.SetPathValue("name", "payments")`, which fills
+in the wildcard like the mux would. So task 2 works before task 3.
 
 ## Your task
 
@@ -112,24 +118,29 @@ service is deployed. `Catalog` maps service names to versions, for example
 
 ### 1. Answer health checks
 
-Change `Healthz` so it sets the header `Content-Type` to
-`text/plain; charset=utf-8` and writes the body `ok\n` (`ok` and a newline).
-The status stays at the default 200. Add the `"fmt"` import.
+**Goal:** `Healthz` sets `Content-Type` to `text/plain; charset=utf-8` and writes the body `ok\n`.
+
+The body is `ok` followed by a newline. The status stays at the default 200.
+Add the `"fmt"` import.
 
 ```text
 GET /healthz
 => 200, Content-Type: text/plain; charset=utf-8, body "ok\n"
 ```
 
+**Think it through:**
+- Headers first, then body.
+- Which part goes inside the quotes: header name, header value, body text?
+
 ### 2. Look up a service
 
-Change `ServeService` so it reads the service name with `r.PathValue("name")`
-and looks it up in the catalog `c`.
+**Goal:** `ServeService` reads the name from the path and replies with its version, or a 404.
 
-- Unknown name: reply with `http.Error`, status 404 and the message
-  `unknown service: <name>`.
-- Known name: set the header `X-Service-Version` to the version, then write
-  `<name> <version>\n`. The status is the default 200.
+- Name comes from `r.PathValue("name")`; look it up in the catalog `c`.
+- **Unknown name:** reply with `http.Error`, status 404, message
+  `unknown service: ` followed by the name.
+- **Known name:** set header `X-Service-Version` to the version, then write
+  the name, a space, the version, and a newline. Status stays 200.
 
 ```text
 GET /services/payments   (catalog has "payments": "v1.4.2")
@@ -139,11 +150,16 @@ GET /services/billing    (not in the catalog)
 => 404, body "unknown service: billing\n"
 ```
 
+**Think it through:**
+- Which parts are fixed text and which come from variables?
+- Don't forget the space between name and version.
+- After the 404, stop the handler.
+
 ### 3. Wire up the routes
 
-Change `NewMux` so it registers `Healthz` for `GET /healthz` and
-`c.ServeService` for `GET /services/{name}`. The tests send requests through
-the mux and check the status codes:
+**Goal:** `NewMux` registers `Healthz` for `GET /healthz` and `c.ServeService` for `GET /services/{name}`.
+
+The tests send requests through the mux:
 
 | Request | Status |
 |---|---|
@@ -152,6 +168,10 @@ the mux and check the status codes:
 | `POST /healthz` | 405, and the `Allow` header contains `GET` |
 | `DELETE /services/payments` | 405, and the `Allow` header contains `GET` |
 | `GET /nope` | 404 |
+
+**Think it through:**
+- The pattern is one string; the handler is passed by name, no `()`.
+- The 404 and 405 come free from the mux.
 
 ## Learn more
 
