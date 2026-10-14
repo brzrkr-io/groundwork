@@ -115,6 +115,7 @@ The tab row shows which view you're looking at. The results always come first.
 | `n` | next unfinished exercise |
 | `←` / `→` | previous / next exercise |
 | `↑` `↓` `pgup` `pgdn` | scroll |
+| `[` `]` | previous / next section of the instructions or a guide |
 | `e` | open the exercise in `$EDITOR` |
 | `r` | re-run the tests now |
 | `x` `x` | reset the exercise to its starter code |

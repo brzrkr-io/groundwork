@@ -126,12 +126,12 @@ func GuideList(c *course.Course, current *course.Module, read func(*course.Guide
 // Guide renders one guide for the terminal, framed like the watcher's
 // guide view.
 func Guide(text string) string {
-	w := pageWidth(readingWidth + 2 + 2*pagePad)
+	w := readingWidth + 2 + 2*pagePad
 	title, body := "", text
 	if t, rest, ok := strings.Cut(text, "\n"); ok && strings.HasPrefix(t, "# ") {
 		title, body = strings.TrimPrefix(t, "# "), rest
 	}
-	r, err := newMarkdown(pageInner(w))
+	r, err := newMarkdown(layoutDoc(w, false).text)
 	if err != nil {
 		return text
 	}
@@ -139,7 +139,7 @@ func Guide(text string) string {
 	if err != nil {
 		return text
 	}
-	return page(title, "", strings.Trim(out, "\n"), w) + "\n"
+	return page(title, out, w) + "\n"
 }
 
 // Notice styles a short informational line for the CLI.

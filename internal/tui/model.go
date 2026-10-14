@@ -18,6 +18,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/pjanderson/groundwork/internal/course"
 	"github.com/pjanderson/groundwork/internal/session"
@@ -72,6 +73,13 @@ type Model struct {
 
 	md      *glamour.TermRenderer
 	mdWidth int
+
+	// A document pane (instructions, hints, guide...) is drawn in a fixed
+	// frame; only the text inside scrolls.
+	doc      bool
+	docTitle string
+	layout   docLayout
+	outline  []outlineItem
 }
 
 type (
@@ -399,6 +407,17 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "x":
 		m.confirm = "reset"
 		m.flash = "Press x again to reset this exercise to its starter code. Any other key cancels."
+	case "[", "]":
+		if len(m.outline) > 0 {
+			cur := currentSection(m.outline, m.body.YOffset)
+			if k == "]" {
+				cur = min(cur+1, len(m.outline)-1)
+			} else if m.outline[cur].line >= m.body.YOffset {
+				cur = max(cur-1, 0)
+			}
+			m.body.SetYOffset(max(0, m.outline[cur].line-1))
+		}
+		return m, nil
 	default:
 		var cmd tea.Cmd
 		m.body, cmd = m.body.Update(msg)
@@ -581,10 +600,11 @@ func (m *Model) refresh() {
 	w := m.contentWidth()
 	m.body.Width = w
 	m.body.Height = max(3, m.height-lipgloss.Height(m.header())-lipgloss.Height(m.footer()))
+	m.doc, m.outline = false, nil
 	var content string
 	switch m.pane {
 	case paneInstructions:
-		inner := pageInner(w)
+		inner := m.startDoc(m.ex.Title, true)
 		readme, _ := m.s.Course.README(m.ex)
 		where := relative(filepath.Join(m.s.Dir(m.ex), "README.md"))
 		meta := dim.Render("Also in " + where + ".")
@@ -595,15 +615,16 @@ func (m *Model) refresh() {
 			}
 			meta += dim.Render(" Background reading: "+strings.Join(titles, ", ")+" (") + keyCap.Render("g") + dim.Render(").")
 		}
-		content = page(m.ex.Title, meta, m.markdown(dropTitle(readme), inner), w)
+		src := dropTitle(readme)
+		content = m.docText(meta, m.markdown(src, inner), src)
 	case paneHints:
-		content = page("Hints", "", m.hintsView(pageInner(w)), w)
+		content = m.docText("", m.hintsView(m.startDoc("Hints", false)), "")
 	case paneList:
 		content = m.listView(w)
 	case paneHelp:
-		content = page("Keys", "", m.helpView(pageInner(w)), w)
+		content = m.docText("", m.helpView(m.startDoc("Keys", false)), "")
 	case paneSolution:
-		content = page("Reference solution", "", m.solutionView(pageInner(w)), w)
+		content = m.docText("", m.solutionView(m.startDoc("Reference solution", false)), "")
 	case paneGuides:
 		content = m.guidesView(w)
 	case paneGuide:
@@ -612,6 +633,9 @@ func (m *Model) refresh() {
 		content = m.resultView(w)
 	}
 	m.body.SetContent(content)
+	if m.doc {
+		m.body.Width = m.layout.text
+	}
 	switch m.pane {
 	case paneList:
 		m.scrollTo(m.listLine)
@@ -629,13 +653,17 @@ func (m *Model) scrollTo(line int) {
 	}
 }
 
-func (m *Model) contentWidth() int { return max(30, min(m.width, 110)) }
+func (m *Model) contentWidth() int { return max(30, min(m.width, 140)) }
 
 // readingWidth caps prose at a comfortable line length, even on wide screens.
 const readingWidth = 84
 
+// widestText is the widest a framed document's text may get when an outline
+// takes the rest of a wide window.
+const widestText = 90
+
 func (m *Model) markdown(src string, width int) string {
-	width = min(width, readingWidth)
+	width = min(width, widestText)
 	src = sectionRules(src)
 	if m.md == nil || m.mdWidth != width {
 		r, err := newMarkdown(width)
@@ -876,18 +904,52 @@ func (m *Model) guidesView(width int) string {
 }
 
 // guideView renders the open guide.
-func (m *Model) guideView(width int) string {
+func (m *Model) guideView(int) string {
 	g := m.guide
 	text, err := m.s.Course.GuideText(g)
 	if err != nil {
 		return badBold.Render("✗ ") + err.Error()
 	}
+	inner := m.startDoc(g.Title, true)
 	status := dim.Render("press ") + keyCap.Render("m") + dim.Render(" when you've read it")
 	if m.s.Read(g) {
 		status = okStyle.Render("✓ read")
 	}
 	meta := dim.Render(fmt.Sprintf("Guide %d of %d · module %d: %s · also in %s · ", g.Number, len(m.s.Course.Guides), g.Module.Number, g.Module.Title, relative(m.s.GuidePath(g)))) + status
-	return page(g.Title, meta, m.markdown(dropTitle(text), pageInner(width)), width)
+	src := dropTitle(text)
+	return m.docText(meta, m.markdown(src, inner), src)
+}
+
+// startDoc makes the body a framed document titled title and returns the
+// text width to render it at.
+func (m *Model) startDoc(title string, withOutline bool) int {
+	m.doc, m.docTitle = true, title
+	m.layout = layoutDoc(m.contentWidth(), withOutline)
+	m.body.Height = max(3, m.body.Height-frameRowsUsed)
+	return m.layout.text
+}
+
+// docText puts an optional meta line above rendered text and, when src is
+// given, finds the outline of its headings.
+func (m *Model) docText(meta, rendered, src string) string {
+	text := strings.Trim(rendered, "\n")
+	if meta != "" {
+		var wrapped []string
+		for l := range strings.SplitSeq(meta, "\n") {
+			wrapped = append(wrapped, ansi.Wrap(l, m.layout.text, " "))
+		}
+		text = strings.Join(wrapped, "\n") + "\n" + rule.Render(strings.Repeat("┄", m.layout.text)) + "\n\n" + text
+	}
+	if src != "" && m.layout.outline > 0 {
+		m.outline = findOutline(src, text)
+	}
+	if len(m.outline) == 0 {
+		m.layout = layoutDoc(m.contentWidth(), false)
+		if src != "" { // re-render at the wider text width
+			return m.docText(meta, m.markdown(src, m.layout.text), "")
+		}
+	}
+	return text
 }
 
 func (m *Model) helpView(width int) string {
@@ -902,6 +964,7 @@ func (m *Model) helpView(width int) string {
 		{"n", "next unfinished exercise"},
 		{"← →", "previous / next exercise"},
 		{"↑ ↓ pgup pgdn", "scroll"},
+		{"[ ]", "previous / next section of a long document"},
 		{"e", "open the exercise in $EDITOR"},
 		{"r", "re-run the tests now"},
 		{"x", "reset the exercise to its starter code"},
@@ -987,7 +1050,15 @@ func (m *Model) View() string {
 	if m.ex == nil {
 		return ""
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, m.header(), m.body.View(), m.footer())
+	body := m.body.View()
+	if m.doc {
+		lines := strings.Split(body, "\n")
+		for len(lines) < m.body.Height {
+			lines = append(lines, "")
+		}
+		body = frame(m.layout, m.docTitle, lines[:m.body.Height], m.outline, m.body.YOffset)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, m.header(), body, m.footer())
 }
 
 func (m *Model) header() string {
@@ -1093,7 +1164,7 @@ func (m *Model) footer() string {
 	case m.checking && m.result == nil:
 		status = dim.Render("Compiling and running the tests. The first run of an exercise takes a moment.")
 	case m.pane == paneInstructions || m.pane == paneHints || m.pane == paneHelp || m.pane == paneSolution:
-		status = dim.Render("↑/↓ scroll · esc back to the results")
+		status = dim.Render("↑/↓ scroll · [ ] sections · esc back to the results")
 	case m.pane == paneList:
 		status = dim.Render("↑/↓ move · enter open · esc back to the results")
 	case m.pane == paneGuides:
