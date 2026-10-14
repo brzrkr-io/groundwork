@@ -1,0 +1,64 @@
+// Command golinks runs the go links service: short names that redirect to
+// long URLs, stored in SQLite.
+//
+//	go run ./cmd/golinks
+//	GOLINKS_LOG_LEVEL=debug GOLINKS_ADDR=127.0.0.1:9000 go run ./cmd/golinks
+//
+// Settings come from GOLINKS_* environment variables (see internal/config).
+// Stop it with Ctrl+C (SIGINT) or SIGTERM, which is what Kubernetes sends:
+// it finishes in-flight requests before exiting.
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"groundwork.local/golinks/internal/config"
+	"groundwork.local/golinks/internal/server"
+	"groundwork.local/golinks/internal/store"
+)
+
+// version is set at build time with -ldflags "-X main.version=v1.2.3".
+var version = "dev"
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "golinks:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	cfg, err := config.Load(os.Getenv)
+	if err != nil {
+		return err
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+
+	// ctx is cancelled on Ctrl+C or SIGTERM.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	db, err := store.Open(ctx, cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	ln, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		return err
+	}
+	logger.Info("listening", "addr", ln.Addr().String(), "version", version, "db", cfg.DBPath)
+
+	if err := server.New(db, logger).Run(ctx, ln, cfg.ShutdownGrace); err != nil {
+		return err
+	}
+	logger.Info("stopped")
+	return nil
+}

@@ -1,0 +1,555 @@
+package golinks
+
+import (
+	"cmp"
+	"path"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"sigs.k8s.io/yaml"
+)
+
+// These tests read the files that build, deploy and ship golinks. The
+// helpers they use are in dockerfile_test.go, kube_test.go,
+// workflow_test.go and portfolio_test.go.
+
+func TestDockerfile(t *testing.T) {
+	const file = "Dockerfile"
+	all := stages(readDockerfile(t, file))
+	if len(all) != 2 {
+		t.Fatalf("%s has %d stages (FROM lines), want 2: a build stage, then the final stage", file, len(all))
+	}
+	build, final := all[0], all[1]
+
+	// The build stage.
+	if !strings.HasPrefix(build.Base, "golang:1.26") || build.Name == "" {
+		t.Errorf("%s: the first stage is FROM %s AS %q, want FROM golang:1.26 AS build (any stage name works)", file, build.Base, build.Name)
+	}
+	modCopy, download, copyAll, versionArg, goBuild := -1, -1, -1, -1, -1
+	for i, in := range build.Instructions {
+		switch {
+		case in.Cmd == "COPY" && len(in.Args) == 2 && (in.Args[0] == "." || in.Args[0] == "./"):
+			copyAll = i
+		case in.Cmd == "COPY" && modCopy < 0 && (slices.Contains(in.Args, "go.mod") || slices.Contains(in.Args, "go.*")):
+			modCopy = i
+			if srcs := in.Args[:len(in.Args)-1]; !slices.Contains(srcs, "go.sum") && !slices.Contains(srcs, "go.*") {
+				t.Errorf("%s line %d: %s copies go.mod without go.sum; copy both", file, in.Line, show(in))
+			}
+		case in.Cmd == "RUN" && strings.HasSuffix(strings.Join(in.Args, " "), "go mod download"):
+			download = i
+		case in.Cmd == "ARG" && len(in.Args) == 1 && strings.ReplaceAll(in.Args[0], `"`, "") == "VERSION=dev":
+			versionArg = i
+		case in.Cmd == "RUN" && strings.Contains(in.Rest, "go build"):
+			goBuild = i
+		}
+	}
+	at := func(i int) int { return build.Instructions[i].Line }
+	switch {
+	case modCopy < 0:
+		t.Errorf("%s: the build stage never copies go.mod and go.sum on their own; want COPY go.mod go.sum ./ before go mod download", file)
+	case download < 0:
+		t.Errorf("%s: the build stage never runs go mod download", file)
+	case download < modCopy:
+		t.Errorf("%s: go mod download (line %d) runs before go.mod is copied (line %d)", file, at(download), at(modCopy))
+	}
+	switch {
+	case copyAll < 0:
+		t.Errorf("%s: the build stage never copies the source; want COPY . . after go mod download", file)
+	case download >= 0 && copyAll < download:
+		t.Errorf("%s: COPY . . (line %d) comes before go mod download (line %d), so every code change downloads the modules again", file, at(copyAll), at(download))
+	}
+	if versionArg < 0 {
+		t.Errorf("%s: the build stage doesn't declare ARG VERSION=dev", file)
+	}
+	binary := ""
+	if goBuild < 0 {
+		t.Errorf("%s: the build stage has no RUN ... go build", file)
+	} else {
+		in := build.Instructions[goBuild]
+		binary = checkGoBuild(t, file, in, envVars(build.Instructions)["CGO_ENABLED"] == "0")
+		if copyAll >= 0 && goBuild < copyAll {
+			t.Errorf("%s: go build (line %d) runs before COPY . . (line %d), so there is no source to build yet", file, in.Line, at(copyAll))
+		}
+		if versionArg >= 0 && goBuild < versionArg {
+			t.Errorf("%s: go build (line %d) comes before ARG VERSION=dev (line %d), so ${VERSION} is empty there", file, in.Line, at(versionArg))
+		}
+	}
+
+	// The final stage.
+	if name, _ := imageName(final.Base); name != "gcr.io/distroless/static-debian13" {
+		t.Errorf("%s: the final stage is FROM %s, want FROM gcr.io/distroless/static-debian13 (any tag, such as :nonroot)", file, final.Base)
+	}
+	installed := ""
+	for _, in := range find(final.Instructions, "COPY") {
+		if len(in.Args) == 2 && binary != "" && in.Args[0] == binary {
+			if build.Name != "" && !slices.Contains(in.Flags, "--from="+build.Name) {
+				t.Errorf("%s line %d: %s, want COPY --from=%s: the binary is in the build stage", file, in.Line, show(in), build.Name)
+			}
+			installed = in.Args[1]
+			if strings.HasSuffix(installed, "/") {
+				installed += path.Base(binary)
+			}
+		}
+	}
+	if binary != "" && installed == "" {
+		t.Errorf("%s: the final stage never copies %s (what go build -o wrote) from the build stage; want COPY --from=%s %s /golinks", file, binary, build.Name, binary)
+	}
+	if user := find(final.Instructions, "USER"); len(user) == 0 {
+		t.Errorf("%s: the final stage has no USER, so golinks runs as root; want USER 65532:65532", file)
+	} else if in := user[len(user)-1]; !numericNonRoot.MatchString(in.Rest) {
+		t.Errorf("%s line %d: %s, want USER 65532:65532 (numbers, and not 0, so Kubernetes can check it isn't root)", file, in.Line, show(in))
+	}
+	exposed := false
+	for _, in := range find(final.Instructions, "EXPOSE") {
+		exposed = exposed || slices.Contains(in.Args, "8080") || slices.Contains(in.Args, "8080/tcp")
+	}
+	if !exposed {
+		t.Errorf("%s: the final stage doesn't expose port 8080; want EXPOSE 8080", file)
+	}
+	want := execForm([]string{cmp.Or(installed, "/golinks")})
+	entrypoints := find(final.Instructions, "ENTRYPOINT")
+	if len(entrypoints) == 0 {
+		t.Fatalf("%s: the final stage has no ENTRYPOINT; want ENTRYPOINT %s", file, want)
+	}
+	switch in := entrypoints[len(entrypoints)-1]; {
+	case !in.Exec:
+		t.Errorf("%s line %d: %s is in shell form, which needs a shell, and distroless has none; want ENTRYPOINT %s", file, in.Line, show(in), want)
+	case installed != "" && (len(in.Args) == 0 || in.Args[0] != installed):
+		t.Errorf("%s line %d: %s, but the binary is copied to %s; want ENTRYPOINT %s", file, in.Line, show(in), installed, want)
+	}
+}
+
+// numericNonRoot matches a USER of numbers whose user ID isn't 0 (root).
+var numericNonRoot = regexp.MustCompile(`^[1-9]\d*(:\d+)?$`)
+
+// checkGoBuild checks the RUN line with go build in the build stage and
+// returns the path it writes the binary to ("" if it has no -o). cgoEnv is
+// true when the stage sets CGO_ENABLED=0 with ENV.
+func checkGoBuild(t *testing.T, file string, in instruction, cgoEnv bool) string {
+	t.Helper()
+	words := strings.Fields(in.Rest)
+	if !slices.Contains(words, "CGO_ENABLED=0") && !cgoEnv {
+		t.Errorf("%s line %d: %s doesn't set CGO_ENABLED=0, so the binary needs C libraries that distroless/static doesn't have", file, in.Line, show(in))
+	}
+	m := ldflags.FindStringSubmatch(in.Rest)
+	switch {
+	case m == nil:
+		t.Errorf(`%s line %d: %s doesn't stamp the version; want -ldflags "-X main.version=${VERSION}"`, file, in.Line, show(in))
+	case m[2] != "":
+		t.Errorf(`%s line %d: -ldflags '%s' is in single quotes, so the shell never fills in ${VERSION}; use double quotes`, file, in.Line, m[2])
+	case !stampsVersion.MatchString(m[1]):
+		t.Errorf(`%s line %d: -ldflags "%s" doesn't set main.version; want -X main.version=${VERSION} inside the quotes`, file, in.Line, m[1])
+	}
+	if !slices.Contains(words, "./cmd/golinks") && !slices.Contains(words, "./cmd/golinks/") {
+		t.Errorf("%s line %d: %s doesn't build ./cmd/golinks, the package with main in it", file, in.Line, show(in))
+	}
+	for i, word := range words {
+		if out, ok := strings.CutPrefix(word, "-o="); ok {
+			return out
+		}
+		if word == "-o" && i+1 < len(words) {
+			return words[i+1]
+		}
+	}
+	t.Errorf("%s line %d: %s has no -o, so you can't know where the binary is; add -o /out/golinks", file, in.Line, show(in))
+	return ""
+}
+
+// ldflags finds the -ldflags value: m[1] in double quotes, m[2] in single.
+var ldflags = regexp.MustCompile(`-ldflags[ =](?:"([^"]*)"|'([^']*)')`)
+
+// stampsVersion matches -X main.version=$VERSION inside an -ldflags value,
+// in the spellings go build accepts.
+var stampsVersion = regexp.MustCompile(`(^|\s)-X[ =]main\.version=\$(VERSION|\{VERSION\})(\s|$)`)
+
+const (
+	baseDir    = "deploy/base"
+	overlayDir = "deploy/overlays/dev"
+)
+
+// ownerImage matches the image golinks is published as: ghcr.io, a GitHub
+// user in lowercase, golinks, and a tag.
+var ownerImage = regexp.MustCompile(`^ghcr\.io/[a-z0-9][a-z0-9-]*/golinks:[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
+
+func TestManifests(t *testing.T) {
+	var (
+		cm      corev1.ConfigMap
+		pvc     corev1.PersistentVolumeClaim
+		deploy  appsv1.Deployment
+		service corev1.Service
+	)
+	readManifest(t, baseDir+"/configmap.yaml", &cm)
+	readManifest(t, baseDir+"/pvc.yaml", &pvc)
+	readManifest(t, baseDir+"/deployment.yaml", &deploy)
+	readManifest(t, baseDir+"/service.yaml", &service)
+
+	t.Run("kustomization lists every file", func(t *testing.T) {
+		k := readKustomization(t, baseDir+"/kustomization.yaml")
+		for _, file := range []string{"configmap.yaml", "pvc.yaml", "deployment.yaml", "service.yaml"} {
+			if !slices.ContainsFunc(k.Resources, func(r string) bool { return resolves(baseDir, r, baseDir+"/"+file) }) {
+				t.Errorf("%s/kustomization.yaml resources = %q, want it to list %s", baseDir, k.Resources, file)
+			}
+		}
+	})
+
+	t.Run("configmap", func(t *testing.T) {
+		const file = baseDir + "/configmap.yaml"
+		if cm.APIVersion != "v1" || cm.Kind != "ConfigMap" || cm.Name != "golinks-config" {
+			t.Fatalf("%s: apiVersion %q, kind %q, name %q, want v1, ConfigMap, golinks-config", file, cm.APIVersion, cm.Kind, cm.Name)
+		}
+		want := map[string]string{"GOLINKS_ADDR": ":8080", "GOLINKS_DB": "/data/golinks.db", "GOLINKS_LOG_LEVEL": "info"}
+		for key, value := range want {
+			if got := cm.Data[key]; got != value {
+				t.Errorf("%s: data.%s = %q, want %q", file, key, got, value)
+			}
+		}
+		if grace, err := time.ParseDuration(cm.Data["GOLINKS_SHUTDOWN_GRACE"]); err != nil || grace <= 0 {
+			t.Errorf("%s: data.GOLINKS_SHUTDOWN_GRACE = %q, want a duration such as \"20s\"", file, cm.Data["GOLINKS_SHUTDOWN_GRACE"])
+		}
+	})
+
+	t.Run("pvc", func(t *testing.T) {
+		const file = baseDir + "/pvc.yaml"
+		if pvc.APIVersion != "v1" || pvc.Kind != "PersistentVolumeClaim" || pvc.Name != "golinks-data" {
+			t.Fatalf("%s: apiVersion %q, kind %q, name %q, want v1, PersistentVolumeClaim, golinks-data", file, pvc.APIVersion, pvc.Kind, pvc.Name)
+		}
+		if !slices.Equal(pvc.Spec.AccessModes, []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}) {
+			t.Errorf("%s: accessModes = %q, want [ReadWriteOnce]", file, pvc.Spec.AccessModes)
+		}
+		if got, want := pvc.Spec.Resources.Requests[corev1.ResourceStorage], resource.MustParse("1Gi"); got.Cmp(want) != 0 {
+			t.Errorf("%s: resources.requests.storage = %q, want 1Gi", file, got.String())
+		}
+	})
+
+	t.Run("deployment", func(t *testing.T) {
+		checkDeployment(t, deploy, cm, pvc)
+	})
+
+	t.Run("service selects the pods", func(t *testing.T) {
+		const file = baseDir + "/service.yaml"
+		labels := deploy.Spec.Template.Labels
+		if !selects(service.Spec.Selector, labels) {
+			t.Errorf("%s selects pods with labels %v, but the Deployment's pods have %v; give the pod template the label app: golinks", file, service.Spec.Selector, labels)
+		}
+		if len(service.Spec.Ports) != 1 || len(deploy.Spec.Template.Spec.Containers) != 1 {
+			return // reported elsewhere
+		}
+		if got := portNumber(service.Spec.Ports[0].TargetPort, deploy.Spec.Template.Spec.Containers[0]); got != 8080 {
+			t.Errorf("%s: targetPort %s doesn't reach the container's port 8080; name the container port http", file, service.Spec.Ports[0].TargetPort.String())
+		}
+	})
+}
+
+// checkDeployment checks deployment.yaml, and that it fits the ConfigMap
+// and the PersistentVolumeClaim.
+func checkDeployment(t *testing.T, d appsv1.Deployment, cm corev1.ConfigMap, pvc corev1.PersistentVolumeClaim) {
+	t.Helper()
+	const file = baseDir + "/deployment.yaml"
+	if d.APIVersion != "apps/v1" || d.Kind != "Deployment" || d.Name != "golinks" {
+		t.Fatalf("%s: apiVersion %q, kind %q, name %q, want apps/v1, Deployment, golinks", file, d.APIVersion, d.Kind, d.Name)
+	}
+	if d.Spec.Replicas != nil && *d.Spec.Replicas != 1 {
+		t.Errorf("%s: replicas = %d, want 1: SQLite on a ReadWriteOnce volume has one writer", file, *d.Spec.Replicas)
+	}
+	if d.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
+		t.Errorf("%s: strategy.type = %q, want Recreate, so the old pod lets go of the volume before the new one starts", file, d.Spec.Strategy.Type)
+	}
+	pod := d.Spec.Template
+	if pod.Labels["app"] != "golinks" {
+		t.Errorf("%s: the pod template's labels are %v, want app: golinks", file, pod.Labels)
+	}
+	if d.Spec.Selector == nil || !selects(d.Spec.Selector.MatchLabels, pod.Labels) {
+		t.Errorf("%s: selector.matchLabels must match the pod template's labels (%v)", file, pod.Labels)
+	}
+	if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Name != "golinks" {
+		t.Fatalf("%s: want exactly one container, named golinks", file)
+	}
+	c := pod.Spec.Containers[0]
+
+	if !ownerImage.MatchString(c.Image) {
+		t.Errorf("%s: image %q, want ghcr.io/<your GitHub user in lowercase>/golinks:v0.1.0", file, c.Image)
+	} else if _, tag := imageName(c.Image); tag == "latest" {
+		t.Errorf("%s: image %q uses :latest, which moves; want a version such as v0.1.0", file, c.Image)
+	}
+	if c.ImagePullPolicy != "" && c.ImagePullPolicy != corev1.PullIfNotPresent {
+		t.Errorf("%s: imagePullPolicy %q; leave it out or use IfNotPresent, or kind can't use the image you load into it", file, c.ImagePullPolicy)
+	}
+	if len(c.Ports) != 1 || c.Ports[0].ContainerPort != 8080 || c.Ports[0].Name != "http" {
+		t.Errorf("%s: ports = %+v, want one port: containerPort 8080 named http", file, c.Ports)
+	}
+
+	if !slices.ContainsFunc(c.EnvFrom, func(e corev1.EnvFromSource) bool {
+		return e.ConfigMapRef != nil && e.ConfigMapRef.Name == cm.Name
+	}) {
+		t.Errorf("%s: the container doesn't load the ConfigMap; want envFrom with configMapRef name %s", file, cm.Name)
+	}
+
+	for _, p := range []struct {
+		name  string
+		probe *corev1.Probe
+		path  string
+	}{
+		{"readinessProbe", c.ReadinessProbe, "/readyz"},
+		{"livenessProbe", c.LivenessProbe, "/healthz"},
+	} {
+		if p.probe == nil || p.probe.HTTPGet == nil {
+			t.Errorf("%s: the container has no %s with httpGet; want path %s on port http", file, p.name, p.path)
+			continue
+		}
+		if p.probe.HTTPGet.Path != p.path || portNumber(p.probe.HTTPGet.Port, c) != 8080 {
+			t.Errorf("%s: %s.httpGet is path %q port %s, want path %s on port http (8080)", file, p.name, p.probe.HTTPGet.Path, p.probe.HTTPGet.Port.String(), p.path)
+		}
+	}
+
+	req, lim := c.Resources.Requests, c.Resources.Limits
+	if req.Cpu().IsZero() || req.Memory().IsZero() {
+		t.Errorf("%s: resources.requests = %v, want both cpu and memory, so the scheduler knows what golinks needs", file, req)
+	}
+	if lim.Memory().IsZero() {
+		t.Errorf("%s: resources.limits = %v, want a memory limit", file, lim)
+	} else if lim.Memory().Cmp(*req.Memory()) < 0 {
+		t.Errorf("%s: the memory limit %s is below the request %s", file, lim.Memory(), req.Memory())
+	}
+
+	checkSecurity(t, file, pod.Spec.SecurityContext, c.SecurityContext)
+
+	mountPath := ""
+	for _, v := range pod.Spec.Volumes {
+		if v.PersistentVolumeClaim == nil || v.PersistentVolumeClaim.ClaimName != pvc.Name {
+			continue
+		}
+		for _, m := range c.VolumeMounts {
+			if m.Name == v.Name {
+				mountPath = m.MountPath
+			}
+		}
+	}
+	if mountPath == "" {
+		t.Errorf("%s: no volume from the claim %s is mounted in the container; want a volume with persistentVolumeClaim claimName %s, mounted at /data", file, pvc.Name, pvc.Name)
+	} else if db := cm.Data["GOLINKS_DB"]; !strings.HasPrefix(path.Clean(db), path.Clean(mountPath)+"/") {
+		t.Errorf("%s: the volume is mounted at %s, but GOLINKS_DB is %q: the database must live on the volume", file, mountPath, db)
+	}
+
+	grace := int64(30) // the Kubernetes default
+	if pod.Spec.TerminationGracePeriodSeconds != nil {
+		grace = *pod.Spec.TerminationGracePeriodSeconds
+	}
+	if shutdown, err := time.ParseDuration(cm.Data["GOLINKS_SHUTDOWN_GRACE"]); err == nil && shutdown >= time.Duration(grace)*time.Second {
+		t.Errorf("%s: GOLINKS_SHUTDOWN_GRACE (%s) must be shorter than the pod's terminationGracePeriodSeconds (%ds), or Kubernetes kills golinks mid-drain", file, shutdown, grace)
+	}
+}
+
+// checkSecurity checks the pod's and the container's securityContext.
+// runAsNonRoot may be set on either; the rest belongs to the container.
+func checkSecurity(t *testing.T, file string, pod *corev1.PodSecurityContext, c *corev1.SecurityContext) {
+	t.Helper()
+	if c == nil {
+		c = &corev1.SecurityContext{}
+	}
+	nonRoot := c.RunAsNonRoot != nil && *c.RunAsNonRoot
+	if pod != nil && pod.RunAsNonRoot != nil && *pod.RunAsNonRoot && c.RunAsNonRoot == nil {
+		nonRoot = true
+	}
+	if !nonRoot {
+		t.Errorf("%s: runAsNonRoot isn't true, in the pod's or the container's securityContext", file)
+	}
+	if c.AllowPrivilegeEscalation == nil || *c.AllowPrivilegeEscalation {
+		t.Errorf("%s: the container's securityContext doesn't set allowPrivilegeEscalation: false", file)
+	}
+	if c.ReadOnlyRootFilesystem == nil || !*c.ReadOnlyRootFilesystem {
+		t.Errorf("%s: the container's securityContext doesn't set readOnlyRootFilesystem: true", file)
+	}
+	if c.Capabilities == nil || !slices.Contains(c.Capabilities.Drop, "ALL") {
+		t.Errorf("%s: the container's securityContext doesn't drop every capability; want capabilities: drop: [ALL]", file)
+	}
+}
+
+func TestDevOverlay(t *testing.T) {
+	const file = overlayDir + "/kustomization.yaml"
+	k := readKustomization(t, file)
+	if k.Kind != "" && k.Kind != "Kustomization" {
+		t.Errorf("%s: kind %q, want Kustomization", file, k.Kind)
+	}
+	if !slices.ContainsFunc(k.Resources, func(r string) bool { return resolves(overlayDir, r, baseDir) }) {
+		t.Errorf("%s: resources = %q, want ../../base, the folder with the base", file, k.Resources)
+	}
+
+	var deploy appsv1.Deployment
+	readManifest(t, baseDir+"/deployment.yaml", &deploy)
+	if cs := deploy.Spec.Template.Spec.Containers; len(cs) != 1 || !ownerImage.MatchString(cs[0].Image) {
+		t.Fatal("finish task 9 first: the overlay renames the image in the base Deployment, so that needs to be right")
+	}
+	baseImage, _ := imageName(deploy.Spec.Template.Spec.Containers[0].Image)
+	found := false
+	for _, img := range k.Images {
+		if img.Name != baseImage {
+			continue
+		}
+		found = true
+		if img.NewName != "golinks" || img.NewTag != "dev" || img.Digest != "" {
+			t.Errorf("%s: images entry %s has newName %q, newTag %q, want newName golinks and newTag dev, so the pod runs golinks:dev", file, img.Name, img.NewName, img.NewTag)
+		}
+	}
+	if !found {
+		t.Errorf("%s: no images entry with name %s (the base image without its tag)", file, baseImage)
+	}
+
+	if len(k.Patches) == 0 {
+		t.Fatalf("%s: no patches; want - path: configmap-patch.yaml", file)
+	}
+	debug := false
+	for _, p := range k.Patches {
+		var cm corev1.ConfigMap
+		switch {
+		case p.Path != "":
+			readManifest(t, path.Join(overlayDir, p.Path), &cm)
+		default:
+			if err := yaml.UnmarshalStrict([]byte(p.Patch), &cm); err != nil {
+				t.Errorf("%s: the inline patch isn't a ConfigMap: %v", file, err)
+			}
+		}
+		if cm.Kind == "ConfigMap" && cm.Name == "golinks-config" {
+			debug = cm.Data["GOLINKS_LOG_LEVEL"] == "debug"
+			if len(cm.Data) > 1 {
+				t.Errorf("%s: the patch sets %d keys; a patch only lists what changes, here GOLINKS_LOG_LEVEL", file, len(cm.Data))
+			}
+		}
+	}
+	if !debug {
+		t.Errorf("%s: no patch sets GOLINKS_LOG_LEVEL to debug in the ConfigMap golinks-config; want configmap-patch.yaml with apiVersion, kind, metadata.name and data", file)
+	}
+}
+
+func TestCIWorkflow(t *testing.T) {
+	const file = "ci.yml"
+	wf := readWorkflow(t, file)
+	if wf.Name != "ci" {
+		t.Errorf("%s: name is %q, want %q", file, wf.Name, "ci")
+	}
+	events := triggers(wf)
+	if got := eventNames(wf); !slices.Equal(got, []string{"pull_request", "push"}) {
+		t.Errorf("%s: on has the events %q, want push and pull_request", file, got)
+	}
+	if branches := stringList(events["push"], "branches"); !slices.Equal(branches, []string{"main"}) {
+		t.Errorf("%s: push has branches %q, want [main]", file, branches)
+	}
+	if tags := stringList(events["push"], "tags"); !slices.Equal(tags, []string{"v*"}) {
+		t.Errorf("%s: push has tags %q, want ['v*']", file, tags)
+	}
+	if perms, _ := wf.Permissions.(map[string]any); len(perms) != 1 || perms["contents"] != "read" {
+		t.Errorf("%s: the workflow's permissions are %v, want only contents: read; the image job asks for more itself", file, wf.Permissions)
+	}
+
+	test := checkJob(t, file, wf, "test")
+	checkSetupSteps(t, file, "test", test.Steps)
+	setup := findStep(test.Steps, "actions/setup-go")
+	vet, tests := findRun(test.Steps, "go vet ./..."), findRun(test.Steps, "go test -race ./...")
+	switch {
+	case vet < 0:
+		t.Errorf("%s: job test has no step that runs go vet ./...", file)
+	case tests < 0:
+		t.Errorf("%s: job test has no step that runs go test -race ./...", file)
+	case vet < setup || tests < vet:
+		t.Errorf("%s: job test has steps in the order %v, want checkout, setup-go, go vet, go test", file, stepNames(test.Steps))
+	}
+
+	image := checkJob(t, file, wf, "image")
+	if got := needs(image); !slices.Contains(got, "test") {
+		t.Errorf("%s: job image needs %q, want it to need test", file, got)
+	}
+	if cond := strings.ReplaceAll(image.If, `"`, "'"); !strings.Contains(cond, "refs/tags/v") {
+		t.Errorf("%s: job image has if: %q, want startsWith(github.ref, 'refs/tags/v'), so pushes to main and pull requests don't publish", file, image.If)
+	}
+	if perms, _ := image.Permissions.(map[string]any); len(perms) != 2 || perms["contents"] != "read" || perms["packages"] != "write" {
+		t.Errorf("%s: job image has permissions %v, want exactly contents: read and packages: write", file, image.Permissions)
+	}
+	steps := image.Steps
+	checkout, login, buildPush := findStep(steps, "actions/checkout"), findStep(steps, "docker/login-action"), findStep(steps, "docker/build-push-action")
+	if checkout < 0 || login < 0 || buildPush < 0 {
+		t.Fatalf("%s: job image has steps %v, want actions/checkout, docker/login-action and docker/build-push-action", file, stepNames(steps))
+	}
+	if login < checkout || buildPush < login {
+		t.Errorf("%s: job image has steps in the order %v, want checkout, login-action, build-push-action", file, stepNames(steps))
+	}
+	for _, s := range steps {
+		if s.Uses != "" && !pinned.MatchString(s.Uses) {
+			t.Errorf("%s: job image uses %s; pin it to a version, such as @v4", file, s.Uses)
+		}
+	}
+	with := steps[login].With
+	if with["registry"] != "ghcr.io" || expression(with["username"]) != "${{ github.actor }}" ||
+		(expression(with["password"]) != "${{ secrets.GITHUB_TOKEN }}" && expression(with["password"]) != "${{ github.token }}") {
+		t.Errorf("%s: login-action has %v, want registry ghcr.io, username ${{ github.actor }}, password ${{ secrets.GITHUB_TOKEN }}", file, with)
+	}
+	with = steps[buildPush].With
+	if with["context"] != "." || (with["push"] != true && with["push"] != "true") {
+		t.Errorf("%s: build-push-action has context %v and push %v, want . and true", file, with["context"], with["push"])
+	}
+	tagged := slices.ContainsFunc(inputList(with["tags"]), func(tag string) bool {
+		name, version := imageName(tag)
+		return version == "${{ github.ref_name }}" && ownerImage.MatchString(name+":v1")
+	})
+	if !tagged {
+		t.Errorf("%s: build-push-action has tags %q, want ghcr.io/<your GitHub user in lowercase>/golinks:${{ github.ref_name }}", file, inputList(with["tags"]))
+	}
+	if got := inputList(with["build-args"]); !slices.Contains(got, "VERSION=${{ github.ref_name }}") {
+		t.Errorf("%s: build-push-action has build-args %q, want VERSION=${{ github.ref_name }}", file, got)
+	}
+}
+
+func TestPortfolio(t *testing.T) {
+	doc := readPortfolio(t)
+	if !badge.MatchString(doc.text) {
+		t.Errorf("%s has no CI badge; keep the template's badge line with your GitHub user in place of <you>", portfolioFile)
+	}
+
+	problem := doc.section(t, "Problem")
+	if n := wordCount(problem); n < 40 {
+		t.Errorf("Problem has %d words, want at least 40: who needs go links, and what goes wrong without them?", n)
+	}
+
+	design := doc.section(t, "Design")
+	if n := wordCount(design); n < 60 {
+		t.Errorf("Design has %d words outside code blocks, want at least 60: the parts, how a request flows, where data lives", n)
+	}
+	if len(codeBlocks(design)) == 0 {
+		t.Error("Design has no ``` code block; draw the request path as a diagram in one")
+	}
+
+	run := strings.Join(codeBlocks(doc.section(t, "Run it")), "\n")
+	if !strings.Contains(run, "go run") && !strings.Contains(run, "make run") {
+		t.Errorf("Run it has no code block with go run or make run; show how to start golinks on a laptop")
+	}
+	if !strings.Contains(run, "kubectl apply -k") && !strings.Contains(run, "make deploy") {
+		t.Errorf("Run it has no code block with kubectl apply -k or make deploy; show how to put it on a cluster")
+	}
+
+	checkBullets(t, "Trade-offs", doc.section(t, "Trade-offs"), 3, 8)
+	checkBullets(t, "What I'd do next", doc.section(t, "What I'd do next"), 3, 4)
+}
+
+// checkBullets checks a section has at least min bullets ("- ...") of at
+// least words words each.
+func checkBullets(t *testing.T, name, text string, min, words int) {
+	t.Helper()
+	count := 0
+	for line := range strings.SplitSeq(text, "\n") {
+		item, ok := strings.CutPrefix(strings.TrimSpace(line), "- ")
+		if !ok {
+			continue
+		}
+		if n := wordCount(item); n < words {
+			t.Errorf("%s: %q has %d words, want at least %d", name, item, n, words)
+		}
+		count++
+	}
+	if count < min {
+		t.Errorf("%s has %d bullet points (lines starting with \"- \"), want at least %d", name, count, min)
+	}
+}

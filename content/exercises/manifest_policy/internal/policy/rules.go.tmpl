@@ -1,0 +1,24 @@
+package policy
+
+import (
+	"groundwork.local/manifest_policy/internal/manifest"
+)
+
+// RequiredLabels are the labels every workload must carry, so people can
+// tell what it is and who to call about it.
+var RequiredLabels = []string{"app.kubernetes.io/name", "team"}
+
+// ProductionNamespaces are the namespaces where the replicas rule applies.
+var ProductionNamespaces = []string{"production", "prod"}
+
+// checkResources wants CPU and memory requests and limits on every container.
+func checkResources(obj manifest.Object) []string {
+	// TODO(3): Return one message per container in obj.Pod.Containers that
+	// is missing a CPU or memory request or limit, naming what's missing.
+	// You will need to import "fmt", "strings" and
+	// corev1 "k8s.io/api/core/v1".
+	return nil
+}
+
+// TODO(5): Write a check function for each of the other rules here, and add
+// each one to Rules in policy.go.

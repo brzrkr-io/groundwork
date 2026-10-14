@@ -1,0 +1,103 @@
+// Package policy holds kubepolicy's rules and runs them over workloads.
+package policy
+
+import (
+	"slices"
+
+	"groundwork.local/manifest_policy/internal/manifest"
+)
+
+// Severity says how serious a violation is. Errors fail the run; warnings
+// are reported but don't.
+type Severity string
+
+// The severities a rule can have.
+const (
+	Error   Severity = "error"
+	Warning Severity = "warning"
+)
+
+// Rule is one policy check. Check returns one message per problem it finds
+// in obj, or nil when obj passes.
+type Rule struct {
+	Name     string                             // what --ignore and --enable call it
+	Severity Severity                           // how serious its violations are
+	OptIn    bool                               // runs only when Config.Enable names it
+	Check    func(obj manifest.Object) []string // finds the problems
+}
+
+// Rules is every rule kubepolicy knows, in the order their violations are
+// reported. Adding a rule is adding an entry.
+var Rules = []Rule{
+	{Name: "resources", Severity: Error, Check: checkResources},
+	{Name: "probes", Severity: Error, Check: checkProbes},
+	{Name: "security-context", Severity: Error, Check: checkSecurityContext},
+	{Name: "image-tag", Severity: Error, Check: checkImageTag},
+	{Name: "image-digest", Severity: Error, OptIn: true, Check: checkImageDigest},
+	{Name: "labels", Severity: Warning, Check: checkLabels},
+	{Name: "host-access", Severity: Error, Check: checkHostAccess},
+	{Name: "replicas", Severity: Error, Check: checkReplicas},
+}
+
+// Names returns the name of every rule, in table order.
+func Names() []string {
+	names := make([]string, len(Rules))
+	for i, r := range Rules {
+		names[i] = r.Name
+	}
+	return names
+}
+
+// Config chooses which rules run.
+type Config struct {
+	Ignore []string // rules to skip
+	Enable []string // opt-in rules to run as well
+}
+
+// Violation is one problem found in one object.
+type Violation struct {
+	Location  string   `json:"location"`  // the object's document, such as "deploy/web.yaml#1"
+	Kind      string   `json:"kind"`      // the object's kind
+	Namespace string   `json:"namespace"` // the object's namespace, or ""
+	Name      string   `json:"name"`      // the object's name
+	Rule      string   `json:"rule"`      // the rule that found the problem
+	Severity  Severity `json:"severity"`  // the rule's severity
+	Message   string   `json:"message"`   // what's wrong
+}
+
+// Object names the violating object for people: "Deployment/web", or
+// "production/Deployment/web" when it has a namespace.
+func (v Violation) Object() string {
+	if v.Namespace == "" {
+		return v.Kind + "/" + v.Name
+	}
+	return v.Namespace + "/" + v.Kind + "/" + v.Name
+}
+
+// Evaluate runs the rules cfg selects over every object and returns what
+// they find: for each object in order, each rule in table order, each
+// message in the order the rule returned them.
+func Evaluate(objects []manifest.Object, cfg Config) []Violation {
+	var found []Violation
+	for _, obj := range objects {
+		for _, rule := range Rules {
+			ignored := slices.Contains(cfg.Ignore, rule.Name)
+			notEnabled := rule.OptIn && !slices.Contains(cfg.Enable, rule.Name)
+			if ignored || notEnabled {
+				continue
+			}
+			for _, msg := range rule.Check(obj) {
+				found = append(found, Violation{
+					Location:  obj.Location,
+					Kind:      obj.Kind,
+					Namespace: obj.Namespace,
+					Name:      obj.Name,
+					Rule:      rule.Name,
+					Severity:  rule.Severity,
+					Message:   msg,
+				})
+			}
+		}
+	}
+	return found
+}

@@ -1,0 +1,328 @@
+package policy_test
+
+import (
+	"slices"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+
+	"groundwork.local/manifest_policy/internal/manifest"
+	"groundwork.local/manifest_policy/internal/policy"
+)
+
+// The tests find each rule by its name in policy.Rules, so your check
+// functions can have any names.
+
+// goodContainer returns a container that passes every rule.
+func goodContainer(name string) corev1.Container {
+	return corev1.Container{
+		Name:  name,
+		Image: "ghcr.io/acme/" + name + ":1.2.3@sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("64Mi")},
+			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("128Mi")},
+		},
+		LivenessProbe:  &corev1.Probe{},
+		ReadinessProbe: &corev1.Probe{},
+		SecurityContext: &corev1.SecurityContext{
+			AllowPrivilegeEscalation: new(false),
+			ReadOnlyRootFilesystem:   new(true),
+		},
+	}
+}
+
+// goodObject returns a Deployment that passes every rule. Each test case
+// breaks one thing in it.
+func goodObject() manifest.Object {
+	return manifest.Object{
+		Location:  "deploy/web.yaml#1",
+		Kind:      "Deployment",
+		Name:      "web",
+		Namespace: "production",
+		Labels:    map[string]string{"app.kubernetes.io/name": "web", "team": "storefront"},
+		Replicas:  new(int32(3)),
+		Pod: corev1.PodSpec{
+			SecurityContext: &corev1.PodSecurityContext{RunAsNonRoot: new(true)},
+			Containers:      []corev1.Container{goodContainer("web")},
+		},
+	}
+}
+
+// ruleCase is one object and the messages a rule must return for it.
+type ruleCase struct {
+	name   string
+	change func(o *manifest.Object) // breaks (or keeps) goodObject
+	want   []string
+}
+
+// checkRule runs the named rule from policy.Rules over each case.
+func checkRule(t *testing.T, name string, cases []ruleCase) {
+	t.Helper()
+	i := slices.IndexFunc(policy.Rules, func(r policy.Rule) bool { return r.Name == name })
+	if i < 0 {
+		t.Fatalf("policy.Rules has no rule named %q; add it to the table", name)
+	}
+	rule := policy.Rules[i]
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			obj := goodObject()
+			tc.change(&obj)
+			got := rule.Check(obj)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("rule %s: Check() = %q, want %q", name, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResourcesRule(t *testing.T) {
+	checkRule(t, "resources", []ruleCase{
+		{
+			name:   "requests and limits set",
+			change: func(o *manifest.Object) {},
+			want:   nil,
+		},
+		{
+			name:   "no resources at all",
+			change: func(o *manifest.Object) { o.Pod.Containers[0].Resources = corev1.ResourceRequirements{} },
+			want:   []string{`container "web": missing requests.cpu, requests.memory, limits.cpu, limits.memory`},
+		},
+		{
+			name:   "requests only",
+			change: func(o *manifest.Object) { o.Pod.Containers[0].Resources.Limits = nil },
+			want:   []string{`container "web": missing limits.cpu, limits.memory`},
+		},
+		{
+			name: "one container of two is missing its memory limit",
+			change: func(o *manifest.Object) {
+				sidecar := goodContainer("log-shipper")
+				delete(sidecar.Resources.Limits, corev1.ResourceMemory)
+				o.Pod.Containers = append(o.Pod.Containers, sidecar)
+			},
+			want: []string{`container "log-shipper": missing limits.memory`},
+		},
+		{
+			name: "every container is checked",
+			change: func(o *manifest.Object) {
+				o.Pod.Containers[0].Resources.Requests = nil
+				sidecar := goodContainer("log-shipper")
+				delete(sidecar.Resources.Requests, corev1.ResourceCPU)
+				o.Pod.Containers = append(o.Pod.Containers, sidecar)
+			},
+			want: []string{
+				`container "web": missing requests.cpu, requests.memory`,
+				`container "log-shipper": missing requests.cpu`,
+			},
+		},
+	})
+}
+
+func TestEvaluate(t *testing.T) {
+	// This test swaps in a small rule table of its own, so it doesn't
+	// depend on your rules from task 5.
+	saved := policy.Rules
+	t.Cleanup(func() { policy.Rules = saved })
+	policy.Rules = []policy.Rule{
+		{Name: "twice", Severity: policy.Error, Check: func(o manifest.Object) []string {
+			return []string{"first problem with " + o.Name, "second problem with " + o.Name}
+		}},
+		{Name: "never", Severity: policy.Error, Check: func(manifest.Object) []string { return nil }},
+		{Name: "opt-in", Severity: policy.Error, OptIn: true, Check: func(o manifest.Object) []string {
+			return []string{"opt-in problem with " + o.Name}
+		}},
+		{Name: "warn", Severity: policy.Warning, Check: func(o manifest.Object) []string {
+			return []string{"warning about " + o.Name}
+		}},
+	}
+
+	web := manifest.Object{Location: "deploy/web.yaml#1", Kind: "Deployment", Name: "web", Namespace: "production"}
+	agent := manifest.Object{Location: "deploy/agent.yaml#2", Kind: "DaemonSet", Name: "agent"}
+	v := func(o manifest.Object, rule string, severity policy.Severity, msg string) policy.Violation {
+		return policy.Violation{Location: o.Location, Kind: o.Kind, Namespace: o.Namespace, Name: o.Name, Rule: rule, Severity: severity, Message: msg}
+	}
+
+	tests := []struct {
+		name    string
+		objects []manifest.Object
+		cfg     policy.Config
+		want    []policy.Violation
+	}{
+		{
+			name:    "no objects",
+			objects: nil,
+			want:    nil,
+		},
+		{
+			name:    "objects in order, then rules in table order, then messages",
+			objects: []manifest.Object{web, agent},
+			want: []policy.Violation{
+				v(web, "twice", policy.Error, "first problem with web"),
+				v(web, "twice", policy.Error, "second problem with web"),
+				v(web, "warn", policy.Warning, "warning about web"),
+				v(agent, "twice", policy.Error, "first problem with agent"),
+				v(agent, "twice", policy.Error, "second problem with agent"),
+				v(agent, "warn", policy.Warning, "warning about agent"),
+			},
+		},
+		{
+			name:    "ignored rules don't run",
+			objects: []manifest.Object{web},
+			cfg:     policy.Config{Ignore: []string{"twice"}},
+			want:    []policy.Violation{v(web, "warn", policy.Warning, "warning about web")},
+		},
+		{
+			name:    "enabled opt-in rules run in table order",
+			objects: []manifest.Object{agent},
+			cfg:     policy.Config{Enable: []string{"opt-in"}, Ignore: []string{"warn"}},
+			want: []policy.Violation{
+				v(agent, "twice", policy.Error, "first problem with agent"),
+				v(agent, "twice", policy.Error, "second problem with agent"),
+				v(agent, "opt-in", policy.Error, "opt-in problem with agent"),
+			},
+		},
+		{
+			name:    "ignore wins over enable",
+			objects: []manifest.Object{web},
+			cfg:     policy.Config{Enable: []string{"opt-in"}, Ignore: []string{"opt-in", "twice"}},
+			want:    []policy.Violation{v(web, "warn", policy.Warning, "warning about web")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := policy.Evaluate(tt.objects, tt.cfg)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Evaluate() returned\n%s\nwant\n%s", show(got), show(tt.want))
+			}
+		})
+	}
+}
+
+// show lists violations one per line, for failure messages.
+func show(vs []policy.Violation) string {
+	if len(vs) == 0 {
+		return "  (none)"
+	}
+	var s string
+	for _, v := range vs {
+		s += "  " + v.Location + " " + v.Object() + " " + v.Rule + " " + string(v.Severity) + ": " + v.Message + "\n"
+	}
+	return s
+}
+
+func TestRemainingRules(t *testing.T) {
+	t.Run("the rule table", func(t *testing.T) {
+		want := []string{"resources", "probes", "security-context", "image-tag", "image-digest", "labels", "host-access", "replicas"}
+		if got := policy.Names(); !slices.Equal(got, want) {
+			t.Fatalf("the rules in policy.Rules are %q, want %q", got, want)
+		}
+		for _, r := range policy.Rules {
+			wantSeverity, wantOptIn := policy.Error, r.Name == "image-digest"
+			if r.Name == "labels" {
+				wantSeverity = policy.Warning
+			}
+			if r.Severity != wantSeverity || r.OptIn != wantOptIn {
+				t.Errorf("rule %s has Severity %q and OptIn %v, want %q and %v", r.Name, r.Severity, r.OptIn, wantSeverity, wantOptIn)
+			}
+			if r.Check == nil {
+				t.Errorf("rule %s has no Check function", r.Name)
+			}
+		}
+	})
+
+	t.Run("probes", func(t *testing.T) {
+		checkRule(t, "probes", []ruleCase{
+			{"both probes", func(o *manifest.Object) {}, nil},
+			{"no probes", func(o *manifest.Object) {
+				o.Pod.Containers[0].LivenessProbe, o.Pod.Containers[0].ReadinessProbe = nil, nil
+			}, []string{`container "web": missing livenessProbe, readinessProbe`}},
+			{"no readiness probe", func(o *manifest.Object) {
+				o.Pod.Containers[0].ReadinessProbe = nil
+			}, []string{`container "web": missing readinessProbe`}},
+			{"a Job needs no probes", func(o *manifest.Object) {
+				o.Kind, o.Replicas = "Job", nil
+				o.Pod.Containers[0].LivenessProbe, o.Pod.Containers[0].ReadinessProbe = nil, nil
+			}, nil},
+		})
+	})
+
+	t.Run("security-context", func(t *testing.T) {
+		checkRule(t, "security-context", []ruleCase{
+			{"all set", func(o *manifest.Object) {}, nil},
+			{"nothing set", func(o *manifest.Object) {
+				o.Pod.SecurityContext, o.Pod.Containers[0].SecurityContext = nil, nil
+			}, []string{`container "web": needs runAsNonRoot: true, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true`}},
+			{"the container's runAsNonRoot wins over the pod's", func(o *manifest.Object) {
+				o.Pod.Containers[0].SecurityContext.RunAsNonRoot = new(false)
+			}, []string{`container "web": needs runAsNonRoot: true`}},
+			{"runAsNonRoot on the container only", func(o *manifest.Object) {
+				o.Pod.SecurityContext = nil
+				o.Pod.Containers[0].SecurityContext.RunAsNonRoot = new(true)
+			}, nil},
+			{"escalation allowed, root filesystem writable", func(o *manifest.Object) {
+				o.Pod.Containers[0].SecurityContext.AllowPrivilegeEscalation = new(true)
+				o.Pod.Containers[0].SecurityContext.ReadOnlyRootFilesystem = new(false)
+			}, []string{`container "web": needs allowPrivilegeEscalation: false, readOnlyRootFilesystem: true`}},
+		})
+	})
+
+	image := func(img string) func(o *manifest.Object) {
+		return func(o *manifest.Object) { o.Pod.Containers[0].Image = img }
+	}
+	t.Run("image-tag", func(t *testing.T) {
+		checkRule(t, "image-tag", []ruleCase{
+			{"tagged", image("nginx:1.27"), nil},
+			{"tagged, with a registry port", image("registry.example.com:5000/ops/shipper:2.0"), nil},
+			{"pinned by digest without a tag", image("nginx@sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"), nil},
+			{"no tag", image("nginx"), []string{`container "web": image "nginx" has no tag`}},
+			{"a registry port is not a tag", image("registry.example.com:5000/ops/shipper"),
+				[]string{`container "web": image "registry.example.com:5000/ops/shipper" has no tag`}},
+			{"latest", image("ghcr.io/acme/web:latest"), []string{`container "web": image "ghcr.io/acme/web:latest" uses the latest tag`}},
+		})
+	})
+
+	t.Run("image-digest", func(t *testing.T) {
+		checkRule(t, "image-digest", []ruleCase{
+			{"pinned", func(o *manifest.Object) {}, nil},
+			{"tag only", image("nginx:1.27"), []string{`container "web": image "nginx:1.27" is not pinned by digest`}},
+		})
+	})
+
+	t.Run("labels", func(t *testing.T) {
+		checkRule(t, "labels", []ruleCase{
+			{"both labels", func(o *manifest.Object) {}, nil},
+			{"no labels", func(o *manifest.Object) { o.Labels = nil }, []string{"missing labels: app.kubernetes.io/name, team"}},
+			{"empty team", func(o *manifest.Object) { o.Labels["team"] = "" }, []string{"missing labels: team"}},
+		})
+	})
+
+	t.Run("host-access", func(t *testing.T) {
+		hostPath := func(name, path string) corev1.Volume {
+			return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: path}}}
+		}
+		checkRule(t, "host-access", []ruleCase{
+			{"an emptyDir is fine", func(o *manifest.Object) {
+				o.Pod.Volumes = []corev1.Volume{{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}
+			}, nil},
+			{"hostNetwork", func(o *manifest.Object) { o.Pod.HostNetwork = true }, []string{"hostNetwork is true"}},
+			{"hostNetwork and two hostPath volumes", func(o *manifest.Object) {
+				o.Pod.HostNetwork = true
+				o.Pod.Volumes = []corev1.Volume{hostPath("logs", "/var/log"), hostPath("docker", "/var/run/docker.sock")}
+			}, []string{"hostNetwork is true", `volume "logs" uses hostPath "/var/log"`, `volume "docker" uses hostPath "/var/run/docker.sock"`}},
+		})
+	})
+
+	t.Run("replicas", func(t *testing.T) {
+		replicas := func(ns string, n int32) func(o *manifest.Object) {
+			return func(o *manifest.Object) { o.Namespace, o.Replicas = ns, new(n) }
+		}
+		checkRule(t, "replicas", []ruleCase{
+			{"3 in production", replicas("production", 3), nil},
+			{"2 in prod", replicas("prod", 2), nil},
+			{"1 in production", replicas("production", 1), []string{`replicas is 1, want at least 2 in namespace "production"`}},
+			{"0 in prod", replicas("prod", 0), []string{`replicas is 0, want at least 2 in namespace "prod"`}},
+			{"1 in staging is fine", replicas("staging", 1), nil},
+			{"a DaemonSet has no replicas", func(o *manifest.Object) { o.Kind, o.Replicas = "DaemonSet", nil }, nil},
+		})
+	})
+}

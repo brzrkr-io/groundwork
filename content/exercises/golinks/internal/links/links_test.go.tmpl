@@ -1,0 +1,59 @@
+package links
+
+import (
+	"errors"
+	"strings"
+	"testing"
+)
+
+func TestValidate(t *testing.T) {
+	valid := []Link{
+		{Name: "runbook-db", URL: "https://wiki.example.com/runbooks/db"},
+		{Name: "oncall", URL: "http://pager.internal/schedule?team=platform"},
+		{Name: "a", URL: "https://example.com"},
+		{Name: "2026-q4-okrs", URL: "https://docs.example.com/okrs#platform"},
+		{Name: strings.Repeat("x", 64), URL: "https://example.com/long"},
+	}
+	for _, l := range valid {
+		t.Run("valid "+l.Name, func(t *testing.T) {
+			if err := Validate(l); err != nil {
+				t.Errorf("Validate(%+v) = %v, want nil", l, err)
+			}
+		})
+	}
+
+	invalid := []struct {
+		name string
+		link Link
+		want string
+	}{
+		{"no name", Link{Name: "", URL: "https://example.com"}, "invalid link: name is required"},
+		{"no name and no URL", Link{}, "invalid link: name is required"},
+		{"uppercase", Link{Name: "Runbook", URL: "https://example.com"}, "invalid link: name must be at most 64 characters of a-z, 0-9 and -"},
+		{"space", Link{Name: "run book", URL: "https://example.com"}, "invalid link: name must be at most 64 characters of a-z, 0-9 and -"},
+		{"slash", Link{Name: "team/db", URL: "https://example.com"}, "invalid link: name must be at most 64 characters of a-z, 0-9 and -"},
+		{"65 characters", Link{Name: strings.Repeat("x", 65), URL: "https://example.com"}, "invalid link: name must be at most 64 characters of a-z, 0-9 and -"},
+		{"reserved api", Link{Name: "api", URL: "https://example.com"}, "invalid link: name is reserved"},
+		{"reserved healthz", Link{Name: "healthz", URL: "https://example.com"}, "invalid link: name is reserved"},
+		{"no URL", Link{Name: "docs", URL: ""}, "invalid link: url must be an absolute http or https URL"},
+		{"no scheme", Link{Name: "docs", URL: "wiki.example.com/docs"}, "invalid link: url must be an absolute http or https URL"},
+		{"ftp scheme", Link{Name: "docs", URL: "ftp://files.example.com/docs"}, "invalid link: url must be an absolute http or https URL"},
+		{"javascript", Link{Name: "docs", URL: "javascript:alert(1)"}, "invalid link: url must be an absolute http or https URL"},
+		{"no host", Link{Name: "docs", URL: "https:///docs"}, "invalid link: url must be an absolute http or https URL"},
+		{"unparsable", Link{Name: "docs", URL: "https://exa mple.com/%zz"}, "invalid link: url must be an absolute http or https URL"},
+	}
+	for _, tt := range invalid {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Validate(tt.link)
+			if err == nil {
+				t.Fatalf("Validate(%+v) = nil, want error %q", tt.link, tt.want)
+			}
+			if err.Error() != tt.want {
+				t.Errorf("Validate(%+v) = %q, want %q", tt.link, err, tt.want)
+			}
+			if !errors.Is(err, ErrInvalid) {
+				t.Errorf("Validate(%+v) = %q, but errors.Is(err, ErrInvalid) is false; wrap ErrInvalid with %%w", tt.link, err)
+			}
+		})
+	}
+}

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("--- # first\n\t\n---\t# second\nkind: A\n---\n")

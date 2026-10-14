@@ -1,0 +1,42 @@
+# Breaks one rule: host-access. The agent shares the node's network and
+# mounts the node's log directory.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: log-agent
+  labels:
+    app.kubernetes.io/name: log-agent
+    team: observability
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: log-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: log-agent
+    spec:
+      hostNetwork: true
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: agent
+          image: ghcr.io/acme/log-agent:3.1.0
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          livenessProbe:
+            httpGet: {path: /healthz, port: 2020}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 2020}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log

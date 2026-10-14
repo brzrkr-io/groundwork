@@ -1,0 +1,75 @@
+package manifest
+
+import (
+	"errors"
+	"fmt"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
+)
+
+// ErrUnsupportedKind marks a document whose kind kubepolicy doesn't check,
+// such as a Service. Callers skip those documents with a note.
+var ErrUnsupportedKind = errors.New("unsupported kind")
+
+// Object is a workload: the parts of a Deployment, StatefulSet, DaemonSet,
+// Job or Pod that the policy rules look at, whatever its kind.
+type Object struct {
+	Location  string            // where it came from, such as "deploy/web.yaml#1"
+	Kind      string            // "Deployment", "StatefulSet", "DaemonSet", "Job" or "Pod"
+	Name      string            // metadata.name
+	Namespace string            // metadata.namespace; "" when the manifest leaves it out
+	Labels    map[string]string // metadata.labels: the object's own labels
+	Replicas  *int32            // nil for kinds without replicas: DaemonSet, Job and Pod
+	Pod       corev1.PodSpec    // what runs: the pod template's spec, or a Pod's own spec
+}
+
+// Decode turns one document into an Object, through the typed Go struct for
+// its kind. A kind it doesn't check returns an error wrapping
+// ErrUnsupportedKind.
+func Decode(doc Document) (Object, error) {
+	var tm metav1.TypeMeta
+	if err := yaml.Unmarshal(doc.Data, &tm); err != nil {
+		return Object{}, fmt.Errorf("%s: %w", doc.Location(), err)
+	}
+
+	var (
+		meta     metav1.ObjectMeta
+		replicas *int32
+		pod      corev1.PodSpec
+		err      error
+	)
+	switch tm.Kind {
+	case "Deployment":
+		var d appsv1.Deployment
+		err = yaml.Unmarshal(doc.Data, &d)
+		meta, replicas, pod = d.ObjectMeta, defaultReplicas(d.Spec.Replicas), d.Spec.Template.Spec
+		// TODO(2): Add a case for each of StatefulSet, DaemonSet, Job (package
+		// k8s.io/api/batch/v1) and Pod, and a default case that returns an
+		// error wrapping ErrUnsupportedKind.
+	}
+	if err != nil {
+		return Object{}, fmt.Errorf("%s: %w", doc.Location(), err)
+	}
+
+	return Object{
+		Location:  doc.Location(),
+		Kind:      tm.Kind,
+		Name:      meta.Name,
+		Namespace: meta.Namespace,
+		Labels:    meta.Labels,
+		Replicas:  replicas,
+		Pod:       pod,
+	}, nil
+}
+
+// defaultReplicas returns replicas, or 1 when the manifest leaves it out:
+// the API server fills in 1 for a Deployment or StatefulSet without one.
+func defaultReplicas(replicas *int32) *int32 {
+	if replicas == nil {
+		return new(int32(1))
+	}
+	return replicas
+}

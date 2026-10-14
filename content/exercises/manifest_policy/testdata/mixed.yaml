@@ -1,0 +1,93 @@
+# Source: shop/templates/configmap.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-config
+  namespace: production
+data:
+  LOG_LEVEL: info
+--- # frontend: passes every rule
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: production
+  labels:
+    app.kubernetes.io/name: frontend
+    team: storefront
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frontend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: frontend
+          image: ghcr.io/acme/frontend:2.3.0
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8080}
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8080}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+---
+# This document has nothing but a comment, so it isn't counted.
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cache
+  namespace: production
+  labels:
+    app.kubernetes.io/name: cache
+spec:
+  replicas: 1
+  serviceName: cache
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cache
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cache
+    spec:
+      containers:
+        - name: redis
+          image: redis:latest
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backfill
+  namespace: production
+  labels:
+    app.kubernetes.io/name: backfill
+    team: storefront
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: backfill
+          image: ghcr.io/acme/backfill:1.0.0
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true

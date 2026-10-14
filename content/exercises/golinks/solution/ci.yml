@@ -1,0 +1,47 @@
+# Vets and tests every push to main and every pull request. A pushed
+# version tag (v0.1.0, v1.2.3) also builds the image and pushes it to
+# ghcr.io. In your repository: .github/workflows/ci.yml.
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+# Every job's GITHUB_TOKEN can read the code and nothing else, unless the
+# job asks for more.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  image:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/octocat/golinks:${{ github.ref_name }}
+          build-args: VERSION=${{ github.ref_name }}

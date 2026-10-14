@@ -1,0 +1,141 @@
+package store
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"groundwork.local/golinks/internal/links"
+)
+
+// openMemory opens a fresh in-memory database, migrated, and closes it when
+// the test ends.
+func openMemory(t *testing.T) *SQLite {
+	t.Helper()
+	s, err := Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatalf("Open(ctx, %q) error = %v", ":memory:", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+var (
+	docs = links.Link{Name: "docs", URL: "https://docs.example.com"}
+	wiki = links.Link{Name: "wiki", URL: "https://wiki.example.com/start"}
+)
+
+func TestStore(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("schema", func(t *testing.T) {
+		s := openMemory(t)
+		// Each statement runs straight against the table, in this order.
+		steps := []struct {
+			sql     string
+			wantErr bool
+			why     string
+		}{
+			{`INSERT INTO links (name, url) VALUES ('docs', 'https://docs.example.com')`, false,
+				"a link with a name and a url must fit"},
+			{`INSERT INTO links (name, url) VALUES ('docs', 'https://other.example.com')`, true,
+				"name is the primary key, so a second row named docs must be rejected"},
+			{`INSERT INTO links (name, url) VALUES ('wiki', NULL)`, true,
+				"url is NOT NULL, so a row without one must be rejected"},
+			{`INSERT INTO links (name, url) VALUES (NULL, 'https://x.example.com')`, true,
+				"name is NOT NULL (SQLite lets a TEXT primary key hold NULL unless you say NOT NULL)"},
+		}
+		for _, step := range steps {
+			_, err := s.db.ExecContext(ctx, step.sql)
+			switch {
+			case err != nil && strings.Contains(err.Error(), "no such table"):
+				t.Fatalf("%s\nerror = %v; write the CREATE TABLE in internal/store/migrations/001_create_links.sql", step.sql, err)
+			case err != nil && !step.wantErr:
+				t.Errorf("%s\nerror = %v, want it to work: %s", step.sql, err, step.why)
+			case err == nil && step.wantErr:
+				t.Errorf("%s\nworked, want an error: %s", step.sql, step.why)
+			}
+		}
+	})
+
+	t.Run("create and get", func(t *testing.T) {
+		s := openMemory(t)
+		for _, l := range []links.Link{docs, wiki} {
+			if err := s.Create(ctx, l); err != nil {
+				t.Fatalf("Create(ctx, %+v) = %v, want nil", l, err)
+			}
+		}
+		for _, want := range []links.Link{docs, wiki} {
+			got, err := s.Get(ctx, want.Name)
+			if err != nil || got != want {
+				t.Errorf("Get(ctx, %q) = %+v, %v, want %+v, nil", want.Name, got, err, want)
+			}
+		}
+	})
+
+	t.Run("create a taken name", func(t *testing.T) {
+		s := openMemory(t)
+		if err := s.Create(ctx, docs); err != nil {
+			t.Fatalf("Create(ctx, %+v) = %v, want nil", docs, err)
+		}
+		again := links.Link{Name: "docs", URL: "https://evil.example.com"}
+		if err := s.Create(ctx, again); !errors.Is(err, links.ErrExists) {
+			t.Errorf("Create(ctx, %+v) for a taken name = %v, want links.ErrExists", again, err)
+		}
+		if got, err := s.Get(ctx, "docs"); err != nil || got != docs {
+			t.Errorf("Get(ctx, %q) after the second Create = %+v, %v, want the first link %+v unchanged", "docs", got, err, docs)
+		}
+	})
+
+	t.Run("get a missing link", func(t *testing.T) {
+		s := openMemory(t)
+		for _, name := range []string{"nope", "docs"} {
+			if got, err := s.Get(ctx, name); !errors.Is(err, links.ErrNotFound) {
+				t.Errorf("Get(ctx, %q) on an empty store = %+v, %v, want links.ErrNotFound", name, got, err)
+			}
+		}
+	})
+
+	t.Run("list and delete", func(t *testing.T) {
+		s := openMemory(t)
+		for _, l := range []links.Link{wiki, docs} {
+			if err := s.Create(ctx, l); err != nil {
+				t.Fatalf("Create(ctx, %+v) = %v, want nil", l, err)
+			}
+		}
+		if got, err := s.List(ctx); err != nil || !slices.Equal(got, []links.Link{docs, wiki}) {
+			t.Errorf("List(ctx) = %+v, %v, want %+v (sorted by name)", got, err, []links.Link{docs, wiki})
+		}
+		if err := s.Delete(ctx, "docs"); err != nil {
+			t.Errorf("Delete(ctx, %q) = %v, want nil", "docs", err)
+		}
+		if _, err := s.Get(ctx, "docs"); !errors.Is(err, links.ErrNotFound) {
+			t.Errorf("Get(ctx, %q) after Delete = %v, want links.ErrNotFound", "docs", err)
+		}
+	})
+
+	t.Run("links survive a restart", func(t *testing.T) {
+		// A file database, opened twice: the second Open must skip the
+		// migration it already ran and still find the link.
+		path := filepath.Join(t.TempDir(), "golinks.db")
+		first, err := Open(ctx, path)
+		if err != nil {
+			t.Fatalf("Open(ctx, %q) = %v", path, err)
+		}
+		if err := first.Create(ctx, docs); err != nil {
+			t.Fatalf("Create(ctx, %+v) = %v, want nil", docs, err)
+		}
+		first.Close()
+		second, err := Open(ctx, path)
+		if err != nil {
+			t.Fatalf("Open(ctx, %q) a second time = %v", path, err)
+		}
+		defer second.Close()
+		if got, err := second.Get(ctx, "docs"); err != nil || got != docs {
+			t.Errorf("Get(ctx, %q) after reopening = %+v, %v, want %+v, nil", "docs", got, err, docs)
+		}
+	})
+}

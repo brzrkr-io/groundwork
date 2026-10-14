@@ -1,0 +1,40 @@
+package cli
+
+import (
+	"flag"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// update rewrites the golden files instead of comparing with them:
+//
+//	go test ./internal/cli -run TestGolden -update
+var update = flag.Bool("update", false, "rewrite the golden files in testdata/")
+
+// goldenCases are the command lines TestGolden locks down. Each one's
+// expected stdout is in testdata/<name>.golden.
+var goldenCases = []struct {
+	name string
+	args []string
+}{
+	{"mixed-table", []string{"../../testdata/mixed.yaml"}},
+	{"mixed-json", []string{"-format", "json", "../../testdata/mixed.yaml"}},
+	{"violations", []string{"-enable", "image-digest", "../../testdata/violations"}},
+}
+
+func TestGolden(t *testing.T) {
+	for _, tc := range goldenCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr strings.Builder
+			Run(tc.args, strings.NewReader(""), &stdout, &stderr)
+			golden := filepath.Join("testdata", tc.name+".golden")
+
+			// TODO(9): Replace this line. With -update, write stdout to the
+			// golden file (creating testdata/ if needed). Then read the golden
+			// file and fail the test if it differs from stdout. You will need
+			// to import "os".
+			t.Fatalf("TestGolden doesn't compare with %s yet (update is %v)", golden, *update)
+		})
+	}
+}

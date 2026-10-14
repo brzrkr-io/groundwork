@@ -1,0 +1,4 @@
+# golinks' settings, handed to the container as environment variables.
+
+# TODO(9): Write the ConfigMap golinks-config with GOLINKS_ADDR,
+# GOLINKS_DB, GOLINKS_LOG_LEVEL and GOLINKS_SHUTDOWN_GRACE.

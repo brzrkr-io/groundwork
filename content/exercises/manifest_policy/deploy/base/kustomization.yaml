@@ -1,0 +1,7 @@
+# The hello app: a stand-in for any service your team ships. kubepolicy's CI
+# job checks these manifests on every push.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml

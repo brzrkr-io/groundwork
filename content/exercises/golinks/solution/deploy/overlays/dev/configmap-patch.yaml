@@ -1,0 +1,7 @@
+# Changes the dev ConfigMap: only the keys listed here change.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: golinks-config
+data:
+  GOLINKS_LOG_LEVEL: debug

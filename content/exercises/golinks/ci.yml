@@ -1,0 +1,5 @@
+# Vets and tests every push to main and every pull request. A pushed
+# version tag (v0.1.0, v1.2.3) also builds the image and pushes it to
+# ghcr.io. In your repository: .github/workflows/ci.yml.
+
+# TODO(11): Write the workflow ci, with the jobs test and image.

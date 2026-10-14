@@ -1,0 +1,5 @@
+# Tests kubepolicy, then checks the deploy/ manifests with it, on pushes to
+# main and on every pull request.
+# In your GitHub repository this file lives at .github/workflows/ci.yml.
+
+# TODO(11): Write the workflow named ci, with the jobs "test" and "policy".

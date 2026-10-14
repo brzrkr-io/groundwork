@@ -1,7 +1,7 @@
 # Groundwork lesson plan
 
 <!-- begin summary -->
-362 exercises in 20 modules, about 156 hours of hands-on work.
+364 exercises in 21 modules, about 167 hours of hands-on work.
 <!-- end summary -->
 The course takes a complete beginner to the Go that DevOps and platform engineers write every day: CLIs, log and config processing, HTTP services, concurrency, Kubernetes controllers and AWS automation. Woven between the Go modules are the tools of the trade, each where it's most useful:
 
@@ -641,6 +641,21 @@ Habits that make it stick (the why is in [LEARNING.md](LEARNING.md)):
 | 360 | Drift detection: a tiny terraform plan | concept | 35 |
 | 361 | Drift detection: ignore AWS-managed tags | concept | 20 |
 | 362 | Practice: cloud inventory report | **practice** · race | 45 |
+
+## Phase: Capstones (about 11 hours)
+
+### Module 21: Capstones
+
+*About 11.0 hours, in `exercises/21_capstones/`.* Two portfolio projects that pull the whole course together: a real service, built, tested, containerised, deployed to Kubernetes and shipped by CI, and the policy checker that guards it.
+
+**After this module you can:** Build a production-style Go service end to end, run it on a local Kubernetes cluster, ship it with CI, enforce deployment policy with your own tool, and present both as portfolio projects.
+
+**Guides:** [Shipping it for real: clusters, registries and your portfolio](content/guides/shipping.md)
+
+| # | Exercise | Kind | Min |
+|---:|---|---|---:|
+| 363 | Capstone: go links, built and shipped | **project** · race | 360 |
+| 364 | Capstone: a policy checker for Kubernetes manifests | **project** | 300 |
 
 <!-- end modules -->
 

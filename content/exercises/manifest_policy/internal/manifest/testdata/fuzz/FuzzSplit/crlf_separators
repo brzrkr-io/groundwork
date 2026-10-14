@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("kind: A\r\n---\r\nkind: B\r\n")

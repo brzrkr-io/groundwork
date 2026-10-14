@@ -1,0 +1,103 @@
+package server
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"groundwork.local/golinks/internal/links"
+)
+
+// maxBodyBytes caps request bodies: a link is a few hundred bytes, so
+// anything bigger is a mistake or an attack.
+const maxBodyBytes = 64 << 10
+
+// writeJSON sends v as a JSON body with the given status code.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+// writeError sends {"error": msg} with the given status code.
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// decodeJSON reads the request body into v. It rejects bodies over
+// maxBodyBytes and fields v doesn't have, so a typo like "nmae" is an error
+// instead of a link with no name.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
+}
+
+// writeStoreError turns an error from links.Validate or the store into a
+// response:
+//
+//	links.ErrNotFound  404  {"error":"link not found"}
+//	links.ErrExists    409  {"error":"link already exists"}
+//	links.ErrInvalid   400  {"error":"invalid link: <reason>"}
+//	anything else      500  {"error":"internal error"}, and an ERROR log
+func (s *Server) writeStoreError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, links.ErrNotFound):
+		writeError(w, http.StatusNotFound, links.ErrNotFound.Error())
+	case errors.Is(err, links.ErrExists):
+		writeError(w, http.StatusConflict, links.ErrExists.Error())
+	case errors.Is(err, links.ErrInvalid):
+		writeError(w, http.StatusBadRequest, err.Error())
+	default:
+		// The client learns nothing about the database; the log has it all.
+		s.logger.ErrorContext(r.Context(), "store failed", "path", r.URL.Path, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+	}
+}
+
+// handleList serves GET /api/links: 200 with a JSON array of every link.
+func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
+	all, err := s.store.List(r.Context())
+	if err != nil {
+		s.writeStoreError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, all)
+}
+
+// handleRedirect serves GET /{name}.
+//
+//	link found       302 Found, Location: <its URL>, and counts a redirect
+//	no such link     404 {"error":"link not found"}
+func (s *Server) handleRedirect(w http.ResponseWriter, r *http.Request) {
+	// TODO(3): Look up the link named in the path, count a redirect with
+	// s.metrics.Redirect(), and redirect to its URL with 302 Found.
+	writeError(w, http.StatusNotImplemented, "not implemented")
+}
+
+// handleCreate serves POST /api/links.
+//
+//	body is not valid JSON   400  {"error":"invalid JSON body"}
+//	link fails validation    400  {"error":"invalid link: <reason>"}
+//	name is taken            409  {"error":"link already exists"}
+//	created                  201  the link as JSON
+func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
+	var l links.Link
+	if err := decodeJSON(w, r, &l); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	// TODO(3): Validate l, save it in the store, and answer as described
+	// above.
+	writeError(w, http.StatusNotImplemented, "not implemented")
+}
+
+// handleDelete serves DELETE /api/links/{name}.
+//
+//	no such link   404  {"error":"link not found"}
+//	deleted        204  no body
+func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	// TODO(3): Delete the link named in the path and answer as described
+	// above.
+	writeError(w, http.StatusNotImplemented, "not implemented")
+}

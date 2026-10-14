@@ -1,0 +1,113 @@
+package report
+
+import (
+	"strings"
+	"testing"
+
+	"groundwork.local/manifest_policy/internal/policy"
+)
+
+var sample = Report{
+	Objects: 3,
+	Skipped: 1,
+	Violations: []policy.Violation{
+		{Location: "deploy/web.yaml#1", Kind: "Deployment", Namespace: "production", Name: "web", Rule: "resources", Severity: policy.Error, Message: `container "web": missing limits.cpu`},
+		{Location: "deploy/web.yaml#1", Kind: "Deployment", Namespace: "production", Name: "web", Rule: "labels", Severity: policy.Warning, Message: "missing labels: team"},
+		{Location: "deploy/agent.yaml#2", Kind: "DaemonSet", Name: "log-agent", Rule: "host-access", Severity: policy.Error, Message: "hostNetwork is true"},
+	},
+}
+
+func TestTable(t *testing.T) {
+	tests := []struct {
+		name string
+		rep  Report
+		want string
+	}{
+		{
+			name: "three violations",
+			rep:  sample,
+			want: `LOCATION             OBJECT                     RULE         SEVERITY  MESSAGE
+deploy/web.yaml#1    production/Deployment/web  resources    error     container "web": missing limits.cpu
+deploy/web.yaml#1    production/Deployment/web  labels       warning   missing labels: team
+deploy/agent.yaml#2  DaemonSet/log-agent        host-access  error     hostNetwork is true
+
+3 objects checked, 2 errors, 1 warning
+`,
+		},
+		{
+			name: "one violation",
+			rep:  Report{Objects: 1, Violations: sample.Violations[2:]},
+			want: `LOCATION             OBJECT               RULE         SEVERITY  MESSAGE
+deploy/agent.yaml#2  DaemonSet/log-agent  host-access  error     hostNetwork is true
+
+1 object checked, 1 error, 0 warnings
+`,
+		},
+		{
+			name: "no violations prints only the summary",
+			rep:  Report{Objects: 4, Skipped: 2},
+			want: "4 objects checked, no violations\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got strings.Builder
+			if err := Table(&got, tt.rep); err != nil {
+				t.Fatalf("Table() error = %v", err)
+			}
+			if got.String() != tt.want {
+				t.Errorf("Table() wrote\n%s\nwant\n%s", got.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		rep  Report
+		want string
+	}{
+		{
+			name: "one violation",
+			rep:  Report{Objects: 2, Skipped: 1, Violations: sample.Violations[2:]},
+			want: `{
+  "objects": 2,
+  "skipped": 1,
+  "violations": [
+    {
+      "location": "deploy/agent.yaml#2",
+      "kind": "DaemonSet",
+      "namespace": "",
+      "name": "log-agent",
+      "rule": "host-access",
+      "severity": "error",
+      "message": "hostNetwork is true"
+    }
+  ]
+}
+`,
+		},
+		{
+			name: "no violations is an empty list, not null",
+			rep:  Report{Objects: 4},
+			want: `{
+  "objects": 4,
+  "skipped": 0,
+  "violations": []
+}
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got strings.Builder
+			if err := JSON(&got, tt.rep); err != nil {
+				t.Fatalf("JSON() error = %v", err)
+			}
+			if got.String() != tt.want {
+				t.Errorf("JSON() wrote\n%s\nwant\n%s", got.String(), tt.want)
+			}
+		})
+	}
+}

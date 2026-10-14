@@ -1,0 +1,15 @@
+# A stable name and address for the golinks pods inside the cluster:
+# http://golinks (port 80) reaches the container port named http.
+apiVersion: v1
+kind: Service
+metadata:
+  name: golinks
+  labels:
+    app: golinks
+spec:
+  selector:
+    app: golinks
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,109 @@
+package golinks
+
+import (
+	"os"
+	"path"
+	"strings"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/yaml"
+)
+
+// This file reads Kubernetes manifests and kustomization files for the
+// tests. You don't need to change it.
+
+// readManifest parses the YAML file name into obj, a pointer to a typed
+// Kubernetes object such as *appsv1.Deployment. It is strict: a field the
+// type doesn't have, such as a misspelled "readinessprobe", is an error.
+func readManifest(t *testing.T, name string, obj any) {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	if err := yaml.UnmarshalStrict(raw, obj); err != nil {
+		t.Fatalf("%s: %v\n(check the spelling and indentation of the field it names)", name, err)
+	}
+}
+
+// kustomization is the part of a kustomization.yaml file the tests read.
+type kustomization struct {
+	APIVersion string   `json:"apiVersion"`
+	Kind       string   `json:"kind"`
+	Resources  []string `json:"resources"`
+	Images     []struct {
+		Name    string `json:"name"`
+		NewName string `json:"newName"`
+		NewTag  string `json:"newTag"`
+		Digest  string `json:"digest"`
+	} `json:"images"`
+	Patches []struct {
+		Path  string `json:"path"`
+		Patch string `json:"patch"`
+	} `json:"patches"`
+}
+
+// readKustomization parses the kustomization file name. Kustomize has many
+// more fields than the struct above, so this one isn't strict.
+func readKustomization(t *testing.T, name string) kustomization {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	var k kustomization
+	if err := yaml.Unmarshal(raw, &k); err != nil {
+		t.Fatalf("%s is not valid YAML: %v", name, err)
+	}
+	return k
+}
+
+// resolves reports whether entry, a path written in the kustomization file
+// in folder dir, points at target: "../../base" in deploy/overlays/dev
+// points at deploy/base.
+func resolves(dir, entry, target string) bool {
+	return path.Clean(path.Join(dir, strings.TrimSuffix(entry, "/"))) == target
+}
+
+// imageName splits an image reference into its name and its tag:
+// "ghcr.io/octocat/golinks:v0.1.0" -> "ghcr.io/octocat/golinks", "v0.1.0".
+// A ":" before the last "/" belongs to a registry port, not a tag.
+func imageName(ref string) (name, tag string) {
+	ref, _, _ = strings.Cut(ref, "@") // drop a digest
+	i := strings.LastIndex(ref, ":")
+	if i < 0 || strings.Contains(ref[i:], "/") {
+		return ref, ""
+	}
+	return ref[:i], ref[i+1:]
+}
+
+// portNumber resolves a probe's or Service's port, given as a number or as
+// a container port's name, to a number. It returns 0 if a name matches no
+// port of the container.
+func portNumber(p intstr.IntOrString, c corev1.Container) int32 {
+	if p.Type == intstr.Int {
+		return p.IntVal
+	}
+	for _, cp := range c.Ports {
+		if cp.Name == p.StrVal {
+			return cp.ContainerPort
+		}
+	}
+	return 0
+}
+
+// selects reports whether every label in selector is in labels with the
+// same value: how a Service or a Deployment picks its pods.
+func selects(selector, labels map[string]string) bool {
+	if len(selector) == 0 {
+		return false
+	}
+	for k, v := range selector {
+		if labels[k] != v {
+			return false
+		}
+	}
+	return true
+}

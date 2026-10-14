@@ -1,0 +1,57 @@
+package manifest
+
+import "bytes"
+
+// Split cuts a multi-document YAML stream into its documents. Documents are
+// separated by "---" lines; each document is the exact bytes between two
+// separators, so it is a piece of data, not a copy. Documents with nothing
+// but blank lines and comments are left out.
+func Split(data []byte) [][]byte {
+	var docs [][]byte
+	start, pos := 0, 0
+	for line := range bytes.Lines(data) {
+		if isSeparator(line) {
+			docs = appendDoc(docs, data[start:pos])
+			start = pos + len(line)
+		}
+		pos += len(line)
+	}
+	return appendDoc(docs, data[start:])
+}
+
+// appendDoc adds doc to docs, unless it has no content.
+func appendDoc(docs [][]byte, doc []byte) [][]byte {
+	if !hasContent(doc) {
+		return docs
+	}
+	return append(docs, doc)
+}
+
+// isSeparator reports whether line is a document separator: "---", then
+// optionally spaces and a comment ("--- # web").
+func isSeparator(line []byte) bool {
+	rest, ok := bytes.CutPrefix(bytes.TrimRight(line, "\r\n"), []byte("---"))
+	if !ok {
+		return false
+	}
+	if len(rest) == 0 {
+		return true
+	}
+	if rest[0] != ' ' && rest[0] != '\t' {
+		return false // "----" or "---x" is text, not a separator
+	}
+	rest = bytes.TrimLeft(rest, " \t")
+	return len(rest) == 0 || rest[0] == '#'
+}
+
+// hasContent reports whether doc has a line that is neither blank nor a
+// comment.
+func hasContent(doc []byte) bool {
+	for line := range bytes.Lines(doc) {
+		text := bytes.TrimSpace(line)
+		if len(text) > 0 && text[0] != '#' {
+			return true
+		}
+	}
+	return false
+}

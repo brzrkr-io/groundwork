@@ -1,0 +1,71 @@
+// Package config reads golinks' settings from environment variables, the
+// way containers and Kubernetes ConfigMaps hand settings to a program.
+package config
+
+import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+)
+
+// Config holds every setting golinks reads at startup.
+type Config struct {
+	Addr          string        // GOLINKS_ADDR: the address to listen on
+	DBPath        string        // GOLINKS_DB: the SQLite database file
+	LogLevel      slog.Level    // GOLINKS_LOG_LEVEL: debug, info, warn or error
+	ShutdownGrace time.Duration // GOLINKS_SHUTDOWN_GRACE: how long shutdown waits for requests
+}
+
+// Load builds a Config from the environment variables getenv returns
+// (os.Getenv in main, a map lookup in tests). An unset or empty variable
+// takes its default:
+//
+//	GOLINKS_ADDR             :8080
+//	GOLINKS_DB               golinks.db
+//	GOLINKS_LOG_LEVEL        info
+//	GOLINKS_SHUTDOWN_GRACE   10s
+//
+// It reports every invalid setting, not only the first, and each error
+// names its variable.
+func Load(getenv func(string) string) (Config, error) {
+	cfg := Config{
+		Addr:          ":8080",
+		DBPath:        "golinks.db",
+		LogLevel:      slog.LevelInfo,
+		ShutdownGrace: 10 * time.Second,
+	}
+	var errs []error
+	if v := getenv("GOLINKS_ADDR"); v != "" {
+		cfg.Addr = v
+	}
+	if v := getenv("GOLINKS_DB"); v != "" {
+		cfg.DBPath = v
+	}
+	if v := getenv("GOLINKS_LOG_LEVEL"); v != "" {
+		switch v {
+		case "debug":
+			cfg.LogLevel = slog.LevelDebug
+		case "info":
+			cfg.LogLevel = slog.LevelInfo
+		case "warn":
+			cfg.LogLevel = slog.LevelWarn
+		case "error":
+			cfg.LogLevel = slog.LevelError
+		default:
+			errs = append(errs, fmt.Errorf("GOLINKS_LOG_LEVEL: %q is not debug, info, warn or error", v))
+		}
+	}
+	if v := getenv("GOLINKS_SHUTDOWN_GRACE"); v != "" {
+		d, err := time.ParseDuration(v)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("GOLINKS_SHUTDOWN_GRACE: %w", err))
+		case d <= 0:
+			errs = append(errs, fmt.Errorf("GOLINKS_SHUTDOWN_GRACE: %s is not positive", v))
+		default:
+			cfg.ShutdownGrace = d
+		}
+	}
+	return cfg, errors.Join(errs...)
+}

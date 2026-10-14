@@ -1,0 +1,55 @@
+package server
+
+import (
+	"log/slog"
+	"net/http"
+	"time"
+)
+
+// statusRecorder wraps a ResponseWriter and remembers the status code the
+// handler sent. A handler that never calls WriteHeader sends 200.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+// WriteHeader records code, then sends it on.
+func (rec *statusRecorder) WriteHeader(code int) {
+	rec.status = code
+	rec.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap returns the wrapped ResponseWriter, so http.ResponseController can
+// still reach features like Flush through the recorder.
+func (rec *statusRecorder) Unwrap() http.ResponseWriter {
+	return rec.ResponseWriter
+}
+
+// observe serves each request through next, then counts it in s.metrics
+// and writes one access log line with s.logger.
+func (s *Server) observe(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+
+		// The mux fills in r.Pattern while it routes the request.
+		route := r.Pattern
+		if route == "" {
+			route = "unmatched"
+		}
+		s.metrics.Request(route, rec.status)
+
+		level := slog.LevelInfo
+		if rec.status >= 500 {
+			level = slog.LevelError
+		}
+		s.logger.LogAttrs(r.Context(), level, "request",
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.String("route", route),
+			slog.Int("status", rec.status),
+			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+		)
+	})
+}

@@ -1,0 +1,190 @@
+package cli
+
+import (
+	"encoding/json"
+	"errors"
+	"os"
+	"strings"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+
+	"groundwork.local/manifest_policy/internal/manifest"
+	"groundwork.local/manifest_policy/internal/policy"
+	"groundwork.local/manifest_policy/internal/report"
+)
+
+// run calls Run like main does, with stdin holding the given text, and
+// returns the exit code and what Run printed.
+func run(stdin string, args ...string) (code int, stdout, stderr string) {
+	var out, errOut strings.Builder
+	code = Run(args, strings.NewReader(stdin), &out, &errOut)
+	return code, out.String(), errOut.String()
+}
+
+// requireEarlierTasks skips a test until the packages Run is built on work,
+// so its failures are about this package, not an earlier task.
+func requireEarlierTasks(t *testing.T) {
+	t.Helper()
+	if docs := manifest.Split([]byte("kind: A\n---\nkind: B\n")); len(docs) != 2 {
+		t.Skip("finish task 1 first: Run needs manifest.Split")
+	}
+	if _, err := manifest.Decode(manifest.Document{Data: []byte("kind: Service\n")}); !errors.Is(err, manifest.ErrUnsupportedKind) {
+		t.Skip("finish task 2 first: Run needs manifest.Decode")
+	}
+	bare := manifest.Object{Kind: "Pod", Pod: corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "app:1"}}}}
+	if len(policy.Rules[0].Check(bare)) == 0 {
+		t.Skip("finish task 3 first: Run needs the resources rule")
+	}
+	if len(policy.Evaluate([]manifest.Object{bare}, policy.Config{})) == 0 {
+		t.Skip("finish task 4 first: Run needs policy.Evaluate")
+	}
+	if len(policy.Rules) < 8 {
+		t.Skip("finish task 5 first: Run needs every rule")
+	}
+	var table strings.Builder
+	if report.Table(&table, report.Report{Violations: []policy.Violation{{Rule: "probes"}}}) != nil || !strings.Contains(table.String(), "probes") {
+		t.Skip("finish task 6 first: Run needs report.Table")
+	}
+	if report.JSON(&table, report.Report{}) != nil {
+		t.Skip("finish task 7 first: Run needs report.JSON")
+	}
+}
+
+func TestRun(t *testing.T) {
+	requireEarlierTasks(t)
+
+	t.Run("exit codes", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			args       []string
+			wantCode   int
+			wantStdout string // a piece of stdout
+		}{
+			{"a clean file exits 0", []string{"../../testdata/good.yaml"}, 0, "1 object checked, no violations"},
+			{"an error exits 1", []string{"../../testdata/violations/probes.yaml"}, 1, `container "nats": missing readinessProbe`},
+			{"warnings alone exit 0", []string{"../../testdata/violations/labels.yaml"}, 0, "missing labels: team"},
+			{"a directory", []string{"../../testdata/violations"}, 1, "7 objects checked, 8 errors, 1 warning"},
+			{"kubectl List output", []string{"../../testdata/list.yaml"}, 1, "kube-system/Deployment/coredns"},
+			{"the deploy folder passes", []string{"../../deploy/base"}, 0, "1 object checked, no violations"},
+			{"several paths", []string{"../../testdata/good.yaml", "../../testdata/violations/replicas.yaml"}, 1, "2 objects checked, 1 error, 0 warnings"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				code, stdout, stderr := run("", tt.args...)
+				if code != tt.wantCode {
+					t.Errorf("kubepolicy %s exited with %d, want %d\nstdout:\n%s\nstderr:\n%s", strings.Join(tt.args, " "), code, tt.wantCode, stdout, stderr)
+				}
+				if !strings.Contains(stdout, tt.wantStdout) {
+					t.Errorf("kubepolicy %s printed\n%s\nwant it to contain %q", strings.Join(tt.args, " "), stdout, tt.wantStdout)
+				}
+			})
+		}
+	})
+
+	t.Run("stdin", func(t *testing.T) {
+		manifests, err := os.ReadFile("../../testdata/violations/replicas.yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		code, stdout, stderr := run(string(manifests), "-")
+		if code != 1 || !strings.Contains(stdout, "stdin#1") {
+			t.Errorf("kubepolicy - (replicas.yaml on stdin) exited with %d and printed\n%s\nwant exit 1 and the location stdin#1\nstderr:\n%s", code, stdout, stderr)
+		}
+	})
+
+	t.Run("skipped kinds get a note on stderr", func(t *testing.T) {
+		_, _, stderr := run("", "../../testdata/good.yaml")
+		if !strings.Contains(stderr, "good.yaml#2") || !strings.Contains(stderr, "Service") {
+			t.Errorf("stderr = %q, want a note naming good.yaml#2 and its kind, Service", stderr)
+		}
+	})
+
+	t.Run("flags", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			args       []string
+			wantCode   int
+			wantStdout string
+		}{
+			{"-ignore skips a rule", []string{"-ignore", "probes", "../../testdata/violations/probes.yaml"}, 0, "1 object checked, no violations"},
+			{"--ignore works with two dashes", []string{"--ignore", "probes", "../../testdata/violations/probes.yaml"}, 0, "1 object checked, no violations"},
+			{"-ignore is repeatable", []string{"-ignore", "image-tag", "-ignore", "probes",
+				"../../testdata/violations/image-tag.yaml", "../../testdata/violations/probes.yaml"}, 0, "2 objects checked, no violations"},
+			{"-enable runs an opt-in rule", []string{"-enable", "image-digest", "../../testdata/violations/labels.yaml"}, 1, `image "ghcr.io/acme/worker:0.9.0" is not pinned by digest`},
+			{"-enable with pinned images", []string{"-enable", "image-digest", "../../testdata/good.yaml"}, 0, "no violations"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				code, stdout, stderr := run("", tt.args...)
+				if code != tt.wantCode || !strings.Contains(stdout, tt.wantStdout) {
+					t.Errorf("kubepolicy %s exited with %d and printed\n%s\nwant exit %d and %q\nstderr:\n%s",
+						strings.Join(tt.args, " "), code, stdout, tt.wantCode, tt.wantStdout, stderr)
+				}
+			})
+		}
+	})
+
+	t.Run("-format json", func(t *testing.T) {
+		for _, tc := range []struct {
+			path           string
+			wantCode       int
+			wantViolations int
+		}{
+			{"../../testdata/good.yaml", 0, 0},
+			{"../../testdata/violations/security-context.yaml", 1, 1},
+		} {
+			code, stdout, stderr := run("", "-format", "json", tc.path)
+			var got struct {
+				Objects    int               `json:"objects"`
+				Violations []json.RawMessage `json:"violations"`
+			}
+			if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+				t.Errorf("kubepolicy -format json %s printed\n%s\nwhich is not JSON: %v\nstderr:\n%s", tc.path, stdout, err, stderr)
+				continue
+			}
+			if code != tc.wantCode || got.Objects != 1 || len(got.Violations) != tc.wantViolations {
+				t.Errorf("kubepolicy -format json %s exited with %d and printed\n%s\nwant exit %d, 1 object and %d violations",
+					tc.path, code, stdout, tc.wantCode, tc.wantViolations)
+			}
+		}
+	})
+
+	t.Run("usage and input errors exit 2", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			args       []string
+			stdin      string
+			wantStderr string // a piece of stderr
+		}{
+			{"no paths", nil, "", "no manifests given"},
+			{"unknown format", []string{"-format", "xml", "../../testdata/good.yaml"}, "", `-format must be table or json, got "xml"`},
+			{"unknown rule to ignore", []string{"-ignore", "probe", "../../testdata/good.yaml"}, "", `unknown rule "probe"`},
+			{"unknown rule to enable", []string{"-enable", "digest", "../../testdata/good.yaml"}, "", `unknown rule "digest"`},
+			{"unknown flag", []string{"-strict", "../../testdata/good.yaml"}, "", "flag provided but not defined: -strict"},
+			{"broken YAML", []string{"../../testdata/invalid.yaml"}, "", "invalid.yaml#2"},
+			{"missing file", []string{"../../testdata/nope.yaml"}, "", "nope.yaml"},
+			{"empty stdin", []string{"-"}, "", "no YAML documents"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				code, stdout, stderr := run(tt.stdin, tt.args...)
+				if code != 2 {
+					t.Errorf("kubepolicy %s exited with %d, want 2\nstderr:\n%s", strings.Join(tt.args, " "), code, stderr)
+				}
+				if !strings.Contains(stderr, tt.wantStderr) {
+					t.Errorf("kubepolicy %s wrote to stderr\n%s\nwant it to contain %q", strings.Join(tt.args, " "), stderr, tt.wantStderr)
+				}
+				if stdout != "" {
+					t.Errorf("kubepolicy %s printed %q to stdout, want nothing: errors go to stderr", strings.Join(tt.args, " "), stdout)
+				}
+			})
+		}
+	})
+
+	t.Run("-h exits 0", func(t *testing.T) {
+		if code, _, stderr := run("", "-h"); code != 0 || !strings.Contains(stderr, "-ignore") {
+			t.Errorf("kubepolicy -h exited with %d and wrote\n%s\nwant exit 0 and usage text that lists -ignore", code, stderr)
+		}
+	})
+}

@@ -1,0 +1,234 @@
+package repo
+
+// The tests for tasks 11 and 12 read ci.yml and PORTFOLIO.md. You don't
+// need to change this file, and you can delete it (with workflow_test.go)
+// when you publish the project.
+
+import (
+	"errors"
+	"io/fs"
+	"os"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+	"unicode"
+)
+
+func TestWorkflow(t *testing.T) {
+	const file = "ci.yml"
+	wf := readWorkflow(t)
+	if wf.Name != "ci" {
+		t.Errorf("%s: name is %q, want ci", file, wf.Name)
+	}
+	if got := eventNames(wf); !slices.Equal(got, []string{"pull_request", "push"}) {
+		t.Errorf("%s: on has the events %q, want push and pull_request", file, got)
+	}
+	if push, ok := triggers(wf)["push"]; ok {
+		if branches := stringList(push, "branches"); !slices.Equal(branches, []string{"main"}) {
+			t.Errorf("%s: push has branches %q, want [main]", file, branches)
+		}
+	}
+
+	test := checkJob(t, file, wf, "test")
+	checkSetupSteps(t, file, "test", test.Steps)
+	setup := findStep(test.Steps, "actions/setup-go")
+	vet := findRun(test.Steps, "go vet ./...")
+	tests := findRun(test.Steps, "go test -race ./...")
+	switch {
+	case vet < 0:
+		t.Errorf("%s: job test has no step that runs go vet ./...", file)
+	case tests < 0:
+		t.Errorf("%s: job test has no step that runs go test -race ./...", file)
+	case vet < setup || tests < vet:
+		t.Errorf("%s: job test has steps in the order %v, want checkout, setup-go, go vet, go test", file, stepNames(test.Steps))
+	}
+
+	policy := checkJob(t, file, wf, "policy")
+	if got := needs(policy); !slices.Contains(got, "test") {
+		t.Errorf("%s: job policy needs %q, want it to need test", file, got)
+	}
+	checkSetupSteps(t, file, "policy", policy.Steps)
+	setup = findStep(policy.Steps, "actions/setup-go")
+	makePolicy := findRun(policy.Steps, "make policy")
+	base := findLine(policy.Steps, "kubepolicy", "deploy/base")
+	overlay := findLine(policy.Steps, "kustomize", "deploy/overlays/production", "|", "kubepolicy")
+	if makePolicy >= 0 {
+		base, overlay = makePolicy, makePolicy // the Makefile's policy target runs both
+	}
+	switch {
+	case base < 0:
+		t.Errorf("%s: job policy has no step that runs kubepolicy on deploy/base, such as go run ./cmd/kubepolicy deploy/base", file)
+	case overlay < 0:
+		t.Errorf("%s: job policy has no step that pipes kubectl kustomize deploy/overlays/production into kubepolicy -", file)
+	case base < setup || overlay < setup:
+		t.Errorf("%s: job policy has steps in the order %v; kubepolicy needs Go, so setup-go comes first", file, stepNames(policy.Steps))
+	}
+}
+
+// checkJob checks that the workflow has the job id, running on
+// ubuntu-latest, and returns it.
+func checkJob(t *testing.T, file string, wf workflow, id string) job {
+	t.Helper()
+	j, ok := wf.Jobs[id]
+	if !ok {
+		var ids []string
+		for name := range wf.Jobs {
+			ids = append(ids, name)
+		}
+		slices.Sort(ids)
+		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, ids, id)
+	}
+	if runsOn(j) != "ubuntu-latest" {
+		t.Errorf("%s: job %s has runs-on %v, want ubuntu-latest", file, id, j.RunsOn)
+	}
+	return j
+}
+
+// checkSetupSteps checks that a job has a pinned checkout, then a pinned
+// setup-go that reads go.mod.
+func checkSetupSteps(t *testing.T, file, id string, steps []step) {
+	t.Helper()
+	checkout := findStep(steps, "actions/checkout")
+	setup := findStep(steps, "actions/setup-go")
+	if checkout < 0 || setup < 0 {
+		t.Fatalf("%s: job %s has steps %v, want actions/checkout and actions/setup-go", file, id, stepNames(steps))
+	}
+	if setup < checkout {
+		t.Errorf("%s: job %s runs setup-go before checkout; checkout comes first", file, id)
+	}
+	for _, i := range []int{checkout, setup} {
+		if !pinned.MatchString(steps[i].Uses) {
+			t.Errorf("%s: job %s uses %s; pin it to a version, such as @v7", file, id, steps[i].Uses)
+		}
+	}
+	if got := steps[setup].With["go-version-file"]; got != "go.mod" {
+		t.Errorf("%s: job %s: setup-go has go-version-file %v, want go.mod", file, id, got)
+	}
+}
+
+// findLine returns the index of the first step with a command line that
+// contains every one of pieces, or -1.
+func findLine(steps []step, pieces ...string) int {
+	for i, s := range steps {
+		for line := range strings.Lines(s.Run) {
+			if !slices.ContainsFunc(pieces, func(p string) bool { return !strings.Contains(line, p) }) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func TestPortfolio(t *testing.T) {
+	doc := readPortfolio(t)
+
+	if problem := section(t, doc, "The problem"); wordCount(problem) < 40 {
+		t.Errorf("The problem has %d words, want at least 40: who has the problem, what goes wrong without kubepolicy, and how it shows up", wordCount(problem))
+	}
+
+	if design := section(t, doc, "How it works"); wordCount(design) < 60 {
+		t.Errorf("How it works has %d words, want at least 60: the path a manifest takes through the packages, and how the rules are organised", wordCount(design))
+	}
+
+	run := section(t, doc, "Run it")
+	blocks := codeBlock.FindAllString(run, -1)
+	if !slices.ContainsFunc(blocks, func(b string) bool { return strings.Contains(b, "kubepolicy") }) {
+		t.Error("Run it has no ``` code block with a kubepolicy command in it; show the commands a reader can paste")
+	}
+
+	tradeOffs := bullets(section(t, doc, "Trade-offs"))
+	if len(tradeOffs) < 2 {
+		t.Errorf(`Trade-offs has %d bullet points (lines starting "- "), want at least 2`, len(tradeOffs))
+	}
+	for _, b := range tradeOffs {
+		if wordCount(b) < 6 {
+			t.Errorf("the trade-off %q has %d words, want at least 6: say what you chose and what it costs", b, wordCount(b))
+		}
+	}
+
+	next := bullets(section(t, doc, "What I'd do next"))
+	if len(next) < 3 {
+		t.Errorf(`What I'd do next has %d bullet points (lines starting "- "), want at least 3`, len(next))
+	}
+	for _, b := range next {
+		if wordCount(b) < 4 {
+			t.Errorf("the next step %q has %d words, want at least 4", b, wordCount(b))
+		}
+	}
+}
+
+// readPortfolio returns PORTFOLIO.md, or README.md once you've published
+// and renamed it, without its <!-- comments -->. Trailing spaces and
+// Windows line endings are dropped, since nobody can see them.
+func readPortfolio(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile("PORTFOLIO.md")
+	if errors.Is(err, fs.ErrNotExist) {
+		raw, err = os.ReadFile("README.md")
+		if err == nil && !strings.Contains(string(raw), "\n## The problem") {
+			t.Fatal("can't find PORTFOLIO.md")
+		}
+	}
+	if err != nil {
+		t.Fatalf("can't read PORTFOLIO.md: %v", err)
+	}
+	lines := strings.Split(string(raw), "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t\r")
+	}
+	return comments.ReplaceAllString(strings.Join(lines, "\n"), "")
+}
+
+// comments matches <!-- HTML comments -->, which Markdown doesn't show.
+var comments = regexp.MustCompile(`(?s)<!--.*?-->`)
+
+// codeBlock matches a fenced ``` code block.
+var codeBlock = regexp.MustCompile("(?s)```.*?```")
+
+// placeholder matches template text like <name> or <what it is>.
+var placeholder = regexp.MustCompile(`<[a-z][a-z ]*>`)
+
+// section returns the text under the "## name" heading of doc. It stops the
+// test if there is no such heading, and fails it if the text still has a
+// TODO or a <placeholder>.
+func section(t *testing.T, doc, name string) string {
+	t.Helper()
+	_, text, found := strings.Cut(doc, "\n## "+name+"\n")
+	if !found {
+		t.Fatalf(`PORTFOLIO.md has no "## %s" heading; keep the template's headings`, name)
+	}
+	if next := strings.Index(text, "\n## "); next >= 0 {
+		text = text[:next]
+	}
+	if strings.Contains(text, "TODO") {
+		t.Errorf("the %s section still says TODO", name)
+	}
+	if m := placeholder.FindString(text); m != "" {
+		t.Errorf("the %s section still has the placeholder %s; replace it with your own words", name, m)
+	}
+	return text
+}
+
+// bullets returns the text of each "- " line in text.
+func bullets(text string) []string {
+	var found []string
+	for line := range strings.SplitSeq(text, "\n") {
+		if item, ok := strings.CutPrefix(line, "- "); ok {
+			found = append(found, item)
+		}
+	}
+	return found
+}
+
+// wordCount counts the words in text, ignoring Markdown punctuation such as
+// "-" and "*".
+func wordCount(text string) int {
+	count := 0
+	for field := range strings.FieldsSeq(text) {
+		if strings.ContainsFunc(field, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+			count++
+		}
+	}
+	return count
+}

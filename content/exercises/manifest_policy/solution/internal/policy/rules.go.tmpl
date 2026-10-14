@@ -1,0 +1,181 @@
+package policy
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+
+	"groundwork.local/manifest_policy/internal/manifest"
+)
+
+// RequiredLabels are the labels every workload must carry, so people can
+// tell what it is and who to call about it.
+var RequiredLabels = []string{"app.kubernetes.io/name", "team"}
+
+// ProductionNamespaces are the namespaces where the replicas rule applies.
+var ProductionNamespaces = []string{"production", "prod"}
+
+// checkResources wants CPU and memory requests and limits on every container.
+func checkResources(obj manifest.Object) []string {
+	var problems []string
+	for _, c := range obj.Pod.Containers {
+		var missing []string
+		if _, ok := c.Resources.Requests[corev1.ResourceCPU]; !ok {
+			missing = append(missing, "requests.cpu")
+		}
+		if _, ok := c.Resources.Requests[corev1.ResourceMemory]; !ok {
+			missing = append(missing, "requests.memory")
+		}
+		if _, ok := c.Resources.Limits[corev1.ResourceCPU]; !ok {
+			missing = append(missing, "limits.cpu")
+		}
+		if _, ok := c.Resources.Limits[corev1.ResourceMemory]; !ok {
+			missing = append(missing, "limits.memory")
+		}
+		if len(missing) > 0 {
+			problems = append(problems, fmt.Sprintf("container %q: missing %s", c.Name, strings.Join(missing, ", ")))
+		}
+	}
+	return problems
+}
+
+// checkProbes wants a liveness and a readiness probe on every container of
+// a long-running workload. A Job's containers run to completion, so Jobs
+// are left alone.
+func checkProbes(obj manifest.Object) []string {
+	if obj.Kind == "Job" {
+		return nil
+	}
+	var problems []string
+	for _, c := range obj.Pod.Containers {
+		var missing []string
+		if c.LivenessProbe == nil {
+			missing = append(missing, "livenessProbe")
+		}
+		if c.ReadinessProbe == nil {
+			missing = append(missing, "readinessProbe")
+		}
+		if len(missing) > 0 {
+			problems = append(problems, fmt.Sprintf("container %q: missing %s", c.Name, strings.Join(missing, ", ")))
+		}
+	}
+	return problems
+}
+
+// checkSecurityContext wants every container to run as non-root, without
+// privilege escalation, on a read-only root filesystem.
+func checkSecurityContext(obj manifest.Object) []string {
+	// runAsNonRoot can be set for the whole pod; a container's own setting wins.
+	podNonRoot := false
+	if psc := obj.Pod.SecurityContext; psc != nil && psc.RunAsNonRoot != nil {
+		podNonRoot = *psc.RunAsNonRoot
+	}
+	var problems []string
+	for _, c := range obj.Pod.Containers {
+		sc := c.SecurityContext
+		if sc == nil {
+			sc = &corev1.SecurityContext{} // every field unset
+		}
+		nonRoot := podNonRoot
+		if sc.RunAsNonRoot != nil {
+			nonRoot = *sc.RunAsNonRoot
+		}
+		var needs []string
+		if !nonRoot {
+			needs = append(needs, "runAsNonRoot: true")
+		}
+		if sc.AllowPrivilegeEscalation == nil || *sc.AllowPrivilegeEscalation {
+			needs = append(needs, "allowPrivilegeEscalation: false")
+		}
+		if sc.ReadOnlyRootFilesystem == nil || !*sc.ReadOnlyRootFilesystem {
+			needs = append(needs, "readOnlyRootFilesystem: true")
+		}
+		if len(needs) > 0 {
+			problems = append(problems, fmt.Sprintf("container %q: needs %s", c.Name, strings.Join(needs, ", ")))
+		}
+	}
+	return problems
+}
+
+// checkImageTag rejects images without a tag or with the latest tag. An
+// image pinned by digest ("nginx@sha256:...") is fine either way.
+func checkImageTag(obj manifest.Object) []string {
+	var problems []string
+	for _, c := range obj.Pod.Containers {
+		if strings.Contains(c.Image, "@") {
+			continue
+		}
+		switch imageTag(c.Image) {
+		case "":
+			problems = append(problems, fmt.Sprintf("container %q: image %q has no tag", c.Name, c.Image))
+		case "latest":
+			problems = append(problems, fmt.Sprintf("container %q: image %q uses the latest tag", c.Name, c.Image))
+		}
+	}
+	return problems
+}
+
+// imageTag returns the tag of an image, or "" if it has none. A colon before
+// the last slash belongs to a registry port ("registry:5000/app"), not a tag.
+func imageTag(image string) string {
+	colon := strings.LastIndex(image, ":")
+	if colon <= strings.LastIndex(image, "/") {
+		return ""
+	}
+	return image[colon+1:]
+}
+
+// checkImageDigest wants every image pinned by digest, so a pushed-over tag
+// can't change what runs. It's opt-in: digests are a hassle to update.
+func checkImageDigest(obj manifest.Object) []string {
+	var problems []string
+	for _, c := range obj.Pod.Containers {
+		if !strings.Contains(c.Image, "@sha256:") {
+			problems = append(problems, fmt.Sprintf("container %q: image %q is not pinned by digest", c.Name, c.Image))
+		}
+	}
+	return problems
+}
+
+// checkLabels wants every label in RequiredLabels, with a value.
+func checkLabels(obj manifest.Object) []string {
+	var missing []string
+	for _, label := range RequiredLabels {
+		if obj.Labels[label] == "" {
+			missing = append(missing, label)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return []string{"missing labels: " + strings.Join(missing, ", ")}
+}
+
+// checkHostAccess rejects pods that share the node's network or mount the
+// node's files: either one lets a compromised container reach the node.
+func checkHostAccess(obj manifest.Object) []string {
+	var problems []string
+	if obj.Pod.HostNetwork {
+		problems = append(problems, "hostNetwork is true")
+	}
+	for _, v := range obj.Pod.Volumes {
+		if v.HostPath != nil {
+			problems = append(problems, fmt.Sprintf("volume %q uses hostPath %q", v.Name, v.HostPath.Path))
+		}
+	}
+	return problems
+}
+
+// checkReplicas wants at least 2 replicas in a production namespace, so one
+// pod restarting doesn't take the service down.
+func checkReplicas(obj manifest.Object) []string {
+	if obj.Replicas == nil || !slices.Contains(ProductionNamespaces, obj.Namespace) {
+		return nil
+	}
+	if *obj.Replicas >= 2 {
+		return nil
+	}
+	return []string{fmt.Sprintf("replicas is %d, want at least 2 in namespace %q", *obj.Replicas, obj.Namespace)}
+}

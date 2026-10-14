@@ -1,0 +1,76 @@
+package server
+
+import (
+	"cmp"
+	"fmt"
+	"io"
+	"maps"
+	"net/http"
+	"slices"
+	"sync"
+)
+
+// routeKey is one combination of labels for the request counter.
+type routeKey struct {
+	Route string // the ServeMux pattern, such as "GET /{name}", or "unmatched"
+	Code  int
+}
+
+// Metrics counts requests by route and status code, and redirects served.
+// It is safe for concurrent use.
+type Metrics struct {
+	mu        sync.Mutex
+	requests  map[routeKey]int
+	redirects int
+}
+
+// NewMetrics returns Metrics with every count at zero.
+func NewMetrics() *Metrics {
+	return &Metrics{requests: map[routeKey]int{}}
+}
+
+// Request counts one request to route that was answered with code.
+func (m *Metrics) Request(route string, code int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.requests[routeKey{Route: route, Code: code}]++
+}
+
+// Redirect counts one redirect served.
+func (m *Metrics) Redirect() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.redirects++
+}
+
+// Write renders the counters in the Prometheus text format, requests sorted
+// by route and then by code:
+//
+//	# HELP golinks_http_requests_total HTTP requests handled, by route and status code.
+//	# TYPE golinks_http_requests_total counter
+//	golinks_http_requests_total{route="GET /{name}",code="302"} 12
+//	golinks_http_requests_total{route="GET /{name}",code="404"} 1
+//	# HELP golinks_redirects_total Redirects served.
+//	# TYPE golinks_redirects_total counter
+//	golinks_redirects_total 12
+func (m *Metrics) Write(w io.Writer) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	fmt.Fprintln(w, "# HELP golinks_http_requests_total HTTP requests handled, by route and status code.")
+	fmt.Fprintln(w, "# TYPE golinks_http_requests_total counter")
+	keys := slices.SortedFunc(maps.Keys(m.requests), func(a, b routeKey) int {
+		return cmp.Or(cmp.Compare(a.Route, b.Route), cmp.Compare(a.Code, b.Code))
+	})
+	for _, k := range keys {
+		fmt.Fprintf(w, "golinks_http_requests_total{route=%q,code=\"%d\"} %d\n", k.Route, k.Code, m.requests[k])
+	}
+	fmt.Fprintln(w, "# HELP golinks_redirects_total Redirects served.")
+	fmt.Fprintln(w, "# TYPE golinks_redirects_total counter")
+	fmt.Fprintf(w, "golinks_redirects_total %d\n", m.redirects)
+}
+
+// handleMetrics serves GET /metrics for Prometheus to scrape.
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	s.metrics.Write(w)
+}

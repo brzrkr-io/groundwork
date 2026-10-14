@@ -1,0 +1,45 @@
+# Breaks one rule: image-tag. One image has no tag, the other uses latest.
+# The :5000 in the second one is a registry port, not a tag.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+    team: storefront
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: api
+          image: nginx
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          livenessProbe:
+            httpGet: {path: /, port: 80}
+          readinessProbe:
+            httpGet: {path: /, port: 80}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+        - name: log-shipper
+          image: registry.example.com:5000/ops/shipper:latest
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 50m, memory: 64Mi}
+          livenessProbe:
+            httpGet: {path: /healthz, port: 9000}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 9000}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true

@@ -1,0 +1,4 @@
+# Runs one golinks pod: the image, its settings, probes, resources, a
+# locked-down security context and the database volume.
+
+# TODO(9): Write the Deployment golinks.

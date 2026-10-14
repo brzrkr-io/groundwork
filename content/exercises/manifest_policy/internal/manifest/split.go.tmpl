@@ -1,0 +1,15 @@
+package manifest
+
+// TODO(1): Make Split return the documents in data: cut at every separator
+// line, and leave out documents with nothing but blank lines and comments.
+// Helper functions (one that spots a separator line, one that checks a
+// document has content) make it easier to read. You will need to import
+// "bytes".
+
+// Split cuts a multi-document YAML stream into its documents. Documents are
+// separated by "---" lines; each document is the exact bytes between two
+// separators, so it is a piece of data, not a copy. Documents with nothing
+// but blank lines and comments are left out.
+func Split(data []byte) [][]byte {
+	return [][]byte{data}
+}

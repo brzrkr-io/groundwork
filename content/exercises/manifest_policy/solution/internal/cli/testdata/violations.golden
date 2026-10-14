@@ -1,0 +1,20 @@
+LOCATION                                           OBJECT                    RULE              SEVERITY  MESSAGE
+../../testdata/violations/host-access.yaml#1       DaemonSet/log-agent       image-digest      error     container "agent": image "ghcr.io/acme/log-agent:3.1.0" is not pinned by digest
+../../testdata/violations/host-access.yaml#1       DaemonSet/log-agent       host-access       error     hostNetwork is true
+../../testdata/violations/host-access.yaml#1       DaemonSet/log-agent       host-access       error     volume "varlog" uses hostPath "/var/log"
+../../testdata/violations/image-tag.yaml#1         Deployment/api            image-tag         error     container "api": image "nginx" has no tag
+../../testdata/violations/image-tag.yaml#1         Deployment/api            image-tag         error     container "log-shipper": image "registry.example.com:5000/ops/shipper:latest" uses the latest tag
+../../testdata/violations/image-tag.yaml#1         Deployment/api            image-digest      error     container "api": image "nginx" is not pinned by digest
+../../testdata/violations/image-tag.yaml#1         Deployment/api            image-digest      error     container "log-shipper": image "registry.example.com:5000/ops/shipper:latest" is not pinned by digest
+../../testdata/violations/labels.yaml#1            Deployment/worker         image-digest      error     container "worker": image "ghcr.io/acme/worker:0.9.0" is not pinned by digest
+../../testdata/violations/labels.yaml#1            Deployment/worker         labels            warning   missing labels: team
+../../testdata/violations/probes.yaml#1            StatefulSet/queue         probes            error     container "nats": missing readinessProbe
+../../testdata/violations/probes.yaml#1            StatefulSet/queue         image-digest      error     container "nats": image "nats:2.10-alpine" is not pinned by digest
+../../testdata/violations/replicas.yaml#1          prod/Deployment/checkout  image-digest      error     container "checkout": image "ghcr.io/acme/checkout:5.2.0" is not pinned by digest
+../../testdata/violations/replicas.yaml#1          prod/Deployment/checkout  replicas          error     replicas is 1, want at least 2 in namespace "prod"
+../../testdata/violations/resources.yaml#1         Job/migrate               resources         error     container "migrate": missing limits.cpu, limits.memory
+../../testdata/violations/resources.yaml#1         Job/migrate               image-digest      error     container "migrate": image "ghcr.io/acme/migrate:2.0.1" is not pinned by digest
+../../testdata/violations/security-context.yaml#1  Pod/debug                 security-context  error     container "shell": needs allowPrivilegeEscalation: false, readOnlyRootFilesystem: true
+../../testdata/violations/security-context.yaml#1  Pod/debug                 image-digest      error     container "shell": image "busybox:1.37" is not pinned by digest
+
+7 objects checked, 16 errors, 1 warning

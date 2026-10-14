@@ -1,0 +1,32 @@
+# Breaks one rule: probes. The container has a liveness probe but no
+# readiness probe.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: queue
+  labels:
+    app.kubernetes.io/name: queue
+    team: platform
+spec:
+  serviceName: queue
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: queue
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: queue
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: nats
+          image: nats:2.10-alpine
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          livenessProbe:
+            tcpSocket: {port: 4222}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true

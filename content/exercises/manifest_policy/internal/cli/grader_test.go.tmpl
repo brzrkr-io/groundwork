@@ -1,0 +1,147 @@
+package cli
+
+// This file is how Groundwork grades task 9. You don't need to change it,
+// and you can delete it when you publish the project.
+//
+// TestGrader checks that your golden files hold what kubepolicy prints, and
+// then tests your TestGolden: it re-runs it (this same test binary, with
+// -test.run=^TestGolden$) in a scratch copy of the testdata folders where a
+// golden file has been changed, where it must fail, and with -update, where
+// it must write the golden files. Your own testdata is never touched.
+
+import (
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestGrader(t *testing.T) {
+	requireEarlierTasks(t)
+	if code, _, _ := run("", "-enable", "image-digest", "../../testdata/good.yaml"); code != 0 {
+		t.Skip("finish task 8 first: the golden cases use -enable")
+	}
+
+	// What each golden file must hold: what kubepolicy prints right now.
+	want := map[string]string{}
+	for _, tc := range goldenCases {
+		_, stdout, _ := run("", tc.args...)
+		want[tc.name] = stdout
+	}
+
+	t.Run("golden files match the output", func(t *testing.T) {
+		for _, tc := range goldenCases {
+			got, err := os.ReadFile(filepath.Join("testdata", tc.name+".golden"))
+			switch {
+			case err != nil:
+				t.Errorf("testdata/%s.golden is missing; run go test ./internal/cli -run TestGolden -update, then read the files it wrote", tc.name)
+			case string(got) != want[tc.name]:
+				t.Errorf("testdata/%s.golden doesn't match what kubepolicy %s prints now; if that change is on purpose, run with -update and review the diff",
+					tc.name, strings.Join(tc.args, " "))
+			}
+		}
+	})
+	if t.Failed() {
+		return
+	}
+
+	t.Run("TestGolden passes", func(t *testing.T) {
+		out, err := rerunGolden(t, ".")
+		if strings.Contains(out, "no tests to run") {
+			t.Fatal("found no test named TestGolden in golden_test.go")
+		}
+		if err != nil {
+			t.Fatalf("TestGolden must pass on the real code first, but it failed:\n%s", out)
+		}
+	})
+	if t.Failed() {
+		return
+	}
+
+	t.Run("TestGolden notices a wrong golden file", func(t *testing.T) {
+		for _, tc := range goldenCases {
+			dir := scratchCopy(t)
+			golden := filepath.Join(dir, "testdata", tc.name+".golden")
+			if err := os.WriteFile(golden, []byte(want[tc.name]+"one line too many\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := rerunGolden(t, dir); err == nil {
+				t.Errorf("TestGolden passed although testdata/%s.golden no longer matched the output; does it compare stdout with the file for every case?", tc.name)
+			}
+		}
+	})
+
+	t.Run("-update writes the golden files", func(t *testing.T) {
+		dir := scratchCopy(t)
+		for _, tc := range goldenCases {
+			if err := os.WriteFile(filepath.Join(dir, "testdata", tc.name+".golden"), []byte("out of date\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		out, err := rerunGolden(t, dir, "-update")
+		if strings.Contains(out, "flag provided but not defined") {
+			t.Fatal("TestGolden has no -update flag; keep the update variable in golden_test.go")
+		}
+		if err != nil {
+			t.Fatalf("go test -run TestGolden -update failed:\n%s", out)
+		}
+		for _, tc := range goldenCases {
+			got, err := os.ReadFile(filepath.Join(dir, "testdata", tc.name+".golden"))
+			if err != nil || string(got) != want[tc.name] {
+				t.Errorf("with -update, TestGolden left testdata/%s.golden holding\n%s\nwant\n%s", tc.name, got, want[tc.name])
+			}
+		}
+	})
+}
+
+// rerunGolden runs TestGolden alone in dir, with extra test flags.
+func rerunGolden(t *testing.T, dir string, flags ...string) (string, error) {
+	t.Helper()
+	bin, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, append([]string{"-test.run=^TestGolden$"}, flags...)...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// scratchCopy copies the folders TestGolden reads into a temporary
+// directory laid out like the exercise, and returns the copy of this
+// package's folder.
+func scratchCopy(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	pkg := filepath.Join(root, "internal", "cli")
+	copyDir(t, "../../testdata", filepath.Join(root, "testdata"))
+	copyDir(t, "testdata", filepath.Join(pkg, "testdata"))
+	return pkg
+}
+
+// copyDir copies the files under src to dst.
+func copyDir(t *testing.T, src, dst string) {
+	t.Helper()
+	err := filepath.WalkDir(src, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return os.MkdirAll(filepath.Join(dst, rel), 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dst, rel), data, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

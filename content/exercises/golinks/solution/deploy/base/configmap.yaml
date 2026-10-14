@@ -1,0 +1,10 @@
+# golinks' settings, handed to the container as environment variables.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: golinks-config
+data:
+  GOLINKS_ADDR: ":8080"
+  GOLINKS_DB: /data/golinks.db
+  GOLINKS_LOG_LEVEL: info
+  GOLINKS_SHUTDOWN_GRACE: 20s

@@ -1,0 +1,112 @@
+package manifest
+
+// This file is how Groundwork grades task 10. You don't need to change it,
+// and you can delete it when you publish the project.
+//
+// FuzzSplit itself runs as a test: go test replays your seeds and the
+// inputs in testdata/fuzz/FuzzSplit/ through it. TestGrader checks the two
+// halves of your work: that checkSplit catches broken results (it feeds it
+// some on purpose), and that FuzzSplit has seeds and calls Split and
+// checkSplit.
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"testing"
+)
+
+func TestGrader(t *testing.T) {
+	t.Run("checkSplit accepts correct results", func(t *testing.T) {
+		for _, tc := range []struct {
+			data string
+			docs []string
+		}{
+			{"kind: A\n---\nkind: B\n", []string{"kind: A\n", "kind: B\n"}},
+			{"# Source: web.yaml\n---\nkind: A\n--- # b\n\nkind: B", []string{"kind: A\n", "\nkind: B"}},
+			{"kind: A\r\n---\r\nkind: B\r\n", []string{"kind: A\r\n", "kind: B\r\n"}},
+			{"---\n# nothing here\n", nil},
+			{"", nil},
+		} {
+			if err := checkSplit([]byte(tc.data), toBytes(tc.docs)); err != nil {
+				t.Errorf("checkSplit(%q, %q) = %q, want nil: that is what Split should return", tc.data, tc.docs, err)
+			}
+		}
+	})
+
+	t.Run("checkSplit catches broken results", func(t *testing.T) {
+		for _, tc := range []struct {
+			why  string
+			data string
+			docs []string
+		}{
+			{"a blank document", "kind: A\n---\n\n", []string{"kind: A\n", "\n"}},
+			{"a comment-only document", "kind: A\n---\n# hi\n", []string{"kind: A\n", "# hi\n"}},
+			{"a separator inside a document", "kind: A\n---\nkind: B\n", []string{"kind: A\n---\nkind: B\n"}},
+			{"a document that isn't in the input", "kind: A\n", []string{"kind: Z\n"}},
+			{"documents out of order", "kind: A\n---\nkind: B\n", []string{"kind: B\n", "kind: A\n"}},
+			{"the same document twice", "kind: A\n", []string{"kind: A\n", "kind: A\n"}},
+			{"a lost document", "kind: A\n---\nkind: B\n", []string{"kind: A\n"}},
+			{"a lost line", "kind: A\nname: web\n", []string{"name: web\n"}},
+		} {
+			if err := checkSplit([]byte(tc.data), toBytes(tc.docs)); err == nil {
+				t.Errorf("checkSplit(%q, %q) = nil, want an error: the result has %s", tc.data, tc.docs, tc.why)
+			}
+		}
+	})
+
+	t.Run("FuzzSplit has seeds and checks Split", func(t *testing.T) {
+		fn := findFunc(t, "split_fuzz_test.go", "FuzzSplit")
+		if fn == nil {
+			t.Fatal("split_fuzz_test.go has no FuzzSplit function")
+		}
+		adds, calls := 0, map[string]bool{}
+		ast.Inspect(fn, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch f := call.Fun.(type) {
+			case *ast.SelectorExpr:
+				if f.Sel.Name == "Add" {
+					adds++
+				}
+			case *ast.Ident:
+				calls[f.Name] = true
+			}
+			return true
+		})
+		if adds < 3 {
+			t.Errorf("FuzzSplit adds %d seeds with f.Add, want at least 3", adds)
+		}
+		for _, name := range []string{"Split", "checkSplit"} {
+			if !calls[name] {
+				t.Errorf("FuzzSplit never calls %s; inside f.Fuzz, pass Split's result to checkSplit", name)
+			}
+		}
+	})
+}
+
+// toBytes turns test documents into what Split returns.
+func toBytes(docs []string) [][]byte {
+	var out [][]byte
+	for _, doc := range docs {
+		out = append(out, []byte(doc))
+	}
+	return out
+}
+
+// findFunc returns the function called name in file, or nil.
+func findFunc(t *testing.T, file, name string) *ast.FuncDecl {
+	t.Helper()
+	f, err := parser.ParseFile(token.NewFileSet(), file, nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", file, err)
+	}
+	for _, decl := range f.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == name {
+			return fn
+		}
+	}
+	return nil
+}

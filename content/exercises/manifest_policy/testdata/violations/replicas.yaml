@@ -1,0 +1,34 @@
+# Breaks one rule: replicas. It runs in the prod namespace and leaves out
+# replicas, so Kubernetes runs just 1.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: prod
+  labels:
+    app.kubernetes.io/name: checkout
+    team: payments
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: checkout
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: checkout
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: checkout
+          image: ghcr.io/acme/checkout:5.2.0
+          resources:
+            requests: {cpu: 200m, memory: 256Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8080}
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8080}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true

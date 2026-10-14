@@ -1,0 +1,9 @@
+LOCATION                     OBJECT                        RULE              SEVERITY  MESSAGE
+../../testdata/mixed.yaml#3  production/StatefulSet/cache  resources         error     container "redis": missing limits.cpu, limits.memory
+../../testdata/mixed.yaml#3  production/StatefulSet/cache  probes            error     container "redis": missing livenessProbe, readinessProbe
+../../testdata/mixed.yaml#3  production/StatefulSet/cache  security-context  error     container "redis": needs runAsNonRoot: true, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true
+../../testdata/mixed.yaml#3  production/StatefulSet/cache  image-tag         error     container "redis": image "redis:latest" uses the latest tag
+../../testdata/mixed.yaml#3  production/StatefulSet/cache  labels            warning   missing labels: team
+../../testdata/mixed.yaml#3  production/StatefulSet/cache  replicas          error     replicas is 1, want at least 2 in namespace "production"
+
+3 objects checked, 5 errors, 1 warning

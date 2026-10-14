@@ -1,0 +1,90 @@
+package golinks
+
+import (
+	"os"
+	"regexp"
+	"strings"
+	"testing"
+	"unicode"
+)
+
+// This file reads PORTFOLIO.md for TestPortfolio. The tests can't tell
+// whether your writing is good: that's what readers are for. They check
+// that nothing a reader looks for is missing.
+
+const portfolioFile = "PORTFOLIO.md"
+
+// portfolio is PORTFOLIO.md without its <!-- comments -->.
+type portfolio struct {
+	text string
+}
+
+// comments matches <!-- HTML comments -->, which Markdown doesn't show.
+var comments = regexp.MustCompile(`(?s)<!--.*?-->`)
+
+// placeholder matches template text like <you> or <what it does>.
+var placeholder = regexp.MustCompile(`<[a-z][a-z ]*>`)
+
+// badge matches a GitHub Actions status badge for a workflow named ci.yml.
+var badge = regexp.MustCompile(`https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/actions/workflows/ci\.yml/badge\.svg`)
+
+// readPortfolio reads PORTFOLIO.md and drops its comments. It fails the
+// test if the text left still has a TODO or a <placeholder>.
+func readPortfolio(t *testing.T) portfolio {
+	t.Helper()
+	raw, err := os.ReadFile(portfolioFile)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", portfolioFile, err)
+	}
+	// Trailing spaces (and Windows line endings) are invisible, so ignore them.
+	lines := strings.Split(string(raw), "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t\r")
+	}
+	text := comments.ReplaceAllString(strings.Join(lines, "\n"), "")
+	if strings.Contains(text, "TODO") {
+		t.Errorf("%s still says TODO outside a comment", portfolioFile)
+	}
+	if m := placeholder.FindString(text); m != "" {
+		t.Errorf("%s still has the placeholder %s; replace it with your own words", portfolioFile, m)
+	}
+	return portfolio{text: text}
+}
+
+// section returns the text under the "## name" heading, or stops the test
+// if there is no such heading.
+func (p portfolio) section(t *testing.T, name string) string {
+	t.Helper()
+	_, text, found := strings.Cut(p.text, "\n## "+name+"\n")
+	if !found {
+		t.Fatalf(`%s has no "## %s" heading; keep the template's headings`, portfolioFile, name)
+	}
+	if next := strings.Index(text, "\n## "); next >= 0 {
+		text = text[:next]
+	}
+	return text
+}
+
+// fence matches a ``` code block; group 1 is what's inside it.
+var fence = regexp.MustCompile("(?s)```[^\n]*\n(.*?)```")
+
+// codeBlocks returns the contents of the ``` code blocks in text.
+func codeBlocks(text string) []string {
+	var blocks []string
+	for _, m := range fence.FindAllStringSubmatch(text, -1) {
+		blocks = append(blocks, m[1])
+	}
+	return blocks
+}
+
+// wordCount counts the words in text outside code blocks, ignoring
+// Markdown punctuation such as "-" and "*".
+func wordCount(text string) int {
+	count := 0
+	for field := range strings.FieldsSeq(fence.ReplaceAllString(text, "")) {
+		if strings.ContainsFunc(field, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+			count++
+		}
+	}
+	return count
+}

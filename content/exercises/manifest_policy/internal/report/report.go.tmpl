@@ -1,0 +1,63 @@
+// Package report prints what kubepolicy found: an aligned table for people,
+// JSON for scripts.
+package report
+
+import (
+	"errors"
+	"fmt"
+	"io"
+
+	"groundwork.local/manifest_policy/internal/policy"
+)
+
+// Report is the result of one kubepolicy run.
+type Report struct {
+	Objects    int                `json:"objects"`    // workloads checked
+	Skipped    int                `json:"skipped"`    // documents of kinds kubepolicy doesn't check
+	Violations []policy.Violation `json:"violations"` // what the rules found, in order
+}
+
+// Table prints the violations as an aligned table, then a blank line, then
+// a summary line. Without violations it prints only the summary.
+func Table(w io.Writer, rep Report) error {
+	// TODO(6): When rep has violations, print the header and one row per
+	// violation through a tabwriter, flush it, then print a blank line.
+	// You will need to import "text/tabwriter".
+	_, err := fmt.Fprintln(w, summary(rep))
+	return err
+}
+
+// summary counts the objects and violations: "3 objects checked, 2 errors,
+// 1 warning", or "3 objects checked, no violations".
+func summary(rep Report) string {
+	errs, warnings := 0, 0
+	for _, v := range rep.Violations {
+		if v.Severity == policy.Error {
+			errs++
+		} else {
+			warnings++
+		}
+	}
+	checked := plural(rep.Objects, "object") + " checked"
+	if errs+warnings == 0 {
+		return checked + ", no violations"
+	}
+	return fmt.Sprintf("%s, %s, %s", checked, plural(errs, "error"), plural(warnings, "warning"))
+}
+
+// plural writes a count and a noun: "1 error", "2 errors", "0 errors".
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+// JSON prints the report as one JSON object, indented with two spaces.
+// "violations" is always a list, [] when there are none.
+func JSON(w io.Writer, rep Report) error {
+	// TODO(7): Encode rep as indented JSON to w, with [] rather than null
+	// when there are no violations. You will need to import "encoding/json"
+	// (and won't need "errors" any more).
+	return errors.New("JSON output is not written yet")
+}

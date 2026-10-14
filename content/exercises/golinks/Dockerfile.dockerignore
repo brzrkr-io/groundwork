@@ -1,0 +1,9 @@
+# What `docker build` leaves out of the build context. BuildKit reads
+# <Dockerfile name>.dockerignore; in your own repository you can rename this
+# file to .dockerignore.
+.git
+.github
+bin/
+deploy/
+*.db
+**/*.md

@@ -1,0 +1,47 @@
+// Package server is the HTTP side of golinks: routes, handlers, health
+// probes, metrics, request logs and the Run loop.
+package server
+
+import (
+	"log/slog"
+	"net/http"
+	"sync/atomic"
+
+	"groundwork.local/golinks/internal/links"
+)
+
+// Server serves the go links API. Create one with New.
+type Server struct {
+	store   links.Store
+	logger  *slog.Logger
+	metrics *Metrics
+
+	// ready is true while Run is serving, and false before it starts and
+	// once shutdown begins. GET /readyz reports it.
+	ready atomic.Bool
+}
+
+// New returns a Server that keeps links in store and logs to logger.
+func New(store links.Store, logger *slog.Logger) *Server {
+	return &Server{store: store, logger: logger, metrics: NewMetrics()}
+}
+
+// Handler returns every route, wrapped in the observe middleware that logs
+// and counts each request. More specific patterns win, so GET /healthz
+// reaches the health check and not a link called "healthz".
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{name}", s.handleRedirect)
+	mux.HandleFunc("GET /api/links", s.handleList)
+	mux.HandleFunc("POST /api/links", s.handleCreate)
+	mux.HandleFunc("DELETE /api/links/{name}", s.handleDelete)
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
+	mux.HandleFunc("GET /readyz", s.handleReadyz)
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
+	return s.observe(mux)
+}
+
+// Ready reports whether the server is accepting traffic.
+func (s *Server) Ready() bool {
+	return s.ready.Load()
+}

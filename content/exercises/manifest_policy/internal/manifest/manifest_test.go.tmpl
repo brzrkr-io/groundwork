@@ -1,0 +1,202 @@
+package manifest
+
+import (
+	"errors"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestSplit(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want []string
+	}{
+		{
+			name: "one document",
+			data: "kind: A\n",
+			want: []string{"kind: A\n"},
+		},
+		{
+			name: "two documents",
+			data: "kind: A\n---\nkind: B\n",
+			want: []string{"kind: A\n", "kind: B\n"},
+		},
+		{
+			name: "comments stay inside a document",
+			data: "# the web app\nkind: A\n",
+			want: []string{"# the web app\nkind: A\n"},
+		},
+		{
+			name: "separator with a comment",
+			data: "kind: A\n--- # the worker\nkind: B\n",
+			want: []string{"kind: A\n", "kind: B\n"},
+		},
+		{
+			name: "leading separator after a comment header",
+			data: "# Source: shop/templates/web.yaml\n---\nkind: A\n",
+			want: []string{"kind: A\n"},
+		},
+		{
+			name: "blank and comment-only documents are left out",
+			data: "---\n\n---\n# nothing here\n---\nkind: A\n---\n",
+			want: []string{"kind: A\n"},
+		},
+		{
+			name: "windows line endings",
+			data: "kind: A\r\n---\r\nkind: B\r\n",
+			want: []string{"kind: A\r\n", "kind: B\r\n"},
+		},
+		{
+			name: "no newline at the end",
+			data: "kind: A\n---\nkind: B",
+			want: []string{"kind: A\n", "kind: B"},
+		},
+		{
+			name: "indented dashes are text, not a separator",
+			data: "kind: A\ndata:\n  script: |\n    ---\n    echo hi\n",
+			want: []string{"kind: A\ndata:\n  script: |\n    ---\n    echo hi\n"},
+		},
+		{
+			name: "empty input",
+			data: "",
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, doc := range Split([]byte(tt.data)) {
+				got = append(got, string(doc))
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Split(%q) = %q, want %q", tt.data, got, tt.want)
+			}
+		})
+	}
+}
+
+// container is the one container every workload in TestDecode runs.
+const container = `
+      containers:
+        - name: app
+          image: ghcr.io/acme/app:1.0.0
+`
+
+func TestDecode(t *testing.T) {
+	tests := []struct {
+		name         string
+		yaml         string
+		wantKind     string
+		wantName     string
+		wantNS       string
+		wantLabels   map[string]string
+		wantReplicas int32 // -1 means Replicas must be nil
+	}{
+		{
+			name: "Deployment",
+			yaml: "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n  namespace: production\n  labels:\n    team: storefront\n" +
+				"spec:\n  replicas: 3\n  template:\n    spec:" + container,
+			wantKind: "Deployment", wantName: "web", wantNS: "production",
+			wantLabels: map[string]string{"team": "storefront"}, wantReplicas: 3,
+		},
+		{
+			name: "StatefulSet without replicas gets 1",
+			yaml: "apiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: db\n  labels:\n    team: data\n" +
+				"spec:\n  template:\n    spec:" + container,
+			wantKind: "StatefulSet", wantName: "db",
+			wantLabels: map[string]string{"team": "data"}, wantReplicas: 1,
+		},
+		{
+			name: "DaemonSet has no replicas",
+			yaml: "apiVersion: apps/v1\nkind: DaemonSet\nmetadata:\n  name: agent\n  namespace: kube-system\n" +
+				"spec:\n  template:\n    spec:" + container,
+			wantKind: "DaemonSet", wantName: "agent", wantNS: "kube-system", wantReplicas: -1,
+		},
+		{
+			name: "Job",
+			yaml: "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: migrate\n  labels:\n    app.kubernetes.io/name: migrate\n" +
+				"spec:\n  template:\n    spec:" + container,
+			wantKind: "Job", wantName: "migrate",
+			wantLabels: map[string]string{"app.kubernetes.io/name": "migrate"}, wantReplicas: -1,
+		},
+		{
+			name: "Pod uses its own spec",
+			yaml: "apiVersion: v1\nkind: Pod\nmetadata:\n  name: debug\n  namespace: dev\nspec:" +
+				strings.ReplaceAll(container, "\n    ", "\n"),
+			wantKind: "Pod", wantName: "debug", wantNS: "dev", wantReplicas: -1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc := Document{Source: "deploy/app.yaml", Index: 2, Data: []byte(tt.yaml)}
+			obj, err := Decode(doc)
+			if err != nil {
+				t.Fatalf("Decode() error = %v, want nil", err)
+			}
+			if obj.Location != "deploy/app.yaml#2" {
+				t.Errorf("Location = %q, want %q", obj.Location, "deploy/app.yaml#2")
+			}
+			if obj.Kind != tt.wantKind || obj.Name != tt.wantName || obj.Namespace != tt.wantNS {
+				t.Errorf("Kind, Name, Namespace = %q, %q, %q, want %q, %q, %q",
+					obj.Kind, obj.Name, obj.Namespace, tt.wantKind, tt.wantName, tt.wantNS)
+			}
+			if len(obj.Labels) != len(tt.wantLabels) {
+				t.Errorf("Labels = %v, want %v", obj.Labels, tt.wantLabels)
+			}
+			for k, v := range tt.wantLabels {
+				if obj.Labels[k] != v {
+					t.Errorf("Labels = %v, want %v", obj.Labels, tt.wantLabels)
+				}
+			}
+			switch {
+			case tt.wantReplicas == -1 && obj.Replicas != nil:
+				t.Errorf("Replicas = %d, want nil: a %s has no replicas", *obj.Replicas, tt.wantKind)
+			case tt.wantReplicas >= 0 && obj.Replicas == nil:
+				t.Errorf("Replicas = nil, want %d", tt.wantReplicas)
+			case tt.wantReplicas >= 0 && *obj.Replicas != tt.wantReplicas:
+				t.Errorf("Replicas = %d, want %d", *obj.Replicas, tt.wantReplicas)
+			}
+			if len(obj.Pod.Containers) != 1 || obj.Pod.Containers[0].Image != "ghcr.io/acme/app:1.0.0" {
+				t.Errorf("Pod.Containers = %+v, want the one container named app; is Pod the right spec?", obj.Pod.Containers)
+			}
+		})
+	}
+
+	t.Run("kinds it doesn't check", func(t *testing.T) {
+		for _, tc := range []struct{ yaml, kind string }{
+			{"apiVersion: v1\nkind: Service\nmetadata:\n  name: web\n", "Service"},
+			{"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: settings\n", "ConfigMap"},
+			{"name: not a Kubernetes object\n", ""},
+		} {
+			doc := Document{Source: "deploy/app.yaml", Index: 3, Data: []byte(tc.yaml)}
+			_, err := Decode(doc)
+			if !errors.Is(err, ErrUnsupportedKind) {
+				t.Errorf("Decode(%q) error = %v, want one wrapping ErrUnsupportedKind", tc.yaml, err)
+				continue
+			}
+			want := `deploy/app.yaml#3: unsupported kind "` + tc.kind + `"`
+			if err.Error() != want {
+				t.Errorf("Decode(%q) error = %q, want %q", tc.yaml, err, want)
+			}
+		}
+	})
+
+	t.Run("broken documents", func(t *testing.T) {
+		for _, data := range []string{
+			"kind: Deployment\nmetadata: [unclosed\n",
+			"kind: StatefulSet\nspec:\n  replicas: three\n",
+		} {
+			doc := Document{Source: "deploy/app.yaml", Index: 1, Data: []byte(data)}
+			_, err := Decode(doc)
+			if err == nil || errors.Is(err, ErrUnsupportedKind) {
+				t.Errorf("Decode(%q) error = %v, want a decode error", data, err)
+				continue
+			}
+			if !strings.HasPrefix(err.Error(), "deploy/app.yaml#1: ") {
+				t.Errorf("Decode(%q) error = %q, want it to start with the location %q", data, err, "deploy/app.yaml#1: ")
+			}
+		}
+	})
+}

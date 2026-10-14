@@ -1,0 +1,12 @@
+# The base: everything golinks needs in any cluster. Overlays such as
+# overlays/dev start from it and change only what differs.
+#
+#   kubectl kustomize deploy/base       # print the combined YAML
+#   kubectl apply -k deploy/overlays/dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - configmap.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml

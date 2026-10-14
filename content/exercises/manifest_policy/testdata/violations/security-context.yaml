@@ -1,0 +1,25 @@
+# Breaks one rule: security-context. The pod runs as non-root, but the
+# container may escalate privileges and write to its root filesystem.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: debug
+  labels:
+    app.kubernetes.io/name: debug
+    team: platform
+spec:
+  securityContext:
+    runAsNonRoot: true
+  containers:
+    - name: shell
+      image: busybox:1.37
+      command: ["sleep", "3600"]
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {cpu: 100m, memory: 32Mi}
+      livenessProbe:
+        exec: {command: ["true"]}
+      readinessProbe:
+        exec: {command: ["true"]}
+      securityContext:
+        allowPrivilegeEscalation: true

@@ -1,0 +1,6 @@
+# What `docker build` leaves out of the build context. In a repository of
+# your own you can rename this file to .dockerignore.
+.git
+.github
+bin
+**/*.md

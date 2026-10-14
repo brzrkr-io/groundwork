@@ -1,0 +1,33 @@
+// Package config reads golinks' settings from environment variables, the
+// way containers and Kubernetes ConfigMaps hand settings to a program.
+package config
+
+import (
+	"log/slog"
+	"time"
+)
+
+// Config holds every setting golinks reads at startup.
+type Config struct {
+	Addr          string        // GOLINKS_ADDR: the address to listen on
+	DBPath        string        // GOLINKS_DB: the SQLite database file
+	LogLevel      slog.Level    // GOLINKS_LOG_LEVEL: debug, info, warn or error
+	ShutdownGrace time.Duration // GOLINKS_SHUTDOWN_GRACE: how long shutdown waits for requests
+}
+
+// Load builds a Config from the environment variables getenv returns
+// (os.Getenv in main, a map lookup in tests). An unset or empty variable
+// takes its default:
+//
+//	GOLINKS_ADDR             :8080
+//	GOLINKS_DB               golinks.db
+//	GOLINKS_LOG_LEVEL        info
+//	GOLINKS_SHUTDOWN_GRACE   10s
+//
+// It reports every invalid setting, not only the first, and each error
+// names its variable.
+func Load(getenv func(string) string) (Config, error) {
+	// TODO(6): Start from the defaults, override each one that getenv
+	// returns, and collect an error for each invalid value.
+	return Config{}, nil
+}

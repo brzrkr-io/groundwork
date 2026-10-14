@@ -1,0 +1,167 @@
+// Package store keeps links in a SQLite database. Open runs the SQL files in
+// migrations/ before it returns, so the schema is always up to date.
+package store
+
+import (
+	"context"
+	"database/sql"
+	"embed"
+	"errors"
+	"fmt"
+	"io/fs"
+
+	"groundwork.local/golinks/internal/links"
+
+	_ "modernc.org/sqlite" // registers the pure-Go "sqlite" driver
+)
+
+// migrations holds the schema changes, applied in file-name order.
+//
+//go:embed migrations/*.sql
+var migrations embed.FS
+
+// SQLite is a links.Store backed by a SQLite database file.
+type SQLite struct {
+	db *sql.DB
+}
+
+// Open opens the SQLite database at path, creating the file if needed, and
+// applies any migrations it hasn't had yet. The path ":memory:" gives a
+// fresh database that lives in memory, which is what the tests use.
+func Open(ctx context.Context, path string) (*SQLite, error) {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, err
+	}
+	// SQLite lets one connection write at a time, and an in-memory database
+	// lives inside a single connection. One connection suits both, and is
+	// plenty for a few requests a second.
+	db.SetMaxOpenConns(1)
+	if err := migrate(ctx, db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate %s: %w", path, err)
+	}
+	return &SQLite{db: db}, nil
+}
+
+// migrate applies every migrations/*.sql file not yet listed in the
+// schema_migrations table, in name order, each in its own transaction.
+func migrate(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY)`); err != nil {
+		return err
+	}
+	names, err := fs.Glob(migrations, "migrations/*.sql") // sorted by name
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if err := applyOnce(ctx, db, name); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// applyOnce runs one migration file unless schema_migrations says it already
+// ran. The script and its record commit together, or not at all.
+func applyOnce(ctx context.Context, db *sql.DB, name string) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // does nothing after a successful Commit
+
+	var applied int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE name = ?`, name).Scan(&applied); err != nil {
+		return err
+	}
+	if applied > 0 {
+		return nil
+	}
+	script, err := migrations.ReadFile(name)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, string(script)); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (name) VALUES (?)`, name); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// Create saves l, or returns links.ErrExists if its name is taken.
+func (s *SQLite) Create(ctx context.Context, l links.Link) error {
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO links (name, url) VALUES (?, ?) ON CONFLICT (name) DO NOTHING`, l.Name, l.URL)
+	if err != nil {
+		return fmt.Errorf("create link %q: %w", l.Name, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("create link %q: %w", l.Name, err)
+	}
+	if n == 0 {
+		return links.ErrExists
+	}
+	return nil
+}
+
+// Get returns the link called name, or links.ErrNotFound.
+func (s *SQLite) Get(ctx context.Context, name string) (links.Link, error) {
+	l := links.Link{Name: name}
+	err := s.db.QueryRowContext(ctx, `SELECT url FROM links WHERE name = ?`, name).Scan(&l.URL)
+	if errors.Is(err, sql.ErrNoRows) {
+		return links.Link{}, links.ErrNotFound
+	}
+	if err != nil {
+		return links.Link{}, fmt.Errorf("get link %q: %w", name, err)
+	}
+	return l, nil
+}
+
+// List returns every link, sorted by name. With no links it returns an
+// empty slice, not nil, so the API answers [] rather than null.
+func (s *SQLite) List(ctx context.Context) ([]links.Link, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT name, url FROM links ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("list links: %w", err)
+	}
+	defer rows.Close()
+	all := []links.Link{}
+	for rows.Next() {
+		var l links.Link
+		if err := rows.Scan(&l.Name, &l.URL); err != nil {
+			return nil, fmt.Errorf("list links: %w", err)
+		}
+		all = append(all, l)
+	}
+	return all, rows.Err()
+}
+
+// Delete removes the link called name, or returns links.ErrNotFound.
+func (s *SQLite) Delete(ctx context.Context, name string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM links WHERE name = ?`, name)
+	if err != nil {
+		return fmt.Errorf("delete link %q: %w", name, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete link %q: %w", name, err)
+	}
+	if n == 0 {
+		return links.ErrNotFound
+	}
+	return nil
+}
+
+// Ping checks that the database still answers.
+func (s *SQLite) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
+
+// Close closes the database.
+func (s *SQLite) Close() error {
+	return s.db.Close()
+}

@@ -1,0 +1,23 @@
+# Breaks one rule: resources. The container has requests but no limits.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  labels:
+    app.kubernetes.io/name: migrate
+    team: payments
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: migrate
+          image: ghcr.io/acme/migrate:2.0.1
+          args: ["up"]
+          resources:
+            requests: {cpu: 250m, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true

@@ -1,0 +1,38 @@
+package server
+
+import (
+	"context"
+	"log/slog"
+	"net"
+	"net/http"
+	"time"
+)
+
+// newHTTPServer returns an http.Server for s.Handler with production
+// timeouts, so slow or stuck clients can't hold connections forever. The
+// server's own errors (a broken TLS handshake, a panic in a handler) go to
+// the JSON log too.
+func (s *Server) newHTTPServer() *http.Server {
+	return &http.Server{
+		Handler:           s.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		ErrorLog:          slog.NewLogLogger(s.logger.Handler(), slog.LevelError),
+	}
+}
+
+// Run serves on ln until ctx is cancelled, then shuts down gracefully,
+// giving in-flight requests up to grace to finish.
+//
+// It marks the server ready while serving and not ready once shutdown
+// begins. It returns nil after a clean shutdown, the Serve error if serving
+// fails, or the Shutdown error if the grace period runs out (after closing
+// the remaining connections).
+func (s *Server) Run(ctx context.Context, ln net.Listener, grace time.Duration) error {
+	srv := s.newHTTPServer()
+	// TODO(7): This serves forever and never reports ready. Mark ready,
+	// serve in a goroutine, wait for ctx or a Serve error, then shut down.
+	return srv.Serve(ln)
+}

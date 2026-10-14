@@ -1,0 +1,7 @@
+# The dev overlay: the base, with the image you built and loaded into kind,
+# and debug logs.
+#
+#   kubectl apply -k deploy/overlays/dev
+
+# TODO(10): Start from ../../base, swap the image for golinks:dev, and
+# patch the ConfigMap with configmap-patch.yaml.

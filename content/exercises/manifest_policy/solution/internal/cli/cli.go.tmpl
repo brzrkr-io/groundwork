@@ -1,0 +1,144 @@
+// Package cli is the kubepolicy command: it reads manifests, runs the
+// policy rules over them, prints a report and picks the exit code.
+package cli
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"slices"
+	"strings"
+
+	"groundwork.local/manifest_policy/internal/manifest"
+	"groundwork.local/manifest_policy/internal/policy"
+	"groundwork.local/manifest_policy/internal/report"
+)
+
+// Exit codes, so a CI step or a script can tell the outcomes apart.
+const (
+	exitClean      = 0 // no error-severity violations (warnings are fine)
+	exitViolations = 1 // at least one error-severity violation
+	exitUsage      = 2 // bad command line, unreadable path or broken YAML
+)
+
+// options holds everything the command line asked for.
+type options struct {
+	format string        // "table" or "json"
+	config policy.Config // which rules run
+	paths  []string      // files, directories, or "-" for stdin
+}
+
+// Run is the whole kubepolicy command. args excludes the program name. It
+// returns the exit code.
+func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	opts, err := parseFlags(args, stderr)
+	if errors.Is(err, flag.ErrHelp) {
+		return exitClean
+	}
+	if err != nil {
+		return exitUsage // parseFlags already told the user what was wrong
+	}
+
+	objects, skipped, err := load(opts.paths, stdin, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "kubepolicy: %v\n", err)
+		return exitUsage
+	}
+
+	rep := report.Report{
+		Objects:    len(objects),
+		Skipped:    skipped,
+		Violations: policy.Evaluate(objects, opts.config),
+	}
+	write := report.Table
+	if opts.format == "json" {
+		write = report.JSON
+	}
+	if err := write(stdout, rep); err != nil {
+		fmt.Fprintf(stderr, "kubepolicy: %v\n", err)
+		return exitUsage
+	}
+
+	for _, v := range rep.Violations {
+		if v.Severity == policy.Error {
+			return exitViolations
+		}
+	}
+	return exitClean
+}
+
+// parseFlags reads the command line into options. Like flag itself, it
+// reports any problem on stderr before returning the error.
+func parseFlags(args []string, stderr io.Writer) (options, error) {
+	var opts options
+	fs := flag.NewFlagSet("kubepolicy", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: kubepolicy [flags] PATH...")
+		fmt.Fprintln(fs.Output(), "PATH is a YAML file, a directory of them, or - for stdin. Flags:")
+		fs.PrintDefaults()
+	}
+	fs.StringVar(&opts.format, "format", "table", "output `format`: table or json")
+	fs.Func("ignore", "skip `rule` (repeatable)", ruleList(&opts.config.Ignore))
+	fs.Func("enable", "also run the opt-in `rule` (repeatable)", ruleList(&opts.config.Enable))
+
+	if err := fs.Parse(args); err != nil {
+		return options{}, err
+	}
+
+	if fs.NArg() == 0 {
+		return options{}, usageError(fs, "no manifests given")
+	}
+	if opts.format != "table" && opts.format != "json" {
+		return options{}, usageError(fs, "-format must be table or json, got %q", opts.format)
+	}
+	opts.paths = fs.Args()
+	return opts, nil
+}
+
+// ruleList returns a flag function that adds a rule name to *names, and
+// rejects names that aren't in the rule table.
+func ruleList(names *[]string) func(string) error {
+	return func(name string) error {
+		if !slices.Contains(policy.Names(), name) {
+			return fmt.Errorf("unknown rule %q; rules: %s", name, strings.Join(policy.Names(), ", "))
+		}
+		*names = append(*names, name)
+		return nil
+	}
+}
+
+// usageError reports a command-line mistake the way flag reports its own:
+// "kubepolicy: <message>" on stderr, then the usage text. It returns the
+// error so the caller can pass it on.
+func usageError(fs *flag.FlagSet, format string, args ...any) error {
+	err := fmt.Errorf(format, args...)
+	fmt.Fprintf(fs.Output(), "kubepolicy: %v\n", err)
+	fs.Usage()
+	return err
+}
+
+// load reads and decodes the documents in paths. Documents of kinds
+// kubepolicy doesn't check are skipped with a note on stderr and counted.
+func load(paths []string, stdin io.Reader, stderr io.Writer) ([]manifest.Object, int, error) {
+	docs, err := manifest.Read(paths, stdin)
+	if err != nil {
+		return nil, 0, err
+	}
+	var objects []manifest.Object
+	skipped := 0
+	for _, doc := range docs {
+		obj, err := manifest.Decode(doc)
+		if errors.Is(err, manifest.ErrUnsupportedKind) {
+			fmt.Fprintf(stderr, "kubepolicy: skipped %v\n", err)
+			skipped++
+			continue
+		}
+		if err != nil {
+			return nil, 0, err
+		}
+		objects = append(objects, obj)
+	}
+	return objects, skipped, nil
+}

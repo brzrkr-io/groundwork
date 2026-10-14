@@ -1,0 +1,120 @@
+// Package manifest reads Kubernetes YAML: it finds the documents in files,
+// directories and stdin, and decodes the workloads among them.
+package manifest
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"sigs.k8s.io/yaml"
+)
+
+// Document is one YAML document and where it came from.
+type Document struct {
+	Source string // the file it came from, or "stdin"
+	Index  int    // its position in Source: 1 for the first document
+	Data   []byte // the YAML text
+}
+
+// Location names the document for people: "deploy/web.yaml#2" is the second
+// document in deploy/web.yaml.
+func (d Document) Location() string {
+	return fmt.Sprintf("%s#%d", d.Source, d.Index)
+}
+
+// Read returns every document in paths, in order. A path is a file, a
+// directory (every .yaml and .yml file under it, in lexical order), or "-"
+// for stdin. Finding no documents at all is an error: a policy check that
+// checked nothing must not look like a pass.
+func Read(paths []string, stdin io.Reader) ([]Document, error) {
+	var docs []Document
+	for _, path := range paths {
+		found, err := readPath(path, stdin)
+		if err != nil {
+			return nil, err
+		}
+		docs = append(docs, found...)
+	}
+	if len(docs) == 0 {
+		return nil, fmt.Errorf("no YAML documents in %s", strings.Join(paths, ", "))
+	}
+	return docs, nil
+}
+
+// readPath reads the documents in one path argument.
+func readPath(path string, stdin io.Reader) ([]Document, error) {
+	if path == "-" {
+		data, err := io.ReadAll(stdin)
+		if err != nil {
+			return nil, fmt.Errorf("read stdin: %w", err)
+		}
+		return documents("stdin", data), nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		return documents(path, data), nil
+	}
+
+	var docs []Document
+	err = filepath.WalkDir(path, func(p string, entry fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case entry.IsDir() && p != path && strings.HasPrefix(entry.Name(), "."):
+			return fs.SkipDir // .git and friends
+		case entry.IsDir():
+			return nil
+		}
+		if ext := strings.ToLower(filepath.Ext(p)); ext != ".yaml" && ext != ".yml" {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		docs = append(docs, documents(p, data)...)
+		return nil
+	})
+	return docs, err
+}
+
+// documents splits one file's contents into Documents.
+func documents(source string, data []byte) []Document {
+	var docs []Document
+	for i, doc := range Split(data) {
+		for _, item := range listItems(doc) {
+			docs = append(docs, Document{Source: source, Index: i + 1, Data: item})
+		}
+	}
+	return docs
+}
+
+// listItems returns the items of a "kind: List" document, which is what
+// kubectl get -o yaml prints for more than one object. Any other document
+// comes back on its own. The items are JSON, which is valid YAML too.
+func listItems(doc []byte) [][]byte {
+	var list struct {
+		Kind  string            `json:"kind"`
+		Items []json.RawMessage `json:"items"`
+	}
+	if yaml.Unmarshal(doc, &list) != nil || list.Kind != "List" {
+		return [][]byte{doc}
+	}
+	items := make([][]byte, len(list.Items))
+	for i, item := range list.Items {
+		items[i] = item
+	}
+	return items
+}

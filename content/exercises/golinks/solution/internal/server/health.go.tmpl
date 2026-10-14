@@ -1,0 +1,36 @@
+package server
+
+import (
+	"context"
+	"net/http"
+	"time"
+)
+
+// pingTimeout bounds the database check in GET /readyz. Kubernetes gives a
+// probe one second by default, so a slow database must not take longer.
+const pingTimeout = time.Second
+
+// handleHealthz serves GET /healthz, the liveness probe: 200
+// {"status":"ok"} whenever the process can answer at all. It doesn't check
+// the database: restarting golinks wouldn't fix a broken database.
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleReadyz serves GET /readyz, the readiness probe: 200
+// {"status":"ready"} while Run is serving and the store answers a Ping
+// within pingTimeout, otherwise 503 {"status":"not ready"}.
+func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	if !s.ready.Load() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not ready"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), pingTimeout)
+	defer cancel()
+	if err := s.store.Ping(ctx); err != nil {
+		s.logger.WarnContext(r.Context(), "not ready: store ping failed", "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not ready"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}

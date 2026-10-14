@@ -562,6 +562,18 @@
         { "name": "drift_detection_2", "title": "Drift detection: ignore AWS-managed tags", "minutes": 20 },
         { "name": "cloud_inventory", "title": "Practice: cloud inventory report", "minutes": 45, "kind": "practice", "race": true }
       ]
+    },
+    {
+      "title": "Capstones",
+      "dir": "capstones",
+      "phase": "Capstones",
+      "summary": "Two portfolio projects that pull the whole course together: a real service, built, tested, containerised, deployed to Kubernetes and shipped by CI, and the policy checker that guards it.",
+      "outcome": "Build a production-style Go service end to end, run it on a local Kubernetes cluster, ship it with CI, enforce deployment policy with your own tool, and present both as portfolio projects.",
+      "guides": ["shipping"],
+      "exercises": [
+        { "name": "golinks", "title": "Capstone: go links, built and shipped", "minutes": 360, "kind": "project", "race": true },
+        { "name": "manifest_policy", "title": "Capstone: a policy checker for Kubernetes manifests", "minutes": 300, "kind": "project" }
+      ]
     }
   ]
 }

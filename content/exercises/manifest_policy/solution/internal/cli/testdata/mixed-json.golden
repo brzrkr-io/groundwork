@@ -1,0 +1,60 @@
+{
+  "objects": 3,
+  "skipped": 1,
+  "violations": [
+    {
+      "location": "../../testdata/mixed.yaml#3",
+      "kind": "StatefulSet",
+      "namespace": "production",
+      "name": "cache",
+      "rule": "resources",
+      "severity": "error",
+      "message": "container \"redis\": missing limits.cpu, limits.memory"
+    },
+    {
+      "location": "../../testdata/mixed.yaml#3",
+      "kind": "StatefulSet",
+      "namespace": "production",
+      "name": "cache",
+      "rule": "probes",
+      "severity": "error",
+      "message": "container \"redis\": missing livenessProbe, readinessProbe"
+    },
+    {
+      "location": "../../testdata/mixed.yaml#3",
+      "kind": "StatefulSet",
+      "namespace": "production",
+      "name": "cache",
+      "rule": "security-context",
+      "severity": "error",
+      "message": "container \"redis\": needs runAsNonRoot: true, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true"
+    },
+    {
+      "location": "../../testdata/mixed.yaml#3",
+      "kind": "StatefulSet",
+      "namespace": "production",
+      "name": "cache",
+      "rule": "image-tag",
+      "severity": "error",
+      "message": "container \"redis\": image \"redis:latest\" uses the latest tag"
+    },
+    {
+      "location": "../../testdata/mixed.yaml#3",
+      "kind": "StatefulSet",
+      "namespace": "production",
+      "name": "cache",
+      "rule": "labels",
+      "severity": "warning",
+      "message": "missing labels: team"
+    },
+    {
+      "location": "../../testdata/mixed.yaml#3",
+      "kind": "StatefulSet",
+      "namespace": "production",
+      "name": "cache",
+      "rule": "replicas",
+      "severity": "error",
+      "message": "replicas is 1, want at least 2 in namespace \"production\""
+    }
+  ]
+}

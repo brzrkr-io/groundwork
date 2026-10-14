@@ -1,0 +1,3 @@
+# Changes the dev ConfigMap: only the keys listed here change.
+
+# TODO(10): Set GOLINKS_LOG_LEVEL to debug in the ConfigMap golinks-config.

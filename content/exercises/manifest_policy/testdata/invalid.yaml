@@ -1,0 +1,14 @@
+# The first document is fine. The second has a list that is never closed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: settings
+data:
+  mode: fast
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: broken
+data:
+  hosts: [web-1, web-2

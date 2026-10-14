@@ -1,0 +1,14 @@
+# The dev overlay: the base, with the image you built and loaded into kind,
+# and debug logs.
+#
+#   kubectl apply -k deploy/overlays/dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+images:
+  - name: ghcr.io/octocat/golinks
+    newName: golinks
+    newTag: dev
+patches:
+  - path: configmap-patch.yaml

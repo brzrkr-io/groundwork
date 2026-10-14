@@ -1,0 +1,3 @@
+# The disk the SQLite database lives on, so links survive pod restarts.
+
+# TODO(9): Write the PersistentVolumeClaim golinks-data: ReadWriteOnce, 1Gi.

@@ -1,0 +1,15 @@
+// Command kubepolicy checks Kubernetes manifests against deployment policy.
+//
+//	go run ./cmd/kubepolicy deploy/base
+//	kubectl kustomize deploy/overlays/production | go run ./cmd/kubepolicy -
+package main
+
+import (
+	"os"
+
+	"groundwork.local/manifest_policy/internal/cli"
+)
+
+func main() {
+	os.Exit(cli.Run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}

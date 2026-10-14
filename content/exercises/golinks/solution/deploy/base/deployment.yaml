@@ -1,0 +1,63 @@
+# Runs one golinks pod: the image, its settings, probes, resources, a
+# locked-down security context and the database volume.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: golinks
+  labels:
+    app: golinks
+spec:
+  # SQLite on a ReadWriteOnce volume: one pod, and the old one stops
+  # before the new one starts.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: golinks
+  template:
+    metadata:
+      labels:
+        app: golinks
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: golinks
+          image: ghcr.io/octocat/golinks:v0.1.0
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: golinks-config
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: golinks-data

@@ -1,0 +1,60 @@
+package manifest
+
+import (
+	"bytes"
+	"fmt"
+	"testing"
+)
+
+func FuzzSplit(f *testing.F) {
+	f.Add([]byte("kind: A\n---\nkind: B\n"))
+	f.Add([]byte("# Source: web.yaml\n---\nkind: A\n--- # b\n\nkind: B"))
+	f.Add([]byte("---\n# only a comment\n---\n"))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if err := checkSplit(data, Split(data)); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// checkSplit checks what Split returned for data, and returns an error
+// describing the first broken promise: a document without content, a
+// document with a separator line inside it, documents that aren't pieces of
+// data in order, or content lines that went missing.
+func checkSplit(data []byte, docs [][]byte) error {
+	rest := data // the part of data after the previous document
+	lines := 0
+	for i, doc := range docs {
+		if !hasContent(doc) {
+			return fmt.Errorf("document %d has no content: %q", i+1, doc)
+		}
+		for line := range bytes.Lines(doc) {
+			if isSeparator(line) {
+				return fmt.Errorf("document %d has a separator line inside: %q", i+1, doc)
+			}
+		}
+		at := bytes.Index(rest, doc)
+		if at < 0 {
+			return fmt.Errorf("document %d is not a piece of the input after document %d: %q", i+1, i, doc)
+		}
+		rest = rest[at+len(doc):]
+		lines += contentLines(doc)
+	}
+	if want := contentLines(data); lines != want {
+		return fmt.Errorf("the documents have %d content lines, the input has %d", lines, want)
+	}
+	return nil
+}
+
+// contentLines counts the lines of data that are neither blank, nor a
+// comment, nor a separator.
+func contentLines(data []byte) int {
+	n := 0
+	for line := range bytes.Lines(data) {
+		text := bytes.TrimSpace(line)
+		if len(text) > 0 && text[0] != '#' && !isSeparator(line) {
+			n++
+		}
+	}
+	return n
+}

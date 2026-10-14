@@ -1,0 +1,76 @@
+package config
+
+import (
+	"log/slog"
+	"strings"
+	"testing"
+	"time"
+)
+
+// env returns a getenv function that reads from vars instead of the real
+// environment, so tests don't depend on the machine they run on.
+func env(vars map[string]string) func(string) string {
+	return func(key string) string { return vars[key] }
+}
+
+func TestLoad(t *testing.T) {
+	valid := []struct {
+		name string
+		vars map[string]string
+		want Config
+	}{
+		{"nothing set", nil, Config{Addr: ":8080", DBPath: "golinks.db", LogLevel: slog.LevelInfo, ShutdownGrace: 10 * time.Second}},
+		{"empty means unset", map[string]string{"GOLINKS_ADDR": "", "GOLINKS_LOG_LEVEL": ""},
+			Config{Addr: ":8080", DBPath: "golinks.db", LogLevel: slog.LevelInfo, ShutdownGrace: 10 * time.Second}},
+		{"everything set", map[string]string{
+			"GOLINKS_ADDR":           "127.0.0.1:9000",
+			"GOLINKS_DB":             "/data/golinks.db",
+			"GOLINKS_LOG_LEVEL":      "debug",
+			"GOLINKS_SHUTDOWN_GRACE": "25s",
+		}, Config{Addr: "127.0.0.1:9000", DBPath: "/data/golinks.db", LogLevel: slog.LevelDebug, ShutdownGrace: 25 * time.Second}},
+		{"warn and 1m30s", map[string]string{"GOLINKS_LOG_LEVEL": "warn", "GOLINKS_SHUTDOWN_GRACE": "1m30s"},
+			Config{Addr: ":8080", DBPath: "golinks.db", LogLevel: slog.LevelWarn, ShutdownGrace: 90 * time.Second}},
+		{"error and 500ms", map[string]string{"GOLINKS_LOG_LEVEL": "error", "GOLINKS_SHUTDOWN_GRACE": "500ms"},
+			Config{Addr: ":8080", DBPath: "golinks.db", LogLevel: slog.LevelError, ShutdownGrace: 500 * time.Millisecond}},
+		{"info", map[string]string{"GOLINKS_LOG_LEVEL": "info", "GOLINKS_DB": "links.db"},
+			Config{Addr: ":8080", DBPath: "links.db", LogLevel: slog.LevelInfo, ShutdownGrace: 10 * time.Second}},
+	}
+	for _, tt := range valid {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Load(env(tt.vars))
+			if err != nil {
+				t.Fatalf("Load(%v) error = %v, want nil", tt.vars, err)
+			}
+			if got != tt.want {
+				t.Errorf("Load(%v) = %+v, want %+v", tt.vars, got, tt.want)
+			}
+		})
+	}
+
+	invalid := []struct {
+		name string
+		vars map[string]string
+		want []string // variable names the error must mention
+	}{
+		{"unknown level", map[string]string{"GOLINKS_LOG_LEVEL": "loud"}, []string{"GOLINKS_LOG_LEVEL"}},
+		{"not a duration", map[string]string{"GOLINKS_SHUTDOWN_GRACE": "soon"}, []string{"GOLINKS_SHUTDOWN_GRACE"}},
+		{"number without unit", map[string]string{"GOLINKS_SHUTDOWN_GRACE": "30"}, []string{"GOLINKS_SHUTDOWN_GRACE"}},
+		{"zero grace", map[string]string{"GOLINKS_SHUTDOWN_GRACE": "0s"}, []string{"GOLINKS_SHUTDOWN_GRACE"}},
+		{"negative grace", map[string]string{"GOLINKS_SHUTDOWN_GRACE": "-5s"}, []string{"GOLINKS_SHUTDOWN_GRACE"}},
+		{"both wrong", map[string]string{"GOLINKS_LOG_LEVEL": "verbose", "GOLINKS_SHUTDOWN_GRACE": "forever"},
+			[]string{"GOLINKS_LOG_LEVEL", "GOLINKS_SHUTDOWN_GRACE"}},
+	}
+	for _, tt := range invalid {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(env(tt.vars))
+			if err == nil {
+				t.Fatalf("Load(%v) error = nil, want an error naming %v", tt.vars, tt.want)
+			}
+			for _, name := range tt.want {
+				if !strings.Contains(err.Error(), name) {
+					t.Errorf("Load(%v) error = %q, want it to name %s", tt.vars, err, name)
+				}
+			}
+		})
+	}
+}

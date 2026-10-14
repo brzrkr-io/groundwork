@@ -1,0 +1,637 @@
+package server
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"maps"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"groundwork.local/golinks/internal/links"
+)
+
+// fakeStore is an in-memory links.Store for the tests. Setting err makes
+// every method fail with it, like a broken database.
+type fakeStore struct {
+	mu           sync.Mutex
+	links        map[string]string // name -> URL
+	err          error
+	pingDeadline time.Time // the deadline of the last Ping's context
+	pingHasLimit bool      // whether the last Ping's context had a deadline
+}
+
+func newFakeStore(seed ...links.Link) *fakeStore {
+	f := &fakeStore{links: map[string]string{}}
+	for _, l := range seed {
+		f.links[l.Name] = l.URL
+	}
+	return f
+}
+
+func (f *fakeStore) Create(ctx context.Context, l links.Link) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
+	if _, ok := f.links[l.Name]; ok {
+		return links.ErrExists
+	}
+	f.links[l.Name] = l.URL
+	return nil
+}
+
+func (f *fakeStore) Get(ctx context.Context, name string) (links.Link, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return links.Link{}, f.err
+	}
+	url, ok := f.links[name]
+	if !ok {
+		return links.Link{}, links.ErrNotFound
+	}
+	return links.Link{Name: name, URL: url}, nil
+}
+
+func (f *fakeStore) List(ctx context.Context) ([]links.Link, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return nil, f.err
+	}
+	all := []links.Link{}
+	for _, name := range slices.Sorted(maps.Keys(f.links)) {
+		all = append(all, links.Link{Name: name, URL: f.links[name]})
+	}
+	return all, nil
+}
+
+func (f *fakeStore) Delete(ctx context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
+	if _, ok := f.links[name]; !ok {
+		return links.ErrNotFound
+	}
+	delete(f.links, name)
+	return nil
+}
+
+func (f *fakeStore) Ping(ctx context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pingDeadline, f.pingHasLimit = ctx.Deadline()
+	return f.err
+}
+
+// has reports whether the store holds a link called name, and its URL.
+func (f *fakeStore) has(name string) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	url, ok := f.links[name]
+	return url, ok
+}
+
+// broken makes every store method fail from now on.
+func (f *fakeStore) broken() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = errors.New("disk I/O error")
+}
+
+var (
+	runbook = links.Link{Name: "runbook-db", URL: "https://wiki.example.com/runbooks/db"}
+	oncall  = links.Link{Name: "oncall", URL: "https://pager.example.com/schedules/platform"}
+)
+
+// quiet is a logger that throws everything away.
+var quiet = slog.New(slog.DiscardHandler)
+
+// do runs one request through h and returns the recorded response.
+func do(h http.Handler, method, target, body string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(method, target, strings.NewReader(body)))
+	return rec
+}
+
+// jsonField returns field of a JSON object body, such as "error" or "status".
+func jsonField(t *testing.T, rec *httptest.ResponseRecorder, field string) string {
+	t.Helper()
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body %q is not a JSON object of strings: %v", rec.Body.String(), err)
+	}
+	return body[field]
+}
+
+// metricsText returns what GET /metrics would show for s right now.
+func metricsText(s *Server) string {
+	var b strings.Builder
+	s.metrics.Write(&b)
+	return b.String()
+}
+
+func TestLinkAPI(t *testing.T) {
+	t.Run("create", func(t *testing.T) {
+		store := newFakeStore()
+		h := New(store, quiet).Handler()
+		for _, l := range []links.Link{runbook, oncall} {
+			body := `{"name":"` + l.Name + `","url":"` + l.URL + `"}`
+			rec := do(h, "POST", "/api/links", body)
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("POST /api/links %s status = %d, want %d (body %q)", body, rec.Code, http.StatusCreated, rec.Body.String())
+			}
+			var got links.Link
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got != l {
+				t.Errorf("POST /api/links %s body = %q, want the link as JSON: %s", body, rec.Body.String(), body)
+			}
+			if url, ok := store.has(l.Name); !ok || url != l.URL {
+				t.Errorf("after POST /api/links %s the store has %q -> %q, want %q", body, l.Name, url, l.URL)
+			}
+		}
+	})
+
+	t.Run("create errors", func(t *testing.T) {
+		tests := []struct {
+			name, body string
+			status     int
+			want       string
+		}{
+			{"broken JSON", `{"name":`, http.StatusBadRequest, "invalid JSON body"},
+			{"not JSON", `runbook-db`, http.StatusBadRequest, "invalid JSON body"},
+			{"unknown field", `{"name":"docs","url":"https://docs.example.com","owner":"me"}`, http.StatusBadRequest, "invalid JSON body"},
+			{"taken name", `{"name":"runbook-db","url":"https://evil.example.com"}`, http.StatusConflict, "link already exists"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				store := newFakeStore(runbook)
+				rec := do(New(store, quiet).Handler(), "POST", "/api/links", tt.body)
+				if rec.Code != tt.status {
+					t.Fatalf("POST /api/links %s status = %d, want %d (body %q)", tt.body, rec.Code, tt.status, rec.Body.String())
+				}
+				if got := jsonField(t, rec, "error"); got != tt.want {
+					t.Errorf("POST /api/links %s error = %q, want %q", tt.body, got, tt.want)
+				}
+				if url, _ := store.has("runbook-db"); url != runbook.URL {
+					t.Errorf("after POST /api/links %s runbook-db points to %q, want it unchanged: %q", tt.body, url, runbook.URL)
+				}
+			})
+		}
+	})
+
+	t.Run("create invalid links", func(t *testing.T) {
+		if links.Validate(links.Link{}) == nil {
+			t.Skip("finish task 1 first: these cases need links.Validate")
+		}
+		tests := []struct{ body, want string }{
+			{`{"name":"","url":"https://docs.example.com"}`, "invalid link: name is required"},
+			{`{"name":"healthz","url":"https://docs.example.com"}`, "invalid link: name is reserved"},
+			{`{"name":"docs","url":"docs.example.com"}`, "invalid link: url must be an absolute http or https URL"},
+		}
+		for _, tt := range tests {
+			store := newFakeStore()
+			rec := do(New(store, quiet).Handler(), "POST", "/api/links", tt.body)
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("POST /api/links %s status = %d, want %d", tt.body, rec.Code, http.StatusBadRequest)
+				continue
+			}
+			if got := jsonField(t, rec, "error"); got != tt.want {
+				t.Errorf("POST /api/links %s error = %q, want %q", tt.body, got, tt.want)
+			}
+			if all, _ := store.List(context.Background()); len(all) != 0 {
+				t.Errorf("after POST /api/links %s the store has %v, want it empty: invalid links aren't saved", tt.body, all)
+			}
+		}
+	})
+
+	t.Run("redirect", func(t *testing.T) {
+		s := New(newFakeStore(runbook, oncall), quiet)
+		h := s.Handler()
+		for i, l := range []links.Link{runbook, oncall} {
+			rec := do(h, "GET", "/"+l.Name, "")
+			if rec.Code != http.StatusFound {
+				t.Fatalf("GET /%s status = %d, want %d (302 Found)", l.Name, rec.Code, http.StatusFound)
+			}
+			if got := rec.Header().Get("Location"); got != l.URL {
+				t.Errorf("GET /%s Location = %q, want %q", l.Name, got, l.URL)
+			}
+			want := fmt.Sprintf("golinks_redirects_total %d\n", i+1)
+			if got := metricsText(s); !strings.Contains(got, want) {
+				t.Errorf("after %d redirects /metrics shows:\n%s\nwant a line %q; call s.metrics.Redirect()", i+1, got, strings.TrimSpace(want))
+			}
+		}
+	})
+
+	t.Run("redirect to a missing link", func(t *testing.T) {
+		s := New(newFakeStore(runbook), quiet)
+		rec := do(s.Handler(), "GET", "/runbook-dbb", "")
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("GET /runbook-dbb status = %d, want %d", rec.Code, http.StatusNotFound)
+		}
+		if got := jsonField(t, rec, "error"); got != "link not found" {
+			t.Errorf("GET /runbook-dbb error = %q, want %q", got, "link not found")
+		}
+		if got := metricsText(s); !strings.Contains(got, "golinks_redirects_total 0\n") {
+			t.Errorf("after a 404 /metrics shows:\n%s\nwant golinks_redirects_total 0: only count redirects you serve", got)
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		store := newFakeStore(runbook, oncall)
+		h := New(store, quiet).Handler()
+		rec := do(h, "DELETE", "/api/links/runbook-db", "")
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("DELETE /api/links/runbook-db status = %d, want %d", rec.Code, http.StatusNoContent)
+		}
+		if rec.Body.Len() != 0 {
+			t.Errorf("DELETE /api/links/runbook-db body = %q, want empty", rec.Body.String())
+		}
+		if _, ok := store.has("runbook-db"); ok {
+			t.Error("after DELETE /api/links/runbook-db the store still has it")
+		}
+		if _, ok := store.has("oncall"); !ok {
+			t.Error("after DELETE /api/links/runbook-db the store lost oncall too")
+		}
+		rec = do(h, "DELETE", "/api/links/runbook-db", "")
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("second DELETE /api/links/runbook-db status = %d, want %d", rec.Code, http.StatusNotFound)
+		}
+		if got := jsonField(t, rec, "error"); got != "link not found" {
+			t.Errorf("second DELETE /api/links/runbook-db error = %q, want %q", got, "link not found")
+		}
+	})
+
+	t.Run("broken store", func(t *testing.T) {
+		store := newFakeStore(runbook)
+		store.broken()
+		h := New(store, quiet).Handler()
+		requests := []struct{ method, target, body string }{
+			{"GET", "/runbook-db", ""},
+			{"POST", "/api/links", `{"name":"docs","url":"https://docs.example.com"}`},
+			{"DELETE", "/api/links/runbook-db", ""},
+		}
+		for _, req := range requests {
+			rec := do(h, req.method, req.target, req.body)
+			if rec.Code != http.StatusInternalServerError {
+				t.Errorf("%s %s with a broken store: status = %d, want %d", req.method, req.target, rec.Code, http.StatusInternalServerError)
+				continue
+			}
+			if got := jsonField(t, rec, "error"); got != "internal error" {
+				t.Errorf("%s %s with a broken store: error = %q, want %q", req.method, req.target, got, "internal error")
+			}
+		}
+	})
+}
+
+func TestHealth(t *testing.T) {
+	t.Run("healthz always answers ok", func(t *testing.T) {
+		store := newFakeStore()
+		s := New(store, quiet)
+		for _, state := range []string{"before Run", "while serving", "with a broken store"} {
+			switch state {
+			case "while serving":
+				s.ready.Store(true)
+			case "with a broken store":
+				store.broken()
+			}
+			rec := do(s.Handler(), "GET", "/healthz", "")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET /healthz %s: status = %d, want %d", state, rec.Code, http.StatusOK)
+			}
+			if got := jsonField(t, rec, "status"); got != "ok" {
+				t.Errorf("GET /healthz %s: status field = %q, want %q", state, got, "ok")
+			}
+		}
+	})
+
+	tests := []struct {
+		name   string
+		ready  bool
+		broken bool
+		code   int
+		status string
+	}{
+		{"before Run", false, false, http.StatusServiceUnavailable, "not ready"},
+		{"while serving", true, false, http.StatusOK, "ready"},
+		{"store down", true, true, http.StatusServiceUnavailable, "not ready"},
+		{"shutting down with the store down", false, true, http.StatusServiceUnavailable, "not ready"},
+	}
+	for _, tt := range tests {
+		t.Run("readyz "+tt.name, func(t *testing.T) {
+			store := newFakeStore()
+			if tt.broken {
+				store.broken()
+			}
+			s := New(store, quiet)
+			s.ready.Store(tt.ready)
+			rec := do(s.Handler(), "GET", "/readyz", "")
+			if rec.Code != tt.code {
+				t.Fatalf("GET /readyz %s: status = %d, want %d", tt.name, rec.Code, tt.code)
+			}
+			if got := jsonField(t, rec, "status"); got != tt.status {
+				t.Errorf("GET /readyz %s: status field = %q, want %q", tt.name, got, tt.status)
+			}
+		})
+	}
+
+	t.Run("readyz pings with a timeout", func(t *testing.T) {
+		store := newFakeStore()
+		s := New(store, quiet)
+		s.ready.Store(true)
+		start := time.Now()
+		do(s.Handler(), "GET", "/readyz", "")
+		store.mu.Lock()
+		deadline, limited := store.pingDeadline, store.pingHasLimit
+		store.mu.Unlock()
+		if !limited {
+			t.Fatal("GET /readyz pinged the store with a context that has no deadline; use context.WithTimeout(r.Context(), pingTimeout)")
+		}
+		if !deadline.After(start) || deadline.After(time.Now().Add(pingTimeout)) {
+			t.Errorf("GET /readyz pinged with a deadline %v after the request started, want at most %v", deadline.Sub(start), pingTimeout)
+		}
+	})
+}
+
+// logsWithMessage decodes the JSON log lines in logs whose "msg" is msg.
+func logsWithMessage(t *testing.T, logs *bytes.Buffer, msg string) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	for raw := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+		if raw == "" {
+			continue
+		}
+		var line map[string]any
+		if err := json.Unmarshal([]byte(raw), &line); err != nil {
+			t.Fatalf("log line %q is not JSON: %v", raw, err)
+		}
+		if line["msg"] == msg {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func TestObserve(t *testing.T) {
+	var logs bytes.Buffer
+	store := newFakeStore(runbook)
+	s := New(store, slog.New(slog.NewJSONHandler(&logs, nil)))
+	h := s.Handler()
+
+	requests := []struct {
+		method, path string
+		broken       bool
+		level, route string
+		status       int
+	}{
+		{"GET", "/api/links", false, "INFO", "GET /api/links", 200},
+		{"GET", "/api/links", false, "INFO", "GET /api/links", 200},
+		{"GET", "/team/db", false, "INFO", "unmatched", 404},
+		{"PUT", "/api/links", false, "INFO", "unmatched", 405},
+		{"GET", "/api/links", true, "ERROR", "GET /api/links", 500},
+	}
+	for _, req := range requests {
+		if req.broken {
+			store.broken()
+		}
+		do(h, req.method, req.path, "")
+	}
+
+	lines := logsWithMessage(t, &logs, "request")
+	if len(lines) != len(requests) {
+		t.Fatalf("%d requests wrote %d log lines with msg \"request\", want one each:\n%s", len(requests), len(lines), logs.String())
+	}
+	for i, req := range requests {
+		line := lines[i]
+		want := map[string]any{
+			"level":  req.level,
+			"method": req.method,
+			"path":   req.path,
+			"route":  req.route,
+			"status": float64(req.status), // JSON numbers decode as float64
+		}
+		for field, value := range want {
+			if line[field] != value {
+				t.Errorf("%s %s: log field %q = %#v, want %#v\nline: %v", req.method, req.path, field, line[field], value, line)
+			}
+		}
+		if ms, ok := line["duration_ms"].(float64); !ok || ms < 0 {
+			t.Errorf("%s %s: log field \"duration_ms\" = %#v, want a number of milliseconds\nline: %v", req.method, req.path, line["duration_ms"], line)
+		}
+	}
+
+	metrics := metricsText(s)
+	for _, want := range []string{
+		`golinks_http_requests_total{route="GET /api/links",code="200"} 2`,
+		`golinks_http_requests_total{route="GET /api/links",code="500"} 1`,
+		`golinks_http_requests_total{route="unmatched",code="404"} 1`,
+		`golinks_http_requests_total{route="unmatched",code="405"} 1`,
+	} {
+		if !strings.Contains(metrics, want+"\n") {
+			t.Errorf("/metrics after the requests shows:\n%s\nwant the line %s", metrics, want)
+		}
+	}
+}
+
+// slowStore is a fakeStore whose List blocks until release is closed (or
+// the request is cancelled), so a test can hold a request in flight.
+type slowStore struct {
+	*fakeStore
+	entered chan struct{} // gets a value when a List call starts
+	release chan struct{} // List carries on once this is closed
+}
+
+func newSlowStore(t *testing.T) *slowStore {
+	s := &slowStore{fakeStore: newFakeStore(runbook), entered: make(chan struct{}, 1), release: make(chan struct{})}
+	t.Cleanup(func() { close(s.release) })
+	return s
+}
+
+func (s *slowStore) List(ctx context.Context) ([]links.Link, error) {
+	s.entered <- struct{}{}
+	select {
+	case <-s.release:
+		return s.fakeStore.List(ctx)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// listen opens a listener on a free loopback port.
+func listen(t *testing.T) net.Listener {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ln
+}
+
+// runInBackground starts s.Run and returns a channel that gets its result.
+func runInBackground(ctx context.Context, s *Server, ln net.Listener, grace time.Duration) <-chan error {
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx, ln, grace) }()
+	return done
+}
+
+// waitFor returns Run's result, or fails the test if it takes over 5s.
+func waitFor(t *testing.T, done <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run didn't return within 5s; does it watch ctx.Done() and shut down?")
+		return nil
+	}
+}
+
+// waitReady waits until s reports ready, failing if Run returns first or
+// it takes over 1s.
+func waitReady(t *testing.T, s *Server, done <-chan error) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for !s.Ready() {
+		select {
+		case err := <-done:
+			t.Fatalf("Run returned %v before it was ready", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Ready() is still false 1s after Run started; Run must mark the server ready (s.ready.Store(true))")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// get sends GET url in the background and returns a channel with the status
+// code, or an error if the request failed.
+func get(url string) <-chan error {
+	result := make(chan error, 1)
+	go func() {
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Get(url)
+		if err != nil {
+			result <- err
+			return
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			err = errors.New(resp.Status)
+		}
+		result <- err
+	}()
+	return result
+}
+
+func TestRun(t *testing.T) {
+	t.Run("serves until ctx is cancelled", func(t *testing.T) {
+		s := New(newFakeStore(runbook), quiet)
+		ln := listen(t)
+		addr := ln.Addr().String()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := runInBackground(ctx, s, ln, time.Second)
+
+		waitReady(t, s, done)
+		if err := <-get("http://" + addr + "/api/links"); err != nil {
+			t.Fatalf("GET /api/links while serving: %v", err)
+		}
+		cancel()
+		if err := waitFor(t, done); err != nil {
+			t.Errorf("Run after cancel = %v, want nil", err)
+		}
+		if s.Ready() {
+			t.Error("Ready() after shutdown = true, want false")
+		}
+		if conn, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
+			conn.Close()
+			t.Error("a new connection worked after Run returned, want it refused")
+		}
+	})
+
+	t.Run("returns Serve errors", func(t *testing.T) {
+		s := New(newFakeStore(), quiet)
+		ln := listen(t)
+		ln.Close() // Serve fails at once on a closed listener
+		if err := waitFor(t, runInBackground(context.Background(), s, ln, time.Second)); err == nil {
+			t.Error("Run on a closed listener = nil, want Serve's error")
+		}
+		if s.Ready() {
+			t.Error("Ready() after Serve failed = true, want false")
+		}
+	})
+
+	t.Run("drains in-flight requests", func(t *testing.T) {
+		var logs bytes.Buffer
+		store := newSlowStore(t)
+		s := New(store, slog.New(slog.NewJSONHandler(&logs, nil)))
+		ln := listen(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := runInBackground(ctx, s, ln, 5*time.Second)
+		waitReady(t, s, done)
+
+		response := get("http://" + ln.Addr().String() + "/api/links")
+		<-store.entered // the request is now inside the handler
+		cancel()
+		select {
+		case err := <-done:
+			t.Fatalf("Run returned %v while a request was still in flight; Shutdown must wait for it", err)
+		case <-time.After(30 * time.Millisecond):
+		}
+		store.release <- struct{}{} // let the handler finish
+		if err := <-response; err != nil {
+			t.Errorf("the in-flight GET /api/links failed: %v, want it to finish with 200 during shutdown", err)
+		}
+		if err := waitFor(t, done); err != nil {
+			t.Errorf("Run after a clean drain = %v, want nil", err)
+		}
+		if lines := logsWithMessage(t, &logs, "shutting down"); len(lines) != 1 || lines[0]["grace"] != "5s" {
+			t.Errorf("logs:\n%s\nwant one line with msg \"shutting down\" and grace \"5s\" (grace.String())", logs.String())
+		}
+	})
+
+	t.Run("force-closes after the grace period", func(t *testing.T) {
+		store := newSlowStore(t)
+		s := New(store, quiet)
+		ln := listen(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := runInBackground(ctx, s, ln, 20*time.Millisecond)
+		waitReady(t, s, done)
+
+		response := get("http://" + ln.Addr().String() + "/api/links")
+		<-store.entered // this request never finishes on its own
+		cancel()
+		err := waitFor(t, done)
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("Run with a stuck request = %v, want an error wrapping context.DeadlineExceeded", err)
+		}
+		if err != nil && !strings.HasPrefix(err.Error(), "graceful shutdown: ") {
+			t.Errorf("Run with a stuck request = %q, want it to start with \"graceful shutdown: \"", err)
+		}
+		select {
+		case err := <-response:
+			if err == nil {
+				t.Error("the stuck request succeeded, want its connection closed")
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("the stuck request's connection is still open 2s after Run returned; call srv.Close() when Shutdown fails")
+		}
+	})
+}

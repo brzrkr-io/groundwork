@@ -1,0 +1,26 @@
+package manifest
+
+import (
+	"fmt"
+	"testing"
+)
+
+func FuzzSplit(f *testing.F) {
+	// TODO(10): Add at least three seeds with f.Add, such as a stream with
+	// two documents. Each seed is a []byte.
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// TODO(10): Replace this line: split data, and fail the test with
+		// t.Fatal when checkSplit finds a problem.
+		t.Fatalf("FuzzSplit doesn't check anything yet (input %q)", data)
+	})
+}
+
+// checkSplit checks what Split returned for data, and returns an error
+// describing the first broken promise: a document without content, a
+// document with a separator line inside it, documents that aren't pieces of
+// data in order, or content lines that went missing.
+func checkSplit(data []byte, docs [][]byte) error {
+	// TODO(10): Check the four properties from the README.
+	return fmt.Errorf("checkSplit is not written yet (got %d bytes and %d documents)", len(data), len(docs))
+}
