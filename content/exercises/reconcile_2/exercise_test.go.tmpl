@@ -37,7 +37,7 @@ func liveDeployment(namespace, name string, replicas *int32, image string) *apps
 			Name:        name,
 			Namespace:   namespace,
 			Labels:      map[string]string{"app": name, "team": "payments"},
-			Annotations: map[string]string{"gopherlings.dev/owner": "payments-team"},
+			Annotations: map[string]string{"groundwork.dev/owner": "payments-team"},
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: replicas,
@@ -190,8 +190,8 @@ func TestReconcileKeepsOtherFields(t *testing.T) {
 			if got := d.Labels["team"]; got != "payments" {
 				t.Errorf("label team after Reconcile = %q, want %q (keep labels others added)", got, "payments")
 			}
-			if got := d.Annotations["gopherlings.dev/owner"]; got != "payments-team" {
-				t.Errorf("annotation gopherlings.dev/owner after Reconcile = %q, want %q (keep annotations others added)", got, "payments-team")
+			if got := d.Annotations["groundwork.dev/owner"]; got != "payments-team" {
+				t.Errorf("annotation groundwork.dev/owner after Reconcile = %q, want %q (keep annotations others added)", got, "payments-team")
 			}
 			if len(c.Env) != 1 || c.Env[0].Value != "debug" {
 				t.Errorf("container env after Reconcile = %v, want [LOG_LEVEL=debug] (keep env vars others added)", c.Env)

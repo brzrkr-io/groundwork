@@ -1,0 +1,10 @@
+name,ip,env,role
+web-01,10.0.1.11,prod,web
+web-02,10.0.1.12,prod,web
+web-03,10.0.2.13,staging,web
+db-01,10.0.1.21,prod,db
+db-02,10.0.3.22,preprod,db
+cache-01,10.0.1.31,prod,cache
+ci-runner-01,10.0.4.41,dev,ci
+mon-01,10.0.2.51,staging,monitoring
+bastion,10.0.0.5,prod,bastion

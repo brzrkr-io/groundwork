@@ -1,0 +1,108 @@
+package shellconditions
+
+import (
+	"bytes"
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+func TestCheckConfig(t *testing.T) {
+	expect(t, "found testdata/app.conf\n", "1_check_config.sh", "testdata/app.conf")
+	expectExit(t, 1, "missing testdata/missing.conf\n", "1_check_config.sh", "testdata/missing.conf")
+	expectExit(t, 1, "missing testdata\n", "1_check_config.sh", "testdata")
+}
+
+func TestDiskLevel(t *testing.T) {
+	expect(t, "critical: 95%\n", "2_disk_level.sh", "95")
+	expect(t, "critical: 90%\n", "2_disk_level.sh", "90")
+	expect(t, "critical: 100%\n", "2_disk_level.sh", "100")
+	expect(t, "warning: 89%\n", "2_disk_level.sh", "89")
+	expect(t, "warning: 75%\n", "2_disk_level.sh", "75")
+	expect(t, "ok: 74%\n", "2_disk_level.sh", "74")
+	expect(t, "ok: 8%\n", "2_disk_level.sh", "8")
+}
+
+func TestCheckEnv(t *testing.T) {
+	expect(t, "production is a valid environment\n", "3_check_env.sh", "production")
+	expect(t, "staging is a valid environment\n", "3_check_env.sh", "staging")
+	expectExit(t, 2, "unknown environment: prod\n", "3_check_env.sh", "prod")
+	expectExit(t, 2, "usage: 3_check_env.sh ENV\n", "3_check_env.sh")
+	expectExit(t, 2, "usage: 3_check_env.sh ENV\n", "3_check_env.sh", "")
+}
+
+func TestRollbackCheck(t *testing.T) {
+	expect(t, "testdata/deploy_ok.log: clean\n", "4_rollback_check.sh", "testdata/deploy_ok.log")
+	expect(t, "testdata/deploy_rollback.log: rolled back\n", "4_rollback_check.sh", "testdata/deploy_rollback.log")
+}
+
+// expectExit runs the script and checks that it exits with status
+// wantCode, prints wantStderr to stderr, and prints nothing to stdout.
+func expectExit(t *testing.T, wantCode int, wantStderr, script string, args ...string) {
+	t.Helper()
+	stdout, stderr, code := run(t, script, args...)
+	command := commandLine(script, args...)
+	if code != wantCode {
+		t.Errorf("%s exited with status %d, want %d. It printed %q to stdout and %q to stderr",
+			command, code, wantCode, stdout, stderr)
+		return
+	}
+	if stderr != wantStderr {
+		t.Errorf("%s printed %q to stderr, want %q", command, stderr, wantStderr)
+	}
+	if stdout != "" {
+		t.Errorf("%s printed %q to stdout, want nothing there", command, stdout)
+	}
+}
+
+// expect runs the script with bash in the exercise folder, just as you do
+// in your terminal, and checks that it succeeds and prints want.
+func expect(t *testing.T, want, script string, args ...string) {
+	t.Helper()
+	got, stderr, code := run(t, script, args...)
+	command := commandLine(script, args...)
+	if code != 0 {
+		t.Errorf("%s exited with status %d, want 0. bash said:\n%s", command, code, stderr)
+		return
+	}
+	switch {
+	case got == want:
+		return
+	case got == "":
+		t.Errorf("%s printed nothing, want:\n%s", command, want)
+	case strings.Count(want, "\n") > 1:
+		t.Errorf("%s printed:\n%s\nwant:\n%s", command, got, want)
+	default:
+		t.Errorf("%s printed %q, want %q", command, got, want)
+	}
+	if stderr != "" {
+		t.Errorf("%s also printed to stderr:\n%s", command, stderr)
+	}
+}
+
+// run runs "bash script args..." and returns what it printed to stdout and
+// stderr, and its exit status.
+func run(t *testing.T, script string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	cmd := exec.Command("bash", append([]string{script}, args...)...)
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C", "TZ=UTC")
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); cmd.ProcessState == nil {
+		t.Fatalf("could not start bash: %v", err)
+	}
+	return out.String(), errOut.String(), cmd.ProcessState.ExitCode()
+}
+
+// commandLine shows how to run the script by hand: bash, the script and its
+// arguments, with quotes around any argument that is empty or has a space.
+func commandLine(script string, args ...string) string {
+	line := "bash " + script
+	for _, arg := range args {
+		if arg == "" || strings.Contains(arg, " ") {
+			arg = `"` + arg + `"`
+		}
+		line += " " + arg
+	}
+	return line
+}

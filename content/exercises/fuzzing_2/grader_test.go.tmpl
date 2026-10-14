@@ -1,6 +1,6 @@
 package alerts
 
-// This file is how Gopherlings grades the test you write. You don't need to
+// This file is how Groundwork grades the test you write. You don't need to
 // change it, but you are welcome to read it.
 //
 // TestTruncate checks that your fixed Truncate works. TestGrader re-runs
@@ -99,16 +99,16 @@ func TestTruncate(t *testing.T) {
 
 // mutantEnv names the environment variable that tells a re-run which mutant
 // to install.
-const mutantEnv = "GOPHERLINGS_MUTANT"
+const mutantEnv = "GROUNDWORK_MUTANT"
 
 type mutant struct {
-	name    string // short name, used in GOPHERLINGS_MUTANT and test output
+	name    string // short name, used in GROUNDWORK_MUTANT and test output
 	bug     string // completes "your tests didn't notice when ..."
 	install func() // swaps the bug into the package
 }
 
 // TestMain runs before any test. In a re-run started by TestGrader, it
-// installs the mutant named by GOPHERLINGS_MUTANT.
+// installs the mutant named by GROUNDWORK_MUTANT.
 func TestMain(m *testing.M) {
 	if name := os.Getenv(mutantEnv); name != "" {
 		for _, mu := range mutants {

@@ -1,0 +1,171 @@
+package rotate
+
+// This file reads exercise.go as a tree of Go syntax, the same way gofmt and
+// your editor do, so the tests can check names, numbers, length and nesting
+// as well as behaviour. You don't need to change it, but you're welcome to
+// read it.
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"slices"
+	"testing"
+)
+
+// source is exercise.go, parsed.
+type source struct {
+	fset *token.FileSet
+	file *ast.File
+}
+
+// parseExercise reads and parses exercise.go.
+func parseExercise(t *testing.T) source {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "exercise.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("can't read exercise.go: %v", err)
+	}
+	return source{fset, file}
+}
+
+// line returns the line of exercise.go that n starts on.
+func (s source) line(n ast.Node) int {
+	return s.fset.Position(n.Pos()).Line
+}
+
+// funcs returns every function in exercise.go.
+func (s source) funcs() []*ast.FuncDecl {
+	var found []*ast.FuncDecl
+	for _, decl := range s.file.Decls {
+		if f, ok := decl.(*ast.FuncDecl); ok {
+			found = append(found, f)
+		}
+	}
+	return found
+}
+
+// fn returns the function called name, or nil if there is none.
+func (s source) fn(name string) *ast.FuncDecl {
+	for _, f := range s.funcs() {
+		if f.Name.Name == name {
+			return f
+		}
+	}
+	return nil
+}
+
+// lines returns how many lines f takes, from "func" to the closing brace.
+func (s source) lines(f *ast.FuncDecl) int {
+	return s.fset.Position(f.End()).Line - s.line(f) + 1
+}
+
+// names returns every parameter and variable that f declares: its
+// parameters, and the names on the left of :=, in var lines and in range.
+func names(f *ast.FuncDecl) []*ast.Ident {
+	var found []*ast.Ident
+	for _, field := range f.Type.Params.List {
+		found = append(found, field.Names...)
+	}
+	ast.Inspect(f.Body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.AssignStmt:
+			if n.Tok == token.DEFINE {
+				for _, left := range n.Lhs {
+					if id, ok := left.(*ast.Ident); ok {
+						found = append(found, id)
+					}
+				}
+			}
+		case *ast.RangeStmt:
+			if n.Tok == token.DEFINE {
+				for _, e := range []ast.Expr{n.Key, n.Value} {
+					if id, ok := e.(*ast.Ident); ok {
+						found = append(found, id)
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			found = append(found, n.Names...)
+		}
+		return true
+	})
+	return found
+}
+
+// numbers returns every number written inside f.
+func numbers(f *ast.FuncDecl) []*ast.BasicLit {
+	var found []*ast.BasicLit
+	ast.Inspect(f.Body, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.BasicLit); ok && (lit.Kind == token.INT || lit.Kind == token.FLOAT) {
+			found = append(found, lit)
+		}
+		return true
+	})
+	return found
+}
+
+// constants returns the names of the package-level constants.
+func (s source) constants() map[string]bool {
+	declared := map[string]bool{}
+	for _, decl := range s.file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			for _, id := range spec.(*ast.ValueSpec).Names {
+				declared[id.Name] = true
+			}
+		}
+	}
+	return declared
+}
+
+// shape describes how deeply f nests: the deepest level, the line where it
+// starts, and the lines of every else. Depth counts the if, for and switch
+// statements around a line: an if at the top of the function is depth 1, an
+// if inside a for loop is depth 2. An "else if" is the same depth as its if.
+func (s source) shape(f *ast.FuncDecl) (deepest, deepestLine int, elseLines []int) {
+	elseIf := map[ast.Node]bool{} // ifs that are the "else if" of another if
+	var open []ast.Node           // the nodes we are inside right now
+	depth := 0
+	ast.Inspect(f.Body, func(n ast.Node) bool {
+		if n == nil { // leaving the node on top of open
+			if nests(open[len(open)-1], elseIf) {
+				depth--
+			}
+			open = open[:len(open)-1]
+			return true
+		}
+		open = append(open, n)
+		if ifStmt, ok := n.(*ast.IfStmt); ok && ifStmt.Else != nil {
+			elseLines = append(elseLines, s.line(ifStmt.Else))
+			if next, ok := ifStmt.Else.(*ast.IfStmt); ok {
+				elseIf[next] = true
+			}
+		}
+		if nests(n, elseIf) {
+			depth++
+			if depth > deepest {
+				deepest, deepestLine = depth, s.line(n)
+			}
+		}
+		return true
+	})
+	slices.Sort(elseLines)
+	return deepest, deepestLine, elseLines
+}
+
+// nests reports whether n opens a new level: an if (but not an else if), a
+// for loop or a switch.
+func nests(n ast.Node, elseIf map[ast.Node]bool) bool {
+	switch n.(type) {
+	case *ast.IfStmt:
+		return !elseIf[n]
+	case *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+		return true
+	}
+	return false
+}

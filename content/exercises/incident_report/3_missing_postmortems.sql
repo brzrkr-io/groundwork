@@ -1,0 +1,6 @@
+-- Task 3: Find the missing postmortems
+--
+-- Return the id, service name (service) and severity of every
+-- resolved sev1 or sev2 incident that has no postmortem, by id.
+--
+-- TODO(3): Write your query below.

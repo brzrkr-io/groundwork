@@ -1,0 +1,3 @@
+2026-10-13T09:00:01Z INFO api started
+2026-10-13T09:00:02Z INFO api listening on :8080
+2026-10-13T09:05:13Z ERROR api upstream timeout

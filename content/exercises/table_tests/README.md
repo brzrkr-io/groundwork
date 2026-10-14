@@ -86,7 +86,7 @@ at it. For a rule like "adult from 18":
 | 17 | last value before the limit |
 | 18 | first value at the limit |
 
-### How Gopherlings grades your test
+### How Groundwork grades your test
 
 As in *Your first test*, `TestGrader` runs your test against the real code
 (it must pass) and against *mutants*, copies with one bug each (it must fail

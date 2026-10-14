@@ -1,0 +1,125 @@
+package gitcommits
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// Each test builds a fresh sandbox with setup.sh, runs your scripts in
+// task order up to the one it checks, then inspects the repo with git.
+var scripts = []string{
+	"1_init_repo.sh",
+	"2_first_commit.sh",
+	"3_add_health_check.sh",
+}
+
+func TestInitRepo(t *testing.T) {
+	repo, _ := runTasks(t, 1)
+	if _, err := os.Stat(filepath.Join(repo, ".git")); err != nil {
+		t.Fatal("after 1_init_repo.sh, sandbox has no .git folder, want a Git repository")
+	}
+	if got := git(t, repo, "symbolic-ref", "--short", "HEAD"); got != "main" {
+		t.Errorf("current branch = %q, want \"main\"", got)
+	}
+	if got := git(t, repo, "config", "--local", "--default", "", "user.name"); got != "Sam Rivera" {
+		t.Errorf("repo setting user.name = %q, want \"Sam Rivera\"", got)
+	}
+	if got := git(t, repo, "config", "--local", "--default", "", "user.email"); got != "sam@example.com" {
+		t.Errorf("repo setting user.email = %q, want \"sam@example.com\"", got)
+	}
+}
+
+func TestFirstCommit(t *testing.T) {
+	repo, _ := runTasks(t, 2)
+	if got := git(t, repo, "rev-list", "--count", "--all"); got != "1" {
+		t.Fatalf("the repo has %s commits, want 1", got)
+	}
+	if got := git(t, repo, "log", "-1", "--format=%s"); got != "Add deploy script and app config" {
+		t.Errorf("commit message = %q, want \"Add deploy script and app config\"", got)
+	}
+	want := "README.md\nconfig/app.yaml\ndeploy.sh"
+	if got := git(t, repo, "ls-tree", "-r", "--name-only", "HEAD"); got != want {
+		t.Errorf("files in the commit:\n%s\nwant:\n%s", got, want)
+	}
+	if got := git(t, repo, "status", "--porcelain"); got != "" {
+		t.Errorf("git status --porcelain:\n%s\nwant nothing left to commit", got)
+	}
+}
+
+func TestAddHealthCheck(t *testing.T) {
+	repo, _ := runTasks(t, 3)
+	if got := git(t, repo, "rev-list", "--count", "HEAD"); got != "2" {
+		t.Fatalf("main has %s commits, want 2", got)
+	}
+	if got := git(t, repo, "log", "-1", "--format=%s"); got != "Add health check path" {
+		t.Errorf("newest commit message = %q, want \"Add health check path\"", got)
+	}
+	if got := git(t, repo, "show", "--name-only", "--format=", "HEAD"); got != "config/app.yaml" {
+		t.Errorf("files changed by the newest commit = %q, want \"config/app.yaml\"", got)
+	}
+	want := "name: web\nreplicas: 2\nport: 8080\nhealthcheck: /healthz"
+	if got := git(t, repo, "show", "HEAD:config/app.yaml"); got != want {
+		t.Errorf("committed config/app.yaml:\n%s\nwant:\n%s", got, want)
+	}
+	if got := git(t, repo, "status", "--porcelain"); got != "" {
+		t.Errorf("git status --porcelain:\n%s\nwant nothing left to commit", got)
+	}
+}
+
+// runTasks builds a fresh sandbox with setup.sh, then runs task scripts 1 to
+// n inside it, in order, as you would by hand. It returns the repo's path
+// and what script n printed.
+func runTasks(t *testing.T, n int) (repo, printed string) {
+	t.Helper()
+	home := t.TempDir()
+	repo = filepath.Join(home, "sandbox")
+	if _, stderr, err := run(home, ".", "bash", "setup.sh", repo); err != nil {
+		t.Fatalf("setup.sh failed (%v):\n%s", err, stderr)
+	}
+	for _, script := range scripts[:n] {
+		path, err := filepath.Abs(script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, err := run(home, repo, "bash", path)
+		if err != nil {
+			t.Fatalf("%s failed (%v). It printed:\n%s%s", script, err, stdout, stderr)
+		}
+		printed = stdout
+	}
+	return repo, printed
+}
+
+// git runs a git command in repo and returns what it printed, without the
+// final newline.
+func git(t *testing.T, repo string, args ...string) string {
+	t.Helper()
+	stdout, stderr, err := run(filepath.Dir(repo), repo, "git", args...)
+	if err != nil {
+		t.Fatalf("git %s failed (%v):\n%s", strings.Join(args, " "), err, stderr)
+	}
+	return strings.TrimSuffix(stdout, "\n")
+}
+
+// run runs a command in dir, hermetically: no personal Git config, a fixed
+// author and date, and no editor or pager waiting for input.
+func run(home, dir, name string, args ...string) (stdout, stderr string, err error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"HOME="+home, "XDG_CONFIG_HOME="+home, "LC_ALL=C", "TZ=UTC",
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		"GIT_AUTHOR_NAME=Sam Rivera", "GIT_AUTHOR_EMAIL=sam@example.com",
+		"GIT_COMMITTER_NAME=Sam Rivera", "GIT_COMMITTER_EMAIL=sam@example.com",
+		"GIT_AUTHOR_DATE=2026-10-01 12:00:00 +0000", "GIT_COMMITTER_DATE=2026-10-01 12:00:00 +0000",
+		"GIT_EDITOR=true", "GIT_PAGER=cat", "PAGER=cat",
+	)
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	err = cmd.Run()
+	return out.String(), errOut.String(), err
+}

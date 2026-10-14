@@ -1,4 +1,4 @@
-// Command gopherlings is a hands-on Go course in your terminal: fix small
+// Command groundwork is a hands-on Go course in your terminal: fix small
 // programs until their tests pass, from "Hello, Go" to Kubernetes controllers.
 package main
 
@@ -19,23 +19,25 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
 
-	"github.com/pjanderson/gopherlings/content"
-	"github.com/pjanderson/gopherlings/internal/course"
-	"github.com/pjanderson/gopherlings/internal/session"
-	"github.com/pjanderson/gopherlings/internal/tui"
-	"github.com/pjanderson/gopherlings/internal/workspace"
+	"github.com/pjanderson/groundwork/content"
+	"github.com/pjanderson/groundwork/internal/cards"
+	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/pjanderson/groundwork/internal/session"
+	"github.com/pjanderson/groundwork/internal/tui"
+	"github.com/pjanderson/groundwork/internal/workspace"
 )
 
-const usage = `gopherlings: learn Go by fixing small programs until their tests pass.
+const usage = `groundwork: learn Go by fixing small programs until their tests pass.
 
 Usage:
-  gopherlings               open the current exercise and watch for saves
-  gopherlings init [DIR]    start a new course in DIR (default: this directory)
-  gopherlings list [--all]  show your progress through the course
-  gopherlings check [EX]    run one exercise's tests once (default: current)
-  gopherlings reset EX      restore an exercise's starter code
-  gopherlings guides [G]    list the guides, or read guide G
-  gopherlings version       print the version
+  groundwork               open the current exercise and watch for saves
+  groundwork init [DIR]    start a new course in DIR (default: this directory)
+  groundwork list [--all]  show your progress through the course
+  groundwork check [EX]    run one exercise's tests once (default: current)
+  groundwork reset EX      restore an exercise's starter code
+  groundwork guides [G]    list the guides, or read guide G
+  groundwork cards [--all] flashcards from the guides, for Anki (phone or desktop)
+  groundwork version       print the version
 
 EX is an exercise number (12) or folder name (012_variables).
 G is a guide number (10) or name (abstraction).
@@ -64,7 +66,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprint(stdout, usage)
 		return nil
 	case "version", "--version":
-		fmt.Fprintln(stdout, "gopherlings", toolVersion())
+		fmt.Fprintln(stdout, "groundwork", toolVersion())
 		return nil
 	}
 
@@ -77,6 +79,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return initCourse(c, rest, stdout)
 	case "guides", "guide":
 		return guides(c, rest, stdout)
+	case "cards":
+		return exportCards(c, rest, stdout, stderr)
 	}
 	s, err := openSession(c)
 	if err != nil {
@@ -107,7 +111,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return check(s, e, stdout)
 	case "reset":
 		if len(rest) != 1 {
-			return errors.New("which exercise? For example: gopherlings reset 12")
+			return errors.New("which exercise? For example: groundwork reset 12")
 		}
 		e, err := find(c, rest[0])
 		if err != nil {
@@ -128,9 +132,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 func openSession(c *course.Course) (*session.Session, error) {
 	root, err := session.FindRoot(".")
 	if errors.Is(err, session.ErrNoCourse) {
-		return nil, errors.New("there's no Gopherlings course in this directory or its parents.\n\n" +
-			"  Start one here:          " + tui.Key("gopherlings init") + "\n" +
-			"  Or in a new folder:      " + tui.Key("gopherlings init learn-go") + "\n")
+		return nil, errors.New("there's no Groundwork course in this directory or its parents.\n\n" +
+			"  Start one here:          " + tui.Key("groundwork init") + "\n" +
+			"  Or in a new folder:      " + tui.Key("groundwork init learn-go") + "\n")
 	}
 	if err != nil {
 		return nil, err
@@ -150,7 +154,7 @@ func openSession(c *course.Course) (*session.Session, error) {
 func checkGo() error {
 	out, err := exec.Command("go", "env", "GOVERSION").Output()
 	if err != nil {
-		return errors.New("Gopherlings needs the Go toolchain. Install it from https://go.dev/dl/ and try again")
+		return errors.New("Groundwork needs the Go toolchain. Install it from https://go.dev/dl/ and try again")
 	}
 	have := strings.TrimSpace(string(out))
 	if version.Compare(have, "go"+workspace.GoVersion) < 0 {
@@ -162,14 +166,14 @@ func checkGo() error {
 func find(c *course.Course, query string) (*course.Exercise, error) {
 	e, ok := c.Find(query)
 	if !ok {
-		return nil, fmt.Errorf("no exercise %q; gopherlings list --all shows them all", query)
+		return nil, fmt.Errorf("no exercise %q; groundwork list --all shows them all", query)
 	}
 	return e, nil
 }
 
 func initCourse(c *course.Course, args []string, stdout io.Writer) error {
 	if len(args) > 1 {
-		return errors.New("usage: gopherlings init [DIR]")
+		return errors.New("usage: groundwork init [DIR]")
 	}
 	dir := "."
 	if len(args) == 1 {
@@ -192,12 +196,12 @@ func initCourse(c *course.Course, args []string, stdout io.Writer) error {
 	if err := s.Sync(); err != nil {
 		return err
 	}
-	fmt.Fprintln(stdout, tui.Notice("ok", fmt.Sprintf("Created a Gopherlings course in %s", abs)))
+	fmt.Fprintln(stdout, tui.Notice("ok", fmt.Sprintf("Created a Groundwork course in %s", abs)))
 	fmt.Fprintf(stdout, "\n  %d exercises in %d modules, from Hello, Go to Kubernetes controllers.\n\n", len(c.Exercises), len(c.Modules))
 	if dir != "." {
 		fmt.Fprintf(stdout, "  %s\n", tui.Key("cd "+dir))
 	}
-	fmt.Fprintf(stdout, "  %s   %s\n\n", tui.Key("gopherlings"), tui.Dim("start the first exercise"))
+	fmt.Fprintf(stdout, "  %s   %s\n\n", tui.Key("groundwork"), tui.Dim("start the first exercise"))
 	fmt.Fprintln(stdout, tui.Dim("  Tip: open this folder in your editor in a second window. Every exercise is in exercises/, numbered in order."))
 	return nil
 }
@@ -213,7 +217,7 @@ func watch(s *session.Session, stdout io.Writer) error {
 		return m.Err()
 	}
 	done, total := s.DoneCount(), len(s.Course.Exercises)
-	fmt.Fprintf(stdout, "%s %s\n", tui.Notice("ok", fmt.Sprintf("Progress saved: %d of %d exercises done.", done, total)), tui.Dim("Run gopherlings to pick up where you left off."))
+	fmt.Fprintf(stdout, "%s %s\n", tui.Notice("ok", fmt.Sprintf("Progress saved: %d of %d exercises done.", done, total)), tui.Dim("Run groundwork to pick up where you left off."))
 	return nil
 }
 
@@ -244,9 +248,12 @@ func check(s *session.Session, e *course.Exercise, stdout io.Writer) error {
 // highlights the learner's current module.
 func guides(c *course.Course, args []string, stdout io.Writer) error {
 	if len(args) > 1 {
-		return errors.New("usage: gopherlings guides [GUIDE]")
+		return errors.New("usage: groundwork guides [GUIDE]")
 	}
-	var current *course.Module
+	var (
+		current *course.Module
+		read    func(*course.Guide) bool
+	)
 	root, err := session.FindRoot(".")
 	switch {
 	case err == nil:
@@ -257,17 +264,17 @@ func guides(c *course.Course, args []string, stdout io.Writer) error {
 		if err := s.Sync(); err != nil {
 			return err
 		}
-		current = s.Current().Module
+		current, read = s.Current().Module, s.Read
 	case !errors.Is(err, session.ErrNoCourse):
 		return err
 	}
 	if len(args) == 0 {
-		fmt.Fprint(stdout, tui.GuideList(c, current))
+		fmt.Fprint(stdout, tui.GuideList(c, current, read))
 		return nil
 	}
 	g, ok := c.FindGuide(args[0])
 	if !ok {
-		return fmt.Errorf("no guide %q; gopherlings guides lists them", args[0])
+		return fmt.Errorf("no guide %q; groundwork guides lists them", args[0])
 	}
 	text, err := c.GuideText(g)
 	if err != nil {
@@ -278,6 +285,88 @@ func guides(c *course.Course, args []string, stdout io.Writer) error {
 		return err
 	}
 	return page(tui.Guide(text), stdout)
+}
+
+// exportCards writes flashcards for the guides of the modules reached so far
+// (or all of them) to an Anki import file.
+func exportCards(c *course.Course, args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("cards", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	all := fs.Bool("all", false, "include guides for modules you haven't reached")
+	out := fs.String("o", "", "file to write (default: groundwork-cards.txt in the course folder)")
+	if err := fs.Parse(args); err != nil || fs.NArg() > 0 {
+		return errors.New("usage: groundwork cards [--all] [-o FILE]")
+	}
+	reached, dir := len(c.Modules), "."
+	if root, err := session.FindRoot("."); err == nil {
+		s, err := session.Open(root, c)
+		if err != nil {
+			return err
+		}
+		dir = root
+		if !*all {
+			reached = s.Current().Module.Number
+		}
+	} else if !errors.Is(err, session.ErrNoCourse) {
+		return err
+	}
+	if *out == "" {
+		*out = filepath.Join(dir, "groundwork-cards.txt")
+	}
+	var deck []cards.Card
+	guides := 0
+	for _, g := range c.Guides {
+		if g.Module.Number > reached {
+			continue
+		}
+		text, err := c.GuideText(g)
+		if err != nil {
+			return err
+		}
+		more, err := cards.FromGuide(g, text)
+		if err != nil {
+			return err
+		}
+		deck = append(deck, more...)
+		guides++
+	}
+	f, err := os.Create(*out)
+	if err != nil {
+		return err
+	}
+	if err := cards.WriteAnki(f, deck); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	scope := fmt.Sprintf("the %d guides up to your current module", guides)
+	if reached == len(c.Modules) {
+		scope = fmt.Sprintf("all %d guides", guides)
+	}
+	fmt.Fprintln(stdout, tui.Notice("ok", fmt.Sprintf("Wrote %d flashcards from %s to %s", len(deck), scope, relativePath(*out))))
+	for _, line := range []string{
+		"",
+		"  iPhone: AirDrop or save the file to Files, open it, and choose Anki",
+		"  (AnkiMobile). Desktop Anki: File > Import, then sync to your phone.",
+		"  Each guide gets its own deck under \"Groundwork\". Export again as you",
+		"  reach new modules: re-importing updates cards and keeps your reviews.",
+	} {
+		fmt.Fprintln(stdout, tui.Dim(line))
+	}
+	return nil
+}
+
+// relativePath shortens path to be relative to the working directory when it
+// is inside it.
+func relativePath(path string) string {
+	if wd, err := os.Getwd(); err == nil {
+		if rel, err := filepath.Rel(wd, path); err == nil && !strings.HasPrefix(rel, "..") {
+			return rel
+		}
+	}
+	return path
 }
 
 // page shows text through $PAGER (default less), like git does, or prints it

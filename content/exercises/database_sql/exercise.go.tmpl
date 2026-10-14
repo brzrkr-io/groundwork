@@ -1,0 +1,53 @@
+// Package deploydb is the Groundwork exercise "database/sql: query deploys from Go".
+package deploydb
+
+import (
+	"database/sql"
+	"errors"
+)
+
+// Deploy is one row of the deploys table.
+type Deploy struct {
+	ID          int64
+	Service     string
+	Version     string
+	Environment string
+	Status      string
+	StartedAt   string
+}
+
+// ErrNotFound means no deploy has the requested id.
+var ErrNotFound = errors.New("deploy not found")
+
+// CountFailed returns how many deploys of service have the status "failed".
+func CountFailed(db *sql.DB, service string) (int, error) {
+	// TODO(1): Count the failed deploys of service with db.QueryRow and a ?
+	// placeholder, and Scan the count. Wrap errors as "count failed deploys: %w"
+	// (add "fmt" to the imports).
+	return 0, nil
+}
+
+// GetDeploy returns the deploy with the given id, or ErrNotFound if there is
+// none.
+func GetDeploy(db *sql.DB, id int64) (Deploy, error) {
+	// TODO(2): Select the deploy's six columns with db.QueryRow and Scan them
+	// into a Deploy. Turn sql.ErrNoRows into ErrNotFound; wrap other errors as
+	// "get deploy %d: %w".
+	return Deploy{}, ErrNotFound
+}
+
+// RecentDeploys returns up to limit deploys of service, newest first.
+func RecentDeploys(db *sql.DB, service string, limit int) ([]Deploy, error) {
+	// TODO(3): Query the deploys of service, newest first, at most limit of
+	// them, with db.Query. Close the rows, Scan each one into a Deploy, and
+	// check rows.Err. Wrap errors as "recent deploys: %w".
+	return nil, nil
+}
+
+// RecordDeploy inserts d as a new deploy, ignoring d.ID, and returns the id
+// the database gave it.
+func RecordDeploy(db *sql.DB, d Deploy) (int64, error) {
+	// TODO(4): Insert d with db.Exec and five ? placeholders, then return the
+	// result's LastInsertId. Wrap errors as "record deploy: %w".
+	return 0, nil
+}

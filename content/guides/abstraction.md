@@ -354,7 +354,7 @@ You decompose a problem into parts, give each part an abstraction (a name and a 
 
 1. In `kubectl apply`, what is the interface, what is the promise, and name two hidden details.
 2. A teammate's script reads the third column of `kubectl get pods` to find the pod status. Why is this fragile, and what should it use?
-3. Why can `alert` work with a PagerDuty notifier that was written a year after `alert` itself?
+3. `func alert(n Notifier, host string)` calls `n.Notify(...)`, where `Notifier` is an interface with one method, `Notify(msg string)`. Why can `alert` work with a PagerDuty notifier that was written a year after `alert` itself?
 4. Your `sendReport` function has grown parameters `toSlack bool, toEmail bool, compact bool, isWeekly bool`. What has gone wrong, and what could you do?
 5. `len("naïve")` returns 6, not 5. Which abstraction leaked?
 6. Which is better for a function that only needs to send messages: a parameter of type `Notifier` (one method) or `SlackClient` (a struct with 15 methods)? Why?
@@ -387,6 +387,13 @@ You decompose a problem into parts, give each part an abstraction (a name and a 
 | indirection | an extra hop between the caller and the real work |
 | decomposition | splitting a big job into smaller parts |
 | encapsulation | stopping outside code from touching internal details |
+
+## Watch
+
+- [The Art of Abstraction - Computerphile](https://www.youtube.com/watch?v=p7nGcY73epw) · Computerphile · 5 min: a quick tour down the tower of layers, from the text on your screen to electrons, to picture the *Layers* section.
+- [Gopherfest 2015 | Go Proverbs with Rob Pike](https://www.youtube.com/watch?v=PAAkCSZUG1c) · The Go Programming Language · 22 min: Go's co-creator explains "the bigger the interface, the weaker the abstraction" and "a little copying is better than a little dependency" in his own words.
+- [RailsConf 2014 - All the Little Things by Sandi Metz](https://www.youtube.com/watch?v=8bZh5LMaSmE) · Confreaks · 39 min: a friendly live refactor (in Ruby, but easy to follow) where she argues "duplication is far cheaper than the wrong abstraction"; watch it for *The wrong abstraction*.
+- [A Philosophy of Software Design | John Ousterhout | Talks at Google](https://www.youtube.com/watch?v=bmSAYlu0NcY) · Talks at Google · 62 min: the deeper talk; his idea of "deep modules" (a small interface hiding a lot of work) is the best test of whether an abstraction earns its keep.
 
 ## Go deeper
 

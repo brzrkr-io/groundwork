@@ -1,0 +1,221 @@
+package flags
+
+import (
+	"errors"
+	"fmt"
+	"sync"
+	"testing"
+)
+
+// errStoreDown is what fakeStore returns when it is told to fail.
+var errStoreDown = errors.New("store unavailable")
+
+// fakeStore is a Store kept in memory. It counts reads and can be told to
+// fail.
+type fakeStore struct {
+	mu         sync.Mutex
+	flags      map[string]string
+	reads      int  // how many times Get was called
+	failReads  bool // Get returns errStoreDown
+	failWrites bool // Set and Delete return errStoreDown
+}
+
+func newFakeStore() *fakeStore {
+	return &fakeStore{flags: make(map[string]string)}
+}
+
+func (f *fakeStore) Get(name string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads++
+	if f.failReads {
+		return "", errStoreDown
+	}
+	value, ok := f.flags[name]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return value, nil
+}
+
+func (f *fakeStore) Set(name, value string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failWrites {
+		return errStoreDown
+	}
+	f.flags[name] = value
+	return nil
+}
+
+func (f *fakeStore) Delete(name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failWrites {
+		return errStoreDown
+	}
+	delete(f.flags, name)
+	return nil
+}
+
+// wantGet checks that s.Get(name) returns want and an error that matches
+// wantErr (nil means no error).
+func wantGet(t *testing.T, s *Service, name, want string, wantErr error) {
+	t.Helper()
+	got, err := s.Get(name)
+	if got != want || !errors.Is(err, wantErr) {
+		t.Errorf("Get(%q) = %q, %v, want %q, %v", name, got, err, want, wantErr)
+	}
+}
+
+// wantReads checks how many times the store has been read.
+func wantReads(t *testing.T, store *fakeStore, want int) {
+	t.Helper()
+	if store.reads != want {
+		t.Errorf("store reads = %d, want %d", store.reads, want)
+	}
+}
+
+func TestGetCachesOnlySuccess(t *testing.T) {
+	t.Run("a hit doesn't read the store", func(t *testing.T) {
+		store := newFakeStore()
+		store.flags["dark-mode"] = "on"
+		s := New(store, 10)
+		wantGet(t, s, "dark-mode", "on", nil)
+		wantGet(t, s, "dark-mode", "on", nil)
+		wantReads(t, store, 1)
+	})
+
+	t.Run("not found isn't cached", func(t *testing.T) {
+		store := newFakeStore()
+		s := New(store, 10)
+		wantGet(t, s, "new-checkout", "", ErrNotFound)
+		wantGet(t, s, "new-checkout", "", ErrNotFound)
+		wantReads(t, store, 2)
+		store.flags["new-checkout"] = "on" // another replica creates the flag
+		wantGet(t, s, "new-checkout", "on", nil)
+	})
+
+	t.Run("store errors aren't cached", func(t *testing.T) {
+		store := newFakeStore()
+		store.flags["dark-mode"] = "on"
+		s := New(store, 10)
+		store.failReads = true
+		wantGet(t, s, "dark-mode", "", errStoreDown)
+		store.failReads = false // the database is back
+		wantGet(t, s, "dark-mode", "on", nil)
+	})
+}
+
+func TestSetInvalidates(t *testing.T) {
+	t.Run("a failed write changes nothing", func(t *testing.T) {
+		store := newFakeStore()
+		store.flags["dark-mode"] = "off"
+		s := New(store, 10)
+		wantGet(t, s, "dark-mode", "off", nil) // now cached
+		store.failWrites = true
+		if err := s.Set("dark-mode", "on"); !errors.Is(err, errStoreDown) {
+			t.Errorf("Set(%q, %q) with the store down = %v, want %v", "dark-mode", "on", err, errStoreDown)
+		}
+		wantGet(t, s, "dark-mode", "off", nil)
+	})
+
+	t.Run("a failed write doesn't create the flag", func(t *testing.T) {
+		store := newFakeStore()
+		s := New(store, 10)
+		store.failWrites = true
+		if err := s.Set("beta-banner", "on"); !errors.Is(err, errStoreDown) {
+			t.Errorf("Set(%q, %q) with the store down = %v, want %v", "beta-banner", "on", err, errStoreDown)
+		}
+		wantGet(t, s, "beta-banner", "", ErrNotFound)
+	})
+
+	t.Run("the next Get reads the new value from the store", func(t *testing.T) {
+		store := newFakeStore()
+		store.flags["dark-mode"] = "off"
+		s := New(store, 10)
+		wantGet(t, s, "dark-mode", "off", nil) // read 1, now cached
+		if err := s.Set("dark-mode", "on"); err != nil {
+			t.Errorf("Set(%q, %q) = %v, want <nil>", "dark-mode", "on", err)
+		}
+		if got := store.flags["dark-mode"]; got != "on" {
+			t.Errorf("after Set, the store holds %q, want %q", got, "on")
+		}
+		wantGet(t, s, "dark-mode", "on", nil) // read 2: Set removed it from the cache
+		wantGet(t, s, "dark-mode", "on", nil) // cached again
+		wantReads(t, store, 2)
+	})
+
+	t.Run("a new flag is read from the store", func(t *testing.T) {
+		store := newFakeStore()
+		s := New(store, 10)
+		if err := s.Set("beta-banner", "on"); err != nil {
+			t.Errorf("Set(%q, %q) = %v, want <nil>", "beta-banner", "on", err)
+		}
+		wantGet(t, s, "beta-banner", "on", nil)
+		wantReads(t, store, 1)
+	})
+}
+
+func TestDeleteInvalidates(t *testing.T) {
+	t.Run("a deleted flag is gone", func(t *testing.T) {
+		store := newFakeStore()
+		store.flags["new-checkout"] = "on"
+		s := New(store, 10)
+		wantGet(t, s, "new-checkout", "on", nil) // now cached
+		if err := s.Delete("new-checkout"); err != nil {
+			t.Errorf("Delete(%q) = %v, want <nil>", "new-checkout", err)
+		}
+		wantGet(t, s, "new-checkout", "", ErrNotFound)
+	})
+
+	t.Run("other flags stay cached", func(t *testing.T) {
+		store := newFakeStore()
+		store.flags["new-checkout"] = "on"
+		store.flags["dark-mode"] = "off"
+		s := New(store, 10)
+		wantGet(t, s, "new-checkout", "on", nil)
+		wantGet(t, s, "dark-mode", "off", nil)
+		if err := s.Delete("new-checkout"); err != nil {
+			t.Errorf("Delete(%q) = %v, want <nil>", "new-checkout", err)
+		}
+		wantGet(t, s, "dark-mode", "off", nil) // still cached: no read
+		wantReads(t, store, 2)
+		wantGet(t, s, "new-checkout", "", ErrNotFound)
+	})
+
+	t.Run("a failed delete keeps the flag", func(t *testing.T) {
+		store := newFakeStore()
+		store.flags["new-checkout"] = "on"
+		s := New(store, 10)
+		wantGet(t, s, "new-checkout", "on", nil)
+		store.failWrites = true
+		if err := s.Delete("new-checkout"); !errors.Is(err, errStoreDown) {
+			t.Errorf("Delete(%q) with the store down = %v, want %v", "new-checkout", err, errStoreDown)
+		}
+		wantGet(t, s, "new-checkout", "on", nil)
+	})
+
+	t.Run("safe for concurrent use", func(t *testing.T) {
+		store := newFakeStore()
+		store.flags["dark-mode"] = "on"
+		s := New(store, 8) // smaller than the number of flags, so it evicts
+		var wg sync.WaitGroup
+		for i := range 20 {
+			wg.Go(func() {
+				name := fmt.Sprintf("team-%d-banner", i)
+				s.Set(name, "v1")
+				s.Get(name)
+				s.Get("dark-mode")
+				s.Set(name, "v2")
+				s.Get(name)
+				s.Delete(fmt.Sprintf("team-%d-old", i))
+			})
+		}
+		wg.Wait()
+		for i := range 20 {
+			wantGet(t, s, fmt.Sprintf("team-%d-banner", i), "v2", nil)
+		}
+		wantGet(t, s, "dark-mode", "on", nil)
+	})
+}

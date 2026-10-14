@@ -1,0 +1,106 @@
+package grepandpipes
+
+import (
+	"bytes"
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+func TestErrorLines(t *testing.T) {
+	expect(t, ""+
+		"2026-10-13T09:15:02Z ERROR payments msg=\"card declined\" req=7f3a9c\n"+
+		"2026-10-13T09:15:12Z ERROR api msg=\"upstream timeout\" req=9e8d7c\n"+
+		"2026-10-13T09:15:18Z ERROR payments msg=\"gateway unreachable\" req=0f1e2d\n"+
+		"2026-10-13T09:15:26Z ERROR checkout msg=\"stock check failed\" req=b8c9d0\n"+
+		"2026-10-13T09:15:33Z ERROR payments msg=\"card declined\" req=d4e5f6\n",
+		"1_error_lines.sh", "testdata/app.log")
+	expect(t, ""+
+		"2026-10-13T22:00:15Z ERROR mailer msg=\"smtp auth failed\" req=c2e8f4\n"+
+		"2026-10-13T22:00:40Z ERROR worker msg=\"job failed: reports\" req=1d4f7a\n"+
+		"2026-10-13T22:00:52Z ERROR mailer msg=\"smtp auth failed\" req=f85b21\n",
+		"1_error_lines.sh", "testdata/worker.log")
+}
+
+func TestCountProblems(t *testing.T) {
+	expect(t, "6\n", "2_count_problems.sh", "testdata/app.log")
+	expect(t, "3\n", "2_count_problems.sh", "testdata/worker.log")
+	// No ERROR or FATAL lines: grep -c prints 0 and exits with status 1.
+	expect(t, "0\n", "2_count_problems.sh", "testdata/quiet.log")
+}
+
+func TestWithoutHealthChecks(t *testing.T) {
+	expect(t, ""+
+		"2026-10-14T03:00:04Z INFO auth msg=\"token refreshed\" req=7b0f3d\n"+
+		"2026-10-14T03:00:13Z WARN checkout msg=\"cache miss rate high\" req=58e2c7\n"+
+		"2026-10-14T03:00:26Z INFO payments msg=\"charge settled\" req=0e9b84\n",
+		"3_without_health_checks.sh", "testdata/quiet.log")
+	expect(t, ""+
+		"2026-10-13T22:00:00Z INFO scheduler msg=\"nightly jobs queued\" req=e41c07\n"+
+		"2026-10-13T22:00:07Z INFO worker msg=\"job started: invoices\" req=a07d5b\n"+
+		"2026-10-13T22:00:15Z ERROR mailer msg=\"smtp auth failed\" req=c2e8f4\n"+
+		"2026-10-13T22:00:31Z WARN worker msg=\"job slow: invoices\" req=98ac3e\n"+
+		"2026-10-13T22:00:40Z ERROR worker msg=\"job failed: reports\" req=1d4f7a\n"+
+		"2026-10-13T22:00:52Z ERROR mailer msg=\"smtp auth failed\" req=f85b21\n"+
+		"2026-10-13T22:01:10Z INFO scheduler msg=\"retry queued: reports\" req=b7a466\n"+
+		"2026-10-13T22:01:12Z INFO mailer msg=\"digest sent\" req=4e2d9f\n",
+		"3_without_health_checks.sh", "testdata/worker.log")
+}
+
+func TestRequestIDs(t *testing.T) {
+	expect(t, "7f3a9c\n0f1e2d\nd4e5f6\n", "4_request_ids.sh", "testdata/app.log", "payments")
+	expect(t, "9e8d7c\n", "4_request_ids.sh", "testdata/app.log", "api")
+	expect(t, "c2e8f4\nf85b21\n", "4_request_ids.sh", "testdata/worker.log", "mailer")
+}
+
+// expect runs the script with bash in the exercise folder, just as you do
+// in your terminal, and checks that it succeeds and prints want.
+func expect(t *testing.T, want, script string, args ...string) {
+	t.Helper()
+	got, stderr, code := run(t, script, args...)
+	command := commandLine(script, args...)
+	if code != 0 {
+		t.Errorf("%s exited with status %d, want 0. bash said:\n%s", command, code, stderr)
+		return
+	}
+	switch {
+	case got == want:
+		return
+	case got == "":
+		t.Errorf("%s printed nothing, want:\n%s", command, want)
+	case strings.Count(want, "\n") > 1:
+		t.Errorf("%s printed:\n%s\nwant:\n%s", command, got, want)
+	default:
+		t.Errorf("%s printed %q, want %q", command, got, want)
+	}
+	if stderr != "" {
+		t.Errorf("%s also printed to stderr:\n%s", command, stderr)
+	}
+}
+
+// run runs "bash script args..." and returns what it printed to stdout and
+// stderr, and its exit status.
+func run(t *testing.T, script string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	cmd := exec.Command("bash", append([]string{script}, args...)...)
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C", "TZ=UTC")
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); cmd.ProcessState == nil {
+		t.Fatalf("could not start bash: %v", err)
+	}
+	return out.String(), errOut.String(), cmd.ProcessState.ExitCode()
+}
+
+// commandLine shows how to run the script by hand: bash, the script and its
+// arguments, with quotes around any argument that has a space.
+func commandLine(script string, args ...string) string {
+	line := "bash " + script
+	for _, arg := range args {
+		if strings.Contains(arg, " ") {
+			arg = `"` + arg + `"`
+		}
+		line += " " + arg
+	}
+	return line
+}

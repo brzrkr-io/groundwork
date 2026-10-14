@@ -535,6 +535,13 @@ yourself searching a slice for something by name.
 | graph | Nodes joined by edges, with no parent rule; may have cycles. |
 | cycle | A path of edges that leads back to where it started. |
 
+## Watch
+
+- [Data Structures: Crash Course Computer Science #14](https://www.youtube.com/watch?v=DuDz6B4cqVc) · CrashCourse · 10 min: arrays, strings, stacks, queues, linked lists, trees and graphs in one fast, well-animated overview.
+- [Data Structures: Hash Tables](https://www.youtube.com/watch?v=shs0KM3wKv8) · HackerRank · 6 min: how a hash table turns a key into a slot, which is why a Go map finds `payments` without searching.
+- [Arrays vs Linked Lists - Computerphile](https://www.youtube.com/watch?v=DyG9S9nAlUM) · Computerphile · 30 min: timing both on real hardware shows why the array usually wins, the point of *Linked lists: know the idea, rarely use it*.
+- [GopherCon 2016: Inside the Map Implementation - Keith Randall](https://www.youtube.com/watch?v=Tl7mi9QmLns) · Gopher Academy · 27 min: the deeper talk, a Go team member on how Go maps really work: buckets, hashing and growth.
+
 ## Go deeper
 
 - [Go Slices: usage and internals](https://go.dev/blog/slices-intro): the

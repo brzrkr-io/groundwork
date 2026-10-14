@@ -1,0 +1,103 @@
+package rollout
+
+import (
+	"slices"
+	"strings"
+	"testing"
+)
+
+// maxPlanLines is how long Plan may be once every step is its own function.
+const maxPlanLines = 12
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     Request
+		wantErr string
+	}{
+		{"no service", Request{Tag: "v1", Replicas: 1, MaxSurge: 1}, "service is required"},
+		{"no tag", Request{Service: "api", Replicas: 1, MaxSurge: 1}, "tag is required"},
+		{"latest", Request{Service: "api", Tag: "latest", Replicas: 1, MaxSurge: 1}, `tag "latest" is not allowed; pin a version`},
+		{"no replicas", Request{Service: "api", Tag: "v1", MaxSurge: 1}, "replicas must be at least 1, got 0"},
+		{"negative surge", Request{Service: "api", Tag: "v1", Replicas: 3, MaxSurge: -1}, "max surge must be at least 1, got -1"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			steps, err := Plan(tc.req)
+			if err == nil || err.Error() != tc.wantErr || steps != nil {
+				t.Errorf("Plan(%+v) = %q, %v; want nil, %q", tc.req, steps, err, tc.wantErr)
+			}
+		})
+	}
+
+	src := parseExercise(t)
+	checkExtracted(t, src, "validate")
+	called := calledFuncs(src.plan(t))
+	if called["errors.New"] || called["fmt.Errorf"] {
+		t.Error("Plan still creates errors itself (errors.New or fmt.Errorf); every check belongs in validate")
+	}
+}
+
+func TestImageRef(t *testing.T) {
+	tests := []struct {
+		req  Request
+		want string
+	}{
+		{Request{Service: "api", Tag: "v1.4.2", Replicas: 2, MaxSurge: 2}, "deploy docker.io/api:v1.4.2 to 2 replicas"},
+		{Request{Service: "web", Registry: "registry.example.com", Tag: "2026.10", Replicas: 3, MaxSurge: 1}, "deploy registry.example.com/web:2026.10 to 3 replicas"},
+	}
+	for _, tc := range tests {
+		steps, err := Plan(tc.req)
+		if err != nil || len(steps) == 0 || steps[0] != tc.want {
+			t.Errorf("Plan(%+v) = %q, %v; want the first step to be %q", tc.req, steps, err, tc.want)
+		}
+	}
+
+	src := parseExercise(t)
+	checkExtracted(t, src, "imageRef")
+	if stringsIn(src.plan(t))["docker.io"] {
+		t.Error(`Plan still mentions "docker.io"; choosing the registry belongs in imageRef`)
+	}
+}
+
+func TestBatchSteps(t *testing.T) {
+	tests := []struct {
+		req  Request
+		want []string
+	}{
+		{
+			Request{Service: "api", Tag: "v2", Replicas: 5, MaxSurge: 2},
+			[]string{
+				"deploy docker.io/api:v2 to 5 replicas",
+				"batch 1: replace 2 pods (2/5)",
+				"batch 2: replace 2 pods (4/5)",
+				"batch 3: replace 1 pod (5/5)",
+				"verify api",
+			},
+		},
+		{
+			Request{Service: "db", Tag: "16.4", Replicas: 3, MaxSurge: 10},
+			[]string{
+				"deploy docker.io/db:16.4 to 3 replicas",
+				"batch 1: replace 3 pods (3/3)",
+				"verify db",
+			},
+		},
+	}
+	for _, tc := range tests {
+		steps, err := Plan(tc.req)
+		if err != nil || !slices.Equal(steps, tc.want) {
+			t.Errorf("Plan(%+v) =\n%s\nerror %v; want\n%s", tc.req, strings.Join(steps, "\n"), err, strings.Join(tc.want, "\n"))
+		}
+	}
+
+	src := parseExercise(t)
+	checkExtracted(t, src, "batchSteps")
+	plan := src.plan(t)
+	if loops(plan) > 0 {
+		t.Error("Plan still has a for loop; the batches belong in batchSteps")
+	}
+	if n := src.lines(plan); n > maxPlanLines {
+		t.Errorf("Plan is %d lines long, want %d or fewer: it should read like a list of steps, each one a call", n, maxPlanLines)
+	}
+}

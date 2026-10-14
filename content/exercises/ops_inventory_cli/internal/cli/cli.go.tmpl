@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"gopherlings.local/ops_inventory_cli/internal/inventory"
+	"groundwork.local/ops_inventory_cli/internal/inventory"
 )
 
 // options holds everything the command line asked for.
@@ -38,7 +38,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// TODO(7): Replace these two lines: validate the hosts, filter and sort
 	// them, print them, and return the right exit code.
 	// You will need to import "cmp", "slices" and
-	// "gopherlings.local/ops_inventory_cli/internal/report".
+	// "groundwork.local/ops_inventory_cli/internal/report".
 	fmt.Fprintf(stderr, "inventory: loaded %d hosts, but Run is not finished\n", len(hosts))
 	return 1
 }

@@ -395,6 +395,12 @@ When a command-line tool fails, it should print the message to standard error an
 | partial failure | some steps succeeded and some didn't, leaving a half-changed world |
 | idempotent | safe to repeat: doing it twice has the same effect as once |
 
+## Watch
+
+- [GopherCon 2016: Don't Just Check Errors Handle Them Gracefully - Dave Cheney](https://www.youtube.com/watch?v=lsBF58Q-DnY) · Gopher Academy · 22 min: the classic Go talk on why errors are values, and on handling an error once while adding context as it travels up.
+- [Go Class: 32 Error Handling](https://www.youtube.com/watch?v=oIxXp0OgK_0) · Matt KØDVB · 34 min: a calm lecture on wrapping with `%w`, `errors.Is` and `errors.As`, and when a panic is the right call.
+- [Debugging Under Fire: Keep your Head when Systems have Lost their Mind • Bryan Cantrill • GOTO 2017](https://www.youtube.com/watch?v=30jNsCVLpAE) · GOTO Conferences · 53 min: what failure looks like from the pager side, and why clear errors and calm thinking matter during an outage.
+
 ## Go deeper
 
 - [Errors are values](https://go.dev/blog/errors-are-values) (Rob Pike): why Go treats errors as ordinary values, and patterns that cut down on repetition.

@@ -1,0 +1,102 @@
+// Package queue is the Groundwork exercise "Work queues: bounded queues and backpressure".
+package queue
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"sync"
+)
+
+// ErrFull is returned by TryEnqueue when the queue has no room for another
+// job.
+var ErrFull = errors.New("queue is full")
+
+// Job is one build request from the deploy API.
+type Job struct {
+	ID      string `json:"id"`
+	Service string `json:"service"`
+}
+
+// Queue is a bounded queue of jobs, worked on by a fixed pool of workers. It
+// is safe for concurrent use.
+type Queue struct {
+	jobs chan Job       // waiting jobs; its capacity is the queue's limit
+	wg   sync.WaitGroup // tracks the running workers
+}
+
+// New returns an empty Queue that holds at most capacity waiting jobs.
+func New(capacity int) *Queue {
+	return &Queue{jobs: make(chan Job, capacity)}
+}
+
+// TryEnqueue adds j if there is room, without waiting. It returns ErrFull
+// when the queue is full.
+func (q *Queue) TryEnqueue(j Job) error {
+	select {
+	case q.jobs <- j:
+		return nil
+	default:
+		return ErrFull
+	}
+}
+
+// Len returns how many jobs are waiting for a worker.
+func (q *Queue) Len() int {
+	return len(q.jobs)
+}
+
+// Enqueue adds j, waiting for room until ctx is done. If ctx is done first,
+// it returns ctx.Err() and j is not queued.
+func (q *Queue) Enqueue(ctx context.Context, j Job) error {
+	select {
+	case q.jobs <- j:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Start launches workers goroutines. Each one takes jobs from the queue and
+// calls handle with them, one at a time, until the queue is closed and empty.
+func (q *Queue) Start(workers int, handle func(Job)) {
+	for range workers {
+		q.wg.Go(func() {
+			for j := range q.jobs {
+				handle(j)
+			}
+		})
+	}
+}
+
+// Close stops the queue and waits until the workers have handled every
+// waiting job. Call it once, after the last Enqueue or TryEnqueue.
+func (q *Queue) Close() {
+	close(q.jobs)
+	q.wg.Wait()
+}
+
+// Handler returns an HTTP handler that queues the JSON Job in each request
+// body. It answers 202 Accepted when the job is queued, 503 Service
+// Unavailable with a Retry-After header when the queue is full, and 400 Bad
+// Request when the body is not a valid job.
+func (q *Queue) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var j Job
+		if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if j.ID == "" || j.Service == "" {
+			http.Error(w, "id and service are required", http.StatusBadRequest)
+			return
+		}
+		if err := q.TryEnqueue(j); err != nil {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "build queue is full, try again later", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
+}

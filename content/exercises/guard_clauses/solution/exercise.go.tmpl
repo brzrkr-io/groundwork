@@ -1,0 +1,85 @@
+// Package gate is the Groundwork exercise "Guard clauses".
+package gate
+
+import (
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+)
+
+// Change is a request to deploy a new version of a service.
+type Change struct {
+	Service     string
+	Environment string // "staging" or "production"
+	TestsPassed bool
+	Approvals   int
+	Frozen      bool // true during a change freeze, such as a holiday
+}
+
+// Verdict says whether c may be deployed: "ok", or the reason it may not.
+func Verdict(c Change) string {
+	if c.Service == "" {
+		return "missing service name"
+	}
+	if c.Frozen {
+		return "change freeze in effect"
+	}
+	if !c.TestsPassed {
+		return "tests failed"
+	}
+	if c.Approvals < 1 {
+		return "needs an approval"
+	}
+	if c.Environment == "production" && c.Approvals < 2 {
+		return "production needs 2 approvals"
+	}
+	return "ok"
+}
+
+// Host is one server in the fleet.
+type Host struct {
+	Name            string
+	Up              bool
+	DiskUsedPercent int
+	Tags            []string
+}
+
+// PatchTargets returns the names of the hosts to patch tonight, in order:
+// hosts that are up, not tagged "do-not-patch", and less than 90% full.
+func PatchTargets(hosts []Host) []string {
+	var targets []string
+	for _, host := range hosts {
+		if !host.Up {
+			continue
+		}
+		if slices.Contains(host.Tags, "do-not-patch") {
+			continue
+		}
+		if host.DiskUsedPercent >= 90 {
+			continue
+		}
+		targets = append(targets, host.Name)
+	}
+	return targets
+}
+
+// ParseReplicas reads a setting like "replicas=3" and returns the count. See
+// the README for the errors it returns.
+func ParseReplicas(setting string) (int, error) {
+	key, value, found := strings.Cut(setting, "=")
+	if !found {
+		return 0, fmt.Errorf(`missing "=" in %q`, setting)
+	}
+	if key != "replicas" {
+		return 0, fmt.Errorf("unknown setting %q", key)
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("replicas %q is not a number", value)
+	}
+	if n < 0 || n > 50 {
+		return 0, fmt.Errorf("replicas must be between 0 and 50, got %d", n)
+	}
+	return n, nil
+}

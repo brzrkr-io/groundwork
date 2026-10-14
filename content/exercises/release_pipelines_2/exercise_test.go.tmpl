@@ -1,0 +1,224 @@
+package deploy
+
+import (
+	"fmt"
+	"maps"
+	"os"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// The helpers readWorkflow, triggers, needs, findStep, findRun, expr,
+// eventNames and stepNames are in workflow_test.go.
+
+func TestSecretToken(t *testing.T) {
+	const file = "1_secrets.yml"
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", file, err)
+	}
+	for i, line := range strings.Split(string(raw), "\n") {
+		if strings.Contains(line, "ghp_") {
+			t.Errorf("%s line %d: a GitHub token (ghp_...) in plain text; anyone who can read the repository can use it", file, i+1)
+		}
+	}
+
+	wf := readWorkflow(t, file)
+	const want = "${{ secrets.DEPLOY_TOKEN }}"
+	settings := tokenSettings(wf)
+	if len(settings) == 0 {
+		t.Errorf("%s: nothing sets DEPLOY_TOKEN, but deploy.sh needs it; want DEPLOY_TOKEN: %s", file, want)
+	}
+	for _, where := range slices.Sorted(maps.Keys(settings)) {
+		got := expr(settings[where])
+		switch {
+		case got == want:
+		case strings.Contains(got, "ghp_"):
+			t.Errorf("%s: %s sets DEPLOY_TOKEN to the token itself, want DEPLOY_TOKEN: %s", file, where, want)
+		default:
+			t.Errorf("%s: %s sets DEPLOY_TOKEN: %q, want %s", file, where, got, want)
+		}
+	}
+
+	prints := regexp.MustCompile(`\b(echo|printf)\b`)
+	for _, id := range slices.Sorted(maps.Keys(wf.Jobs)) {
+		for _, s := range wf.Jobs[id].Steps {
+			for line := range strings.Lines(s.Run) {
+				if strings.Contains(line, "DEPLOY_TOKEN") && prints.MatchString(line) {
+					t.Errorf("%s: job %s runs %q, which prints the token to the build log; delete that command", file, id, strings.TrimSpace(line))
+				}
+			}
+		}
+	}
+
+	deploy := checkJob(t, file, wf, "deploy")
+	if findRun(deploy.Steps, "./deploy.sh production") < 0 {
+		t.Errorf("%s: job deploy has steps %v; keep the step that runs ./deploy.sh production", file, stepNames(deploy.Steps))
+	}
+}
+
+func TestLeastPermissions(t *testing.T) {
+	const file = "2_permissions.yml"
+	wf := readWorkflow(t, file)
+	checkPermissions(t, file, "the workflow", wf.Permissions, map[string]string{"contents": "read"})
+
+	test := checkJob(t, file, wf, "test")
+	if test.Permissions != nil {
+		checkPermissions(t, file, "job test", test.Permissions, map[string]string{"contents": "read"})
+	}
+	image := checkJob(t, file, wf, "image")
+	checkPermissions(t, file, "job image", image.Permissions, map[string]string{"contents": "read", "packages": "write"})
+}
+
+func TestNoPullRequestDeploys(t *testing.T) {
+	const file = "3_pull_requests.yml"
+	wf := readWorkflow(t, file)
+	if got := eventNames(wf); !slices.Equal(got, []string{"pull_request", "push"}) {
+		t.Errorf("%s: on has the events %q, want push and pull_request; pull requests still need their tests", file, got)
+	}
+
+	test := checkJob(t, file, wf, "test")
+	if test.If != "" {
+		t.Errorf("%s: job test has if: %s; the tests run for every push and pull request, so leave it out", file, test.If)
+	}
+
+	deploy := checkJob(t, file, wf, "deploy")
+	if got := needs(deploy); !slices.Contains(got, "test") {
+		t.Errorf("%s: job deploy needs %q, want it to need test", file, got)
+	}
+	const want = "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+	switch got := condition(deploy.If); got {
+	case want:
+	case "":
+		t.Errorf("%s: job deploy has no if:, so pull requests deploy too; want if: %s", file, want)
+	default:
+		t.Errorf("%s: job deploy has\n\tif: %s\nwant\n\tif: %s", file, got, want)
+	}
+}
+
+func TestDeployTestedImage(t *testing.T) {
+	const file = "4_latest.yml"
+	wf := readWorkflow(t, file)
+	var latest []string
+	for _, id := range slices.Sorted(maps.Keys(wf.Jobs)) {
+		for _, s := range wf.Jobs[id].Steps {
+			for _, value := range stepValues(s) {
+				if strings.Contains(value, ":latest") {
+					latest = append(latest, "job "+id+": "+strings.TrimSpace(value))
+				}
+			}
+		}
+	}
+	if len(latest) > 0 {
+		t.Errorf("%s uses :latest, which another run can move before deploy reads it:\n\t%s", file, strings.Join(latest, "\n\t"))
+	}
+
+	const image = "ghcr.io/acme/statusd:${{ github.sha }}"
+	build := checkJob(t, file, wf, "build")
+	push := findStep(build.Steps, "docker/build-push-action")
+	if push < 0 {
+		t.Fatalf("%s: job build has steps %v; keep docker/build-push-action", file, stepNames(build.Steps))
+	}
+	if got := expr(strings.TrimSpace(fmt.Sprint(build.Steps[push].With["tags"]))); got != image {
+		t.Errorf("%s: job build pushes tags %q, want %q", file, got, image)
+	}
+
+	deploy := checkJob(t, file, wf, "deploy")
+	if got := needs(deploy); !slices.Contains(got, "build") {
+		t.Errorf("%s: job deploy needs %q, want it to need build", file, got)
+	}
+	const command = "./deploy.sh production " + image
+	if findRun(deploy.Steps, command) < 0 {
+		t.Errorf("%s: job deploy has steps %v, want a step that runs %s", file, stepNames(deploy.Steps), command)
+	}
+}
+
+// checkJob checks that the workflow has the job id, running on
+// ubuntu-latest, and returns it.
+func checkJob(t *testing.T, file string, wf workflow, id string) job {
+	t.Helper()
+	j, ok := wf.Jobs[id]
+	if !ok {
+		ids := slices.Sorted(maps.Keys(wf.Jobs))
+		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, ids, id)
+	}
+	if j.RunsOn != "ubuntu-latest" {
+		t.Errorf("%s: job %s has runs-on %v, want ubuntu-latest", file, id, j.RunsOn)
+	}
+	return j
+}
+
+// checkPermissions checks that a permissions block grants exactly want.
+func checkPermissions(t *testing.T, file, where string, permissions any, want map[string]string) {
+	t.Helper()
+	got := map[string]string{}
+	block, ok := permissions.(map[string]any)
+	switch {
+	case permissions == nil:
+		t.Errorf("%s: %s has no permissions, want %s", file, where, describe(want))
+		return
+	case !ok:
+		t.Errorf("%s: %s has permissions: %v, want %s", file, where, permissions, describe(want))
+		return
+	}
+	for name, level := range block {
+		got[name] = fmt.Sprint(level)
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("%s: %s has permissions %s, want %s", file, where, describe(got), describe(want))
+	}
+}
+
+// describe writes permissions as "contents: read, packages: write".
+func describe(permissions map[string]string) string {
+	var parts []string
+	for _, name := range slices.Sorted(maps.Keys(permissions)) {
+		parts = append(parts, name+": "+permissions[name])
+	}
+	return strings.Join(parts, ", ")
+}
+
+// tokenSettings finds every place that sets DEPLOY_TOKEN: the workflow's
+// env, a job's env or a step's env. It maps where to the value.
+func tokenSettings(wf workflow) map[string]string {
+	found := map[string]string{}
+	if v, ok := wf.Env["DEPLOY_TOKEN"]; ok {
+		found["the workflow env"] = fmt.Sprint(v)
+	}
+	for id, j := range wf.Jobs {
+		if v, ok := j.Env["DEPLOY_TOKEN"]; ok {
+			found["job "+id+" env"] = fmt.Sprint(v)
+		}
+		for i, s := range j.Steps {
+			if v, ok := s.Env["DEPLOY_TOKEN"]; ok {
+				found[fmt.Sprintf("job %s step %d env", id, i+1)] = fmt.Sprint(v)
+			}
+		}
+	}
+	return found
+}
+
+// condition writes an if: expression the way the README does: without a
+// ${{ }} around it, and with single spaces between the words.
+func condition(s string) string {
+	s = strings.TrimSpace(s)
+	if inner, ok := strings.CutPrefix(s, "${{"); ok {
+		s = strings.TrimSuffix(inner, "}}")
+	}
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// stepValues returns the text a step passes on: its command, its inputs and
+// its env values.
+func stepValues(s step) []string {
+	values := []string{s.Run}
+	for _, key := range slices.Sorted(maps.Keys(s.With)) {
+		values = append(values, fmt.Sprint(s.With[key]))
+	}
+	for _, key := range slices.Sorted(maps.Keys(s.Env)) {
+		values = append(values, fmt.Sprint(s.Env[key]))
+	}
+	return values
+}

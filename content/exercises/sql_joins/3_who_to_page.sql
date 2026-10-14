@@ -1,0 +1,6 @@
+-- Task 3: Find the Slack channel to alert
+--
+-- Return the id, service name (service), status and the owning team's
+-- slack_channel of every deploy that did not succeed, by deploy id.
+--
+-- TODO(3): Write your query below.

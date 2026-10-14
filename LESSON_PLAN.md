@@ -1,9 +1,18 @@
-# Gopherlings lesson plan
+# Groundwork lesson plan
 
 <!-- begin summary -->
-286 exercises in 14 modules, about 120 hours of hands-on work.
+362 exercises in 20 modules, about 156 hours of hands-on work.
 <!-- end summary -->
-The course takes a complete beginner to the Go that DevOps and platform engineers write every day: CLIs, log and config processing, HTTP services, concurrency, Kubernetes controllers and AWS automation.
+The course takes a complete beginner to the Go that DevOps and platform engineers write every day: CLIs, log and config processing, HTTP services, concurrency, Kubernetes controllers and AWS automation. Woven between the Go modules are the tools of the trade, each where it's most useful:
+
+| Track | Comes after | You write |
+|---|---|---|
+| Linux and the shell | Go foundations | bash scripts and pipelines |
+| Git and version control | the shell | git commands against scenario repos |
+| Databases and SQL | Text and data | SQL queries, then database/sql in Go |
+| Software engineering practice | Testing | refactorings, reviews and a design doc |
+| Containers and CI/CD | Packages and project layout | Dockerfiles and CI workflows |
+| System design | Production services | load balancers, caches, queues and a design |
 
 ## How the course is built
 
@@ -11,11 +20,11 @@ Each **concept** has a short run of exercises, so one lesson is never your only 
 
 1. **The introduction** (for example *Variables*) teaches the idea from zero, with examples, and keeps its tasks small and guided.
 2. **A "fix the bug" round** (*Variables: fix the broken builders*) shows the same idea from another angle, often as broken code or a compiler error to read.
-3. **A small realistic job** (*Variables: build ops commands*) needs the idea with less scaffolding. Modules 1–5 have this third round; later modules have two exercises per concept.
+3. **A small realistic job** (*Variables: build ops commands*) needs the idea with less scaffolding. Go modules 1–5 have this third round; later modules usually have two exercises per concept.
 
 Every module ends with a **practice** exercise that combines its concepts. Each phase ends with a multi-file **project**, where tests unlock task by task.
 
-**Guides** teach the computer science underneath the exercises: one idea each, from *How a program runs* to *Concurrency* and *Declarative systems and control loops*. Each module lists its guides below. Read a module's guides before or alongside its exercises: press `g` in the watcher, run `gopherlings guides`, or open `guides/` in your course folder. Every guide ends with *Check yourself* questions; answer them out loud before reading the answers.
+**Guides** teach the computer science underneath the exercises: one idea each, from *How a program runs* to *Concurrency* and *Declarative systems and control loops*. Each module lists its guides below. Read a module's guides before or alongside its exercises: press `g` in the watcher, run `groundwork guides`, or open `guides/` in your course folder. Every guide ends with *Check yourself* questions; answer them out loud before reading the answers.
 
 After you pass an exercise, press `s` to compare your code with the reference solution (also saved in `solutions/`). Reading a second way to solve the same problem is one of the fastest ways to learn.
 
@@ -31,9 +40,9 @@ Habits that make it stick:
 
 - **Read the README first** (`i`). Each one teaches everything its tests check.
 - **Use hints in order** (`h`). The first hint is a nudge and the last is close to the answer. Try for 5–10 minutes before each one.
-- **Stuck after the last hint?** Press `s` for the solution, read it, then `gopherlings reset` the exercise the next day and solve it without looking. The list marks it ◐ until you do.
+- **Stuck after the last hint?** Press `s` for the solution, read it, then `groundwork reset` the exercise the next day and solve it without looking. The list marks it ◐ until you do.
 - **Space the repetitions.** Do a concept's introduction, then come back to its follow-ups the next day, before you've fully forgotten it.
-- **Redo practice exercises cold.** After finishing a module, `gopherlings reset <practice>` and solve it again without hints.
+- **Redo practice exercises cold.** After finishing a module, `groundwork reset <practice>` and solve it again without hints.
 - **Pair a guide with practice.** Read one section of a guide, then do an exercise. Short reading, then doing, beats a long reading session.
 - **Explain it out loud.** After each module, say in two or three sentences what each concept is for. If you can't, revisit its introduction.
 
@@ -225,11 +234,61 @@ Habits that make it stick:
 | 127 | panic and recover: protect the status API | concept | 30 |
 | 128 | Practice: config validator | **practice** | 40 |
 
-## Phase: Practical Go (about 19 hours)
+## Phase: Everyday tools (about 11 hours)
 
-### Module 6: Text and data
+### Module 6: Linux and the shell
 
-*About 8.2 hours, in `exercises/06_text_and_data/`.* Reading lines, regular expressions, time, JSON, CSV and templates: the daily bread of ops tooling.
+*About 5.6 hours, in `exercises/06_shell/`.* Bash and the classic text tools: the glue of every server, container and CI job.
+
+**After this module you can:** Write safe bash scripts with variables, quoting, conditions, loops and functions, and slice logs with grep, sed, awk, sort, uniq, cut, find and xargs.
+
+**Guides:** [The shell and the command line](content/guides/shell.md)
+
+| # | Exercise | Kind | Min |
+|---:|---|---|---:|
+| 129 | Shell commands and quoting | concept | 15 |
+| 130 | Shell variables | concept | 20 |
+| 131 | Shell variables: fix the quoting bugs | concept | 20 |
+| 132 | Exit codes, && and || | concept | 20 |
+| 133 | if and test | concept | 25 |
+| 134 | if and test: fix the backup checks | concept | 15 |
+| 135 | Shell loops | concept | 25 |
+| 136 | Shell functions | concept | 25 |
+| 137 | Grep and pipes | concept | 25 |
+| 138 | Sort and uniq: top-N reports | concept | 25 |
+| 139 | Columns with cut and awk | concept | 30 |
+| 140 | Editing text with sed | concept | 25 |
+| 141 | Find and xargs: clean up old logs | concept | 25 |
+| 142 | Practice: log triage report | **practice** | 40 |
+
+### Module 7: Git and version control
+
+*About 5.2 hours, in `exercises/07_git/`.* How Git stores history, and the everyday moves: commit, branch, merge, rebase, undo and investigate.
+
+**After this module you can:** Commit, stage and ignore files, branch, merge and rebase with confidence, resolve conflicts, undo mistakes safely with revert, reset and reflog, and find when a bug arrived with log -S, blame and bisect.
+
+**Guides:** [How Git works](content/guides/git.md)
+
+| # | Exercise | Kind | Min |
+|---:|---|---|---:|
+| 143 | Commits: init, add and commit | concept | 25 |
+| 144 | Commits: fix the last commit | concept | 25 |
+| 145 | Staging: choose what goes in a commit | concept | 20 |
+| 146 | .gitignore: keep build output and secrets out | concept | 25 |
+| 147 | Branches: create, switch and merge | concept | 20 |
+| 148 | Branches: resolve a merge conflict | concept | 30 |
+| 149 | Rebase: catch a branch up with main | concept | 25 |
+| 150 | Undoing: revert a bad deploy | concept | 25 |
+| 151 | Undoing: rescue lost work with reflog | concept | 25 |
+| 152 | Investigating history: log -S, blame and diff | concept | 30 |
+| 153 | Bisect: find the commit that broke the check | concept | 25 |
+| 154 | Practice: release day | **practice** | 35 |
+
+## Phase: Practical Go (about 37 hours)
+
+### Module 8: Text and data
+
+*About 8.2 hours, in `exercises/08_text_and_data/`.* Reading lines, regular expressions, time, JSON, CSV and templates: the daily bread of ops tooling.
 
 **After this module you can:** Parse logs and configs: bufio scanning, regular expressions, time, JSON, CSV and text/template. The project produces an access-log report.
 
@@ -237,26 +296,51 @@ Habits that make it stick:
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
-| 129 | Reading input line by line: a hosts list | concept | 25 |
-| 130 | Reading input line by line: scanning logs | concept | 20 |
-| 131 | Regular expressions: release tags and log lines | concept | 30 |
-| 132 | Regular expressions: fix the patterns | concept | 20 |
-| 133 | Time and durations: cert expiry, uptime, maintenance windows | concept | 30 |
-| 134 | Time and durations: fix the backup scheduler | concept | 20 |
-| 135 | Encoding JSON: a deployment status report | concept | 30 |
-| 136 | Encoding JSON: fix the alert stream | concept | 20 |
-| 137 | Decoding JSON: load a service config | concept | 30 |
-| 138 | Decoding JSON: fix the kubectl pod reader | concept | 20 |
-| 139 | CSV files: a host inventory | concept | 25 |
-| 140 | CSV files: fix the TSV DNS export | concept | 20 |
-| 141 | Text templates: render an nginx upstream block | concept | 30 |
-| 142 | Text templates: systemd unit files | concept | 20 |
-| 143 | Practice: .env file parser | **practice** | 35 |
-| 144 | Project: access log report | **project** | 120 |
+| 155 | Reading input line by line: a hosts list | concept | 25 |
+| 156 | Reading input line by line: scanning logs | concept | 20 |
+| 157 | Regular expressions: release tags and log lines | concept | 30 |
+| 158 | Regular expressions: fix the patterns | concept | 20 |
+| 159 | Time and durations: cert expiry, uptime, maintenance windows | concept | 30 |
+| 160 | Time and durations: fix the backup scheduler | concept | 20 |
+| 161 | Encoding JSON: a deployment status report | concept | 30 |
+| 162 | Encoding JSON: fix the alert stream | concept | 20 |
+| 163 | Decoding JSON: load a service config | concept | 30 |
+| 164 | Decoding JSON: fix the kubectl pod reader | concept | 20 |
+| 165 | CSV files: a host inventory | concept | 25 |
+| 166 | CSV files: fix the TSV DNS export | concept | 20 |
+| 167 | Text templates: render an nginx upstream block | concept | 30 |
+| 168 | Text templates: systemd unit files | concept | 20 |
+| 169 | Practice: .env file parser | **practice** | 35 |
+| 170 | Project: access log report | **project** | 120 |
 
-### Module 7: Testing
+### Module 9: Databases and SQL
 
-*About 6.0 hours, in `exercises/07_testing/`.* Now you write the tests. Table tests, subtests, golden files, fakes, benchmarks and fuzzing.
+*About 6.7 hours, in `exercises/09_sql/`.* Relational databases: tables, queries, joins, indexes and transactions, then SQL from Go.
+
+**After this module you can:** Model data in tables, query it with SELECT, WHERE, JOIN and GROUP BY, use indexes and transactions, and call a database safely from Go with database/sql.
+
+**Guides:** [Relational databases and SQL](content/guides/databases.md)
+
+| # | Exercise | Kind | Min |
+|---:|---|---|---:|
+| 171 | SELECT and WHERE: find the failed deploys | concept | 25 |
+| 172 | SELECT and WHERE: fix the broken filters | concept | 20 |
+| 173 | ORDER BY and LIMIT: the latest deploys | concept | 20 |
+| 174 | Aggregates and GROUP BY: failures per service | concept | 25 |
+| 175 | GROUP BY and HAVING: fix the flaky-service report | concept | 25 |
+| 176 | JOINs: services, teams and who to page | concept | 30 |
+| 177 | LEFT JOIN: services with no on-call | concept | 30 |
+| 178 | NULL: fix the missing-value bugs | concept | 25 |
+| 179 | CREATE TABLE: keys and constraints | concept | 35 |
+| 180 | INSERT, UPDATE and DELETE: record a release | concept | 30 |
+| 181 | Indexes: make the deploy lookups fast | concept | 30 |
+| 182 | database/sql: query deploys from Go | concept | 35 |
+| 183 | database/sql: fix the SQL injection | concept | 30 |
+| 184 | Practice: incident report queries | **practice** | 40 |
+
+### Module 10: Testing
+
+*About 6.0 hours, in `exercises/10_testing/`.* Now you write the tests. Table tests, subtests, golden files, fakes, benchmarks and fuzzing.
 
 **After this module you can:** Write your own tests: table tests, subtests, golden files, fakes, benchmarks and fuzzing. Your tests are graded by whether they catch real bugs.
 
@@ -264,25 +348,47 @@ Habits that make it stick:
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
-| 145 | Your first test | concept | 20 |
-| 146 | Your first test: fix a broken test | concept | 20 |
-| 147 | Table-driven tests | concept | 25 |
-| 148 | Table-driven tests: error cases | concept | 20 |
-| 149 | Subtests and helpers | concept | 25 |
-| 150 | Subtests and helpers: files and t.TempDir | concept | 20 |
-| 151 | Test fixtures and golden files | concept | 30 |
-| 152 | Golden files: write your own | concept | 20 |
-| 153 | Fakes and dependency injection | concept | 30 |
-| 154 | Fakes: a fake clock for retries | concept | 20 |
-| 155 | Benchmarks | concept | 25 |
-| 156 | Benchmarks: sub-benchmarks and preallocation | concept | 20 |
-| 157 | Fuzzing | concept | 30 |
-| 158 | Fuzzing: properties of a truncated alert | concept | 20 |
-| 159 | Practice: reproduce a bug report | **practice** | 35 |
+| 185 | Your first test | concept | 20 |
+| 186 | Your first test: fix a broken test | concept | 20 |
+| 187 | Table-driven tests | concept | 25 |
+| 188 | Table-driven tests: error cases | concept | 20 |
+| 189 | Subtests and helpers | concept | 25 |
+| 190 | Subtests and helpers: files and t.TempDir | concept | 20 |
+| 191 | Test fixtures and golden files | concept | 30 |
+| 192 | Golden files: write your own | concept | 20 |
+| 193 | Fakes and dependency injection | concept | 30 |
+| 194 | Fakes: a fake clock for retries | concept | 20 |
+| 195 | Benchmarks | concept | 25 |
+| 196 | Benchmarks: sub-benchmarks and preallocation | concept | 20 |
+| 197 | Fuzzing | concept | 30 |
+| 198 | Fuzzing: properties of a truncated alert | concept | 20 |
+| 199 | Practice: reproduce a bug report | **practice** | 35 |
 
-### Module 8: Packages and project layout
+### Module 11: Software engineering practice
 
-*About 4.2 hours, in `exercises/08_packages/`.* Split code into packages, control what is exported, embed files and stamp version info into binaries.
+*About 5.1 hours, in `exercises/11_craft/`.* Code other people can read and change: naming, simplicity, refactoring, reviews and design.
+
+**After this module you can:** Refactor working code safely under tests, name and structure code for readers, spot problems in review, and write a short design doc.
+
+**Guides:** [Code for humans: naming, simplicity and refactoring](content/guides/code_quality.md) · [Code review and working on a team](content/guides/code_review.md)
+
+| # | Exercise | Kind | Min |
+|---:|---|---|---:|
+| 200 | Naming things | concept | 25 |
+| 201 | Naming things: fix the misleading names | concept | 20 |
+| 202 | Extract function | concept | 30 |
+| 203 | Guard clauses | concept | 25 |
+| 204 | Guard clauses: fix the flipped conditions | concept | 20 |
+| 205 | Named constants | concept | 20 |
+| 206 | Removing duplication | concept | 25 |
+| 207 | Lookup tables | concept | 25 |
+| 208 | Code review: catch the bugs in a PR | concept | 35 |
+| 209 | Design docs: propose a log retention fix | concept | 40 |
+| 210 | Practice: refactor the log rotator | **practice** | 40 |
+
+### Module 12: Packages and project layout
+
+*About 4.2 hours, in `exercises/12_packages/`.* Split code into packages, control what is exported, embed files and stamp version info into binaries.
 
 **After this module you can:** Split a program into packages, control your public API, use internal/, embed files and stamp version info into binaries.
 
@@ -290,23 +396,47 @@ Habits that make it stick:
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
-| 160 | Packages and imports | concept | 25 |
-| 161 | Packages: two packages, one name | concept | 20 |
-| 162 | Exported and unexported names | concept | 20 |
-| 163 | Exported names: design a small API | concept | 20 |
-| 164 | internal packages | concept | 20 |
-| 165 | internal packages: the boundary | concept | 20 |
-| 166 | Embedding files | concept | 25 |
-| 167 | Embedding files: database migrations | concept | 20 |
-| 168 | Version info and ldflags | concept | 25 |
-| 169 | Build info: what's inside the binary | concept | 20 |
-| 170 | Practice: lay out a tool | **practice** | 40 |
+| 211 | Packages and imports | concept | 25 |
+| 212 | Packages: two packages, one name | concept | 20 |
+| 213 | Exported and unexported names | concept | 20 |
+| 214 | Exported names: design a small API | concept | 20 |
+| 215 | internal packages | concept | 20 |
+| 216 | internal packages: the boundary | concept | 20 |
+| 217 | Embedding files | concept | 25 |
+| 218 | Embedding files: database migrations | concept | 20 |
+| 219 | Version info and ldflags | concept | 25 |
+| 220 | Build info: what's inside the binary | concept | 20 |
+| 221 | Practice: lay out a tool | **practice** | 40 |
 
-## Phase: Building tools and services (about 42 hours)
+### Module 13: Containers and CI/CD
 
-### Module 9: CLI tools and the OS
+*About 6.3 hours, in `exercises/13_containers/`.* Shipping software: container images, Dockerfiles, registries and pipelines that test and deploy it.
 
-*About 12.1 hours, in `exercises/09_cli/`.* Arguments, flags, files, environment, subprocesses and signals: build the kind of tool you would put in a pipeline.
+**After this module you can:** Write small, secure multi-stage Dockerfiles, reason about layers, tags and digests, read config from the environment, and define CI pipelines that test, build, release and promote a Go service.
+
+**Guides:** [Containers and images](content/guides/containers.md) · [Continuous integration and delivery](content/guides/ci_cd.md)
+
+| # | Exercise | Kind | Min |
+|---:|---|---|---:|
+| 222 | Dockerfiles | concept | 25 |
+| 223 | Dockerfiles: fix the slow builds | concept | 25 |
+| 224 | Multi-stage builds | concept | 30 |
+| 225 | Multi-stage builds: fix the broken images | concept | 25 |
+| 226 | Image security: non-root and no secrets | concept | 30 |
+| 227 | Image security: fix the audit findings | concept | 25 |
+| 228 | Container config: settings from the environment | concept | 35 |
+| 229 | CI workflows | concept | 30 |
+| 230 | CI workflows: fix the broken pipeline | concept | 25 |
+| 231 | CI workflows: a matrix, a cache and artifacts | concept | 30 |
+| 232 | Release pipelines | concept | 30 |
+| 233 | Release pipelines: fix the risky deploy | concept | 25 |
+| 234 | Practice: containerize and ship a service | **practice** | 45 |
+
+## Phase: Building tools and services (about 49 hours)
+
+### Module 14: CLI tools and the OS
+
+*About 12.1 hours, in `exercises/14_cli/`.* Arguments, flags, files, environment, subprocesses and signals: build the kind of tool you would put in a pipeline.
 
 **After this module you can:** Build pipeline-ready CLIs: args, flags, subcommands, streams and exit codes, safe file writes, directory walks, config precedence, subprocesses, signals, checksums and archives.
 
@@ -314,33 +444,33 @@ Habits that make it stick:
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
-| 171 | Command-line arguments: os.Args and usage errors | concept | 20 |
-| 172 | Command-line arguments: fix the port waiter | concept | 20 |
-| 173 | Flags: parsing options with a FlagSet | concept | 25 |
-| 174 | Flags: repeatable and validated flags | concept | 25 |
-| 175 | Subcommands: dispatching git-style commands | concept | 30 |
-| 176 | Subcommands: a command table and generated help | concept | 25 |
-| 177 | Standard streams: stdin, stdout, stderr and exit codes | concept | 25 |
-| 178 | Standard streams: grep-style exit codes | concept | 20 |
-| 179 | Files: read, scan and write | concept | 25 |
-| 180 | Files: an append-only audit log | concept | 20 |
-| 181 | Atomic writes: temp file and rename | concept | 30 |
-| 182 | Atomic writes: safely change one setting | concept | 25 |
-| 183 | Walking directories: find big log files | concept | 25 |
-| 184 | Walking directories: fix the backup cleaner | concept | 25 |
-| 185 | Config precedence: defaults, file, env and flags | concept | 30 |
-| 186 | Config precedence: fix the backup job config | concept | 30 |
-| 187 | Running commands: output, exit codes and timeouts | concept | 30 |
-| 188 | Running commands: stdin, stderr and PATH lookups | concept | 30 |
-| 189 | Signals: graceful stop for a rolling drain | concept | 30 |
-| 190 | Signals: SIGHUP reloads, SIGTERM stops | concept | 20 |
-| 191 | Checksums and archives: verify and extract safely | concept | 35 |
-| 192 | Checksums and archives: publish a release | concept | 30 |
-| 193 | Project: ops inventory CLI | **project** | 150 |
+| 235 | Command-line arguments: os.Args and usage errors | concept | 20 |
+| 236 | Command-line arguments: fix the port waiter | concept | 20 |
+| 237 | Flags: parsing options with a FlagSet | concept | 25 |
+| 238 | Flags: repeatable and validated flags | concept | 25 |
+| 239 | Subcommands: dispatching git-style commands | concept | 30 |
+| 240 | Subcommands: a command table and generated help | concept | 25 |
+| 241 | Standard streams: stdin, stdout, stderr and exit codes | concept | 25 |
+| 242 | Standard streams: grep-style exit codes | concept | 20 |
+| 243 | Files: read, scan and write | concept | 25 |
+| 244 | Files: an append-only audit log | concept | 20 |
+| 245 | Atomic writes: temp file and rename | concept | 30 |
+| 246 | Atomic writes: safely change one setting | concept | 25 |
+| 247 | Walking directories: find big log files | concept | 25 |
+| 248 | Walking directories: fix the backup cleaner | concept | 25 |
+| 249 | Config precedence: defaults, file, env and flags | concept | 30 |
+| 250 | Config precedence: fix the backup job config | concept | 30 |
+| 251 | Running commands: output, exit codes and timeouts | concept | 30 |
+| 252 | Running commands: stdin, stderr and PATH lookups | concept | 30 |
+| 253 | Signals: graceful stop for a rolling drain | concept | 30 |
+| 254 | Signals: SIGHUP reloads, SIGTERM stops | concept | 20 |
+| 255 | Checksums and archives: verify and extract safely | concept | 35 |
+| 256 | Checksums and archives: publish a release | concept | 30 |
+| 257 | Project: ops inventory CLI | **project** | 150 |
 
-### Module 10: Networking and HTTP
+### Module 15: Networking and HTTP
 
-*About 9.1 hours, in `exercises/10_networking/`.* IP addresses, TCP, HTTP clients and servers, JSON APIs, middleware and TLS.
+*About 9.1 hours, in `exercises/15_networking/`.* IP addresses, TCP, HTTP clients and servers, JSON APIs, middleware and TLS.
 
 **After this module you can:** Work with IPs and CIDRs, TCP, port checks, HTTP clients and servers, JSON APIs, middleware and TLS, all tested with httptest.
 
@@ -348,29 +478,29 @@ Habits that make it stick:
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
-| 194 | IP addresses: classify, allowlist, overlap | concept | 25 |
-| 195 | CIDRs: normalize and audit subnet rules | concept | 20 |
-| 196 | TCP: a line-based control protocol | concept | 30 |
-| 197 | TCP: banner grabbing with deadlines | concept | 25 |
-| 198 | Port checks: open, closed or filtered | concept | 30 |
-| 199 | Port checks: wait for the database | concept | 25 |
-| 200 | HTTP clients: fetch a service status | concept | 30 |
-| 201 | HTTP clients: fix the deploy notifier | concept | 25 |
-| 202 | HTTP servers: handlers and routes | concept | 30 |
-| 203 | HTTP servers: fix the log viewer | concept | 30 |
-| 204 | Testing HTTP: recorders and fake servers | concept | 25 |
-| 205 | Testing HTTP: a regression test for a bug report | concept | 25 |
-| 206 | JSON APIs: build a service catalog | concept | 35 |
-| 207 | JSON APIs: fix the alerts API | concept | 30 |
-| 208 | Middleware: logging, request IDs and panics | concept | 30 |
-| 209 | Middleware: chains, status codes and auth | concept | 30 |
-| 210 | TLS: trust a CA and read certificates | concept | 30 |
-| 211 | TLS: stop skipping verification | concept | 30 |
-| 212 | Practice: endpoint health checker | **practice** | 40 |
+| 258 | IP addresses: classify, allowlist, overlap | concept | 25 |
+| 259 | CIDRs: normalize and audit subnet rules | concept | 20 |
+| 260 | TCP: a line-based control protocol | concept | 30 |
+| 261 | TCP: banner grabbing with deadlines | concept | 25 |
+| 262 | Port checks: open, closed or filtered | concept | 30 |
+| 263 | Port checks: wait for the database | concept | 25 |
+| 264 | HTTP clients: fetch a service status | concept | 30 |
+| 265 | HTTP clients: fix the deploy notifier | concept | 25 |
+| 266 | HTTP servers: handlers and routes | concept | 30 |
+| 267 | HTTP servers: fix the log viewer | concept | 30 |
+| 268 | Testing HTTP: recorders and fake servers | concept | 25 |
+| 269 | Testing HTTP: a regression test for a bug report | concept | 25 |
+| 270 | JSON APIs: build a service catalog | concept | 35 |
+| 271 | JSON APIs: fix the alerts API | concept | 30 |
+| 272 | Middleware: logging, request IDs and panics | concept | 30 |
+| 273 | Middleware: chains, status codes and auth | concept | 30 |
+| 274 | TLS: trust a CA and read certificates | concept | 30 |
+| 275 | TLS: stop skipping verification | concept | 30 |
+| 276 | Practice: endpoint health checker | **practice** | 40 |
 
-### Module 11: Concurrency
+### Module 16: Concurrency
 
-*About 10.5 hours, in `exercises/11_concurrency/`.* Goroutines, channels, select, sync and context. Every check runs with the race detector.
+*About 10.5 hours, in `exercises/16_concurrency/`.* Goroutines, channels, select, sync and context. Every check runs with the race detector.
 
 **After this module you can:** Use goroutines, channels, select, WaitGroups, mutexes and context; read race reports; build worker pools and pipelines; collect errors concurrently.
 
@@ -378,31 +508,31 @@ Habits that make it stick:
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
-| 213 | Goroutines | concept · race | 20 |
-| 214 | Goroutines: fix the maintenance script | concept · race | 15 |
-| 215 | Channels | concept · race | 25 |
-| 216 | Channels: deadlocks and directions | concept · race | 20 |
-| 217 | select and timeouts | concept · race | 25 |
-| 218 | select: tickers and deadlines | concept · race | 20 |
-| 219 | WaitGroups | concept · race | 20 |
-| 220 | WaitGroups: patching the fleet | concept · race | 20 |
-| 221 | Mutexes | concept · race | 25 |
-| 222 | Mutexes: atomics and slow locks | concept · race | 20 |
-| 223 | The race detector | concept · race | 25 |
-| 224 | The race detector: hidden races | concept · race | 20 |
-| 225 | Context and cancellation | concept · race | 30 |
-| 226 | Context: cancelling HTTP requests | concept · race | 25 |
-| 227 | Worker pools | concept · race | 30 |
-| 228 | Worker pools: fix the image puller | concept · race | 20 |
-| 229 | Pipelines | concept · race | 30 |
-| 230 | Pipelines: fan-in and cancellation | concept · race | 30 |
-| 231 | Collecting errors from goroutines | concept · race | 30 |
-| 232 | Errors from goroutines: stop on first failure | concept · race | 30 |
-| 233 | Project: uptime monitor | **project** · race | 150 |
+| 277 | Goroutines | concept · race | 20 |
+| 278 | Goroutines: fix the maintenance script | concept · race | 15 |
+| 279 | Channels | concept · race | 25 |
+| 280 | Channels: deadlocks and directions | concept · race | 20 |
+| 281 | select and timeouts | concept · race | 25 |
+| 282 | select: tickers and deadlines | concept · race | 20 |
+| 283 | WaitGroups | concept · race | 20 |
+| 284 | WaitGroups: patching the fleet | concept · race | 20 |
+| 285 | Mutexes | concept · race | 25 |
+| 286 | Mutexes: atomics and slow locks | concept · race | 20 |
+| 287 | The race detector | concept · race | 25 |
+| 288 | The race detector: hidden races | concept · race | 20 |
+| 289 | Context and cancellation | concept · race | 30 |
+| 290 | Context: cancelling HTTP requests | concept · race | 25 |
+| 291 | Worker pools | concept · race | 30 |
+| 292 | Worker pools: fix the image puller | concept · race | 20 |
+| 293 | Pipelines | concept · race | 30 |
+| 294 | Pipelines: fan-in and cancellation | concept · race | 30 |
+| 295 | Collecting errors from goroutines | concept · race | 30 |
+| 296 | Errors from goroutines: stop on first failure | concept · race | 30 |
+| 297 | Project: uptime monitor | **project** · race | 150 |
 
-### Module 12: Production services
+### Module 17: Production services
 
-*About 10.8 hours, in `exercises/12_production/`.* Logging, metrics, health checks, graceful shutdown, retries, rate limits and caches: what keeps a service up at 3am.
+*About 10.8 hours, in `exercises/17_production/`.* Logging, metrics, health checks, graceful shutdown, retries, rate limits and caches: what keeps a service up at 3am.
 
 **After this module you can:** Add what on-call needs: slog logging, Prometheus metrics, health checks, graceful shutdown, retries, rate limits, circuit breakers, caches and idempotency.
 
@@ -410,31 +540,54 @@ Habits that make it stick:
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
-| 234 | Structured logging with slog | concept · race | 25 |
-| 235 | Structured logging: access logs | concept · race | 20 |
-| 236 | Prometheus-style metrics: counters and /metrics | concept · race | 30 |
-| 237 | Prometheus-style metrics: histograms | concept · race | 25 |
-| 238 | Health checks: liveness and readiness | concept · race | 25 |
-| 239 | Health checks: readiness gates | concept · race | 20 |
-| 240 | Graceful shutdown: drain in-flight requests | concept · race | 30 |
-| 241 | Graceful shutdown: HTTP server and worker | concept · race | 20 |
-| 242 | Retries: backoff and jitter | concept · race | 30 |
-| 243 | Retries: retryable HTTP errors | concept · race | 25 |
-| 244 | Rate limiting: token buckets | concept · race | 30 |
-| 245 | Rate limiting: fix the bucket | concept · race | 25 |
-| 246 | Circuit breakers: fail fast | concept · race | 30 |
-| 247 | Circuit breakers: protect an HTTP client | concept · race | 25 |
-| 248 | TTL caching: expire on read | concept · race | 30 |
-| 249 | TTL caching: collapse concurrent loads | concept · race | 25 |
-| 250 | Idempotency keys: replay retried requests | concept · race | 30 |
-| 251 | Idempotency keys: scope, expire and fingerprint | concept · race | 20 |
-| 252 | Project: inventory service | **project** · race | 180 |
+| 298 | Structured logging with slog | concept · race | 25 |
+| 299 | Structured logging: access logs | concept · race | 20 |
+| 300 | Prometheus-style metrics: counters and /metrics | concept · race | 30 |
+| 301 | Prometheus-style metrics: histograms | concept · race | 25 |
+| 302 | Health checks: liveness and readiness | concept · race | 25 |
+| 303 | Health checks: readiness gates | concept · race | 20 |
+| 304 | Graceful shutdown: drain in-flight requests | concept · race | 30 |
+| 305 | Graceful shutdown: HTTP server and worker | concept · race | 20 |
+| 306 | Retries: backoff and jitter | concept · race | 30 |
+| 307 | Retries: retryable HTTP errors | concept · race | 25 |
+| 308 | Rate limiting: token buckets | concept · race | 30 |
+| 309 | Rate limiting: fix the bucket | concept · race | 25 |
+| 310 | Circuit breakers: fail fast | concept · race | 30 |
+| 311 | Circuit breakers: protect an HTTP client | concept · race | 25 |
+| 312 | TTL caching: expire on read | concept · race | 30 |
+| 313 | TTL caching: collapse concurrent loads | concept · race | 25 |
+| 314 | Idempotency keys: replay retried requests | concept · race | 30 |
+| 315 | Idempotency keys: scope, expire and fingerprint | concept · race | 20 |
+| 316 | Project: inventory service | **project** · race | 180 |
+
+### Module 18: System design
+
+*About 6.4 hours, in `exercises/18_system_design/`.* How bigger systems fit together: load balancing, caching, queues, sharding and the trade-offs between them.
+
+**After this module you can:** Estimate capacity and set SLOs, then build the core pieces of a bigger system (load balancers, sharding, a consistent-hash ring, an LRU cache, a bounded work queue, an at-least-once consumer) and write down the trade-offs.
+
+**Guides:** [System design fundamentals](content/guides/system_design.md) · [Scaling: caches, queues and load balancers](content/guides/scaling.md)
+
+| # | Exercise | Kind | Min |
+|---:|---|---|---:|
+| 317 | Capacity estimates: QPS, storage and bandwidth | concept | 30 |
+| 318 | SLOs: error budgets and burn rates | concept | 30 |
+| 319 | Load balancing: round robin with health checks | concept · race | 30 |
+| 320 | Load balancing: fix the least-connections balancer | concept · race | 25 |
+| 321 | Sharding: route keys and plan a rebalance | concept | 30 |
+| 322 | Consistent hashing: a ring with virtual nodes | concept | 35 |
+| 323 | Consistent hashing: fix the ring | concept | 25 |
+| 324 | LRU caches: evict the least recently used | concept · race | 35 |
+| 325 | LRU caches: fix the stale cache-aside reads | concept · race | 25 |
+| 326 | Work queues: bounded queues and backpressure | concept · race | 30 |
+| 327 | Work queues: fix the at-least-once consumer | concept | 30 |
+| 328 | Practice: deploy-status service | **practice** · race | 60 |
 
 ## Phase: Platform engineering (about 17 hours)
 
-### Module 13: Kubernetes with client-go
+### Module 19: Kubernetes with client-go
 
-*About 10.9 hours, in `exercises/13_kubernetes/`.* Kubernetes objects, manifests, kubeconfig, clientsets, informers, workqueues and reconcile loops using the real client-go.
+*About 10.9 hours, in `exercises/19_kubernetes/`.* Kubernetes objects, manifests, kubeconfig, clientsets, informers, workqueues and reconcile loops using the real client-go.
 
 **After this module you can:** Build and validate Kubernetes objects, read manifests and kubeconfigs, use the clientset, selectors, watches, informers and workqueues, and write a controller.
 
@@ -442,29 +595,29 @@ Habits that make it stick:
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
-| 253 | Kubernetes objects: building a Deployment | concept | 30 |
-| 254 | Kubernetes objects: Services and selectors | concept | 25 |
-| 255 | YAML manifests: reading them into Go | concept | 30 |
-| 256 | YAML manifests: decoding kinds and linting images | concept | 30 |
-| 257 | kubeconfig: clusters, users and contexts | concept | 25 |
-| 258 | kubeconfig: building a rest.Config | concept | 20 |
-| 259 | The clientset: get, create and delete | concept | 30 |
-| 260 | The clientset: updates and create-or-update | concept | 30 |
-| 261 | Labels and selectors: matching in Go | concept | 25 |
-| 262 | Labels and selectors: selecting on the server | concept | 25 |
-| 263 | Watching resources: streaming Pod events | concept · race | 30 |
-| 264 | Watching resources: closed watches and ERROR events | concept · race | 25 |
-| 265 | Informers: list, watch and cache | concept · race | 35 |
-| 266 | Informers: listers and the read-only cache | concept · race | 30 |
-| 267 | Workqueues: keys, dedup and the worker loop | concept · race | 30 |
-| 268 | Workqueues: retries with backoff | concept · race | 25 |
-| 269 | Reconcile loops: desired vs actual | concept | 30 |
-| 270 | Reconcile loops: idempotent updates | concept | 30 |
-| 271 | Project: Kubernetes controller | **project** · race | 150 |
+| 329 | Kubernetes objects: building a Deployment | concept | 30 |
+| 330 | Kubernetes objects: Services and selectors | concept | 25 |
+| 331 | YAML manifests: reading them into Go | concept | 30 |
+| 332 | YAML manifests: decoding kinds and linting images | concept | 30 |
+| 333 | kubeconfig: clusters, users and contexts | concept | 25 |
+| 334 | kubeconfig: building a rest.Config | concept | 20 |
+| 335 | The clientset: get, create and delete | concept | 30 |
+| 336 | The clientset: updates and create-or-update | concept | 30 |
+| 337 | Labels and selectors: matching in Go | concept | 25 |
+| 338 | Labels and selectors: selecting on the server | concept | 25 |
+| 339 | Watching resources: streaming Pod events | concept · race | 30 |
+| 340 | Watching resources: closed watches and ERROR events | concept · race | 25 |
+| 341 | Informers: list, watch and cache | concept · race | 35 |
+| 342 | Informers: listers and the read-only cache | concept · race | 30 |
+| 343 | Workqueues: keys, dedup and the worker loop | concept · race | 30 |
+| 344 | Workqueues: retries with backoff | concept · race | 25 |
+| 345 | Reconcile loops: desired vs actual | concept | 30 |
+| 346 | Reconcile loops: idempotent updates | concept | 30 |
+| 347 | Project: Kubernetes controller | **project** · race | 150 |
 
-### Module 14: Cloud automation with the AWS SDK
+### Module 20: Cloud automation with the AWS SDK
 
-*About 6.4 hours, in `exercises/14_aws/`.* aws-sdk-go-v2 configuration, testable clients, paginators, API errors, S3 and tag compliance, all tested offline.
+*About 6.4 hours, in `exercises/20_aws/`.* aws-sdk-go-v2 configuration, testable clients, paginators, API errors, S3 and tag compliance, all tested offline.
 
 **After this module you can:** Configure aws-sdk-go-v2 safely, write testable SDK code, paginate, handle API errors, manage S3 objects, audit tags and detect drift.
 
@@ -472,21 +625,21 @@ Habits that make it stick:
 
 | # | Exercise | Kind | Min |
 |---:|---|---|---:|
-| 272 | AWS SDK configuration: regions, profiles and credentials | concept | 25 |
-| 273 | AWS SDK configuration: many regions, no leaked keys | concept | 20 |
-| 274 | SDK clients: small interfaces and fakes | concept | 30 |
-| 275 | SDK clients: spy on StopInstances | concept | 20 |
-| 276 | Paginators: walk every page | concept | 25 |
-| 277 | Paginators: fix the stuck size report | concept | 20 |
-| 278 | AWS API errors: codes, faults and NoSuchKey | concept | 25 |
-| 279 | AWS API errors: EC2 dry-run permission checks | concept | 20 |
-| 280 | S3 objects: upload, verify and list configs | concept | 30 |
-| 281 | S3 objects: fix the log cleanup | concept | 20 |
-| 282 | Tag compliance: audit and fix instance tags | concept | 30 |
-| 283 | Tag compliance: untagged S3 buckets and bad values | concept | 20 |
-| 284 | Drift detection: a tiny terraform plan | concept | 35 |
-| 285 | Drift detection: ignore AWS-managed tags | concept | 20 |
-| 286 | Practice: cloud inventory report | **practice** · race | 45 |
+| 348 | AWS SDK configuration: regions, profiles and credentials | concept | 25 |
+| 349 | AWS SDK configuration: many regions, no leaked keys | concept | 20 |
+| 350 | SDK clients: small interfaces and fakes | concept | 30 |
+| 351 | SDK clients: spy on StopInstances | concept | 20 |
+| 352 | Paginators: walk every page | concept | 25 |
+| 353 | Paginators: fix the stuck size report | concept | 20 |
+| 354 | AWS API errors: codes, faults and NoSuchKey | concept | 25 |
+| 355 | AWS API errors: EC2 dry-run permission checks | concept | 20 |
+| 356 | S3 objects: upload, verify and list configs | concept | 30 |
+| 357 | S3 objects: fix the log cleanup | concept | 20 |
+| 358 | Tag compliance: audit and fix instance tags | concept | 30 |
+| 359 | Tag compliance: untagged S3 buckets and bad values | concept | 20 |
+| 360 | Drift detection: a tiny terraform plan | concept | 35 |
+| 361 | Drift detection: ignore AWS-managed tags | concept | 20 |
+| 362 | Practice: cloud inventory report | **practice** · race | 45 |
 
 <!-- end modules -->
 

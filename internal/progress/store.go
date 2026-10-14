@@ -1,4 +1,5 @@
-// Package progress persists which exercises a learner has opened and finished.
+// Package progress persists which exercises a learner has opened and
+// finished, and which guides they have read.
 package progress
 
 import (
@@ -13,17 +14,17 @@ import (
 
 const (
 	// Dir marks a course root; Load and Save use Dir/progress.json.
-	Dir  = ".gopherlings"
+	Dir  = ".groundwork"
 	file = "progress.json"
 
 	// version is bumped whenever the course folder's layout or this file
-	// changes in a way an older gopherlings would get wrong. Older binaries
+	// changes in a way an older groundwork would get wrong. Older binaries
 	// then refuse the folder instead of rebuilding it their way.
-	version = 4
+	version = 5
 )
 
-// ErrNewer means the course folder was set up by a newer gopherlings.
-var ErrNewer = errors.New("this course folder was set up by a newer gopherlings")
+// ErrNewer means the course folder was set up by a newer groundwork.
+var ErrNewer = errors.New("this course folder was set up by a newer groundwork")
 
 // State is keyed by exercise name, so reordering the course keeps progress.
 type State struct {
@@ -39,6 +40,8 @@ type State struct {
 	// keyed "exercise/path". A file that still has that hash is untouched by
 	// the learner, so course updates may replace it.
 	Starters map[string]string `json:"starters,omitempty"`
+	// Read records the guides the learner marked as read, keyed by guide name.
+	Read map[string]time.Time `json:"read,omitempty"`
 }
 
 // New returns empty progress.
@@ -61,12 +64,15 @@ func (s *State) init() {
 	if s.Starters == nil {
 		s.Starters = map[string]string{}
 	}
+	if s.Read == nil {
+		s.Read = map[string]time.Time{}
+	}
 }
 
 // Path is the progress file of the course at root.
 func Path(root string) string { return filepath.Join(root, Dir, file) }
 
-// Load reads root/.gopherlings/progress.json. A missing file is empty progress.
+// Load reads root/.groundwork/progress.json. A missing file is empty progress.
 func Load(root string) (*State, error) {
 	raw, err := os.ReadFile(Path(root))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -81,11 +87,11 @@ func Load(root string) (*State, error) {
 	}
 	switch {
 	case s.Version > version:
-		return nil, fmt.Errorf("%w (format %d, this one reads %d); update it by running go install . in the gopherlings source folder", ErrNewer, s.Version, version)
+		return nil, fmt.Errorf("%w (format %d, this one reads %d); update it by running go install . in the groundwork source folder", ErrNewer, s.Version, version)
 	case s.Version < 3:
-		return nil, fmt.Errorf("%s has an old format (%d) that this gopherlings can't read; move it aside to start fresh", filepath.Join(Dir, file), s.Version)
+		return nil, fmt.Errorf("%s has an old format (%d) that this groundwork can't read; move it aside to start fresh", filepath.Join(Dir, file), s.Version)
 	}
-	s.Version = version // format 3 only lacks the newer, optional fields
+	s.Version = version // formats 3 and 4 only lack the newer, optional fields
 	s.init()
 	return s, nil
 }

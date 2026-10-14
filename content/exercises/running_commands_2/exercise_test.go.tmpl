@@ -209,7 +209,7 @@ func TestInstalled(t *testing.T) {
 		{"fake-helm", true, false},
 		{os.Args[0], true, false},
 		{"kubectl", false, false},
-		{"gopherlings-no-such-tool", false, false},
+		{"groundwork-no-such-tool", false, false},
 		{notes, false, true},
 	}
 	for _, tt := range tests {

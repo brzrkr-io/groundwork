@@ -1,0 +1,82 @@
+package gate
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestVerdict(t *testing.T) {
+	ready := Change{Service: "api", Environment: "staging", TestsPassed: true, Approvals: 1}
+	tests := []struct {
+		name   string
+		change func(c *Change) // how this case differs from ready
+		want   string
+	}{
+		{"ready for staging", func(c *Change) {}, "ok"},
+		{"production with 2 approvals", func(c *Change) { c.Environment, c.Approvals = "production", 2 }, "ok"},
+		{"production with 1 approval", func(c *Change) { c.Environment = "production" }, "production needs 2 approvals"},
+		{"no approvals", func(c *Change) { c.Approvals = 0 }, "needs an approval"},
+		{"failed tests", func(c *Change) { c.TestsPassed = false }, "tests failed"},
+		{"failed tests and no approvals", func(c *Change) { c.TestsPassed, c.Approvals = false, 0 }, "tests failed"},
+		{"freeze", func(c *Change) { c.Frozen = true }, "change freeze in effect"},
+		{"freeze and failed tests", func(c *Change) { c.Frozen, c.TestsPassed = true, false }, "change freeze in effect"},
+		{"no service", func(c *Change) { c.Service = "" }, "missing service name"},
+		{"no service during a freeze", func(c *Change) { c.Service, c.Frozen = "", true }, "missing service name"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := ready
+			tc.change(&c)
+			if got := Verdict(c); got != tc.want {
+				t.Errorf("Verdict(%+v) = %q, want %q", c, got, tc.want)
+			}
+		})
+	}
+	checkFlat(t, "Verdict", 1)
+}
+
+func TestPatchTargets(t *testing.T) {
+	hosts := []Host{
+		{Name: "web-1", Up: true, DiskUsedPercent: 40},
+		{Name: "web-2", Up: false, DiskUsedPercent: 40},
+		{Name: "db-1", Up: true, DiskUsedPercent: 40, Tags: []string{"database", "do-not-patch"}},
+		{Name: "web-3", Up: true, DiskUsedPercent: 90},
+		{Name: "web-4", Up: true, DiskUsedPercent: 89, Tags: []string{"canary"}},
+	}
+	want := []string{"web-1", "web-4"}
+	if got := PatchTargets(hosts); !slices.Equal(got, want) {
+		t.Errorf("PatchTargets(web-1 up 40%%, web-2 down, db-1 tagged do-not-patch, web-3 at 90%%, web-4 up 89%%) = %q, want %q", got, want)
+	}
+	if got := PatchTargets(nil); got != nil {
+		t.Errorf("PatchTargets(nil) = %q, want nil", got)
+	}
+	checkFlat(t, "PatchTargets", 2)
+}
+
+func TestParseReplicas(t *testing.T) {
+	tests := []struct {
+		setting string
+		want    int
+		wantErr string
+	}{
+		{"replicas=3", 3, ""},
+		{"replicas=0", 0, ""},
+		{"replicas=50", 50, ""},
+		{"replicas=51", 0, "replicas must be between 0 and 50, got 51"},
+		{"replicas=-1", 0, "replicas must be between 0 and 50, got -1"},
+		{"replicas=three", 0, `replicas "three" is not a number`},
+		{"memory=512Mi", 0, `unknown setting "memory"`},
+		{"replicas3", 0, `missing "=" in "replicas3"`},
+	}
+	for _, tc := range tests {
+		got, err := ParseReplicas(tc.setting)
+		gotErr := ""
+		if err != nil {
+			gotErr = err.Error()
+		}
+		if got != tc.want || gotErr != tc.wantErr {
+			t.Errorf("ParseReplicas(%q) = %d, error %q; want %d, error %q", tc.setting, got, gotErr, tc.want, tc.wantErr)
+		}
+	}
+	checkFlat(t, "ParseReplicas", 1)
+}

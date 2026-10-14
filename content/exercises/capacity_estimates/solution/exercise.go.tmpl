@@ -1,0 +1,76 @@
+// Package capacity is the Groundwork exercise "Capacity estimates: QPS, storage and bandwidth".
+package capacity
+
+import "math"
+
+// Unit sizes. Estimates here use decimal units: 1 GB is 1e9 bytes, not 1,024³.
+const (
+	// SecondsPerDay is 24 hours in seconds: 86,400.
+	SecondsPerDay = 24 * 60 * 60
+	// BytesPerGB is one decimal gigabyte: 1,000,000,000 bytes.
+	BytesPerGB = 1e9
+	// BitsPerByte is how many bits one byte holds.
+	BitsPerByte = 8
+	// BitsPerMegabit is one decimal megabit: 1,000,000 bits.
+	BitsPerMegabit = 1e6
+)
+
+// AverageQPS returns the average requests per second on a day with
+// requestsPerDay requests.
+func AverageQPS(requestsPerDay int) float64 {
+	return float64(requestsPerDay) / SecondsPerDay
+}
+
+// PeakQPS returns the requests per second at the busiest time of a day with
+// requestsPerDay requests: the average multiplied by peakFactor.
+func PeakQPS(requestsPerDay int, peakFactor float64) float64 {
+	return AverageQPS(requestsPerDay) * peakFactor
+}
+
+// StorageGB returns how many decimal gigabytes itemsPerDay items of
+// bytesPerItem bytes each fill after days days.
+func StorageGB(itemsPerDay, bytesPerItem, days int) float64 {
+	bytes := float64(itemsPerDay) * float64(bytesPerItem) * float64(days)
+	return bytes / BytesPerGB
+}
+
+// BandwidthMbps returns the network traffic, in megabits per second, of qps
+// requests per second that carry bytesPerRequest bytes each.
+func BandwidthMbps(qps float64, bytesPerRequest int) float64 {
+	bytesPerSecond := qps * float64(bytesPerRequest)
+	return bytesPerSecond * BitsPerByte / BitsPerMegabit
+}
+
+// ServersNeeded returns how many servers handle peakQPS when each one
+// handles qpsPerServer, rounded up, plus spare extra servers.
+func ServersNeeded(peakQPS, qpsPerServer float64, spare int) int {
+	return int(math.Ceil(peakQPS/qpsPerServer)) + spare
+}
+
+// Workload describes the traffic a service expects.
+type Workload struct {
+	RequestsPerDay  int     // requests on an average day
+	PeakFactor      float64 // busiest QPS ÷ average QPS
+	BytesPerRequest int     // bytes each request uploads, and the service stores
+	RetentionDays   int     // how many days of data the service keeps
+	QPSPerServer    float64 // requests per second one server handles
+}
+
+// Plan is a capacity estimate for a Workload.
+type Plan struct {
+	PeakQPS   float64 // requests per second at peak
+	StorageGB float64 // disk for RetentionDays days of data
+	PeakMbps  float64 // incoming bandwidth at peak, in megabits per second
+	Servers   int     // servers for the peak, plus one spare
+}
+
+// Estimate returns the Plan for w, with one spare server (N+1).
+func Estimate(w Workload) Plan {
+	peak := PeakQPS(w.RequestsPerDay, w.PeakFactor)
+	return Plan{
+		PeakQPS:   peak,
+		StorageGB: StorageGB(w.RequestsPerDay, w.BytesPerRequest, w.RetentionDays),
+		PeakMbps:  BandwidthMbps(peak, w.BytesPerRequest),
+		Servers:   ServersNeeded(peak, w.QPSPerServer, 1),
+	}
+}

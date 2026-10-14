@@ -1,0 +1,21 @@
+# Task 1: build a release binary whenever a version tag is pushed.
+# In a real repository: .github/workflows/release.yml.
+
+name: release
+
+# TODO(1): Run this workflow only when a version tag such as v1.4.2 is
+# pushed, never on a branch push.
+on: push
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+
+  # TODO(1): Add the job "release". It needs test, and builds bin/statusd
+  # with the tag stamped in as main.version.

@@ -1,0 +1,6 @@
+-- Task 2: Name the service of each failed deploy
+--
+-- Return the id, service name (service) and version of every failed
+-- deploy, by deploy id.
+--
+-- TODO(2): Write your query below.

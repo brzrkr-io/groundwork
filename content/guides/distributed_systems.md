@@ -315,7 +315,7 @@ In an incident you usually go metrics (what's wrong, since when), then traces (w
 2. Three hundred CI jobs fail to reach the registry at the same moment. Each retries after exactly 1 s. What goes wrong, and what fixes it?
 3. A queue promises at-least-once delivery. What must your message handler do?
 4. You update a DNS record, then immediately run `dig` from another office and see the old IP. Is DNS broken?
-5. A dependency you call starts timing out on every request. Which tool from this guide stops it from taking your service down too, and how?
+5. A dependency you call starts timing out on every request. Which resilience pattern stops it from taking your service down too, and how?
 
 ## Answers
 
@@ -347,6 +347,12 @@ In an incident you usually go metrics (what's wrong, since when), then traces (w
 | Circuit breaker | Fails fast after repeated failures to stop cascades |
 | Cache stampede | Many requests reloading an expired cache entry at once |
 | Observability | Seeing inside a system through logs, metrics and traces |
+
+## Watch
+
+- [CAP Theorem Simplified](https://www.youtube.com/watch?v=BHqjEjzAicA) · ByteByteGo · 6 min: a short animated version of the consistency-versus-availability choice when the network splits.
+- [Distributed Systems 2.3: System models](https://www.youtube.com/watch?v=y8f7ZG_UnGI) · Martin Kleppmann · 21 min: a Cambridge lecture on lost messages, crashed nodes and unpredictable delays, the partial failures this guide starts from; the rest of the series goes further.
+- [Timeouts, Retries and Idempotency In Distributed Systems](https://www.infoq.com/presentations/distributed-systems-resiliency/) · Sam Newman, QCon London 2025 · 51 min: the deeper talk for this guide, covering how to pick timeouts, why retries need jitter, and how request IDs make retries safe; it has a transcript to read on the phone too.
 
 ## Go deeper
 

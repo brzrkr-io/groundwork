@@ -1,0 +1,5 @@
+# staging: one of everything
+web-01.staging.example.com
+# db-01.staging.example.com is being rebuilt
+
+db-02.staging.example.com

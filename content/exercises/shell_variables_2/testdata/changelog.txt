@@ -1,0 +1,5 @@
+v1.8.0  faster deploys
+v1.7.2  fixed the health check
+v1.7.1  new log format
+v1.7.0  first release on Kubernetes
+v1.6.0  last release on VMs

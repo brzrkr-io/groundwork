@@ -1,0 +1,192 @@
+package multistage
+
+import (
+	"path"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// The helpers readDockerfile, stages, find, envVars and show are in
+// dockerfile_test.go.
+
+func TestRuntimeStage(t *testing.T) {
+	const file = "1_statusd.Dockerfile"
+	all := checkStages(t, file, readDockerfile(t, file))
+	if all[0].Name != "build" {
+		t.Errorf("%s: the first stage is named %q, want build; keep the given build stage as it is", file, all[0].Name)
+	}
+
+	final := all[1]
+	if final.Base != distroless && final.Base != distroless+":nonroot" {
+		t.Errorf("%s: the final stage starts FROM %s, want FROM %s", file, final.Base, distroless)
+	}
+	checkRuntime(t, file, final)
+	checkEntrypoint(t, file, checkCopy(t, file, final, "build", "/out/statusd"), final)
+}
+
+func TestStaticBuildStage(t *testing.T) {
+	const file = "2_backupctl.Dockerfile"
+	all := checkStages(t, file, readDockerfile(t, file))
+	build := all[0]
+	checkBuildStage(t, file, build, "/out/backupctl", "./cmd/backupctl")
+	checkCacheOrder(t, file, build)
+
+	final := all[1]
+	if final.Base != distroless {
+		t.Errorf("%s: the final stage starts FROM %s, want the given FROM %s", file, final.Base, distroless)
+	}
+	checkEntrypoint(t, file, checkCopy(t, file, final, "build", "/out/backupctl"), final)
+}
+
+func TestScratchWithCertificates(t *testing.T) {
+	const file = "3_notifier.Dockerfile"
+	all := checkStages(t, file, readDockerfile(t, file))
+	checkBuildStage(t, file, all[0], "/out/notifier", "./cmd/notifier")
+
+	final := all[1]
+	if final.Base != "scratch" {
+		t.Errorf("%s: the final stage starts FROM %s, want FROM scratch", file, final.Base)
+	}
+	checkRuntime(t, file, final)
+	if dest := checkCopy(t, file, final, "build", certs); dest != "" && dest != certs {
+		t.Errorf("%s: the CA certificates land at %s, want %s, where Go looks for them", file, dest, certs)
+	}
+	checkEntrypoint(t, file, checkCopy(t, file, final, "build", "/out/notifier"), final)
+}
+
+const (
+	distroless = "gcr.io/distroless/static-debian13"
+	certs      = "/etc/ssl/certs/ca-certificates.crt"
+)
+
+// checkStages checks the Dockerfile has exactly two stages and returns them.
+func checkStages(t *testing.T, file string, instructions []instruction) []stage {
+	t.Helper()
+	all := stages(instructions)
+	if len(all) != 2 {
+		t.Fatalf("%s has %d stages (FROM lines), want 2: FROM golang:1.26 AS build, then the runtime stage", file, len(all))
+	}
+	return all
+}
+
+// checkBuildStage checks s is named build, starts from golang:1.26 and
+// builds pkg to out with cgo off.
+func checkBuildStage(t *testing.T, file string, s stage, out, pkg string) {
+	t.Helper()
+	if s.Base != "golang:1.26" || s.Name != "build" {
+		t.Errorf("%s: the first stage is FROM %s AS %s, want FROM golang:1.26 AS build", file, s.Base, s.Name)
+	}
+	build := goBuild(s)
+	if build == nil {
+		t.Errorf("%s: the build stage has no RUN go build; want RUN CGO_ENABLED=0 go build -o %s %s", file, out, pkg)
+		return
+	}
+	o := slices.Index(build.Args, "-o")
+	if o < 0 || o+1 == len(build.Args) || build.Args[o+1] != out || !slices.Contains(build.Args, pkg) {
+		t.Errorf("%s line %d: %s, want it to build %s with -o %s", file, build.Line, show(*build), pkg, out)
+	}
+	if !slices.Contains(build.Args, "CGO_ENABLED=0") && envVars(s.Instructions)["CGO_ENABLED"] != "0" {
+		t.Errorf("%s line %d: %s builds with cgo on, so the binary needs C libraries the runtime image doesn't have; want CGO_ENABLED=0", file, build.Line, show(*build))
+	}
+}
+
+// checkCacheOrder checks s copies go.mod and go.sum, downloads the modules,
+// then copies the code, as in the first task of the slow builds pack.
+func checkCacheOrder(t *testing.T, file string, s stage) {
+	t.Helper()
+	var modCopy, download, copyAll *instruction
+	for _, in := range s.Instructions {
+		switch {
+		case in.Cmd == "COPY" && modCopy == nil && slices.Contains(in.Args, "go.mod") && slices.Contains(in.Args, "go.sum"):
+			modCopy = &in
+		case in.Cmd == "RUN" && download == nil && strings.Contains(in.Rest, "go mod download"):
+			download = &in
+		case in.Cmd == "COPY" && copyAll == nil && len(in.Args) == 2 && (in.Args[0] == "." || in.Args[0] == "./"):
+			copyAll = &in
+		}
+	}
+	if modCopy == nil || download == nil || copyAll == nil {
+		t.Errorf("%s: the build stage needs COPY go.mod go.sum ./, RUN go mod download and COPY . . (found %v, %v, %v)", file, modCopy != nil, download != nil, copyAll != nil)
+		return
+	}
+	if modCopy.Line > download.Line || download.Line > copyAll.Line {
+		t.Errorf("%s: the build stage has COPY go.mod go.sum (line %d), go mod download (line %d), COPY . . (line %d); want them in that order, so code changes reuse the download", file, modCopy.Line, download.Line, copyAll.Line)
+	}
+	if build := goBuild(s); build != nil && build.Line < copyAll.Line {
+		t.Errorf("%s: RUN go build (line %d) comes before COPY . . (line %d), so there is no code to build yet", file, build.Line, copyAll.Line)
+	}
+}
+
+// goBuild returns the stage's RUN that runs go build, or nil.
+func goBuild(s stage) *instruction {
+	for _, in := range s.Instructions {
+		if in.Cmd == "RUN" && strings.Contains(in.Rest, "go build") {
+			return &in
+		}
+	}
+	return nil
+}
+
+// checkRuntime checks the final stage only copies files out of other stages:
+// distroless and scratch have no shell to RUN anything, and the source code
+// has no place in the image you ship.
+func checkRuntime(t *testing.T, file string, s stage) {
+	t.Helper()
+	for _, in := range s.Instructions {
+		switch {
+		case in.Cmd == "RUN":
+			t.Errorf("%s line %d: %s in the final stage; it has no shell or Go, so build in the build stage and only COPY --from=build here", file, in.Line, show(in))
+		case in.Cmd == "COPY" && !slices.ContainsFunc(in.Flags, isFrom):
+			t.Errorf("%s line %d: %s copies from the build context; the final stage should only COPY --from=build", file, in.Line, show(in))
+		}
+	}
+}
+
+// isFrom reports whether flag is a --from= flag.
+func isFrom(flag string) bool { return strings.HasPrefix(flag, "--from=") }
+
+// checkCopy checks the stage has a COPY --from=from of src, and returns
+// where the file lands in the image, or "".
+func checkCopy(t *testing.T, file string, s stage, from, src string) string {
+	t.Helper()
+	for _, in := range s.Instructions {
+		if in.Cmd != "COPY" || len(in.Args) < 2 || !slices.Contains(in.Args[:len(in.Args)-1], src) {
+			continue
+		}
+		if !slices.Contains(in.Flags, "--from="+from) {
+			t.Errorf("%s line %d: %s, want COPY --from=%s %s ...: without --from it copies from the build context, not the build stage", file, in.Line, show(in), from, src)
+			return ""
+		}
+		dest := in.Args[len(in.Args)-1]
+		if strings.HasSuffix(dest, "/") {
+			dest += path.Base(src)
+		}
+		return dest
+	}
+	t.Errorf("%s: the final stage has no COPY --from=%s %s ...", file, from, src)
+	return ""
+}
+
+// checkEntrypoint checks the stage's ENTRYPOINT is in exec form and runs
+// the program at want. It does nothing when want is "".
+func checkEntrypoint(t *testing.T, file string, want string, s stage) {
+	t.Helper()
+	if want == "" {
+		return
+	}
+	var entry *instruction
+	for _, in := range s.Instructions {
+		if in.Cmd == "ENTRYPOINT" {
+			entry = &in
+		}
+	}
+	switch {
+	case entry == nil:
+		t.Errorf("%s: the final stage has no ENTRYPOINT; want ENTRYPOINT [%q]", file, want)
+	case !entry.Exec:
+		t.Errorf("%s line %d: %s is in shell form, which needs /bin/sh; want the exec form ENTRYPOINT [%q]", file, entry.Line, show(*entry), want)
+	case len(entry.Args) == 0 || entry.Args[0] != want:
+		t.Errorf("%s line %d: %s, want ENTRYPOINT [%q], the path the binary was copied to", file, entry.Line, show(*entry), want)
+	}
+}

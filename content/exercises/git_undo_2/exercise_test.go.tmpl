@@ -1,0 +1,127 @@
+package gitundo
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// Each test builds a fresh sandbox with setup.sh, runs your scripts in
+// task order up to the one it checks, then inspects the repo with git.
+var scripts = []string{
+	"1_rescue_tls_commit.sh",
+	"2_restore_deleted_branch.sh",
+	"3_cherry_pick_tls.sh",
+}
+
+func TestRescueTLSCommit(t *testing.T) {
+	repo, _ := runTasks(t, 1)
+	checkBranchExists(t, repo, "rescue-tls")
+	if got := git(t, repo, "log", "-1", "--format=%s", "rescue-tls"); got != "Add TLS cert rotation" {
+		t.Errorf("rescue-tls points at %q, want \"Add TLS cert rotation\"", got)
+	}
+	checkOnMain(t, repo, "Scale web to 3 replicas")
+}
+
+func TestRestoreDeletedBranch(t *testing.T) {
+	repo, _ := runTasks(t, 2)
+	checkBranchExists(t, repo, "feature/alerts")
+	if got := git(t, repo, "log", "-2", "--format=%s", "feature/alerts"); got != "Add disk space alert\nAdd app config" {
+		t.Errorf("git log -2 --format=%%s feature/alerts:\n%s\nwant:\nAdd disk space alert\nAdd app config", got)
+	}
+	checkOnMain(t, repo, "Scale web to 3 replicas")
+}
+
+func TestCherryPickTLS(t *testing.T) {
+	repo, _ := runTasks(t, 3)
+	checkOnMain(t, repo, "Add TLS cert rotation")
+	if got := len(strings.Fields(git(t, repo, "log", "-1", "--format=%P", "main"))); got != 1 {
+		t.Errorf("main's newest commit has %d parents, want 1: a copy, not a merge", got)
+	}
+	if got := git(t, repo, "log", "-1", "--format=%s", "main~1"); got != "Scale web to 3 replicas" {
+		t.Errorf("the commit before it = %q, want \"Scale web to 3 replicas\"", got)
+	}
+	if got := git(t, repo, "ls-tree", "--name-only", "main", "scripts/"); got != "scripts/rotate-certs.sh" {
+		t.Errorf("files in scripts/ on main = %q, want \"scripts/rotate-certs.sh\"", got)
+	}
+	if got := git(t, repo, "branch", "--list", "rescue-tls"); got != "" {
+		t.Error("the branch rescue-tls still exists, want it deleted")
+	}
+}
+
+// checkBranchExists stops the test if there is no branch called name.
+func checkBranchExists(t *testing.T, repo, name string) {
+	t.Helper()
+	if git(t, repo, "branch", "--list", name) == "" {
+		t.Fatalf("there is no branch %s; git branch lists:\n%s", name, git(t, repo, "branch"))
+	}
+}
+
+// checkOnMain checks that you're on main, and that main's newest commit has
+// the subject want.
+func checkOnMain(t *testing.T, repo, want string) {
+	t.Helper()
+	if got := git(t, repo, "branch", "--show-current"); got != "main" {
+		t.Errorf("current branch = %q, want \"main\"", got)
+	}
+	if got := git(t, repo, "log", "-1", "--format=%s", "main"); got != want {
+		t.Errorf("main's newest commit = %q, want %q", got, want)
+	}
+}
+
+// runTasks builds a fresh sandbox with setup.sh, then runs task scripts 1 to
+// n inside it, in order, as you would by hand. It returns the repo's path
+// and what script n printed.
+func runTasks(t *testing.T, n int) (repo, printed string) {
+	t.Helper()
+	home := t.TempDir()
+	repo = filepath.Join(home, "sandbox")
+	if _, stderr, err := run(home, ".", "bash", "setup.sh", repo); err != nil {
+		t.Fatalf("setup.sh failed (%v):\n%s", err, stderr)
+	}
+	for _, script := range scripts[:n] {
+		path, err := filepath.Abs(script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, err := run(home, repo, "bash", path)
+		if err != nil {
+			t.Fatalf("%s failed (%v). It printed:\n%s%s", script, err, stdout, stderr)
+		}
+		printed = stdout
+	}
+	return repo, printed
+}
+
+// git runs a git command in repo and returns what it printed, without the
+// final newline.
+func git(t *testing.T, repo string, args ...string) string {
+	t.Helper()
+	stdout, stderr, err := run(filepath.Dir(repo), repo, "git", args...)
+	if err != nil {
+		t.Fatalf("git %s failed (%v):\n%s", strings.Join(args, " "), err, stderr)
+	}
+	return strings.TrimSuffix(stdout, "\n")
+}
+
+// run runs a command in dir, hermetically: no personal Git config, a fixed
+// author and date, and no editor or pager waiting for input.
+func run(home, dir, name string, args ...string) (stdout, stderr string, err error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"HOME="+home, "XDG_CONFIG_HOME="+home, "LC_ALL=C", "TZ=UTC",
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		"GIT_AUTHOR_NAME=Sam Rivera", "GIT_AUTHOR_EMAIL=sam@example.com",
+		"GIT_COMMITTER_NAME=Sam Rivera", "GIT_COMMITTER_EMAIL=sam@example.com",
+		"GIT_AUTHOR_DATE=2026-10-01 12:00:00 +0000", "GIT_COMMITTER_DATE=2026-10-01 12:00:00 +0000",
+		"GIT_EDITOR=true", "GIT_PAGER=cat", "PAGER=cat",
+	)
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	err = cmd.Run()
+	return out.String(), errOut.String(), err
+}

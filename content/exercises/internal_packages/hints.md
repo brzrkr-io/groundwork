@@ -52,12 +52,12 @@ The reference solution names the number with `const maxLen = 63`.
 
 ### Closer
 
-The import path is the module path plus the folder: `gopherlings.local/internal_packages/internal/slug`. After deleting `Slugify`, nothing in `deploykit.go` uses `strings`.
+The import path is the module path plus the folder: `groundwork.local/internal_packages/internal/slug`. After deleting `Slugify`, nothing in `deploykit.go` uses `strings`.
 
 ### Answer
 
 ```go
-import "gopherlings.local/internal_packages/internal/slug"
+import "groundwork.local/internal_packages/internal/slug"
 
 func ReleaseName(service, version string) string {
 	return slug.Make(service + "-" + version)

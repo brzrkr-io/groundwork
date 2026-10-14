@@ -1,0 +1,149 @@
+package deploydb
+
+import (
+	"database/sql"
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+
+	_ "modernc.org/sqlite" // the SQLite driver, registered as "sqlite"
+)
+
+func TestCountFailed(t *testing.T) {
+	db := openDB(t)
+	tests := []struct {
+		service string
+		want    int
+	}{
+		{"checkout", 2},
+		{"search", 1},
+		{"api", 0},
+		{"no-such-service", 0},
+		{"checkout' OR '1'='1", 0}, // a quote in the input is just text
+	}
+	for _, tt := range tests {
+		t.Run(tt.service, func(t *testing.T) {
+			got, err := CountFailed(db, tt.service)
+			if err != nil {
+				t.Fatalf("CountFailed(db, %q) error = %v, want nil", tt.service, err)
+			}
+			if got != tt.want {
+				t.Errorf("CountFailed(db, %q) = %d, want %d", tt.service, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetDeploy(t *testing.T) {
+	db := openDB(t)
+	tests := []struct {
+		id   int64
+		want Deploy
+	}{
+		{4, Deploy{ID: 4, Service: "checkout", Version: "v2.7.1", Environment: "production", Status: "failed", StartedAt: "2026-03-02 13:02:00"}},
+		{13, Deploy{ID: 13, Service: "api", Version: "v1.4.1-hotfix", Environment: "production", Status: "succeeded", StartedAt: "2026-03-05 22:10:00"}},
+	}
+	for _, tt := range tests {
+		got, err := GetDeploy(db, tt.id)
+		if err != nil {
+			t.Fatalf("GetDeploy(db, %d) error = %v, want nil", tt.id, err)
+		}
+		if got != tt.want {
+			t.Errorf("GetDeploy(db, %d) = %+v, want %+v", tt.id, got, tt.want)
+		}
+	}
+
+	got, err := GetDeploy(db, 999)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetDeploy(db, 999) error = %v, want ErrNotFound", err)
+	}
+	if got != (Deploy{}) {
+		t.Errorf("GetDeploy(db, 999) = %+v, want Deploy{}", got)
+	}
+}
+
+func TestRecentDeploys(t *testing.T) {
+	db := openDB(t)
+	tests := []struct {
+		service string
+		limit   int
+		wantIDs []int64
+	}{
+		{"api", 2, []int64{13, 9}},
+		{"billing", 10, []int64{11, 10, 5}},
+		{"checkout", 3, []int64{14, 8, 4}},
+		{"no-such-service", 5, nil},
+	}
+	for _, tt := range tests {
+		got, err := RecentDeploys(db, tt.service, tt.limit)
+		if err != nil {
+			t.Fatalf("RecentDeploys(db, %q, %d) error = %v, want nil", tt.service, tt.limit, err)
+		}
+		var gotIDs []int64
+		for _, d := range got {
+			gotIDs = append(gotIDs, d.ID)
+		}
+		if !reflect.DeepEqual(gotIDs, tt.wantIDs) {
+			t.Errorf("RecentDeploys(db, %q, %d) returned deploy ids %v, want %v", tt.service, tt.limit, gotIDs, tt.wantIDs)
+		}
+	}
+
+	got, err := RecentDeploys(db, "search", 1)
+	want := []Deploy{{ID: 12, Service: "search", Version: "v3.1.1", Environment: "production", Status: "succeeded", StartedAt: "2026-03-05 07:30:00"}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("RecentDeploys(db, \"search\", 1) = %+v, %v, want %+v, nil", got, err, want)
+	}
+}
+
+func TestRecordDeploy(t *testing.T) {
+	db := openDB(t)
+	deploys := []Deploy{
+		{ID: 1, Service: "search", Version: "v3.2.0", Environment: "staging", Status: "running", StartedAt: "2026-03-07 09:00:00"},
+		{Service: "o'brien-api", Version: "v0.1.0", Environment: "staging", Status: "running", StartedAt: "2026-03-07 09:30:00"},
+	}
+	for i, d := range deploys {
+		wantID := int64(15 + i)
+		id, err := RecordDeploy(db, d)
+		if err != nil {
+			t.Fatalf("RecordDeploy(db, %+v) error = %v, want nil", d, err)
+		}
+		if id != wantID {
+			t.Errorf("RecordDeploy(db, %+v) = %d, want the new id %d", d, id, wantID)
+		}
+
+		var got Deploy
+		err = db.QueryRow(`SELECT id, service, version, environment, status, started_at FROM deploys WHERE id = ?`, wantID).
+			Scan(&got.ID, &got.Service, &got.Version, &got.Environment, &got.Status, &got.StartedAt)
+		if err != nil {
+			t.Fatalf("after RecordDeploy(db, %+v), reading deploy %d: %v", d, wantID, err)
+		}
+		want := d
+		want.ID = wantID
+		if got != want {
+			t.Errorf("after RecordDeploy(db, %+v), deploy %d is %+v, want %+v", d, wantID, got, want)
+		}
+	}
+}
+
+// openDB creates a fresh SQLite database file in a temporary directory,
+// loaded with testdata/schema.sql and testdata/data.sql.
+func openDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "deploys.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	for _, file := range []string{"testdata/schema.sql", "testdata/data.sql"} {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(data)); err != nil {
+			t.Fatalf("loading %s: %v", file, err)
+		}
+	}
+	return db
+}

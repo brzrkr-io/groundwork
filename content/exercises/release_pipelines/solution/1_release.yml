@@ -1,0 +1,28 @@
+# Task 1: build a release binary whenever a version tag is pushed.
+# In a real repository: .github/workflows/release.yml.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go build -ldflags "-X main.version=${{ github.ref_name }}" -o bin/statusd .

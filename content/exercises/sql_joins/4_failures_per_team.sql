@@ -1,0 +1,6 @@
+-- Task 4: Count failed deploys per team
+--
+-- Return each team with at least one failed deploy: its name (team)
+-- and its number of failed deploys (failures), A to Z by team.
+--
+-- TODO(4): Write your query below.

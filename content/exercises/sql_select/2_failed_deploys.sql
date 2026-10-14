@@ -1,0 +1,6 @@
+-- Task 2: Find the failed deploys
+--
+-- Show the service and version of every deploy whose status is
+-- 'failed'.
+--
+-- TODO(2): Write your query below.

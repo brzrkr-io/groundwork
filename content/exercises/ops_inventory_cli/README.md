@@ -347,7 +347,7 @@ Steps 1 and 2 are already written; replace the placeholder after them. In full:
 5. Print with `report.WriteJSON` when `-json` is set, otherwise `report.WriteTable`. On a write error print `inventory: <err>` and return `1`. Otherwise return `0`; no matches is still success.
 
 - On success nothing goes to stderr; on failure nothing goes to stdout.
-- Add the `cmp`, `slices` and `gopherlings.local/ops_inventory_cli/internal/report` imports.
+- Add the `cmp`, `slices` and `groundwork.local/ops_inventory_cli/internal/report` imports.
 
 ```text
 inventory: testdata/invalid.json is invalid:

@@ -1,0 +1,221 @@
+package incidents
+
+import (
+	"database/sql"
+	"os"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+
+	_ "modernc.org/sqlite" // the SQLite driver, registered as "sqlite"
+)
+
+func TestOpenIncidents(t *testing.T) {
+	const file = "1_open_incidents.sql"
+	got := runFile(t, newDB(t), file)
+	checkColumns(t, file, got, "id", "service", "severity", "opened_at")
+	checkRows(t, file, got, [][]string{
+		{"7", "checkout", "sev1", "2026-03-06 10:05:00"},
+		{"6", "api", "sev3", "2026-03-06 08:00:00"},
+		{"8", "billing", "sev3", "2026-03-06 11:20:00"},
+	})
+}
+
+func TestTimeToResolve(t *testing.T) {
+	const file = "2_time_to_resolve.sql"
+	got := runFile(t, newDB(t), file)
+	checkColumns(t, file, got, "service", "incidents", "avg_minutes")
+	checkRows(t, file, got, [][]string{
+		{"api", "3", "57.5"},
+		{"billing", "2", "70"},
+		{"checkout", "3", "30"},
+		{"notifications", "0", "NULL"},
+		{"search", "1", "90"},
+	})
+}
+
+func TestMissingPostmortems(t *testing.T) {
+	const file = "3_missing_postmortems.sql"
+	got := runFile(t, newDB(t), file)
+	checkColumns(t, file, got, "id", "service", "severity")
+	checkRows(t, file, got, [][]string{
+		{"2", "api", "sev2"},
+		{"5", "checkout", "sev2"},
+	})
+}
+
+func TestNoisiestTeams(t *testing.T) {
+	const file = "4_noisiest_teams.sql"
+	got := runFile(t, newDB(t), file)
+	checkColumns(t, file, got, "team", "incidents")
+	checkRows(t, file, got, [][]string{
+		{"payments", "5"},
+		{"platform", "2"},
+	})
+}
+
+func TestCloseIncident(t *testing.T) {
+	const file = "5_close_incident.sql"
+	text := readSQL(t, file)
+	for _, word := range []string{"BEGIN", "COMMIT"} {
+		if !regexp.MustCompile(`(?i)\b` + word + `\b`).MatchString(text) {
+			t.Errorf("%s has no %s: wrap both changes in BEGIN; ... COMMIT;", file, word)
+		}
+	}
+
+	db := newDB(t)
+	if _, err := db.Exec(text); err != nil {
+		t.Fatalf("%s failed: %v", file, err)
+	}
+	incident := query(t, db, `SELECT id, resolved_at, minutes_to_resolve FROM incidents WHERE id = 7`)
+	checkRows(t, "after "+file+", incident 7", incident, [][]string{{"7", "2026-03-06 11:02:00", "57"}})
+	postmortem := query(t, db, `SELECT incident_id, author, published_at FROM postmortems WHERE incident_id = 7`)
+	checkRows(t, "after "+file+", the postmortems for incident 7", postmortem, [][]string{{"7", "marco", "2026-03-09 10:00:00"}})
+
+	// Now make the postmortem insert fail. The incident must stay open.
+	db = newDB(t)
+	if _, err := db.Exec(`CREATE TRIGGER broken BEFORE INSERT ON postmortems BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(text); err == nil {
+		t.Fatalf("%s succeeded although adding the postmortem failed; does it add the postmortem?", file)
+	}
+	db.Exec("ROLLBACK") // what an application does after an error; fails harmlessly outside a transaction
+	if got := query(t, db, `SELECT resolved_at FROM incidents WHERE id = 7`); got.rows[0][0] != "NULL" {
+		t.Errorf("when adding the postmortem fails, %s still resolves incident 7 at %s; in a transaction it would stay open", file, got.rows[0][0])
+	}
+}
+
+// result is what a query returned: the column names, and the rows with every
+// value written as text ("NULL" for a missing value).
+type result struct {
+	columns []string
+	rows    [][]string
+}
+
+// newDB returns a fresh in-memory database loaded from testdata/schema.sql
+// and testdata/data.sql.
+func newDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every connection to ":memory:" gets its own empty database: use one.
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
+	for _, fixture := range []string{"testdata/schema.sql", "testdata/data.sql"} {
+		if _, err := db.Exec(readSQL(t, fixture)); err != nil {
+			t.Fatalf("loading %s: %v", fixture, err)
+		}
+	}
+	return db
+}
+
+// runFile runs the query in file and returns the result.
+func runFile(t *testing.T, db *sql.DB, file string) result {
+	t.Helper()
+	rows, err := db.Query(readSQL(t, file))
+	if err != nil {
+		t.Fatalf("%s failed: %v", file, err)
+	}
+	return collect(t, rows)
+}
+
+// query runs a query of the test's own and returns the result.
+func query(t *testing.T, db *sql.DB, text string) result {
+	t.Helper()
+	rows, err := db.Query(text)
+	if err != nil {
+		t.Fatalf("%s: %v", text, err)
+	}
+	return collect(t, rows)
+}
+
+// collect reads every row, writing each value as text ("NULL" for a
+// missing value), and closes rows.
+func collect(t *testing.T, rows *sql.Rows) result {
+	t.Helper()
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := result{columns: columns}
+	for rows.Next() {
+		values := make([]sql.NullString, len(columns))
+		targets := make([]any, len(columns))
+		for i := range values {
+			targets[i] = &values[i]
+		}
+		if err := rows.Scan(targets...); err != nil {
+			t.Fatalf("reading a row: %v", err)
+		}
+		row := make([]string, len(columns))
+		for i, v := range values {
+			row[i] = "NULL"
+			if v.Valid {
+				row[i] = v.String
+			}
+		}
+		res.rows = append(res.rows, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("reading the rows: %v", err)
+	}
+	return res
+}
+
+// readSQL returns the contents of file without its "--" comment lines. It
+// fails the test if nothing is left, because then there's nothing to run yet.
+func readSQL(t *testing.T, file string) string {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	for line := range strings.Lines(string(data)) {
+		if !strings.HasPrefix(strings.TrimSpace(line), "--") {
+			b.WriteString(line)
+		}
+	}
+	if strings.TrimSpace(b.String()) == "" {
+		t.Fatalf("%s has no SQL yet: write it under the TODO", file)
+	}
+	return b.String()
+}
+
+// checkColumns compares the column names of got with want. Name a computed
+// column with AS.
+func checkColumns(t *testing.T, file string, got result, want ...string) {
+	t.Helper()
+	if !slices.Equal(got.columns, want) {
+		t.Errorf("%s returned columns %s, want %s", file, strings.Join(got.columns, ", "), strings.Join(want, ", "))
+	}
+}
+
+// checkRows compares the rows of got with want, in order. what names the
+// rows in the failure message.
+func checkRows(t *testing.T, what string, got result, want [][]string) {
+	t.Helper()
+	if !slices.EqualFunc(got.rows, want, slices.Equal) {
+		t.Errorf("%s: got %d rows (columns: %s):\n%s\nwant %d rows, in this order:\n%s",
+			what, len(got.rows), strings.Join(got.columns, ", "), table(got.rows), len(want), table(want))
+	}
+}
+
+// table writes rows one per line, with " | " between the values.
+func table(rows [][]string) string {
+	var b strings.Builder
+	for _, row := range rows {
+		b.WriteString("    ")
+		b.WriteString(strings.Join(row, " | "))
+		b.WriteString("\n")
+	}
+	if len(rows) == 0 {
+		b.WriteString("    (no rows)\n")
+	}
+	return b.String()
+}

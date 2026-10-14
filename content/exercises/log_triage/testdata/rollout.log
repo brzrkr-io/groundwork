@@ -1,0 +1,8 @@
+2026-10-12T16:30:00Z INFO worker 40 rollout 1.9.0 started
+2026-10-12T16:30:12Z ERROR worker 720 job 77 crashed: nil pointer
+2026-10-12T16:30:13Z INFO api 18 GET /healthz 200
+2026-10-12T16:30:25Z ERROR worker 690 job 78 crashed: nil pointer
+2026-10-12T16:30:31Z ERROR api 1500 queue publish failed
+2026-10-12T16:30:37Z ERROR worker 705 job 79 crashed: nil pointer
+2026-10-12T16:30:40Z WARN worker 55 rollout paused
+2026-10-12T16:30:52Z INFO worker 38 rollback to 1.8.4 finished

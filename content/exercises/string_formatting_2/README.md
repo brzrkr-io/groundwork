@@ -18,7 +18,7 @@ and incident tickets need properly padded IDs.
 ### vet errors
 
 Some mistakes compile fine but are almost certainly bugs, like `%d` given a
-string. `go vet` catches them, and Gopherlings runs it with the tests. While
+string. `go vet` catches them, and Groundwork runs it with the tests. While
 vet reports a problem, **every test shows ✗**:
 
 ```text

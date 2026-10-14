@@ -1,0 +1,85 @@
+// Package lru is the Groundwork exercise "LRU caches: evict the least recently used".
+package lru
+
+import (
+	"container/list"
+	"sync"
+)
+
+// entry is one cached key and its value. Every element in Cache.order holds
+// an *entry.
+type entry struct {
+	key   string
+	value string
+}
+
+// Cache holds at most a fixed number of entries. When it is full it evicts
+// the least recently used one. It is safe for concurrent use.
+type Cache struct {
+	mu        sync.Mutex
+	capacity  int
+	order     *list.List               // front: most recently used, back: least
+	items     map[string]*list.Element // key -> its element in order
+	evictions int
+}
+
+// New returns an empty Cache that holds at most capacity entries. capacity
+// must be at least 1.
+func New(capacity int) *Cache {
+	return &Cache{
+		capacity: capacity,
+		order:    list.New(),
+		items:    make(map[string]*list.Element),
+	}
+}
+
+// Get returns the value stored under key and true, and marks key as the
+// most recently used. If key is missing it returns "" and false.
+func (c *Cache) Get(key string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// TODO(2): Look key up in c.items. On a hit, move its element to the
+	// front of c.order and return its value.
+	return "", false
+}
+
+// Put stores value under key and marks key as the most recently used. If a
+// new key takes the cache over capacity, Put evicts the least recently used
+// entry.
+func (c *Cache) Put(key, value string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// TODO(3): If key is already cached, update its value, move it to the
+	// front, and return.
+
+	// TODO(1): Add a new entry at the front of c.order and remember its
+	// element in c.items.
+
+	// TODO(4): If the cache now holds more than c.capacity entries, evict the
+	// least recently used one and count the eviction.
+}
+
+// Len returns how many entries the cache holds.
+func (c *Cache) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.items)
+}
+
+// Keys returns every cached key, from the most recently used to the least.
+func (c *Cache) Keys() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	keys := make([]string, 0, c.order.Len())
+	for el := c.order.Front(); el != nil; el = el.Next() {
+		keys = append(keys, el.Value.(*entry).key)
+	}
+	return keys
+}
+
+// Evictions returns how many entries the cache has evicted so far.
+func (c *Cache) Evictions() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.evictions
+}

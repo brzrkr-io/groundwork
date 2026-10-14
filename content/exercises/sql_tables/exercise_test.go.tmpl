@@ -1,0 +1,234 @@
+package sqltables
+
+import (
+	"database/sql"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+
+	_ "modernc.org/sqlite" // the SQLite driver, registered as "sqlite"
+)
+
+func TestTeamsTable(t *testing.T) {
+	const file = "1_teams_table.sql"
+	db := newDB(t)
+	runFile(t, db, file)
+	checkColumns(t, db, file, "teams", "id INTEGER", "name TEXT", "slack_channel TEXT")
+
+	accepts(t, db, file, `INSERT INTO teams (name, slack_channel) VALUES ('payments', '#payments-oncall')`,
+		"a complete team")
+	checkRows(t, db, file, `SELECT id, name FROM teams`, [][]string{{"1", "payments"}},
+		"id is the primary key, so the database numbers new rows itself")
+	rejects(t, db, file, `INSERT INTO teams (id, name, slack_channel) VALUES (1, 'search', '#search-team')`,
+		"id is the primary key, so two teams can't both have id 1")
+	rejects(t, db, file, `INSERT INTO teams (name, slack_channel) VALUES ('payments', '#payments-2')`,
+		"name must be UNIQUE")
+	rejects(t, db, file, `INSERT INTO teams (slack_channel) VALUES ('#nobody')`,
+		"name is required (NOT NULL)")
+	rejects(t, db, file, `INSERT INTO teams (name) VALUES ('search')`,
+		"slack_channel is required (NOT NULL)")
+}
+
+func TestServicesTable(t *testing.T) {
+	const file = "2_services_table.sql"
+	db := newDB(t, "testdata/teams.sql")
+	runFile(t, db, file)
+	checkColumns(t, db, file, "services", "id INTEGER", "name TEXT", "team_id INTEGER", "tier TEXT")
+
+	accepts(t, db, file, `INSERT INTO services (name, team_id, tier) VALUES ('checkout', 1, 'critical')`,
+		"a complete service")
+	accepts(t, db, file, `INSERT INTO services (name, team_id) VALUES ('reports', 2)`,
+		"a service without a tier")
+	checkRows(t, db, file, `SELECT name, tier FROM services ORDER BY id`,
+		[][]string{{"checkout", "critical"}, {"reports", "standard"}},
+		"tier defaults to 'standard'")
+	rejects(t, db, file, `INSERT INTO services (name, team_id, tier) VALUES ('search', 1, 'gold')`,
+		"tier must be 'critical' or 'standard' (CHECK)")
+	rejects(t, db, file, `INSERT INTO services (name, team_id, tier) VALUES ('search', 1, NULL)`,
+		"tier is required (NOT NULL)")
+	rejects(t, db, file, `INSERT INTO services (name, team_id) VALUES ('search', 99)`,
+		"team_id must point at an existing team (REFERENCES teams)")
+	rejects(t, db, file, `INSERT INTO services (name) VALUES ('search')`,
+		"team_id is required (NOT NULL)")
+	rejects(t, db, file, `INSERT INTO services (name, team_id) VALUES ('checkout', 2)`,
+		"name must be UNIQUE")
+	rejects(t, db, file, `INSERT INTO services (team_id) VALUES (1)`,
+		"name is required (NOT NULL)")
+}
+
+func TestDeploysTable(t *testing.T) {
+	const file = "3_deploys_table.sql"
+	db := newDB(t, "testdata/teams.sql", "testdata/services.sql")
+	runFile(t, db, file)
+	checkColumns(t, db, file, "deploys", "id INTEGER", "service_id INTEGER", "version TEXT", "status TEXT", "started_at TEXT")
+
+	accepts(t, db, file, `INSERT INTO deploys (service_id, version, status, started_at) VALUES (1, 'v1.0.0', 'running', '2026-03-06 10:00:00')`,
+		"a complete deploy")
+	accepts(t, db, file, `INSERT INTO deploys (service_id, version, status, started_at) VALUES (2, 'v1.0.0', 'succeeded', '2026-03-06 11:00:00')`,
+		"the same version for a different service")
+	rejects(t, db, file, `INSERT INTO deploys (service_id, version, status, started_at) VALUES (1, 'v1.0.0', 'failed', '2026-03-06 12:00:00')`,
+		"a service can't have two deploys of the same version (UNIQUE on both columns)")
+	rejects(t, db, file, `INSERT INTO deploys (service_id, version, status, started_at) VALUES (1, 'v1.1.0', 'done', '2026-03-06 12:00:00')`,
+		"status must be 'running', 'succeeded' or 'failed' (CHECK)")
+	rejects(t, db, file, `INSERT INTO deploys (service_id, version, started_at) VALUES (1, 'v1.1.0', '2026-03-06 12:00:00')`,
+		"status is required (NOT NULL)")
+	rejects(t, db, file, `INSERT INTO deploys (service_id, version, status, started_at) VALUES (42, 'v1.1.0', 'running', '2026-03-06 12:00:00')`,
+		"service_id must point at an existing service (REFERENCES services)")
+	rejects(t, db, file, `INSERT INTO deploys (version, status, started_at) VALUES ('v1.1.0', 'running', '2026-03-06 12:00:00')`,
+		"service_id is required (NOT NULL)")
+	rejects(t, db, file, `INSERT INTO deploys (service_id, status, started_at) VALUES (1, 'running', '2026-03-06 12:00:00')`,
+		"version is required (NOT NULL)")
+	rejects(t, db, file, `INSERT INTO deploys (service_id, version, status) VALUES (1, 'v1.1.0', 'running')`,
+		"started_at is required (NOT NULL)")
+}
+
+func TestAddSLOTarget(t *testing.T) {
+	const file = "4_add_slo_target.sql"
+	db := newDB(t, "testdata/teams.sql", "testdata/services.sql")
+	runFile(t, db, file)
+	checkColumns(t, db, file, "services", "id INTEGER", "name TEXT", "team_id INTEGER", "tier TEXT", "slo_target REAL")
+
+	checkRows(t, db, file, `SELECT name, slo_target FROM services ORDER BY id`,
+		[][]string{{"api", "99.9"}, {"checkout", "99.9"}, {"reports", "99.9"}},
+		"the existing services are kept and get 99.9")
+	accepts(t, db, file, `INSERT INTO services (name, team_id, slo_target) VALUES ('billing', 1, 99.99)`,
+		"a service with its own target")
+	accepts(t, db, file, `INSERT INTO services (name, team_id) VALUES ('search', 2)`,
+		"a service without a target")
+	checkRows(t, db, file, `SELECT name, slo_target FROM services WHERE id > 3 ORDER BY id`,
+		[][]string{{"billing", "99.99"}, {"search", "99.9"}},
+		"new services get 99.9 unless they set their own")
+	rejects(t, db, file, `INSERT INTO services (name, team_id, slo_target) VALUES ('notifications', 2, NULL)`,
+		"slo_target is required (NOT NULL)")
+}
+
+// newDB returns an empty in-memory database with foreign key checks switched
+// on, after running each fixture file.
+func newDB(t *testing.T, fixtures ...string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every connection to ":memory:" gets its own empty database: use one.
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range fixtures {
+		if _, err := db.Exec(readSQL(t, fixture)); err != nil {
+			t.Fatalf("loading %s: %v", fixture, err)
+		}
+	}
+	return db
+}
+
+// runFile runs every statement in file.
+func runFile(t *testing.T, db *sql.DB, file string) {
+	t.Helper()
+	if _, err := db.Exec(readSQL(t, file)); err != nil {
+		t.Fatalf("%s failed: %v", file, err)
+	}
+}
+
+// readSQL returns the contents of file. It fails the test if the file holds
+// nothing but comments, because then there's nothing to run yet.
+func readSQL(t *testing.T, file string) string {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line := range strings.Lines(string(data)) {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "--") {
+			return string(data)
+		}
+	}
+	t.Fatalf("%s has no SQL yet: write your statement under the TODO", file)
+	return ""
+}
+
+// checkColumns compares the columns of table, as "name TYPE" in order, with
+// want. Types are compared ignoring case.
+func checkColumns(t *testing.T, db *sql.DB, file, table string, want ...string) {
+	t.Helper()
+	rows := queryRows(t, db, "SELECT name, upper(type) FROM pragma_table_info('"+table+"')")
+	var got []string
+	for _, row := range rows {
+		got = append(got, row[0]+" "+row[1])
+	}
+	if len(got) == 0 {
+		t.Fatalf("after %s there is no table named %s", file, table)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("after %s, table %s has columns:\n    %s\nwant:\n    %s",
+			file, table, strings.Join(got, "\n    "), strings.Join(want, "\n    "))
+	}
+}
+
+// accepts runs stmt and stops the test if the database rejects it.
+func accepts(t *testing.T, db *sql.DB, file, stmt, what string) {
+	t.Helper()
+	if _, err := db.Exec(stmt); err != nil {
+		t.Fatalf("after %s, %s is rejected:\n    %s\n    error: %v", file, what, stmt, err)
+	}
+}
+
+// rejects runs stmt and reports an error if the database accepts it: the
+// table is missing the rule described by why.
+func rejects(t *testing.T, db *sql.DB, file, stmt, why string) {
+	t.Helper()
+	if _, err := db.Exec(stmt); err == nil {
+		t.Errorf("after %s, the database accepted:\n    %s\nwant an error: %s", file, stmt, why)
+	}
+}
+
+// checkRows runs query and compares its rows with want.
+func checkRows(t *testing.T, db *sql.DB, file, query string, want [][]string, why string) {
+	t.Helper()
+	got := queryRows(t, db, query)
+	if !slices.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("after %s, %s returned %v, want %v: %s", file, query, got, want, why)
+	}
+}
+
+// queryRows runs query and returns its rows with every value as text
+// ("NULL" for a missing value).
+func queryRows(t *testing.T, db *sql.DB, query string) [][]string {
+	t.Helper()
+	rows, err := db.Query(query)
+	if err != nil {
+		t.Fatalf("%s: %v", query, err)
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result [][]string
+	for rows.Next() {
+		values := make([]sql.NullString, len(columns))
+		targets := make([]any, len(columns))
+		for i := range values {
+			targets[i] = &values[i]
+		}
+		if err := rows.Scan(targets...); err != nil {
+			t.Fatal(err)
+		}
+		row := make([]string, len(columns))
+		for i, v := range values {
+			row[i] = "NULL"
+			if v.Valid {
+				row[i] = v.String
+			}
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("%s: %v", query, err)
+	}
+	return result
+}

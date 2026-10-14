@@ -1,0 +1,52 @@
+// Package sharding is the Groundwork exercise "Sharding: route keys and plan a rebalance".
+package sharding
+
+import "hash/fnv"
+
+// Move is one key that has to be copied to another shard during a rebalance.
+type Move struct {
+	Key  string
+	From int // the key's shard before the rebalance
+	To   int // the key's shard after it
+}
+
+// ShardFor returns the shard, from 0 to n-1, that key lives on: the 32-bit
+// FNV-1a hash of key, modulo n. n must be at least 1.
+func ShardFor(key string, n int) int {
+	h := fnv.New32a()
+	h.Write([]byte(key)) // a hash's Write never returns an error
+	return int(h.Sum32() % uint32(n))
+}
+
+// Group returns n slices, one per shard, where slice i holds the keys that
+// live on shard i, in the order they appear in keys.
+func Group(keys []string, n int) [][]string {
+	shards := make([][]string, n)
+	for _, key := range keys {
+		i := ShardFor(key, n)
+		shards[i] = append(shards[i], key)
+	}
+	return shards
+}
+
+// Plan returns a Move for every key whose shard changes when the number of
+// shards goes from from to to, in the order the keys appear in keys.
+func Plan(keys []string, from, to int) []Move {
+	var moves []Move
+	for _, key := range keys {
+		before, after := ShardFor(key, from), ShardFor(key, to)
+		if before != after {
+			moves = append(moves, Move{Key: key, From: before, To: after})
+		}
+	}
+	return moves
+}
+
+// MovedFraction returns the share of keys, from 0 to 1, whose shard changes
+// when the number of shards goes from from to to. It returns 0 for no keys.
+func MovedFraction(keys []string, from, to int) float64 {
+	if len(keys) == 0 {
+		return 0
+	}
+	return float64(len(Plan(keys, from, to))) / float64(len(keys))
+}

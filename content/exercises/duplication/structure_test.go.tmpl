@@ -1,0 +1,93 @@
+package svcconfig
+
+// This file reads exercise.go as a tree of Go syntax, the same way gofmt and
+// your editor do, so the tests can spot copies as well as check behaviour.
+// You don't need to change it, but you're welcome to read it.
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
+	"testing"
+)
+
+// source is exercise.go, parsed.
+type source struct {
+	fset *token.FileSet
+	file *ast.File
+}
+
+// parseExercise reads and parses exercise.go.
+func parseExercise(t *testing.T) source {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "exercise.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("can't read exercise.go: %v", err)
+	}
+	return source{fset, file}
+}
+
+// fn returns the function called name, or stops the test if there is none.
+func (s source) fn(t *testing.T, name string) *ast.FuncDecl {
+	t.Helper()
+	for _, decl := range s.file.Decls {
+		if f, ok := decl.(*ast.FuncDecl); ok && f.Name.Name == name {
+			return f
+		}
+	}
+	t.Fatalf("exercise.go has no function named %s", name)
+	return nil
+}
+
+// hasFunc reports whether exercise.go has a function called name.
+func (s source) hasFunc(name string) bool {
+	for _, decl := range s.file.Decls {
+		if f, ok := decl.(*ast.FuncDecl); ok && f.Name.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// countCalls returns how many times f calls the function called name.
+func countCalls(f *ast.FuncDecl, name string) int {
+	count := 0
+	ast.Inspect(f.Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if id, ok := call.Fun.(*ast.Ident); ok && id.Name == name {
+				count++
+			}
+		}
+		return true
+	})
+	return count
+}
+
+// numberLines returns the lines in f that have a number written in them.
+func (s source) numberLines(f *ast.FuncDecl) []int {
+	var lines []int
+	ast.Inspect(f.Body, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.INT {
+			lines = append(lines, s.fset.Position(lit.Pos()).Line)
+		}
+		return true
+	})
+	return lines
+}
+
+// stringLines returns the lines of exercise.go where the string text is
+// written, as a whole string literal such as "staging".
+func (s source) stringLines(text string) []int {
+	var lines []int
+	ast.Inspect(s.file, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			if value, err := strconv.Unquote(lit.Value); err == nil && value == text {
+				lines = append(lines, s.fset.Position(lit.Pos()).Line)
+			}
+		}
+		return true
+	})
+	return lines
+}

@@ -143,7 +143,7 @@ function are errors.
 
 ### Step 6: Test it
 
-In an exercise, Gopherlings runs the tests for you every time you save. Here
+In an exercise, Groundwork runs the tests for you every time you save. Here
 you can test it yourself with a small program that prints what you got next
 to what you wanted:
 
@@ -260,7 +260,7 @@ guide for what goes wrong otherwise.
 Every task in an exercise README shows what the code should return:
 
 ```go
-Banner() // => "gopherlings v1.0.0"
+Banner() // => "groundwork v1.0.0"
 ```
 
 Read the `// =>` line as the *specification*: the exact result the tests
@@ -309,7 +309,7 @@ code compiles but does the wrong thing.
 
 ## Hints and solutions without cheating yourself
 
-Gopherlings gives you two kinds of help:
+Groundwork gives you two kinds of help:
 
 | Key | What you get |
 |---|---|
@@ -393,6 +393,12 @@ need on call.
 | Incremental development | Writing a little code, running it, then adding the next piece. |
 | Rubber duck debugging | Explaining code line by line, out loud, to find the mistake. |
 | Retrieval practice | Learning by recalling something from memory, not re-reading it. |
+
+## Watch
+
+- [Rubber Duck Debugging - How to Solve a Problem](https://www.youtube.com/watch?v=NBgIHOrjSxs) · Coder Foundry · 6 min: a short, practical look at explaining your code out loud, line by line, until the gap shows itself.
+- [CS50x 2024 - Lecture 0 - Scratch](https://www.youtube.com/watch?v=3LPJfIKxwWc) · CS50 · 125 min: watch only "Algorithms" and "Pseudocode" (51:30 to 1:05:10), where David Malan solves a phone-book search step by step and writes the plan in plain words first.
+- [Hammock Driven Development - Rich Hickey](https://www.youtube.com/watch?v=f84n5oFoZBc) · ClojureTV · 40 min: a classic talk on understanding a problem before coding, and why stepping away from the keyboard helps you solve it.
 
 ## Go deeper
 

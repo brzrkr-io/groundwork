@@ -1,0 +1,21 @@
+// Command inventory keeps track of warehouse stock. It runs in a container
+// and reads every setting from environment variables. Try it:
+//
+//	DATABASE_URL=postgres://app:hunter2@db:5432/inventory go run .
+package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	cfg, err := Load(os.LookupEnv)
+	if err != nil {
+		// Exiting with a non-zero status makes Kubernetes restart the
+		// container, so one look at this message must show every problem.
+		fmt.Fprintf(os.Stderr, "inventory: invalid config:\n%v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("inventory: starting with", cfg)
+}

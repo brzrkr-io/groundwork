@@ -1,0 +1,80 @@
+package certs
+
+import (
+	"slices"
+	"testing"
+	"time"
+)
+
+func TestDayThresholds(t *testing.T) {
+	// These cases avoid 21 to 30 days, which task 3 changes.
+	tests := []struct {
+		daysLeft int
+		want     string
+	}{
+		{-1, "expired"},
+		{0, "critical"},
+		{7, "critical"},
+		{8, "warning"},
+		{20, "warning"},
+		{31, "ok"},
+		{90, "ok"},
+	}
+	for _, tc := range tests {
+		if got := CertStatus(tc.daysLeft); got != tc.want {
+			t.Errorf("CertStatus(%d) = %q, want %q", tc.daysLeft, got, tc.want)
+		}
+	}
+	certs := []Cert{{"api.example.com", 3}, {"www.example.com", 120}, {"old.example.com", -2}}
+	if got, want := RenewalList(certs), []string{"api.example.com", "old.example.com"}; !slices.Equal(got, want) {
+		t.Errorf("RenewalList(api 3 days, www 120 days, old -2 days) = %q, want %q", got, want)
+	}
+
+	src := parseExercise(t)
+	src.checkConstants(t, "criticalDays", "warningDays")
+	src.checkNoNumbers(t, "CertStatus", "0")
+	src.checkNoNumbers(t, "RenewalList")
+	src.checkNoNumbers(t, "NextCheck", "3600", "86400") // task 2 deals with these
+}
+
+func TestCheckIntervals(t *testing.T) {
+	tests := []struct {
+		daysLeft int
+		want     time.Duration
+	}{
+		{-3, time.Hour},
+		{7, time.Hour},
+		{8, 24 * time.Hour},
+		{90, 24 * time.Hour},
+	}
+	for _, tc := range tests {
+		if got := NextCheck(tc.daysLeft); got != tc.want {
+			t.Errorf("NextCheck(%d) = %v, want %v", tc.daysLeft, got, tc.want)
+		}
+	}
+
+	src := parseExercise(t)
+	src.checkConstants(t, "urgentInterval", "normalInterval")
+	src.checkNoNumbers(t, "NextCheck")
+}
+
+func TestNewWarningPolicy(t *testing.T) {
+	tests := []struct {
+		daysLeft int
+		want     string
+	}{
+		{20, "warning"},
+		{21, "warning"},
+		{22, "ok"},
+		{30, "ok"},
+	}
+	for _, tc := range tests {
+		if got := CertStatus(tc.daysLeft); got != tc.want {
+			t.Errorf("CertStatus(%d) = %q, want %q under the new policy", tc.daysLeft, got, tc.want)
+		}
+	}
+	certs := []Cert{{"a.example.com", 21}, {"b.example.com", 22}, {"c.example.com", 30}}
+	if got, want := RenewalList(certs), []string{"a.example.com"}; !slices.Equal(got, want) {
+		t.Errorf("RenewalList(a 21 days, b 22 days, c 30 days) = %q, want %q under the new policy", got, want)
+	}
+}

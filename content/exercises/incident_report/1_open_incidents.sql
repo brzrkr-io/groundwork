@@ -1,0 +1,7 @@
+-- Task 1: List the open incidents
+--
+-- Return the id, service name (service), severity and opened_at of
+-- every incident that is still open: worst severity first, and
+-- oldest first within a severity.
+--
+-- TODO(1): Write your query below.

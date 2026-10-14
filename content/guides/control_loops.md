@@ -346,6 +346,12 @@ The catch is the same as any controller: a manual fix during an incident will be
 | Work queue | A deduplicating queue of object keys to reconcile |
 | GitOps | Git as the desired state, with a controller applying it |
 
+## Watch
+
+- [What is GitOps, How GitOps works and Why it's so useful](https://www.youtube.com/watch?v=f5EpcWp0THw) · TechWorld with Nana · 12 min: a clear overview of desired state in git and an agent that pulls it into the cluster, matching the GitOps section.
+- [Kubernetes Design Principles: Understand the Why - Saad Ali, Google](https://www.youtube.com/watch?v=ZuIQurh_kDk) · CNCF [Cloud Native Computing Foundation] · 38 min: the best talk on why Kubernetes is declarative, level-triggered and built from small controllers that watch the API server.
+- [Writing Kube Controllers for Everyone - Maciej Szulik, Red Hat (Beginner Skill Level)](https://www.youtube.com/watch?v=AUNPLQVxvmw) · CNCF [Cloud Native Computing Foundation] · 37 min: a beginner tour of a real controller's informers, listers and work queue, the pieces from "How a controller watches cheaply".
+
 ## Go deeper
 
 - [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/) (kubernetes.io): the official explanation, starting from the same thermostat.

@@ -1,0 +1,21 @@
+# Task 1: inventory ships for Linux and macOS, and must build with this Go
+# release and the next one. In a real repository: .github/workflows/test.yml.
+
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # TODO(1): Run this job four times: on Go 1.26 and Go 1.27, each on Linux
+    # and on macOS. One failing copy must not cancel the other three.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go test ./...

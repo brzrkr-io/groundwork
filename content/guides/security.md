@@ -370,6 +370,13 @@ Good audit logs are append-only, stored where the actor can't edit them, and nev
 | Safe default | The setting you get without asking is the safe one |
 | Audit log | A tamper-resistant record of who did what, when |
 
+## Watch
+
+- [7 Security risks you should never take as a developer](https://www.youtube.com/watch?v=4YOpILi9Oxs) · Fireship · 9 min: a fast tour of vulnerable packages, injection, leaked credentials and least privilege, most of this guide in one sitting.
+- [Hacking Websites with SQL Injection - Computerphile](https://www.youtube.com/watch?v=_jKylhJtPmI) · Computerphile · 9 min: Tom Scott shows on screen how data glued into a command becomes code, the idea behind the Injection section.
+- [Hashing Algorithms and Security - Computerphile](https://www.youtube.com/watch?v=b4b8ktEV4Bg) · Computerphile · 8 min: what a hash is, why it can't be reversed, and why that makes it right for passwords and file checks.
+- [XZ Exploit - Computerphile](https://www.youtube.com/watch?v=LY8_35a_DEA) · Computerphile · 15 min: the near-miss backdoor slipped into a Linux library by a helpful-seeming contributor, a real supply chain attack.
+
 ## Go deeper
 
 - [Security best practices in IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html) (AWS): least privilege and temporary credentials, from the source.

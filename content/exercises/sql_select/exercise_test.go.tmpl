@@ -1,0 +1,171 @@
+package sqlselect
+
+import (
+	"database/sql"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+
+	_ "modernc.org/sqlite" // the SQLite driver, registered as "sqlite"
+)
+
+func TestAllDeploys(t *testing.T) {
+	got := runQuery(t, "1_all_deploys.sql")
+	want := [][]string{
+		{"api", "v1.4.0", "staging"},
+		{"api", "v1.4.0", "production"},
+		{"checkout", "v2.7.1", "staging"},
+		{"checkout", "v2.7.1", "production"},
+		{"billing", "v0.9.3", "production"},
+		{"search", "v3.1.0", "staging"},
+		{"search", "v3.1.1", "staging"},
+		{"checkout", "v2.7.2", "production"},
+		{"api", "v1.5.0-rc.1", "staging"},
+		{"billing", "v1.0.0", "staging"},
+		{"billing", "v1.0.0", "production"},
+		{"search", "v3.1.1", "production"},
+		{"api", "v1.4.1-hotfix", "production"},
+		{"checkout", "v2.8.0", "production"},
+	}
+	checkRowsAnyOrder(t, "1_all_deploys.sql", got, want)
+}
+
+func TestFailedDeploys(t *testing.T) {
+	got := runQuery(t, "2_failed_deploys.sql")
+	want := [][]string{
+		{"checkout", "v2.7.1"},
+		{"search", "v3.1.0"},
+		{"billing", "v1.0.0"},
+		{"checkout", "v2.8.0"},
+	}
+	checkRowsAnyOrder(t, "2_failed_deploys.sql", got, want)
+}
+
+func TestSlowProductionDeploys(t *testing.T) {
+	got := runQuery(t, "3_slow_production.sql")
+	want := [][]string{
+		{"4", "checkout", "610"},
+		{"8", "checkout", "395"},
+		{"11", "billing", "720"},
+		{"14", "checkout", "455"},
+	}
+	checkRowsAnyOrder(t, "3_slow_production.sql", got, want)
+}
+
+func TestPaymentsProblems(t *testing.T) {
+	got := runQuery(t, "4_payments_problems.sql")
+	want := [][]string{
+		{"4", "checkout", "failed"},
+		{"10", "billing", "failed"},
+		{"11", "billing", "rolled_back"},
+		{"14", "checkout", "failed"},
+	}
+	checkRowsAnyOrder(t, "4_payments_problems.sql", got, want)
+}
+
+// result is what a query returned: the column names, and the rows with every
+// value written as text ("NULL" for a missing value).
+type result struct {
+	columns []string
+	rows    [][]string
+}
+
+// runQuery builds a fresh in-memory database from testdata/schema.sql and
+// testdata/data.sql, then runs the query in file against it.
+func runQuery(t *testing.T, file string) result {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every connection to ":memory:" gets its own empty database: use one.
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
+	for _, fixture := range []string{"testdata/schema.sql", "testdata/data.sql"} {
+		if _, err := db.Exec(readSQL(t, fixture)); err != nil {
+			t.Fatalf("loading %s: %v", fixture, err)
+		}
+	}
+
+	rows, err := db.Query(readSQL(t, file))
+	if err != nil {
+		t.Fatalf("%s failed: %v", file, err)
+	}
+	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := result{columns: columns}
+	for rows.Next() {
+		values := make([]sql.NullString, len(columns))
+		targets := make([]any, len(columns))
+		for i := range values {
+			targets[i] = &values[i]
+		}
+		if err := rows.Scan(targets...); err != nil {
+			t.Fatalf("%s: reading a row: %v", file, err)
+		}
+		row := make([]string, len(columns))
+		for i, v := range values {
+			row[i] = "NULL"
+			if v.Valid {
+				row[i] = v.String
+			}
+		}
+		res.rows = append(res.rows, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("%s failed: %v", file, err)
+	}
+	return res
+}
+
+// readSQL returns the contents of file. It fails the test if the file holds
+// nothing but comments, because then there's no query to run yet.
+func readSQL(t *testing.T, file string) string {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line := range strings.Lines(string(data)) {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "--") {
+			return string(data)
+		}
+	}
+	t.Fatalf("%s has no SQL yet: write your query under the TODO", file)
+	return ""
+}
+
+// checkRowsAnyOrder compares the rows of got with want, ignoring their order:
+// these queries have no ORDER BY, so the database may return rows in any
+// order.
+func checkRowsAnyOrder(t *testing.T, file string, got result, want [][]string) {
+	t.Helper()
+	sortedGot := slices.Clone(got.rows)
+	sortedWant := slices.Clone(want)
+	slices.SortFunc(sortedGot, slices.Compare)
+	slices.SortFunc(sortedWant, slices.Compare)
+	if !slices.EqualFunc(sortedGot, sortedWant, slices.Equal) {
+		t.Errorf("%s returned %d rows (columns: %s):\n%s\nwant %d rows:\n%s",
+			file, len(got.rows), strings.Join(got.columns, ", "), table(sortedGot),
+			len(want), table(sortedWant))
+	}
+}
+
+// table writes rows one per line, with " | " between the values.
+func table(rows [][]string) string {
+	var b strings.Builder
+	for _, row := range rows {
+		b.WriteString("    ")
+		b.WriteString(strings.Join(row, " | "))
+		b.WriteString("\n")
+	}
+	if len(rows) == 0 {
+		b.WriteString("    (no rows)\n")
+	}
+	return b.String()
+}

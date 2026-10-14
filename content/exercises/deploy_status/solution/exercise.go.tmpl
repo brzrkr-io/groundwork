@@ -1,0 +1,159 @@
+// Package deploystatus is the Groundwork exercise "Practice: deploy-status service".
+package deploystatus
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"sync"
+)
+
+// Event is one deploy event sent by a CI pipeline.
+type Event struct {
+	ID      string `json:"id"`
+	Service string `json:"service"`
+	Version string `json:"version"`
+	State   string `json:"state"`
+}
+
+// Status is the latest known deploy of one service.
+type Status struct {
+	Service string `json:"service"`
+	Version string `json:"version"`
+	State   string `json:"state"`
+}
+
+// Errors returned by Submit.
+var (
+	ErrInvalidEvent = errors.New("invalid deploy event")
+	ErrQueueFull    = errors.New("event queue is full")
+)
+
+// Service accepts deploy events, applies them in the background and answers
+// "what is deployed right now?" for each service.
+type Service struct {
+	queue chan Event // bounded: when it is full, Submit pushes back
+
+	mu        sync.Mutex        // guards everything below
+	statuses  map[string]Status // the database: service name -> latest status
+	processed map[string]bool   // IDs of events already applied
+	cache     *Cache            // service name -> status, in front of statuses
+	dbReads   int               // how often Lookup read statuses; tests check it
+}
+
+// New returns a Service whose queue holds queueSize events and whose cache
+// holds cacheSize statuses.
+func New(queueSize, cacheSize int) *Service {
+	return &Service{
+		queue:     make(chan Event, queueSize),
+		statuses:  make(map[string]Status),
+		processed: make(map[string]bool),
+		cache:     NewCache(cacheSize),
+	}
+}
+
+// Submit checks ev and puts it on the queue without waiting. It returns an
+// error wrapping ErrInvalidEvent if a field is missing or the state is
+// unknown, and ErrQueueFull if the queue has no room.
+func (s *Service) Submit(ev Event) error {
+	if ev.ID == "" || ev.Service == "" || ev.Version == "" {
+		return fmt.Errorf("%w: id, service and version are required", ErrInvalidEvent)
+	}
+	switch ev.State {
+	case "started", "succeeded", "failed":
+	default:
+		return fmt.Errorf("%w: unknown state %q", ErrInvalidEvent, ev.State)
+	}
+	select {
+	case s.queue <- ev:
+		return nil
+	default:
+		return ErrQueueFull
+	}
+}
+
+// Apply makes ev the latest status of its service, unless an event with the
+// same ID was applied before. It removes that service from the cache.
+func (s *Service) Apply(ev Event) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.processed[ev.ID] {
+		return // a redelivered event: applying it again could roll the status back
+	}
+	s.statuses[ev.Service] = Status{Service: ev.Service, Version: ev.Version, State: ev.State}
+	s.processed[ev.ID] = true
+	s.cache.Remove(ev.Service)
+}
+
+// Lookup returns the latest status of service and true, or false if no
+// event for it has been applied. It reads through the cache.
+func (s *Service) Lookup(service string) (Status, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if st, ok := s.cache.Get(service); ok {
+		return st, true
+	}
+	s.dbReads++
+	st, ok := s.statuses[service]
+	if ok {
+		s.cache.Put(service, st)
+	}
+	return st, ok
+}
+
+// Run applies queued events one at a time until ctx is cancelled.
+func (s *Service) Run(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev := <-s.queue:
+			s.Apply(ev)
+		}
+	}
+}
+
+// Handler returns the service's HTTP API:
+//
+//	POST /events             queue a deploy event
+//	GET  /status/{service}   the latest status of one service
+func (s *Service) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /events", s.handleEvent)
+	mux.HandleFunc("GET /status/{service}", s.handleStatus)
+	return mux
+}
+
+// handleEvent decodes a JSON Event from the request body and submits it.
+func (s *Service) handleEvent(w http.ResponseWriter, r *http.Request) {
+	var ev Event
+	if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
+		http.Error(w, "bad JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	err := s.Submit(ev)
+	switch {
+	case errors.Is(err, ErrQueueFull):
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		w.WriteHeader(http.StatusAccepted)
+	}
+}
+
+// handleStatus replies with the latest status of the service in the path,
+// as JSON.
+func (s *Service) handleStatus(w http.ResponseWriter, r *http.Request) {
+	service := r.PathValue("service")
+	st, ok := s.Lookup(service)
+	if !ok {
+		http.Error(w, "no deploys recorded for "+service, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(st)
+}

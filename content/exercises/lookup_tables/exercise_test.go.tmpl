@@ -1,0 +1,68 @@
+package routing
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestRoute(t *testing.T) {
+	tests := []struct {
+		alert        string
+		wantTeam     string
+		wantSeverity string
+	}{
+		{"DiskFull", "infra", "critical"},
+		{"DiskFillingUp", "infra", "warning"},
+		{"NodeDown", "infra", "critical"},
+		{"CertExpiring", "security", "warning"},
+		{"LoginFailures", "security", "critical"},
+		{"HighErrorRate", "payments", "critical"},
+		{"SlowCheckout", "payments", "warning"},
+		{"ReplicationLag", "data", "warning"},
+		{"BackupFailed", "data", "critical"},
+		{"SomethingNew", "platform", "info"},
+		{"", "platform", "info"},
+	}
+	for _, tc := range tests {
+		team, severity := Route(tc.alert)
+		if team != tc.wantTeam || severity != tc.wantSeverity {
+			t.Errorf("Route(%q) = %q, %q; want %q, %q", tc.alert, team, severity, tc.wantTeam, tc.wantSeverity)
+		}
+	}
+	checkTable(t, "Route", "routes")
+}
+
+func TestExitReason(t *testing.T) {
+	tests := []struct {
+		code int
+		want string
+	}{
+		{0, "success"},
+		{1, "general error"},
+		{2, "misuse of a shell builtin"},
+		{126, "command found but not executable"},
+		{127, "command not found"},
+		{130, "interrupted (Ctrl-C)"},
+		{137, "killed (SIGKILL, often out of memory)"},
+		{143, "terminated (SIGTERM)"},
+		{3, "exit code 3"},
+		{255, "exit code 255"},
+	}
+	for _, tc := range tests {
+		if got := ExitReason(tc.code); got != tc.want {
+			t.Errorf("ExitReason(%d) = %q, want %q", tc.code, got, tc.want)
+		}
+	}
+	checkTable(t, "ExitReason", "exitReasons")
+}
+
+func TestTeams(t *testing.T) {
+	team, severity := Route("PodCrashLooping")
+	if team != "apps" || severity != "critical" {
+		t.Errorf(`Route("PodCrashLooping") = %q, %q; want "apps", "critical"`, team, severity)
+	}
+	want := []string{"apps", "data", "infra", "payments", "platform", "security"}
+	if got := Teams(); !slices.Equal(got, want) {
+		t.Errorf("Teams() = %q, want %q", got, want)
+	}
+}

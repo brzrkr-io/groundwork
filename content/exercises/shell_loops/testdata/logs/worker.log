@@ -1,0 +1,5 @@
+2026-10-13T09:00:03Z INFO worker started
+2026-10-13T09:01:00Z INFO worker job 1 done
+2026-10-13T09:02:00Z INFO worker job 2 done
+2026-10-13T09:03:00Z WARN worker queue slow
+2026-10-13T09:04:00Z INFO worker job 3 done

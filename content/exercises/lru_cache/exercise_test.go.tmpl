@@ -1,0 +1,189 @@
+package lru
+
+import (
+	"fmt"
+	"slices"
+	"sync"
+	"testing"
+)
+
+// wantKeys checks that c.Keys() returns want, most recently used first.
+func wantKeys(t *testing.T, c *Cache, want ...string) {
+	t.Helper()
+	if got := c.Keys(); !slices.Equal(got, want) {
+		t.Errorf("Keys() = %q, want %q", got, want)
+	}
+}
+
+// wantGet checks that c.Get(key) returns want, wantOK.
+func wantGet(t *testing.T, c *Cache, key, want string, wantOK bool) {
+	t.Helper()
+	got, ok := c.Get(key)
+	if got != want || ok != wantOK {
+		t.Errorf("Get(%q) = %q, %t, want %q, %t", key, got, ok, want, wantOK)
+	}
+}
+
+// wantLen checks that c.Len() returns want.
+func wantLen(t *testing.T, c *Cache, want int) {
+	t.Helper()
+	if got := c.Len(); got != want {
+		t.Errorf("Len() = %d, want %d", got, want)
+	}
+}
+
+// wantEvictions checks that c.Evictions() returns want.
+func wantEvictions(t *testing.T, c *Cache, want int) {
+	t.Helper()
+	if got := c.Evictions(); got != want {
+		t.Errorf("Evictions() = %d, want %d", got, want)
+	}
+}
+
+func TestPutNew(t *testing.T) {
+	t.Run("empty cache", func(t *testing.T) {
+		c := New(3)
+		wantKeys(t, c)
+		wantLen(t, c, 0)
+	})
+
+	t.Run("newest key first", func(t *testing.T) {
+		c := New(5)
+		c.Put("nginx:1.27", "sha256:4f1c")
+		c.Put("redis:7.4", "sha256:9a0b")
+		c.Put("postgres:16", "sha256:e83d")
+		wantKeys(t, c, "postgres:16", "redis:7.4", "nginx:1.27")
+		wantLen(t, c, 3)
+	})
+
+	t.Run("one key", func(t *testing.T) {
+		c := New(5)
+		c.Put("alpine:3.20", "sha256:51b6")
+		wantKeys(t, c, "alpine:3.20")
+		wantLen(t, c, 1)
+	})
+}
+
+func TestGet(t *testing.T) {
+	t.Run("hits return the value", func(t *testing.T) {
+		c := New(5)
+		c.Put("nginx:1.27", "sha256:4f1c")
+		c.Put("redis:7.4", "sha256:9a0b")
+		wantGet(t, c, "nginx:1.27", "sha256:4f1c", true)
+		wantGet(t, c, "redis:7.4", "sha256:9a0b", true)
+	})
+
+	t.Run("misses change nothing", func(t *testing.T) {
+		c := New(5)
+		wantGet(t, c, "nginx:1.27", "", false)
+		c.Put("nginx:1.27", "sha256:4f1c")
+		c.Put("redis:7.4", "sha256:9a0b")
+		wantGet(t, c, "mysql:8", "", false)
+		wantKeys(t, c, "redis:7.4", "nginx:1.27")
+	})
+
+	t.Run("a hit moves the key to the front", func(t *testing.T) {
+		c := New(5)
+		c.Put("nginx:1.27", "sha256:4f1c")
+		c.Put("redis:7.4", "sha256:9a0b")
+		c.Put("postgres:16", "sha256:e83d")
+		c.Get("nginx:1.27")
+		wantKeys(t, c, "nginx:1.27", "postgres:16", "redis:7.4")
+		c.Get("redis:7.4")
+		wantKeys(t, c, "redis:7.4", "nginx:1.27", "postgres:16")
+		c.Get("redis:7.4") // already at the front
+		wantKeys(t, c, "redis:7.4", "nginx:1.27", "postgres:16")
+	})
+}
+
+func TestPutExisting(t *testing.T) {
+	t.Run("replaces the value", func(t *testing.T) {
+		c := New(5)
+		c.Put("nginx:1.27", "sha256:4f1c")
+		c.Put("redis:7.4", "sha256:9a0b")
+		c.Put("nginx:1.27", "sha256:7d2e") // the tag was pushed again
+		wantLen(t, c, 2)
+		wantKeys(t, c, "nginx:1.27", "redis:7.4")
+		wantGet(t, c, "nginx:1.27", "sha256:7d2e", true)
+	})
+
+	t.Run("moves the key to the front", func(t *testing.T) {
+		c := New(5)
+		c.Put("nginx:1.27", "sha256:4f1c")
+		c.Put("redis:7.4", "sha256:9a0b")
+		c.Put("postgres:16", "sha256:e83d")
+		c.Put("redis:7.4", "sha256:c41f")
+		wantLen(t, c, 3)
+		wantKeys(t, c, "redis:7.4", "postgres:16", "nginx:1.27")
+		wantGet(t, c, "redis:7.4", "sha256:c41f", true)
+	})
+}
+
+func TestEvict(t *testing.T) {
+	t.Run("drops the least recently used key", func(t *testing.T) {
+		c := New(2)
+		c.Put("nginx:1.27", "sha256:4f1c")
+		c.Put("redis:7.4", "sha256:9a0b")
+		wantEvictions(t, c, 0)
+		c.Put("postgres:16", "sha256:e83d")
+		wantKeys(t, c, "postgres:16", "redis:7.4")
+		wantLen(t, c, 2)
+		wantEvictions(t, c, 1)
+		wantGet(t, c, "nginx:1.27", "", false)
+	})
+
+	t.Run("a Get keeps a key", func(t *testing.T) {
+		c := New(2)
+		c.Put("nginx:1.27", "sha256:4f1c")
+		c.Put("redis:7.4", "sha256:9a0b")
+		c.Get("nginx:1.27")
+		c.Put("postgres:16", "sha256:e83d")
+		wantKeys(t, c, "postgres:16", "nginx:1.27")
+		wantGet(t, c, "redis:7.4", "", false)
+		wantEvictions(t, c, 1)
+	})
+
+	t.Run("an update never evicts", func(t *testing.T) {
+		c := New(2)
+		c.Put("nginx:1.27", "sha256:4f1c")
+		c.Put("redis:7.4", "sha256:9a0b")
+		c.Put("nginx:1.27", "sha256:7d2e")
+		wantEvictions(t, c, 0)
+		wantLen(t, c, 2)
+		c.Put("postgres:16", "sha256:e83d")
+		wantKeys(t, c, "postgres:16", "nginx:1.27")
+		wantEvictions(t, c, 1)
+	})
+
+	t.Run("capacity 1", func(t *testing.T) {
+		c := New(1)
+		c.Put("nginx:1.27", "sha256:4f1c")
+		c.Put("redis:7.4", "sha256:9a0b")
+		c.Put("postgres:16", "sha256:e83d")
+		wantKeys(t, c, "postgres:16")
+		wantEvictions(t, c, 2)
+		wantGet(t, c, "postgres:16", "sha256:e83d", true)
+	})
+
+	t.Run("safe for concurrent use", func(t *testing.T) {
+		c := New(10)
+		var wg sync.WaitGroup
+		for i := range 20 {
+			wg.Go(func() {
+				for j := range 5 {
+					tag := fmt.Sprintf("app-%d:v%d", i, j)
+					c.Put(tag, "sha256:0000")
+					c.Get(tag)
+					c.Len()
+				}
+			})
+		}
+		wg.Wait()
+		// 100 different tags went into a cache that holds 10.
+		wantLen(t, c, 10)
+		if got := len(c.Keys()); got != 10 {
+			t.Errorf("len(Keys()) = %d, want 10", got)
+		}
+		wantEvictions(t, c, 90)
+	})
+}

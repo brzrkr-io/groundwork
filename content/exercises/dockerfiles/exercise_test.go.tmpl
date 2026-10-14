@@ -1,0 +1,137 @@
+package main
+
+import (
+	"slices"
+	"testing"
+)
+
+// The helpers readDockerfile, find and envVars are in dockerfile_test.go.
+
+func TestGoVersionImage(t *testing.T) {
+	const file = "1_go_version.Dockerfile"
+	instructions := readDockerfile(t, file)
+	checkFrom(t, file, instructions, "golang:1.26")
+	checkCmd(t, file, instructions, []string{"go", "version"})
+}
+
+func TestBuildStatusd(t *testing.T) {
+	const file = "2_build.Dockerfile"
+	instructions := readDockerfile(t, file)
+	checkFrom(t, file, instructions, "golang:1.26")
+
+	workdir := first(instructions, "WORKDIR")
+	if workdir == nil {
+		t.Fatalf("%s has no WORKDIR; want WORKDIR /src", file)
+	}
+	if !slices.Equal(workdir.Args, []string{"/src"}) {
+		t.Errorf("%s line %d: %s, want WORKDIR /src", file, workdir.Line, show(*workdir))
+	}
+
+	var copyAll *instruction
+	for _, in := range find(instructions, "COPY") {
+		if len(in.Args) == 2 && in.Args[0] == "." && slices.Contains([]string{".", "./", "/src", "/src/"}, in.Args[1]) {
+			copyAll = &in
+		}
+	}
+	if copyAll == nil {
+		t.Fatalf("%s has no COPY that copies the whole build context into /src; want COPY . .", file)
+	}
+	if copyAll.Line < workdir.Line {
+		t.Errorf("%s: COPY (line %d) comes before WORKDIR (line %d), so the files don't land in /src", file, copyAll.Line, workdir.Line)
+	}
+
+	var build *instruction
+	for _, in := range find(instructions, "RUN") {
+		if slices.Contains(in.Args, "go") && slices.Contains(in.Args, "build") {
+			build = &in
+		}
+	}
+	if build == nil {
+		t.Fatalf("%s has no RUN go build ...; want RUN go build -o /usr/local/bin/statusd .", file)
+	}
+	if want := "go build -o /usr/local/bin/statusd ."; build.Rest != want {
+		t.Errorf("%s line %d: %s, want RUN %s", file, build.Line, show(*build), want)
+	}
+	if build.Line < copyAll.Line {
+		t.Errorf("%s: RUN go build (line %d) comes before COPY (line %d), so there is no source to build yet", file, build.Line, copyAll.Line)
+	}
+
+	cmd := checkCmd(t, file, instructions, []string{"statusd"}, []string{"/usr/local/bin/statusd"})
+	if cmd != nil && cmd.Line < build.Line {
+		t.Errorf("%s: CMD (line %d) comes before the build (line %d); put it last, where readers look for it", file, cmd.Line, build.Line)
+	}
+}
+
+func TestConfigureForProduction(t *testing.T) {
+	const file = "3_configure.Dockerfile"
+	instructions := readDockerfile(t, file)
+	checkFrom(t, file, instructions, "statusd:dev")
+
+	env := envVars(instructions)
+	if got := env["APP_ENV"]; got != "production" {
+		t.Errorf("%s: ENV sets APP_ENV to %q, want %q", file, got, "production")
+	}
+	if got := env["PORT"]; got != "8080" {
+		t.Errorf("%s: ENV sets PORT to %q, want %q", file, got, "8080")
+	}
+
+	exposed := false
+	for _, in := range find(instructions, "EXPOSE") {
+		exposed = exposed || slices.Contains(in.Args, "8080") || slices.Contains(in.Args, "8080/tcp")
+	}
+	if !exposed {
+		t.Errorf("%s doesn't expose port 8080; want EXPOSE 8080", file)
+	}
+
+	if cmd := first(instructions, "CMD"); cmd != nil {
+		t.Errorf("%s line %d: %s; leave CMD out, the one in statusd:dev is inherited", file, cmd.Line, show(*cmd))
+	}
+}
+
+// checkFrom checks that the Dockerfile has exactly one FROM, first, with the
+// image want.
+func checkFrom(t *testing.T, file string, instructions []instruction, want string) {
+	t.Helper()
+	froms := find(instructions, "FROM")
+	if len(froms) != 1 {
+		t.Fatalf("%s has %d FROM instructions, want 1: FROM %s", file, len(froms), want)
+	}
+	if instructions[0].Cmd != "FROM" {
+		t.Errorf("%s line %d: %s comes before FROM; FROM must be the first instruction", file, instructions[0].Line, instructions[0].Cmd)
+	}
+	if got := froms[0].Rest; got != want {
+		t.Errorf("%s line %d: FROM %s, want FROM %s", file, froms[0].Line, got, want)
+	}
+}
+
+// checkCmd checks the last CMD (the one Docker uses) is in exec form and
+// runs one of the wanted commands. It returns the CMD, or nil.
+func checkCmd(t *testing.T, file string, instructions []instruction, want ...[]string) *instruction {
+	t.Helper()
+	cmds := find(instructions, "CMD")
+	if len(cmds) == 0 {
+		t.Errorf("%s has no CMD; want CMD %s", file, execForm(want[0]))
+		return nil
+	}
+	cmd := cmds[len(cmds)-1]
+	if !cmd.Exec {
+		t.Errorf("%s line %d: %s is in shell form; write it in exec form, a JSON list such as CMD %s", file, cmd.Line, show(cmd), execForm(want[0]))
+		return &cmd
+	}
+	for _, w := range want {
+		if slices.Equal(cmd.Args, w) {
+			return &cmd
+		}
+	}
+	t.Errorf("%s line %d: %s, want CMD %s", file, cmd.Line, show(cmd), execForm(want[0]))
+	return &cmd
+}
+
+// first returns the first instruction with the given command, or nil.
+func first(instructions []instruction, cmd string) *instruction {
+	found := find(instructions, cmd)
+	if len(found) == 0 {
+		return nil
+	}
+	return &found[0]
+}

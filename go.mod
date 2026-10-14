@@ -1,4 +1,4 @@
-module github.com/pjanderson/gopherlings
+module github.com/pjanderson/groundwork
 
 go 1.24.2
 

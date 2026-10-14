@@ -1,0 +1,30 @@
+2026-10-13T14:00:01Z INFO api 12 GET /healthz 200
+2026-10-13T14:00:02Z INFO checkout 88 cart created
+2026-10-13T14:00:03Z INFO payments 140 charge started
+2026-10-13T14:00:05Z INFO api 15 GET /healthz 200
+2026-10-13T14:00:07Z WARN payments 950 card processor slow
+2026-10-13T14:00:09Z INFO auth 31 token issued
+2026-10-13T14:00:11Z INFO checkout 92 cart updated
+2026-10-13T14:00:12Z ERROR payments 5012 upstream timeout
+2026-10-13T14:00:14Z INFO api 11 GET /healthz 200
+2026-10-13T14:00:15Z WARN checkout 610 retrying payment call
+2026-10-13T14:00:17Z ERROR checkout 3020 payment failed for order 1182
+2026-10-13T14:00:18Z INFO auth 29 token issued
+2026-10-13T14:00:20Z ERROR payments 5004 upstream timeout
+2026-10-13T14:00:21Z INFO api 13 GET /healthz 200
+2026-10-13T14:00:23Z WARN payments 1210 card processor slow
+2026-10-13T14:00:24Z INFO checkout 95 cart created
+2026-10-13T14:00:26Z ERROR auth 230 token signing key not found
+2026-10-13T14:00:27Z INFO api 12 GET /healthz 200
+2026-10-13T14:00:29Z ERROR payments 4870 upstream timeout
+2026-10-13T14:00:30Z WARN api 480 connection pool almost full
+2026-10-13T14:00:32Z INFO payments 133 charge started
+2026-10-13T14:00:33Z ERROR checkout 2950 payment failed for order 1185
+2026-10-13T14:00:35Z INFO auth 30 token issued
+2026-10-13T14:00:36Z INFO api 14 GET /healthz 200
+2026-10-13T14:00:38Z WARN payments 1020 card processor slow
+2026-10-13T14:00:40Z ERROR payments 61 circuit breaker open
+2026-10-13T14:00:41Z INFO checkout 90 cart updated
+2026-10-13T14:00:43Z INFO api 12 GET /healthz 200
+2026-10-13T14:00:45Z INFO payments 128 charge started
+2026-10-13T14:00:47Z INFO payments 131 charge succeeded

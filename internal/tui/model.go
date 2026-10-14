@@ -19,9 +19,9 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/pjanderson/gopherlings/internal/course"
-	"github.com/pjanderson/gopherlings/internal/session"
-	"github.com/pjanderson/gopherlings/internal/workspace"
+	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/pjanderson/groundwork/internal/session"
+	"github.com/pjanderson/groundwork/internal/workspace"
 )
 
 type pane int
@@ -376,11 +376,15 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// openGuides shows the guide list with the cursor on the current module's
-// first guide (or the nearest earlier one).
+// openGuides shows the guide list with the cursor on the next unread guide,
+// else the current module's first guide (or the nearest earlier one).
 func (m *Model) openGuides() {
 	m.pane = paneGuides
 	m.guideIdx = 0
+	if next := m.s.NextGuide(); next != nil {
+		m.guideIdx = next.Number - 1
+		return
+	}
 	for i, g := range m.s.Course.Guides {
 		if g.Module.Number <= m.ex.Module.Number {
 			m.guideIdx = i
@@ -396,6 +400,22 @@ func (m *Model) openGuides() {
 // false for keys the main handler should take (q, l, ?, n, ...).
 func (m *Model) guideKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 	k, last := msg.String(), len(m.s.Course.Guides)-1
+	switch k {
+	case "m":
+		g := m.cursorGuide()
+		read := !m.s.Read(g)
+		if err := m.s.SetRead(g, read); err != nil {
+			m.flash = "Couldn't save: " + err.Error()
+		} else if read {
+			m.flash = "Marked " + g.Title + " as read."
+		} else {
+			m.flash = "Marked " + g.Title + " as unread."
+		}
+		m.refresh()
+		return true, nil
+	case "o":
+		return true, m.openInEditor(m.s.GuidePath(m.cursorGuide()))
+	}
 	if m.pane == paneGuide {
 		switch k {
 		case "esc", "backspace", "left":
@@ -437,6 +457,14 @@ func (m *Model) guideKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 	return true, nil
 }
 
+// cursorGuide is the guide open in the reader, else the one under the cursor.
+func (m *Model) cursorGuide() *course.Guide {
+	if m.pane == paneGuide {
+		return m.guide
+	}
+	return m.s.Course.Guides[m.guideIdx]
+}
+
 func (m *Model) toggle(p pane) {
 	if m.pane == p {
 		m.pane = paneResult
@@ -460,17 +488,23 @@ func (m *Model) reset() tea.Cmd {
 // edit opens the first file with a TODO in $VISUAL or $EDITOR, suspending
 // the TUI until the editor exits.
 func (m *Model) edit() tea.Cmd {
+	target := m.s.Dir(m.ex)
+	if files := m.todoFiles; len(files) > 0 {
+		target = filepath.Join(m.s.Root, files[0])
+	}
+	return m.openInEditor(target)
+}
+
+// openInEditor opens target in $VISUAL or $EDITOR, suspending the TUI until
+// the editor exits.
+func (m *Model) openInEditor(target string) tea.Cmd {
 	editor := os.Getenv("VISUAL")
 	if editor == "" {
 		editor = os.Getenv("EDITOR")
 	}
 	if editor == "" {
-		m.flash = "Set $EDITOR (for example export EDITOR=vim) to open files with e."
+		m.flash = "Set $EDITOR (for example export EDITOR=vim) to open files in your editor."
 		return nil
-	}
-	target := m.s.Dir(m.ex)
-	if files := m.todoFiles; len(files) > 0 {
-		target = filepath.Join(m.s.Root, files[0])
 	}
 	fields := strings.Fields(editor)
 	cmd := exec.Command(fields[0], append(fields[1:], target)...)
@@ -598,6 +632,9 @@ func (m *Model) resultView(width int) string {
 	} else if m.result != nil {
 		b.WriteString("\n\n" + dim.Render("Not sure what to do? Press ") + keyCap.Render("i") + dim.Render(" for the instructions or ") + keyCap.Render("h") + dim.Render(" for a hint."))
 	}
+	if g := m.s.NextGuide(); g != nil && m.result != nil {
+		b.WriteString("\n\n" + wrapIndent(dim.Render("Background reading: ")+bold.Render(g.Title)+dim.Render(fmt.Sprintf(" (guide %d), for module %d. Press ", g.Number, g.Module.Number))+keyCap.Render("g")+dim.Render(" to read it."), 0, width))
+	}
 	return b.String()
 }
 
@@ -608,7 +645,7 @@ func (m *Model) successView() string {
 	if next := m.s.NextPending(m.ex); next != nil {
 		b.WriteString("  When you're ready, press " + keyCap.Render("n") + " for " + bold.Render(fmt.Sprintf("%03d %s", next.Number, next.Title)) + ".")
 	} else {
-		b.WriteString(okBold.Render("  You finished every exercise in Gopherlings. Brilliant work! 🎉"))
+		b.WriteString(okBold.Render("  You finished every exercise in Groundwork. Brilliant work! 🎉"))
 	}
 	return b.String()
 }
@@ -744,14 +781,18 @@ func (m *Model) guidesView(width int) string {
 			lines = append(lines, head)
 		}
 		label := fmt.Sprintf("%02d  %s", g.Number, g.Title)
+		icon := dim.Render("·")
+		if m.s.Read(g) {
+			icon = okStyle.Render("✓")
+		}
 		if i != m.guideIdx {
-			lines = append(lines, "    "+label)
+			lines = append(lines, "    "+icon+"  "+label)
 			continue
 		}
 		m.guideLine = len(lines)
-		lines = append(lines, keyCap.Render("  ▸ ")+bold.Render(label))
+		lines = append(lines, keyCap.Render("  ▸ ")+icon+"  "+bold.Render(label))
 		if g.Summary != "" {
-			lines = append(lines, wrapIndent(dim.Render(g.Summary), 8, width))
+			lines = append(lines, wrapIndent(dim.Render(g.Summary), 11, width))
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -765,7 +806,11 @@ func (m *Model) guideView(width int) string {
 		return badBold.Render("✗ ") + err.Error()
 	}
 	where := relative(m.s.GuidePath(g))
-	intro := wrapIndent(dim.Render(fmt.Sprintf("Guide %d of %d, for module %d: %s. Also in %s.", g.Number, len(m.s.Course.Guides), g.Module.Number, g.Module.Title, where)), 1, width)
+	status := dim.Render("Press ") + keyCap.Render("m") + dim.Render(" when you've read it.")
+	if m.s.Read(g) {
+		status = okStyle.Render("✓ read")
+	}
+	intro := wrapIndent(dim.Render(fmt.Sprintf("Guide %d of %d, for module %d: %s. Also in %s.", g.Number, len(m.s.Course.Guides), g.Module.Number, g.Module.Title, where)), 1, width) + "\n " + status
 	return intro + "\n\n" + m.markdown(text, width)
 }
 
@@ -777,6 +822,7 @@ func (m *Model) helpView(width int) string {
 		{"s", "the solution: once you pass, or after every hint"},
 		{"l", "list every exercise; enter to open one"},
 		{"g", "guides: the computer science behind the exercises"},
+		{"  m  o", "in the guides: mark read, open in $EDITOR"},
 		{"n", "next unfinished exercise"},
 		{"← →", "previous / next exercise"},
 		{"↑ ↓ pgup pgdn", "scroll"},
@@ -858,7 +904,7 @@ func (m *Model) View() string {
 func (m *Model) header() string {
 	w := m.contentWidth()
 	done, total := m.s.DoneCount(), len(m.s.Course.Exercises)
-	left := brand.Render("gopherlings") + dim.Render(fmt.Sprintf("  ·  module %d of %d: %s", m.ex.Module.Number, len(m.s.Course.Modules), m.ex.Module.Title))
+	left := brand.Render("groundwork") + dim.Render(fmt.Sprintf("  ·  module %d of %d: %s", m.ex.Module.Number, len(m.s.Course.Modules), m.ex.Module.Title))
 	right := progressBar(done, total, min(20, w/5)) + dim.Render(fmt.Sprintf("  %d/%d done", done, total))
 
 	title := bold.Render(fmt.Sprintf("%03d  %s", m.ex.Number, m.ex.Title))
@@ -956,9 +1002,9 @@ func (m *Model) footer() string {
 	case m.pane == paneList:
 		status = dim.Render("↑/↓ move · enter open · esc back to the results")
 	case m.pane == paneGuides:
-		status = dim.Render("↑/↓ move · enter read · esc back to the results")
+		status = dim.Render("↑/↓ move · enter read · m mark read · o open in editor · esc back")
 	case m.pane == paneGuide:
-		status = dim.Render("↑/↓ scroll · space next page · esc back to the guides")
+		status = dim.Render("↑/↓ scroll · space next page · m mark read · o open in editor · esc back")
 	case m.result != nil && m.result.Duration > 0:
 		status = dim.Render(fmt.Sprintf("Checked in %.1fs. Save any file to re-run.", m.result.Duration.Seconds()))
 	}

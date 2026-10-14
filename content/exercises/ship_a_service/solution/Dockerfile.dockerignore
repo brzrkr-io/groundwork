@@ -1,0 +1,12 @@
+# What "docker build" leaves out of the build context, one pattern per line.
+# BuildKit reads this file for the Dockerfile next to it; a repository with a
+# single Dockerfile usually calls it .dockerignore instead.
+
+# Git history: large, and the build doesn't need it.
+.git
+# Local settings and secrets: .env, .env.local, ...
+.env*
+# Binaries from local builds.
+bin/
+# Docs, in any folder.
+**/*.md

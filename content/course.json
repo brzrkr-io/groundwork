@@ -1,5 +1,5 @@
 {
-  "title": "Gopherlings",
+  "title": "Groundwork",
   "modules": [
     {
       "title": "Basics",
@@ -180,6 +180,52 @@
       ]
     },
     {
+      "title": "Linux and the shell",
+      "dir": "shell",
+      "phase": "Everyday tools",
+      "summary": "Bash and the classic text tools: the glue of every server, container and CI job.",
+      "outcome": "Write safe bash scripts with variables, quoting, conditions, loops and functions, and slice logs with grep, sed, awk, sort, uniq, cut, find and xargs.",
+      "guides": ["shell"],
+      "exercises": [
+        { "name": "shell_commands", "title": "Shell commands and quoting", "minutes": 15 },
+        { "name": "shell_variables", "title": "Shell variables", "minutes": 20 },
+        { "name": "shell_variables_2", "title": "Shell variables: fix the quoting bugs", "minutes": 20 },
+        { "name": "exit_codes", "title": "Exit codes, && and ||", "minutes": 20 },
+        { "name": "shell_conditions", "title": "if and test", "minutes": 25 },
+        { "name": "shell_conditions_2", "title": "if and test: fix the backup checks", "minutes": 15 },
+        { "name": "shell_loops", "title": "Shell loops", "minutes": 25 },
+        { "name": "shell_functions", "title": "Shell functions", "minutes": 25 },
+        { "name": "grep_and_pipes", "title": "Grep and pipes", "minutes": 25 },
+        { "name": "sort_and_uniq", "title": "Sort and uniq: top-N reports", "minutes": 25 },
+        { "name": "text_columns", "title": "Columns with cut and awk", "minutes": 30 },
+        { "name": "sed_substitutions", "title": "Editing text with sed", "minutes": 25 },
+        { "name": "find_and_xargs", "title": "Find and xargs: clean up old logs", "minutes": 25 },
+        { "name": "log_triage", "title": "Practice: log triage report", "minutes": 40, "kind": "practice" }
+      ]
+    },
+    {
+      "title": "Git and version control",
+      "dir": "git",
+      "phase": "Everyday tools",
+      "summary": "How Git stores history, and the everyday moves: commit, branch, merge, rebase, undo and investigate.",
+      "outcome": "Commit, stage and ignore files, branch, merge and rebase with confidence, resolve conflicts, undo mistakes safely with revert, reset and reflog, and find when a bug arrived with log -S, blame and bisect.",
+      "guides": ["git"],
+      "exercises": [
+        { "name": "git_commits", "title": "Commits: init, add and commit", "minutes": 25 },
+        { "name": "git_commits_2", "title": "Commits: fix the last commit", "minutes": 25 },
+        { "name": "git_staging", "title": "Staging: choose what goes in a commit", "minutes": 20 },
+        { "name": "git_ignore", "title": ".gitignore: keep build output and secrets out", "minutes": 25 },
+        { "name": "git_branches", "title": "Branches: create, switch and merge", "minutes": 20 },
+        { "name": "git_branches_2", "title": "Branches: resolve a merge conflict", "minutes": 30 },
+        { "name": "git_rebase", "title": "Rebase: catch a branch up with main", "minutes": 25 },
+        { "name": "git_undo", "title": "Undoing: revert a bad deploy", "minutes": 25 },
+        { "name": "git_undo_2", "title": "Undoing: rescue lost work with reflog", "minutes": 25 },
+        { "name": "git_investigate", "title": "Investigating history: log -S, blame and diff", "minutes": 30 },
+        { "name": "git_bisect", "title": "Bisect: find the commit that broke the check", "minutes": 25 },
+        { "name": "git_release_day", "title": "Practice: release day", "minutes": 35, "kind": "practice" }
+      ]
+    },
+    {
       "title": "Text and data",
       "dir": "text_and_data",
       "phase": "Practical Go",
@@ -203,6 +249,30 @@
         { "name": "text_templates_2", "title": "Text templates: systemd unit files", "minutes": 20 },
         { "name": "env_file", "title": "Practice: .env file parser", "minutes": 35, "kind": "practice" },
         { "name": "log_report", "title": "Project: access log report", "minutes": 120, "kind": "project" }
+      ]
+    },
+    {
+      "title": "Databases and SQL",
+      "dir": "sql",
+      "phase": "Practical Go",
+      "summary": "Relational databases: tables, queries, joins, indexes and transactions, then SQL from Go.",
+      "outcome": "Model data in tables, query it with SELECT, WHERE, JOIN and GROUP BY, use indexes and transactions, and call a database safely from Go with database/sql.",
+      "guides": ["databases"],
+      "exercises": [
+        { "name": "sql_select", "title": "SELECT and WHERE: find the failed deploys", "minutes": 25 },
+        { "name": "sql_select_2", "title": "SELECT and WHERE: fix the broken filters", "minutes": 20 },
+        { "name": "sql_sorting", "title": "ORDER BY and LIMIT: the latest deploys", "minutes": 20 },
+        { "name": "sql_grouping", "title": "Aggregates and GROUP BY: failures per service", "minutes": 25 },
+        { "name": "sql_grouping_2", "title": "GROUP BY and HAVING: fix the flaky-service report", "minutes": 25 },
+        { "name": "sql_joins", "title": "JOINs: services, teams and who to page", "minutes": 30 },
+        { "name": "sql_joins_2", "title": "LEFT JOIN: services with no on-call", "minutes": 30 },
+        { "name": "sql_nulls", "title": "NULL: fix the missing-value bugs", "minutes": 25 },
+        { "name": "sql_tables", "title": "CREATE TABLE: keys and constraints", "minutes": 35 },
+        { "name": "sql_changing_data", "title": "INSERT, UPDATE and DELETE: record a release", "minutes": 30 },
+        { "name": "sql_indexes", "title": "Indexes: make the deploy lookups fast", "minutes": 30 },
+        { "name": "database_sql", "title": "database/sql: query deploys from Go", "minutes": 35 },
+        { "name": "database_sql_2", "title": "database/sql: fix the SQL injection", "minutes": 30 },
+        { "name": "incident_report", "title": "Practice: incident report queries", "minutes": 40, "kind": "practice" }
       ]
     },
     {
@@ -231,6 +301,27 @@
       ]
     },
     {
+      "title": "Software engineering practice",
+      "dir": "craft",
+      "phase": "Practical Go",
+      "summary": "Code other people can read and change: naming, simplicity, refactoring, reviews and design.",
+      "outcome": "Refactor working code safely under tests, name and structure code for readers, spot problems in review, and write a short design doc.",
+      "guides": ["code_quality", "code_review"],
+      "exercises": [
+        { "name": "naming", "title": "Naming things", "minutes": 25 },
+        { "name": "naming_2", "title": "Naming things: fix the misleading names", "minutes": 20 },
+        { "name": "extract_function", "title": "Extract function", "minutes": 30 },
+        { "name": "guard_clauses", "title": "Guard clauses", "minutes": 25 },
+        { "name": "guard_clauses_2", "title": "Guard clauses: fix the flipped conditions", "minutes": 20 },
+        { "name": "named_constants", "title": "Named constants", "minutes": 20 },
+        { "name": "duplication", "title": "Removing duplication", "minutes": 25 },
+        { "name": "lookup_tables", "title": "Lookup tables", "minutes": 25 },
+        { "name": "review_tests", "title": "Code review: catch the bugs in a PR", "minutes": 35 },
+        { "name": "design_doc", "title": "Design docs: propose a log retention fix", "minutes": 40 },
+        { "name": "log_rotation", "title": "Practice: refactor the log rotator", "minutes": 40, "kind": "practice" }
+      ]
+    },
+    {
       "title": "Packages and project layout",
       "dir": "packages",
       "phase": "Practical Go",
@@ -249,6 +340,29 @@
         { "name": "build_info", "title": "Version info and ldflags", "minutes": 25 },
         { "name": "build_info_2", "title": "Build info: what's inside the binary", "minutes": 20 },
         { "name": "project_layout", "title": "Practice: lay out a tool", "minutes": 40, "kind": "practice" }
+      ]
+    },
+    {
+      "title": "Containers and CI/CD",
+      "dir": "containers",
+      "phase": "Practical Go",
+      "summary": "Shipping software: container images, Dockerfiles, registries and pipelines that test and deploy it.",
+      "outcome": "Write small, secure multi-stage Dockerfiles, reason about layers, tags and digests, read config from the environment, and define CI pipelines that test, build, release and promote a Go service.",
+      "guides": ["containers", "ci_cd"],
+      "exercises": [
+        { "name": "dockerfiles", "title": "Dockerfiles", "minutes": 25 },
+        { "name": "dockerfiles_2", "title": "Dockerfiles: fix the slow builds", "minutes": 25 },
+        { "name": "multi_stage_builds", "title": "Multi-stage builds", "minutes": 30 },
+        { "name": "multi_stage_builds_2", "title": "Multi-stage builds: fix the broken images", "minutes": 25 },
+        { "name": "image_security", "title": "Image security: non-root and no secrets", "minutes": 30 },
+        { "name": "image_security_2", "title": "Image security: fix the audit findings", "minutes": 25 },
+        { "name": "container_config", "title": "Container config: settings from the environment", "minutes": 35 },
+        { "name": "ci_workflows", "title": "CI workflows", "minutes": 30 },
+        { "name": "ci_workflows_2", "title": "CI workflows: fix the broken pipeline", "minutes": 25 },
+        { "name": "ci_workflows_3", "title": "CI workflows: a matrix, a cache and artifacts", "minutes": 30 },
+        { "name": "release_pipelines", "title": "Release pipelines", "minutes": 30 },
+        { "name": "release_pipelines_2", "title": "Release pipelines: fix the risky deploy", "minutes": 25 },
+        { "name": "ship_a_service", "title": "Practice: containerize and ship a service", "minutes": 45, "kind": "practice" }
       ]
     },
     {
@@ -371,6 +485,28 @@
         { "name": "idempotency", "title": "Idempotency keys: replay retried requests", "minutes": 30, "race": true },
         { "name": "idempotency_2", "title": "Idempotency keys: scope, expire and fingerprint", "minutes": 20, "race": true },
         { "name": "inventory_service", "title": "Project: inventory service", "minutes": 180, "kind": "project", "race": true }
+      ]
+    },
+    {
+      "title": "System design",
+      "dir": "system_design",
+      "phase": "Building tools and services",
+      "summary": "How bigger systems fit together: load balancing, caching, queues, sharding and the trade-offs between them.",
+      "outcome": "Estimate capacity and set SLOs, then build the core pieces of a bigger system (load balancers, sharding, a consistent-hash ring, an LRU cache, a bounded work queue, an at-least-once consumer) and write down the trade-offs.",
+      "guides": ["system_design", "scaling"],
+      "exercises": [
+        { "name": "capacity_estimates", "title": "Capacity estimates: QPS, storage and bandwidth", "minutes": 30 },
+        { "name": "slo_budgets", "title": "SLOs: error budgets and burn rates", "minutes": 30 },
+        { "name": "load_balancer", "title": "Load balancing: round robin with health checks", "minutes": 30, "race": true },
+        { "name": "load_balancer_2", "title": "Load balancing: fix the least-connections balancer", "minutes": 25, "race": true },
+        { "name": "sharding", "title": "Sharding: route keys and plan a rebalance", "minutes": 30 },
+        { "name": "consistent_hashing", "title": "Consistent hashing: a ring with virtual nodes", "minutes": 35 },
+        { "name": "consistent_hashing_2", "title": "Consistent hashing: fix the ring", "minutes": 25 },
+        { "name": "lru_cache", "title": "LRU caches: evict the least recently used", "minutes": 35, "race": true },
+        { "name": "lru_cache_2", "title": "LRU caches: fix the stale cache-aside reads", "minutes": 25, "race": true },
+        { "name": "work_queue", "title": "Work queues: bounded queues and backpressure", "minutes": 30, "race": true },
+        { "name": "work_queue_2", "title": "Work queues: fix the at-least-once consumer", "minutes": 30 },
+        { "name": "deploy_status", "title": "Practice: deploy-status service", "minutes": 60, "kind": "practice", "race": true }
       ]
     },
     {

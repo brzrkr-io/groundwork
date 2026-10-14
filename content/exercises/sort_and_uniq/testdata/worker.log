@@ -1,0 +1,14 @@
+2026-10-13T22:00:08Z INFO scheduler msg="nightly jobs queued" req=dda149
+2026-10-13T22:00:17Z INFO worker msg="job started: invoices" req=db5b5f
+2026-10-13T22:00:25Z ERROR mailer msg="smtp auth failed" req=73ab48
+2026-10-13T22:00:34Z INFO exporter msg="metrics pushed" req=dae445
+2026-10-13T22:00:38Z ERROR worker msg="job failed: reports" req=2f45e6
+2026-10-13T22:00:47Z ERROR mailer msg="smtp auth failed" req=79cb9e
+2026-10-13T22:00:50Z WARN worker msg="job slow: invoices" req=181879
+2026-10-13T22:00:58Z ERROR scheduler msg="lock not acquired" req=4dabb4
+2026-10-13T22:01:01Z INFO exporter msg="metrics pushed" req=17362f
+2026-10-13T22:01:10Z ERROR worker msg="job failed: reports" req=cf44dd
+2026-10-13T22:01:11Z INFO mailer msg="digest sent" req=986e86
+2026-10-13T22:01:18Z ERROR mailer msg="bounce rate high" req=f6fa5d
+2026-10-13T22:01:26Z INFO scheduler msg="retry queued: reports" req=a76777
+2026-10-13T22:01:29Z INFO exporter msg="metrics pushed" req=9f8558

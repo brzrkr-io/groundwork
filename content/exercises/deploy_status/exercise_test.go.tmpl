@@ -1,0 +1,321 @@
+package deploystatus
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"unicode"
+)
+
+// designSections splits DESIGN.md into its "## " sections, by heading.
+func designSections(text string) map[string]string {
+	sections := map[string]string{}
+	heading := ""
+	for line := range strings.SplitSeq(text, "\n") {
+		if name, ok := strings.CutPrefix(line, "## "); ok {
+			heading = strings.TrimSpace(name)
+			sections[heading] = ""
+			continue
+		}
+		if heading != "" {
+			sections[heading] += line + "\n"
+		}
+	}
+	return sections
+}
+
+func TestDesign(t *testing.T) {
+	raw, err := os.ReadFile("DESIGN.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if strings.Contains(text, "TODO") {
+		t.Error("DESIGN.md still contains TODO; replace every TODO line with your own text")
+	}
+	sections := designSections(text)
+	for _, name := range []string{"Requirements", "Estimates", "Design", "Trade-offs"} {
+		body, ok := sections[name]
+		if !ok {
+			t.Errorf("DESIGN.md has no %q heading", "## "+name)
+			continue
+		}
+		if words := len(strings.Fields(body)); words < 25 {
+			t.Errorf("section %q has %d words, want at least 25", name, words)
+		}
+	}
+	if !strings.ContainsFunc(sections["Estimates"], unicode.IsDigit) {
+		t.Error("section \"Estimates\" has no numbers; estimates are numbers")
+	}
+	design := strings.ToLower(sections["Design"])
+	for _, word := range []string{"queue", "cache"} {
+		if !strings.Contains(design, word) {
+			t.Errorf("section \"Design\" never mentions the %s", word)
+		}
+	}
+	bullets := 0
+	for line := range strings.SplitSeq(sections["Trade-offs"], "\n") {
+		if strings.HasPrefix(line, "- ") {
+			bullets++
+		}
+	}
+	if bullets < 2 {
+		t.Errorf("section \"Trade-offs\" has %d bullet points (lines starting with \"- \"), want at least 2", bullets)
+	}
+}
+
+func TestSubmit(t *testing.T) {
+	valid := Event{ID: "evt-1", Service: "api", Version: "1.4.2", State: "succeeded"}
+
+	t.Run("valid events are queued", func(t *testing.T) {
+		s := New(10, 10)
+		for _, state := range []string{"started", "succeeded", "failed"} {
+			ev := valid
+			ev.State = state
+			if err := s.Submit(ev); err != nil {
+				t.Errorf("Submit(state %q) = %v, want nil", state, err)
+			}
+		}
+		if got := len(s.queue); got != 3 {
+			t.Errorf("queue holds %d events after 3 Submits, want 3", got)
+		}
+	})
+
+	t.Run("invalid events are rejected", func(t *testing.T) {
+		tests := []struct {
+			name string
+			ev   Event
+		}{
+			{"missing id", Event{Service: "api", Version: "1.4.2", State: "started"}},
+			{"missing service", Event{ID: "evt-2", Version: "1.4.2", State: "started"}},
+			{"missing version", Event{ID: "evt-3", Service: "api", State: "started"}},
+			{"missing state", Event{ID: "evt-4", Service: "api", Version: "1.4.2"}},
+			{"unknown state", Event{ID: "evt-5", Service: "api", Version: "1.4.2", State: "done"}},
+		}
+		s := New(10, 10)
+		for _, tt := range tests {
+			if err := s.Submit(tt.ev); !errors.Is(err, ErrInvalidEvent) {
+				t.Errorf("Submit(%s: %+v) = %v, want an error wrapping ErrInvalidEvent", tt.name, tt.ev, err)
+			}
+		}
+		if got := len(s.queue); got != 0 {
+			t.Errorf("queue holds %d events after only invalid Submits, want 0", got)
+		}
+	})
+
+	t.Run("a full queue pushes back", func(t *testing.T) {
+		s := New(2, 10)
+		for _, id := range []string{"evt-1", "evt-2"} {
+			ev := valid
+			ev.ID = id
+			if err := s.Submit(ev); err != nil {
+				t.Fatalf("Submit(%q) with room in the queue = %v, want nil", id, err)
+			}
+		}
+		ev := valid
+		ev.ID = "evt-3"
+		if err := s.Submit(ev); !errors.Is(err, ErrQueueFull) {
+			t.Errorf("Submit(%q) with a full queue = %v, want ErrQueueFull", ev.ID, err)
+		}
+		ev.State = "done"
+		if err := s.Submit(ev); !errors.Is(err, ErrInvalidEvent) {
+			t.Errorf("Submit(invalid event) with a full queue = %v, want ErrInvalidEvent (validate first)", err)
+		}
+	})
+}
+
+func TestApply(t *testing.T) {
+	t.Run("the latest event wins", func(t *testing.T) {
+		s := New(10, 10)
+		s.Apply(Event{ID: "evt-1", Service: "api", Version: "1.4.2", State: "started"})
+		s.Apply(Event{ID: "evt-2", Service: "api", Version: "1.4.2", State: "succeeded"})
+		s.Apply(Event{ID: "evt-3", Service: "worker", Version: "2.0.0", State: "failed"})
+		want := map[string]Status{
+			"api":    {Service: "api", Version: "1.4.2", State: "succeeded"},
+			"worker": {Service: "worker", Version: "2.0.0", State: "failed"},
+		}
+		for name, w := range want {
+			if got := s.statuses[name]; got != w {
+				t.Errorf("statuses[%q] = %+v, want %+v", name, got, w)
+			}
+		}
+	})
+
+	t.Run("a redelivered event is skipped", func(t *testing.T) {
+		s := New(10, 10)
+		first := Event{ID: "evt-1", Service: "api", Version: "1.4.2", State: "succeeded"}
+		s.Apply(first)
+		s.Apply(Event{ID: "evt-2", Service: "api", Version: "1.5.0", State: "succeeded"})
+		s.Apply(first) // the queue delivered evt-1 again
+		want := Status{Service: "api", Version: "1.5.0", State: "succeeded"}
+		if got := s.statuses["api"]; got != want {
+			t.Errorf("after evt-1, evt-2, evt-1 again: statuses[%q] = %+v, want %+v", "api", got, want)
+		}
+	})
+
+	t.Run("the cached status is invalidated", func(t *testing.T) {
+		s := New(10, 10)
+		s.cache.Put("api", Status{Service: "api", Version: "1.0.0", State: "succeeded"})
+		s.cache.Put("worker", Status{Service: "worker", Version: "3.1.0", State: "succeeded"})
+		s.Apply(Event{ID: "evt-9", Service: "api", Version: "1.1.0", State: "started"})
+		if st, ok := s.cache.Get("api"); ok {
+			t.Errorf("after Apply for api, the cache still holds %+v for it, want it removed", st)
+		}
+		if _, ok := s.cache.Get("worker"); !ok {
+			t.Error("after Apply for api, the cache lost worker; only api's entry should go")
+		}
+	})
+}
+
+func TestLookup(t *testing.T) {
+	api := Status{Service: "api", Version: "1.4.2", State: "succeeded"}
+
+	t.Run("a miss reads the database once, then hits the cache", func(t *testing.T) {
+		s := New(10, 10)
+		s.statuses["api"] = api
+		for i := range 3 {
+			got, ok := s.Lookup("api")
+			if got != api || !ok {
+				t.Errorf("Lookup(%q) call %d = %+v, %t, want %+v, true", "api", i+1, got, ok, api)
+			}
+		}
+		if s.dbReads != 1 {
+			t.Errorf("3 Lookups of the same service read the database %d times, want 1", s.dbReads)
+		}
+	})
+
+	t.Run("unknown services are not cached", func(t *testing.T) {
+		s := New(10, 10)
+		for range 2 {
+			if got, ok := s.Lookup("billing"); ok {
+				t.Errorf("Lookup(%q) = %+v, true, want ok false", "billing", got)
+			}
+		}
+		if s.dbReads != 2 {
+			t.Errorf("2 Lookups of an unknown service read the database %d times, want 2", s.dbReads)
+		}
+		if got := s.cache.Len(); got != 0 {
+			t.Errorf("cache holds %d entries after looking up an unknown service, want 0", got)
+		}
+	})
+
+	t.Run("safe for concurrent use", func(t *testing.T) {
+		s := New(10, 2)
+		var wg sync.WaitGroup
+		for i := range 20 {
+			wg.Go(func() {
+				name := []string{"api", "worker", "billing"}[i%3]
+				s.Apply(Event{ID: name + "-evt", Service: name, Version: "1.0.0", State: "succeeded"})
+				s.Lookup(name)
+				s.Lookup("api")
+			})
+		}
+		wg.Wait()
+		if got, ok := s.Lookup("billing"); !ok || got.Version != "1.0.0" {
+			t.Errorf("Lookup(%q) after concurrent use = %+v, %t, want version 1.0.0", "billing", got, ok)
+		}
+	})
+}
+
+// post sends body to POST /events and returns the response.
+func post(h http.Handler, body string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(body)))
+	return rec
+}
+
+// get sends GET path and returns the response.
+func get(h http.Handler, path string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec
+}
+
+func TestHTTP(t *testing.T) {
+	t.Run("an event becomes the status", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			s := New(10, 10)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go s.Run(ctx)
+			h := s.Handler()
+
+			body := `{"id":"evt-1","service":"api","version":"1.4.2","state":"started"}`
+			if rec := post(h, body); rec.Code != http.StatusAccepted {
+				t.Fatalf("POST /events %s = %d, want 202", body, rec.Code)
+			}
+			synctest.Wait() // the worker applies the event
+
+			rec := get(h, "/status/api")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET /status/api = %d, want 200", rec.Code)
+			}
+			if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+				t.Errorf("GET /status/api Content-Type = %q, want %q", ct, "application/json")
+			}
+			var got Status
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("GET /status/api body %q is not JSON: %v", rec.Body, err)
+			}
+			want := Status{Service: "api", Version: "1.4.2", State: "started"}
+			if got != want {
+				t.Errorf("GET /status/api = %+v, want %+v", got, want)
+			}
+
+			body = `{"id":"evt-2","service":"api","version":"1.4.2","state":"succeeded"}`
+			post(h, body)
+			synctest.Wait()
+			got = Status{}
+			json.Unmarshal(get(h, "/status/api").Body.Bytes(), &got)
+			if got.State != "succeeded" {
+				t.Errorf("GET /status/api after a succeeded event = %+v, want state %q (stale cache?)", got, "succeeded")
+			}
+		})
+	})
+
+	t.Run("unknown services are 404", func(t *testing.T) {
+		h := New(10, 10).Handler()
+		for _, path := range []string{"/status/billing", "/status/web"} {
+			if rec := get(h, path); rec.Code != http.StatusNotFound {
+				t.Errorf("GET %s = %d, want 404", path, rec.Code)
+			}
+		}
+	})
+
+	t.Run("bad events are 400", func(t *testing.T) {
+		h := New(10, 10).Handler()
+		for _, body := range []string{
+			`{"id":"evt-1","service":"api"`,
+			`not json`,
+			`{"id":"evt-1","service":"api","version":"1.4.2","state":"done"}`,
+			`{"service":"api","version":"1.4.2","state":"started"}`,
+		} {
+			if rec := post(h, body); rec.Code != http.StatusBadRequest {
+				t.Errorf("POST /events %s = %d, want 400", body, rec.Code)
+			}
+		}
+	})
+
+	t.Run("a full queue is 503 with Retry-After", func(t *testing.T) {
+		h := New(1, 10).Handler() // no worker running: the queue only fills
+		first := `{"id":"evt-1","service":"api","version":"1.4.2","state":"started"}`
+		if rec := post(h, first); rec.Code != http.StatusAccepted {
+			t.Fatalf("POST /events with room in the queue = %d, want 202", rec.Code)
+		}
+		second := `{"id":"evt-2","service":"web","version":"0.9.0","state":"started"}`
+		rec := post(h, second)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("POST /events with a full queue = %d, want 503", rec.Code)
+		}
+		if got := rec.Header().Get("Retry-After"); got != "1" {
+			t.Errorf("POST /events with a full queue: Retry-After = %q, want %q", got, "1")
+		}
+	})
+}

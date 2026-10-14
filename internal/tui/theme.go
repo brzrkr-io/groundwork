@@ -7,7 +7,7 @@ import (
 )
 
 // Every colour is one of the terminal's 16 palette slots, never a fixed hex
-// value, so Gopherlings takes on whatever theme the terminal uses (gruvbox,
+// value, so Groundwork takes on whatever theme the terminal uses (gruvbox,
 // tokyo night, rose pine, light or dark) and follows it when the theme
 // changes.
 const (

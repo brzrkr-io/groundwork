@@ -1,0 +1,68 @@
+// Package flags is the Groundwork exercise "LRU caches: fix the stale cache-aside reads".
+package flags
+
+import "errors"
+
+// ErrNotFound means the store has no flag with that name.
+var ErrNotFound = errors.New("flag not found")
+
+// Store is the database that holds every feature flag. It is the source of
+// truth: the cache only ever holds copies of what it returned.
+type Store interface {
+	// Get returns the value of the flag called name, or ErrNotFound.
+	Get(name string) (string, error)
+	// Set creates the flag called name, or replaces its value.
+	Set(name, value string) error
+	// Delete removes the flag called name. Deleting a missing flag is not
+	// an error.
+	Delete(name string) error
+}
+
+// Service serves feature flags from an LRU cache in front of a Store. It is
+// safe for concurrent use, because the LRU locks itself.
+type Service struct {
+	store Store
+	cache *LRU
+}
+
+// New returns a Service that caches up to cacheSize flags read from store.
+func New(store Store, cacheSize int) *Service {
+	return &Service{store: store, cache: NewLRU(cacheSize)}
+}
+
+// Get returns the value of the flag called name. It answers from the cache
+// when it can. On a miss it reads the store, and caches the value only if
+// the read succeeded. Store errors, ErrNotFound included, are returned
+// unchanged.
+func (s *Service) Get(name string) (string, error) {
+	if value, ok := s.cache.Get(name); ok {
+		return value, nil
+	}
+	// TODO(1): Fix the bug: a failed or not-found read is cached as "", so
+	// the flag looks like it exists with an empty value.
+	value, err := s.store.Get(name)
+	s.cache.Put(name, value)
+	if err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+// Set writes the flag to the store, then removes it from the cache, so the
+// next Get reads the new value from the store. If the write fails, Set
+// returns the store's error and leaves the cache alone.
+func (s *Service) Set(name, value string) error {
+	// TODO(2): Fix the bug: the cache is updated before the store is
+	// written, so a failed write leaves a value in the cache that the store
+	// never saved.
+	s.cache.Put(name, value)
+	return s.store.Set(name, value)
+}
+
+// Delete removes the flag from the store, then from the cache. If the store
+// fails, Delete returns its error.
+func (s *Service) Delete(name string) error {
+	// TODO(3): Fix the bug: the flag is deleted from the store, but the
+	// cache keeps serving it.
+	return s.store.Delete(name)
+}

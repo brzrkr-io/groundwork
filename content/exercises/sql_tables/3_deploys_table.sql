@@ -1,0 +1,11 @@
+-- Task 3: Create the deploys table
+--
+-- Create a table named deploys with five columns:
+--   id          INTEGER, the primary key
+--   service_id  INTEGER, required, a foreign key to services (id)
+--   version     TEXT, required
+--   status      TEXT, required, 'running', 'succeeded' or 'failed'
+--   started_at  TEXT, required
+-- A service can't have two deploys of the same version.
+--
+-- TODO(3): Write your statement below.

@@ -1,0 +1,63 @@
+// Package svcconfig is the Groundwork exercise "Removing duplication".
+package svcconfig
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+)
+
+// Config is a service's settings, read from its config file.
+type Config struct {
+	Environment string
+	HTTPPort    int
+	MetricsPort int
+	AdminPort   int
+	GRPCPort    int
+}
+
+// environments lists every environment a service can run in.
+var environments = []string{"development", "staging", "production"}
+
+// Validate returns every problem with c, one message per problem, in the
+// order of the fields. A valid config returns nil. See the README for the
+// rules.
+func Validate(c Config) []string {
+	var problems []string
+	if !slices.Contains(environments, c.Environment) {
+		problems = append(problems, fmt.Sprintf("environment %q is not one of %s", c.Environment, strings.Join(environments, ", ")))
+	}
+	if err := checkPort("http_port", c.HTTPPort); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if err := checkPort("metrics_port", c.MetricsPort); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if err := checkPort("admin_port", c.AdminPort); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if err := checkPort("grpc_port", c.GRPCPort); err != nil {
+		problems = append(problems, err.Error())
+	}
+	return problems
+}
+
+// checkPort returns the problem with the port setting called name, or nil.
+func checkPort(name string, port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("%s %d is out of range 1-65535", name, port)
+	}
+	if port < 1024 {
+		return fmt.Errorf("%s %d needs root; use 1024 or above", name, port)
+	}
+	return nil
+}
+
+// AlertChannel returns the chat channel for alerts from env: "#alerts-" and
+// the environment for a known environment, "#alerts-unknown" otherwise.
+func AlertChannel(env string) string {
+	if !slices.Contains(environments, env) {
+		return "#alerts-unknown"
+	}
+	return "#alerts-" + env
+}

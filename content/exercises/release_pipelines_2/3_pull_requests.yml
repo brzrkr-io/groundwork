@@ -1,0 +1,29 @@
+# Task 3: test every push and pull request; deploy only main.
+# In a real repository: .github/workflows/ci.yml.
+
+name: ci
+
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+
+  deploy:
+    needs: test
+    # TODO(3): The review found that a pull request from a teammate's
+    # branch went to production before anyone had reviewed it.
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./deploy.sh production

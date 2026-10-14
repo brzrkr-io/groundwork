@@ -1,0 +1,210 @@
+package auditfixes
+
+import (
+	"encoding/json"
+	"os"
+	"strings"
+	"testing"
+)
+
+// This file reads Dockerfiles for the tests. You don't need to change it,
+// but it's short: read it to see how Docker itself splits a Dockerfile up.
+
+// instruction is one Dockerfile instruction. For example
+//
+//	COPY --from=build /out/app /app
+//
+// becomes {Line: 7, Cmd: "COPY", Flags: ["--from=build"], Args: ["/out/app", "/app"]}.
+type instruction struct {
+	Line  int      // the line it starts on
+	Cmd   string   // the instruction in capitals: "FROM", "RUN", "CMD", ...
+	Flags []string // leading options such as "--from=build"
+	Args  []string // the rest, split into words (exec form: the JSON list)
+	Rest  string   // the rest as written, continuation lines joined
+	Exec  bool     // true when the rest is a JSON list: ["app", "-v"]
+}
+
+// readDockerfile parses the Dockerfile name in the exercise folder. It
+// handles what Docker handles: case-insensitive instructions, comment lines,
+// blank lines and lines continued with a trailing backslash.
+func readDockerfile(t *testing.T, name string) []instruction {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	var instructions []instruction
+	var current strings.Builder
+	start := 0
+	for i, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue // Docker skips these, even in the middle of a continued line
+		}
+		if current.Len() == 0 {
+			start = i + 1
+		}
+		if body, continued := strings.CutSuffix(trimmed, `\`); continued {
+			current.WriteString(strings.TrimSpace(body))
+			current.WriteByte(' ')
+			continue
+		}
+		current.WriteString(trimmed)
+		instructions = append(instructions, parseInstruction(start, current.String()))
+		current.Reset()
+	}
+	if current.Len() > 0 {
+		t.Fatalf("%s: the instruction on line %d ends with a backslash, but no line follows it", name, start)
+	}
+	return instructions
+}
+
+// parseInstruction splits one joined instruction line into its parts.
+func parseInstruction(line int, text string) instruction {
+	cmd, rest, _ := strings.Cut(text, " ")
+	in := instruction{Line: line, Cmd: strings.ToUpper(cmd)}
+	rest = strings.TrimSpace(rest)
+	for strings.HasPrefix(rest, "--") {
+		flag, after, _ := strings.Cut(rest, " ")
+		in.Flags = append(in.Flags, flag)
+		rest = strings.TrimSpace(after)
+	}
+	in.Rest = rest
+	if strings.HasPrefix(rest, "[") && json.Unmarshal([]byte(rest), &in.Args) == nil {
+		in.Exec = true
+	} else {
+		in.Args = strings.Fields(rest)
+	}
+	return in
+}
+
+// stage is one FROM instruction and everything up to the next FROM.
+type stage struct {
+	Base         string // the image after FROM, e.g. "golang:1.26"
+	Name         string // the name after AS, or "" when it has none
+	Instructions []instruction
+}
+
+// stages splits a Dockerfile into its build stages. Instructions before the
+// first FROM (only ARG is allowed there) belong to no stage.
+func stages(instructions []instruction) []stage {
+	var all []stage
+	for _, in := range instructions {
+		if in.Cmd == "FROM" {
+			s := stage{}
+			if len(in.Args) > 0 {
+				s.Base = in.Args[0]
+			}
+			if len(in.Args) == 3 && strings.EqualFold(in.Args[1], "AS") {
+				s.Name = in.Args[2]
+			}
+			all = append(all, s)
+			continue
+		}
+		if len(all) > 0 {
+			all[len(all)-1].Instructions = append(all[len(all)-1].Instructions, in)
+		}
+	}
+	return all
+}
+
+// find returns the instructions with the given command, in file order.
+func find(instructions []instruction, cmd string) []instruction {
+	var found []instruction
+	for _, in := range instructions {
+		if in.Cmd == cmd {
+			found = append(found, in)
+		}
+	}
+	return found
+}
+
+// keyValue is one name=value pair from an ENV, ARG or LABEL instruction.
+type keyValue struct {
+	Key   string // the name, quotes removed
+	Value string // the value, quotes removed; "" for an ARG without one
+	Raw   string // the value as written, quotes included
+}
+
+// keyValues returns the pairs an ENV, ARG or LABEL instruction sets, the way
+// Docker reads them: words are separated by spaces unless the spaces are in
+// quotes, and each word is key=value. ARG may leave out "=value". ENV and
+// LABEL also accept an older form, "KEY value", where everything after the
+// first word is the value.
+func keyValues(in instruction) []keyValue {
+	words := splitWords(in.Rest)
+	if in.Cmd != "ARG" && len(words) >= 2 && !strings.Contains(words[0], "=") {
+		value := strings.TrimSpace(strings.TrimPrefix(in.Rest, words[0]))
+		return []keyValue{{Key: unquote(words[0]), Value: unquote(value), Raw: value}}
+	}
+	var pairs []keyValue
+	for _, word := range words {
+		key, value, _ := strings.Cut(word, "=")
+		pairs = append(pairs, keyValue{Key: unquote(key), Value: unquote(value), Raw: value})
+	}
+	return pairs
+}
+
+// splitWords splits s at spaces that aren't inside quotes. The words keep
+// their quotes: `a="x y" b` becomes [`a="x y"`, `b`].
+func splitWords(s string) []string {
+	var words []string
+	var word strings.Builder
+	var quote rune // the quote we are inside, or 0
+	escaped := false
+	for _, r := range s {
+		switch {
+		case escaped:
+			escaped = false
+		case r == '\\' && quote != '\'':
+			escaped = true
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			}
+		case r == '"' || r == '\'':
+			quote = r
+		case r == ' ' || r == '\t':
+			if word.Len() > 0 {
+				words = append(words, word.String())
+				word.Reset()
+			}
+			continue
+		}
+		word.WriteRune(r)
+	}
+	if word.Len() > 0 {
+		words = append(words, word.String())
+	}
+	return words
+}
+
+// unquote removes the quotes and backslash escapes from one word, as Docker
+// does: `"x y"` becomes `x y`.
+func unquote(word string) string {
+	var out strings.Builder
+	var quote rune
+	escaped := false
+	for _, r := range word {
+		switch {
+		case escaped:
+			escaped = false
+			out.WriteRune(r)
+		case r == '\\' && quote != '\'':
+			escaped = true
+		case quote != 0 && r == quote:
+			quote = 0
+		case quote == 0 && (r == '"' || r == '\''):
+			quote = r
+		default:
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
+}
+
+// show prints an instruction the way it was written, for failure messages.
+func show(in instruction) string {
+	parts := append([]string{in.Cmd}, in.Flags...)
+	return strings.TrimSpace(strings.Join(append(parts, in.Rest), " "))
+}

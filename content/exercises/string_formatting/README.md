@@ -70,7 +70,7 @@ double quotes, so they're written in backticks. The tests do the same.
 ### When the verbs don't match
 
 If a verb doesn't fit its value (say `%d` with a string), or there are more
-verbs than values, `go vet` reports it. Gopherlings runs `go vet` with the
+verbs than values, `go vet` reports it. Groundwork runs `go vet` with the
 tests, so you'll see a message such as:
 
 ```text

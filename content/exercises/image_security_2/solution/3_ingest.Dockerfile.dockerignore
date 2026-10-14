@@ -1,0 +1,17 @@
+# Task 3: what "docker build -f 3_ingest.Dockerfile ." leaves out of the build
+# context. testdata/context.txt lists every file in the ingest repository.
+# One pattern per line; a line starting with # is a comment.
+
+# Git history: large, and it keeps every secret ever committed.
+.git
+
+# Local settings and secrets. A pattern matches from the root, so the
+# deploy/tls files need their full path.
+.env
+.env.*
+!.env.example
+deploy/tls/
+secrets/
+
+# Old builds: the image compiles its own.
+bin/

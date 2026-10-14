@@ -4,14 +4,14 @@ Both packages are called `region`, so Go can't tell them apart. You can give eac
 
 ### Closer
 
-An alias goes in front of the import path: `awsregion "gopherlings.local/packages_2/aws/region"`. Then use `awsregion.Valid` and `gcpregion.Valid` in `Provider`.
+An alias goes in front of the import path: `awsregion "groundwork.local/packages_2/aws/region"`. Then use `awsregion.Valid` and `gcpregion.Valid` in `Provider`.
 
 ### Answer
 
 ```go
 import (
-	awsregion "gopherlings.local/packages_2/aws/region"
-	gcpregion "gopherlings.local/packages_2/gcp/region"
+	awsregion "groundwork.local/packages_2/aws/region"
+	gcpregion "groundwork.local/packages_2/gcp/region"
 )
 
 func Provider(name string) string {

@@ -1,0 +1,83 @@
+// Package naming2 is the Groundwork exercise "Naming things: fix the
+// misleading names".
+package naming2
+
+import "time"
+
+// BackoffDelay returns how long the deploy bot waits before retry number
+// attempt (0 for the first retry): 500ms, doubling after every attempt, but
+// never more than 30s.
+func BackoffDelay(attempt int) time.Duration {
+	// TODO(1): Rename delay to delayMillis, then fix the line below so the
+	// unit in the name and the unit in the conversion agree.
+	return time.Duration(delay(attempt)) * time.Second
+}
+
+// delay returns the wait before retry number attempt, in milliseconds.
+func delay(attempt int) int {
+	wait := 500
+	for range attempt {
+		wait *= 2
+		if wait >= 30000 {
+			return 30000
+		}
+	}
+	return wait
+}
+
+// Node is one machine behind the load balancer, with the result of its last
+// health check.
+type Node struct {
+	Name    string
+	Healthy bool
+}
+
+// TODO(2): Rename filterHealthy to say what it really returns, then fix
+// ServingCount, which trusted the old name.
+
+// filterHealthy goes through the nodes' health checks.
+func filterHealthy(nodes []Node) []string {
+	var names []string
+	for _, node := range nodes {
+		if !node.Healthy {
+			names = append(names, node.Name)
+		}
+	}
+	return names
+}
+
+// DrainList returns the names of the nodes to take out of the load balancer:
+// the unhealthy ones.
+func DrainList(nodes []Node) []string {
+	return filterHealthy(nodes)
+}
+
+// ServingCount returns how many nodes can serve traffic: the healthy ones.
+func ServingCount(nodes []Node) int {
+	return len(filterHealthy(nodes))
+}
+
+// TODO(3): ownerOf sounds like a lookup, but it also changes the map. Make
+// it a pure lookup, so it matches its name.
+
+// ownerOf returns the team that owns service, or "platform" when owners has
+// no entry for it.
+func ownerOf(owners map[string]string, service string) string {
+	owner, ok := owners[service]
+	if !ok {
+		owner = "platform"
+		owners[service] = owner
+	}
+	return owner
+}
+
+// PageTargets returns the team to page for each service in services, in
+// the same order. owners maps a service to its team; services with no
+// owner go to "platform". PageTargets doesn't change owners.
+func PageTargets(owners map[string]string, services []string) []string {
+	var teams []string
+	for _, service := range services {
+		teams = append(teams, ownerOf(owners, service))
+	}
+	return teams
+}

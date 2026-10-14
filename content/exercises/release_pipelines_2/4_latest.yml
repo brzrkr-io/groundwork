@@ -1,0 +1,38 @@
+# Task 4: build the statusd image on every push to main and deploy it.
+# In a real repository: .github/workflows/deliver.yml.
+
+name: deliver
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        # TODO(4): The review found production running an image nobody had
+        # tested: another run pushed in between build and deploy.
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/acme/statusd:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      # TODO(4): This step rolled out whatever :latest pointed to by then.
+      - run: ./deploy.sh production ghcr.io/acme/statusd:latest

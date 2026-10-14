@@ -1,0 +1,84 @@
+package consumer
+
+// This file is complete. You do not need to change it.
+
+import "slices"
+
+// Message is one deploy request delivered by the Broker.
+type Message struct {
+	ID      string // unique per request, and the same on every redelivery
+	Service string
+	Version string
+}
+
+// Broker is a tiny in-memory message queue with at-least-once delivery, like
+// Amazon SQS. A received message stays in flight until it is acked; if it
+// is nacked, or its visibility timeout runs out (Expire), it is delivered
+// again. Broker is not safe for concurrent use.
+type Broker struct {
+	ready    []Message // waiting to be received, oldest first
+	inFlight []Message // received but not acked yet, oldest first
+}
+
+// NewBroker returns an empty Broker.
+func NewBroker() *Broker {
+	return &Broker{}
+}
+
+// Publish adds m to the back of the queue.
+func (b *Broker) Publish(m Message) {
+	b.ready = append(b.ready, m)
+}
+
+// Receive takes the oldest ready message and marks it in flight. It returns
+// false if no message is ready.
+func (b *Broker) Receive() (Message, bool) {
+	if len(b.ready) == 0 {
+		return Message{}, false
+	}
+	m := b.ready[0]
+	b.ready = b.ready[1:]
+	b.inFlight = append(b.inFlight, m)
+	return m, true
+}
+
+// Ack deletes the in-flight message with this ID: it is done and is never
+// delivered again. Acking a message that is not in flight does nothing.
+func (b *Broker) Ack(id string) {
+	b.take(id)
+}
+
+// Nack puts the in-flight message with this ID back at the end of the queue,
+// to be delivered again later. Nacking a message that is not in flight does
+// nothing.
+func (b *Broker) Nack(id string) {
+	if m, ok := b.take(id); ok {
+		b.ready = append(b.ready, m)
+	}
+}
+
+// Expire simulates the visibility timeout running out, for example because
+// the consumer crashed or was too slow: every in-flight message goes back to
+// the end of the queue, oldest first. It returns how many messages it moved.
+func (b *Broker) Expire() int {
+	n := len(b.inFlight)
+	b.ready = append(b.ready, b.inFlight...)
+	b.inFlight = nil
+	return n
+}
+
+// Pending returns how many messages are not acked yet: ready plus in flight.
+func (b *Broker) Pending() int {
+	return len(b.ready) + len(b.inFlight)
+}
+
+// take removes the in-flight message with this ID and returns it.
+func (b *Broker) take(id string) (Message, bool) {
+	i := slices.IndexFunc(b.inFlight, func(m Message) bool { return m.ID == id })
+	if i < 0 {
+		return Message{}, false
+	}
+	m := b.inFlight[i]
+	b.inFlight = slices.Delete(b.inFlight, i, i+1)
+	return m, true
+}

@@ -1,0 +1,225 @@
+package main
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+// fakeEnv returns a function that works like os.LookupEnv but sees only
+// vars, written "KEY=value" as in docker run -e KEY=value.
+func fakeEnv(vars []string) func(string) (string, bool) {
+	return func(key string) (string, bool) {
+		for _, kv := range vars {
+			k, v, _ := strings.Cut(kv, "=")
+			if k == key {
+				return v, true
+			}
+		}
+		return "", false
+	}
+}
+
+// setRealEnv fills the real environment with values no test expects, so
+// code that calls os.Getenv or os.LookupEnv instead of lookupEnv fails.
+func setRealEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{"PORT", "APP_ENV", "DATABASE_URL", "LOG_LEVEL", "REGION"} {
+		t.Setenv(key, "from-the-real-environment")
+	}
+}
+
+func TestLookup(t *testing.T) {
+	setRealEnv(t)
+	tests := []struct {
+		name          string
+		env           []string
+		key, fallback string
+		want          string
+	}{
+		{"set", []string{"REGION=eu-west-1"}, "REGION", "us-east-1", "eu-west-1"},
+		{"another value", []string{"ZONE=b", "REGION=ap-south-1"}, "REGION", "us-east-1", "ap-south-1"},
+		{"spaces around", []string{"LOG_LEVEL= debug "}, "LOG_LEVEL", "info", "debug"},
+		{"zero is a value", []string{"WORKERS=0"}, "WORKERS", "4", "0"},
+		{"unset", nil, "REGION", "us-east-1", "us-east-1"},
+		{"only another key set", []string{"ZONE=a"}, "REGION", "eu-west-1", "eu-west-1"},
+		{"set but empty", []string{"REGION="}, "REGION", "us-east-1", "us-east-1"},
+		{"only spaces", []string{"TEAM=   "}, "TEAM", "platform", "platform"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Lookup(fakeEnv(tt.env), tt.key, tt.fallback)
+			if got != tt.want {
+				t.Errorf("Lookup(env %q, %q, %q) = %q, want %q", tt.env, tt.key, tt.fallback, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPort(t *testing.T) {
+	setRealEnv(t)
+	tests := []struct {
+		name    string
+		env     []string
+		want    int
+		wantErr string // "" means no error
+	}{
+		{"set", []string{"PORT=9090"}, 9090, ""},
+		{"spaces around", []string{"PORT= 3000 "}, 3000, ""},
+		{"lowest", []string{"PORT=1"}, 1, ""},
+		{"highest", []string{"PORT=65535"}, 65535, ""},
+		{"unset", []string{"APP_ENV=dev"}, 8080, ""},
+		{"set but empty", []string{"PORT="}, 8080, ""},
+		{"word", []string{"PORT=http"}, 0, `PORT "http" is not a number`},
+		{"listen address", []string{"PORT=:8080"}, 0, `PORT ":8080" is not a number`},
+		{"letter O", []string{"PORT= 8O80"}, 0, `PORT "8O80" is not a number`},
+		{"too big", []string{"PORT=70000"}, 0, "PORT 70000 is out of range 1-65535"},
+		{"zero", []string{"PORT=0"}, 0, "PORT 0 is out of range 1-65535"},
+		{"negative", []string{"PORT=-1"}, 0, "PORT -1 is out of range 1-65535"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Port(fakeEnv(tt.env))
+			switch {
+			case tt.wantErr == "" && err != nil:
+				t.Errorf("Port(env %q) returned error %q, want %d", tt.env, err, tt.want)
+			case tt.wantErr == "" && got != tt.want:
+				t.Errorf("Port(env %q) = %d, want %d", tt.env, got, tt.want)
+			case tt.wantErr != "" && err == nil:
+				t.Errorf("Port(env %q) = %d, nil; want error %q", tt.env, got, tt.wantErr)
+			case tt.wantErr != "" && err.Error() != tt.wantErr:
+				t.Errorf("Port(env %q) error = %q, want %q", tt.env, err, tt.wantErr)
+			case tt.wantErr != "" && got != 0:
+				t.Errorf("Port(env %q) = %d with an error, want 0", tt.env, got)
+			}
+		})
+	}
+}
+
+func TestLoad(t *testing.T) {
+	setRealEnv(t)
+	const db = "postgres://app:hunter2@db:5432/inventory"
+	tests := []struct {
+		name    string
+		env     []string
+		want    Config
+		wantErr []string // the joined error's lines; nil means no error
+	}{
+		{
+			"everything set",
+			[]string{"PORT=9090", "APP_ENV=production", "DATABASE_URL=" + db, "LOG_LEVEL=warn"},
+			Config{Port: 9090, Env: "production", DatabaseURL: db, LogLevel: "warn"},
+			nil,
+		},
+		{
+			"defaults",
+			[]string{"DATABASE_URL=" + db},
+			Config{Port: 8080, Env: "dev", DatabaseURL: db, LogLevel: "info"},
+			nil,
+		},
+		{
+			"spaces around",
+			[]string{"APP_ENV= staging", "DATABASE_URL= postgres://app@db-staging/inventory ", "LOG_LEVEL=debug "},
+			Config{Port: 8080, Env: "staging", DatabaseURL: "postgres://app@db-staging/inventory", LogLevel: "debug"},
+			nil,
+		},
+		{
+			"typo in APP_ENV",
+			[]string{"APP_ENV=prod", "DATABASE_URL=" + db},
+			Config{},
+			[]string{`APP_ENV "prod" must be dev, staging or production`},
+		},
+		{
+			"APP_ENV in capitals",
+			[]string{"APP_ENV=Production", "DATABASE_URL=" + db},
+			Config{},
+			[]string{`APP_ENV "Production" must be dev, staging or production`},
+		},
+		{
+			"DATABASE_URL not set",
+			[]string{"APP_ENV=staging"},
+			Config{},
+			[]string{"DATABASE_URL is not set"},
+		},
+		{
+			"DATABASE_URL empty",
+			[]string{"DATABASE_URL=  "},
+			Config{},
+			[]string{"DATABASE_URL is set but empty"},
+		},
+		{
+			"bad port",
+			[]string{"PORT=99999", "DATABASE_URL=" + db},
+			Config{},
+			[]string{"PORT 99999 is out of range 1-65535"},
+		},
+		{
+			"everything wrong",
+			[]string{"PORT=8O80", "APP_ENV=prod", "DATABASE_URL=", "LOG_LEVEL=debug"},
+			Config{},
+			[]string{
+				`PORT "8O80" is not a number`,
+				`APP_ENV "prod" must be dev, staging or production`,
+				"DATABASE_URL is set but empty",
+			},
+		},
+		{
+			"two problems",
+			[]string{"PORT=0", "APP_ENV=production"},
+			Config{},
+			[]string{"PORT 0 is out of range 1-65535", "DATABASE_URL is not set"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Load(fakeEnv(tt.env))
+			want := strings.Join(tt.wantErr, "\n")
+			switch {
+			case tt.wantErr == nil && err != nil:
+				t.Errorf("Load(env %q) error:\n%v\nwant no error", tt.env, err)
+			case tt.wantErr != nil && (err == nil || err.Error() != want):
+				t.Errorf("Load(env %q) error:\n%v\nwant:\n%s", tt.env, err, want)
+			}
+			if got != tt.want {
+				t.Errorf("Load(env %q) = %#v, want %#v", tt.env, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfigString(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{
+			"password",
+			Config{Port: 8080, Env: "production", DatabaseURL: "postgres://app:hunter2@db:5432/inventory", LogLevel: "info"},
+			"port=8080 env=production log=info db=postgres://app:xxxxx@db:5432/inventory",
+		},
+		{
+			"password and query",
+			Config{Port: 3000, Env: "dev", DatabaseURL: "postgres://inventory:s3cr3t@localhost:5432/inventory?sslmode=disable", LogLevel: "debug"},
+			"port=3000 env=dev log=debug db=postgres://inventory:xxxxx@localhost:5432/inventory?sslmode=disable",
+		},
+		{
+			"no password",
+			Config{Port: 9090, Env: "staging", DatabaseURL: "postgres://app@db-staging:5432/inventory", LogLevel: "warn"},
+			"port=9090 env=staging log=warn db=postgres://app@db-staging:5432/inventory",
+		},
+		{
+			"does not parse",
+			Config{Port: 8080, Env: "dev", DatabaseURL: "postgres://app:50%off@db:5432/inventory", LogLevel: "info"},
+			"port=8080 env=dev log=info db=invalid",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// fmt.Sprint uses Config's String method once it has one.
+			if got := fmt.Sprint(tt.cfg); got != tt.want {
+				t.Errorf("fmt.Sprint(%#v) = %q, want %q", tt.cfg, got, tt.want)
+			}
+		})
+	}
+}

@@ -1,4 +1,4 @@
-// Package disk is the Gopherlings exercise "Table-driven tests".
+// Package disk is the Groundwork exercise "Table-driven tests".
 package disk
 
 // DiskAlert turns how full a disk is, as a percentage from 0 to 100, into an
@@ -14,7 +14,7 @@ func DiskAlert(usedPercent int) string {
 	return diskAlert(usedPercent)
 }
 
-// diskAlert points at the real implementation. Gopherlings' grader swaps in
+// diskAlert points at the real implementation. Groundwork' grader swaps in
 // broken versions to check that your test catches them.
 var diskAlert = realDiskAlert
 

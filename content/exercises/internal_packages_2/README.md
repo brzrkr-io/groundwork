@@ -73,7 +73,7 @@ built and none of its tests run. The other packages are tested as usual.
 `go test` reports:
 
 ```text
-report/report.go:…: use of internal package gopherlings.local/internal_packages_2/deploy/internal/naming not allowed
+report/report.go:…: use of internal package groundwork.local/internal_packages_2/deploy/internal/naming not allowed
 ```
 
 `deploy` exports `ReleaseName`, which takes the same arguments and calls the

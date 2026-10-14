@@ -5,13 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjanderson/gopherlings/content"
-	"github.com/pjanderson/gopherlings/internal/course"
+	"github.com/pjanderson/groundwork/content"
+	"github.com/pjanderson/groundwork/internal/cards"
+	"github.com/pjanderson/groundwork/internal/course"
 )
 
 // guideEnd are the closing sections every guide has, in this order, after
 // its teaching sections. See AUTHORING.md.
-var guideEnd = []string{"Common mistakes", "Check yourself", "Answers", "Key terms", "Go deeper"}
+var guideEnd = []string{"Common mistakes", "Check yourself", "Answers", "Key terms", "Watch", "Go deeper"}
 
 // TestGuides checks every guide follows the layout in AUTHORING.md, so the
 // learner always finds the summary at the top and the same closing sections.
@@ -30,6 +31,7 @@ func TestGuides(t *testing.T) {
 	codeBlock := regexp.MustCompile("(?s)```.*?```")
 	heading := regexp.MustCompile(`(?m)^(#{1,6}) (.+)$`)
 	numbered := regexp.MustCompile(`(?m)^\d+\. `)
+	video := regexp.MustCompile(`(?m)^- \[[^\]]+\]\(https://[^)\s]+\) · [^·\n]+ · \d+ min: \S`)
 	link := regexp.MustCompile(`\]\((https?://[^)\s]+)\)`)
 	for _, g := range c.Guides {
 		t.Run(g.Name, func(t *testing.T) {
@@ -65,8 +67,15 @@ func TestGuides(t *testing.T) {
 			if got := h2[len(h2)-len(guideEnd):]; strings.Join(got, "|") != strings.Join(guideEnd, "|") {
 				t.Errorf("the last ## sections are %q, want %q", got, guideEnd)
 			}
+			videos := video.FindAllString(section(text, "Watch"), -1)
+			if items := strings.Count(section(text, "Watch"), "\n- "); len(videos) < 2 || len(videos) > 5 || len(videos) != items {
+				t.Errorf("Watch has %d well-formed videos in %d items; want 2 to 5 items, each `- [Title](https://...) · Channel or speaker · N min: why`", len(videos), items)
+			}
 			if links := link.FindAllString(section(text, "Go deeper"), -1); len(links) < 2 {
 				t.Errorf("Go deeper has %d links, want at least 2", len(links))
+			}
+			if deck, err := cards.FromGuide(g, raw); err != nil || len(deck) < 6 {
+				t.Errorf("flashcards: %d cards, error %v; want at least 3 questions and 3 key terms", len(deck), err)
 			}
 			questions := len(numbered.FindAllString(section(text, "Check yourself"), -1))
 			answers := len(numbered.FindAllString(section(text, "Answers"), -1))

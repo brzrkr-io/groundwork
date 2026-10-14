@@ -51,7 +51,7 @@ status codes. `cmd/inventoryd` reads flags, handles signals and starts it all.
 
 | File | What's in it | Tasks |
 |---|---|---|
-| `go.mod` | the module `gopherlings.local/inventory_service` | |
+| `go.mod` | the module `groundwork.local/inventory_service` | |
 | `cmd/inventoryd/main.go` | flags, JSON logger, signal handling, calls `Run` | read only |
 | `internal/hosts/hosts.go` | `Host`, `Validate`, the in-memory `Store` | 1, 2 |
 | `internal/hosts/hosts_test.go` | `TestValidate`, `TestStore` | |
@@ -269,7 +269,7 @@ itself, because counting happens after its handler finishes.)
 
 Use the `s.idem` store (an `*idempotency.Store`) and the
 `internal/idempotency` package. Add the import
-`"gopherlings.local/inventory_service/internal/idempotency"`.
+`"groundwork.local/inventory_service/internal/idempotency"`.
 
 1. No `Idempotency-Key` header: call `next` normally and stop.
 2. Call `s.idem.Start(key)`. It returns a saved response and a state:

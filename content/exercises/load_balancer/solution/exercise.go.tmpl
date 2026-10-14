@@ -1,0 +1,113 @@
+// Package balancer is the Groundwork exercise "Load balancing: round robin with health checks".
+package balancer
+
+import (
+	"errors"
+	"slices"
+	"sync"
+)
+
+// ErrNoHealthy is returned by Next when no backend is healthy.
+var ErrNoHealthy = errors.New("balancer: no healthy backends")
+
+// backend is one copy of the service and whether it is taking traffic.
+type backend struct {
+	addr    string // "host:port", such as "10.0.1.5:8080"
+	healthy bool
+}
+
+// RoundRobin hands out backends in turn, skipping the ones that are down.
+// It is safe for concurrent use.
+type RoundRobin struct {
+	mu       sync.Mutex
+	backends []backend // in the order given to New
+	next     int       // where Next starts looking
+}
+
+// New returns a RoundRobin over the given addresses. Every backend starts
+// healthy.
+func New(addrs ...string) *RoundRobin {
+	rr := &RoundRobin{}
+	for _, addr := range addrs {
+		rr.backends = append(rr.backends, backend{addr: addr, healthy: true})
+	}
+	return rr
+}
+
+// Healthy returns the addresses of the healthy backends, in list order.
+func (rr *RoundRobin) Healthy() []string {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	var addrs []string
+	for _, b := range rr.backends {
+		if b.healthy {
+			addrs = append(addrs, b.addr)
+		}
+	}
+	return addrs
+}
+
+// Next returns the next healthy backend in turn. It returns ErrNoHealthy if
+// no backend is healthy.
+func (rr *RoundRobin) Next() (string, error) {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	// Look at each backend at most once. With no backends the loop doesn't
+	// run, so there is nothing to divide by zero.
+	for range len(rr.backends) {
+		b := rr.backends[rr.next]
+		rr.next = (rr.next + 1) % len(rr.backends)
+		if b.healthy {
+			return b.addr, nil
+		}
+	}
+	return "", ErrNoHealthy
+}
+
+// MarkDown stops sending traffic to addr. Unknown addresses are ignored.
+func (rr *RoundRobin) MarkDown(addr string) {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	for i := range rr.backends {
+		if rr.backends[i].addr == addr {
+			rr.backends[i].healthy = false
+		}
+	}
+}
+
+// MarkUp starts sending traffic to addr again. Unknown addresses are
+// ignored.
+func (rr *RoundRobin) MarkUp(addr string) {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	for i := range rr.backends {
+		if rr.backends[i].addr == addr {
+			rr.backends[i].healthy = true
+		}
+	}
+}
+
+// CheckAll calls probe once for every backend, sets each backend's health to
+// probe's answer, and returns how many backends are healthy. It doesn't hold
+// the lock while probe runs, so Next keeps answering during a slow check.
+func (rr *RoundRobin) CheckAll(probe func(addr string) bool) int {
+	rr.mu.Lock()
+	backends := slices.Clone(rr.backends)
+	rr.mu.Unlock()
+
+	results := make([]bool, len(backends))
+	for i, b := range backends {
+		results[i] = probe(b.addr)
+	}
+
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	healthy := 0
+	for i, ok := range results {
+		rr.backends[i].healthy = ok
+		if ok {
+			healthy++
+		}
+	}
+	return healthy
+}

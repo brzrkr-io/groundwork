@@ -1,0 +1,40 @@
+package main
+
+// Config holds every setting the inventory service reads at startup.
+type Config struct {
+	Port        int    // PORT
+	Env         string // APP_ENV
+	DatabaseURL string // DATABASE_URL
+	LogLevel    string // LOG_LEVEL
+}
+
+// Lookup returns the value of the environment variable key without
+// surrounding spaces, or fallback when the variable is unset or blank.
+// lookupEnv works like os.LookupEnv.
+func Lookup(lookupEnv func(string) (string, bool), key, fallback string) string {
+	// TODO(1): Return the trimmed value, or fallback when there is none.
+	// Add the "strings" import.
+	return fallback
+}
+
+// Port returns the PORT setting as a number, 8080 when it's unset, or an
+// error when it isn't a whole number from 1 to 65535.
+func Port(lookupEnv func(string) (string, bool)) (int, error) {
+	// TODO(2): Turn PORT into a number and check its range. Add the
+	// "strconv" and "fmt" imports.
+	return 8080, nil
+}
+
+// Load reads every setting through lookupEnv. If any setting is wrong, it
+// returns Config{} and one error that lists every problem.
+func Load(lookupEnv func(string) (string, bool)) (Config, error) {
+	// TODO(3): Read all four settings and collect every problem. Add the
+	// "errors" import.
+	return Config{}, nil
+}
+
+// TODO(4): Give Config a String method that prints every setting on one
+// line, with the database password hidden. Add the "net/url" import.
+
+// String returns the settings as one line for the startup log, with the
+// password in DatabaseURL replaced by xxxxx.

@@ -1,0 +1,9 @@
+-- Task 2: Create the services table
+--
+-- Create a table named services with four columns:
+--   id       INTEGER, the primary key
+--   name     TEXT, required and unique
+--   team_id  INTEGER, required, a foreign key to teams (id)
+--   tier     TEXT, required, 'critical' or 'standard', default 'standard'
+--
+-- TODO(2): Write your statement below.

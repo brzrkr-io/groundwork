@@ -1,0 +1,7 @@
+-- Task 4: Count deploys per day
+--
+-- For each day with deploys, return the day as YYYY-MM-DD (day) and
+-- the number of deploys that started that day (deploys), newest day
+-- first.
+--
+-- TODO(4): Write your query below.

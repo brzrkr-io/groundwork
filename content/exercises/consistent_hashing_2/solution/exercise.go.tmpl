@@ -1,0 +1,74 @@
+// Package ring is the Groundwork exercise "Consistent hashing: fix the ring".
+package ring
+
+import (
+	"hash/crc32"
+	"maps"
+	"slices"
+	"strconv"
+)
+
+// hash returns where s sits on the ring: a number from 0 to 4,294,967,295.
+func hash(s string) uint32 {
+	return crc32.ChecksumIEEE([]byte(s))
+}
+
+// Ring spreads keys across nodes with consistent hashing. Every node sits on
+// the ring at several points (its virtual nodes), and a key belongs to the
+// node at the first point at or after the key's hash, wrapping around after
+// the last point. A Ring is not safe for concurrent use.
+type Ring struct {
+	replicas int               // points per node
+	points   []uint32          // every point on the ring, sorted from low to high
+	owners   map[uint32]string // point -> the node that sits there
+}
+
+// New returns an empty Ring that places every node at replicas points.
+func New(replicas int) *Ring {
+	return &Ring{replicas: replicas, owners: make(map[uint32]string)}
+}
+
+// label returns the name of node's i-th point: node + "#" + i.
+func label(node string, i int) string {
+	return node + "#" + strconv.Itoa(i)
+}
+
+// Add places each node on the ring at r.replicas points. Points that are
+// already on the ring are skipped, so adding a node twice changes nothing.
+func (r *Ring) Add(nodes ...string) {
+	for _, node := range nodes {
+		for i := range r.replicas {
+			p := hash(label(node, i))
+			if _, taken := r.owners[p]; taken {
+				continue
+			}
+			r.owners[p] = node
+			r.points = append(r.points, p)
+		}
+	}
+	slices.Sort(r.points) // the whole ring, not just the new points
+}
+
+// Get returns the node that owns key, or "" if the ring is empty.
+func (r *Ring) Get(key string) string {
+	if len(r.points) == 0 {
+		return ""
+	}
+	i, _ := slices.BinarySearch(r.points, hash(key))
+	if i == len(r.points) {
+		i = 0 // past the last point: wrap around to the first
+	}
+	return r.owners[r.points[i]]
+}
+
+// Remove takes every point of node off the ring. Removing a node that is
+// not on the ring does nothing.
+func (r *Ring) Remove(node string) {
+	// Clean up r.points first: it needs r.owners to know who owns each point.
+	r.points = slices.DeleteFunc(r.points, func(p uint32) bool {
+		return r.owners[p] == node
+	})
+	maps.DeleteFunc(r.owners, func(_ uint32, owner string) bool {
+		return owner == node
+	})
+}

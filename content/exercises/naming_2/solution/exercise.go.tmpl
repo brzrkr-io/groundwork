@@ -1,0 +1,74 @@
+// Package naming2 is the Groundwork exercise "Naming things: fix the
+// misleading names".
+package naming2
+
+import "time"
+
+// BackoffDelay returns how long the deploy bot waits before retry number
+// attempt (0 for the first retry): 500ms, doubling after every attempt, but
+// never more than 30s.
+func BackoffDelay(attempt int) time.Duration {
+	return time.Duration(delayMillis(attempt)) * time.Millisecond
+}
+
+// delayMillis returns the wait before retry number attempt, in milliseconds.
+func delayMillis(attempt int) int {
+	wait := 500
+	for range attempt {
+		wait *= 2
+		if wait >= 30000 {
+			return 30000
+		}
+	}
+	return wait
+}
+
+// Node is one machine behind the load balancer, with the result of its last
+// health check.
+type Node struct {
+	Name    string
+	Healthy bool
+}
+
+// unhealthyNodes returns the names of the nodes that failed their last
+// health check.
+func unhealthyNodes(nodes []Node) []string {
+	var names []string
+	for _, node := range nodes {
+		if !node.Healthy {
+			names = append(names, node.Name)
+		}
+	}
+	return names
+}
+
+// DrainList returns the names of the nodes to take out of the load balancer:
+// the unhealthy ones.
+func DrainList(nodes []Node) []string {
+	return unhealthyNodes(nodes)
+}
+
+// ServingCount returns how many nodes can serve traffic: the healthy ones.
+func ServingCount(nodes []Node) int {
+	return len(nodes) - len(unhealthyNodes(nodes))
+}
+
+// ownerOf returns the team that owns service, or "platform" when owners has
+// no entry for it.
+func ownerOf(owners map[string]string, service string) string {
+	if owner, ok := owners[service]; ok {
+		return owner
+	}
+	return "platform"
+}
+
+// PageTargets returns the team to page for each service in services, in
+// the same order. owners maps a service to its team; services with no
+// owner go to "platform". PageTargets doesn't change owners.
+func PageTargets(owners map[string]string, services []string) []string {
+	var teams []string
+	for _, service := range services {
+		teams = append(teams, ownerOf(owners, service))
+	}
+	return teams
+}

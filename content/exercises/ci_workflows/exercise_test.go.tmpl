@@ -1,0 +1,115 @@
+package ci
+
+import (
+	"slices"
+	"testing"
+)
+
+// The helpers readWorkflow, triggers, needs, pinned, findStep, findRun,
+// eventNames, stepNames and stringList are in workflow_test.go.
+
+func TestHelloWorkflow(t *testing.T) {
+	const file = "1_hello.yml"
+	wf := readWorkflow(t, file)
+	if wf.Name != "hello" {
+		t.Errorf("%s: name is %q, want %q", file, wf.Name, "hello")
+	}
+	if _, ok := triggers(wf)["push"]; !ok {
+		t.Errorf("%s: on has the events %q, want push", file, eventNames(wf))
+	}
+	hello := checkJob(t, file, wf, "hello")
+	if findRun(hello.Steps, "go version") < 0 {
+		t.Errorf("%s: job hello has no step that runs go version", file)
+	}
+}
+
+func TestTestWorkflow(t *testing.T) {
+	const file = "2_test.yml"
+	wf := readWorkflow(t, file)
+	if wf.Name != "test" {
+		t.Errorf("%s: name is %q, want %q", file, wf.Name, "test")
+	}
+	events := triggers(wf)
+	if got := eventNames(wf); !slices.Equal(got, []string{"pull_request", "push"}) {
+		t.Errorf("%s: on has the events %q, want push and pull_request", file, got)
+	}
+	if push, ok := events["push"]; ok {
+		if branches := stringList(push, "branches"); !slices.Equal(branches, []string{"main"}) {
+			t.Errorf("%s: push has branches %q, want [main]", file, branches)
+		}
+	}
+
+	test := checkJob(t, file, wf, "test")
+	checkSetupSteps(t, file, "test", test.Steps)
+	setup := findStep(test.Steps, "actions/setup-go")
+	vet := findRun(test.Steps, "go vet ./...")
+	tests := findRun(test.Steps, "go test ./...")
+	switch {
+	case vet < 0:
+		t.Errorf("%s: job test has no step that runs go vet ./...", file)
+	case tests < 0:
+		t.Errorf("%s: job test has no step that runs go test ./...", file)
+	case vet < setup || tests < vet:
+		t.Errorf("%s: job test has steps in the order %v, want checkout, setup-go, go vet, go test", file, stepNames(test.Steps))
+	}
+}
+
+func TestBuildWorkflow(t *testing.T) {
+	const file = "3_build.yml"
+	wf := readWorkflow(t, file)
+	if _, ok := wf.Jobs["test"]; !ok {
+		t.Errorf("%s: the test job is gone; keep it, build needs it", file)
+	}
+	build := checkJob(t, file, wf, "build")
+	if got := needs(build); !slices.Contains(got, "test") {
+		t.Errorf("%s: job build needs %q, want it to need test", file, got)
+	}
+	checkSetupSteps(t, file, "build", build.Steps)
+	run := findRun(build.Steps, "go build -o bin/statusd .")
+	if run < 0 {
+		t.Errorf("%s: job build has no step that runs go build -o bin/statusd .", file)
+	} else if run < findStep(build.Steps, "actions/setup-go") {
+		t.Errorf("%s: job build has steps in the order %v, want checkout, setup-go, go build", file, stepNames(build.Steps))
+	}
+}
+
+// checkJob checks that the workflow has the job id, running on
+// ubuntu-latest, and returns it.
+func checkJob(t *testing.T, file string, wf workflow, id string) job {
+	t.Helper()
+	j, ok := wf.Jobs[id]
+	if !ok {
+		var ids []string
+		for name := range wf.Jobs {
+			ids = append(ids, name)
+		}
+		slices.Sort(ids)
+		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, ids, id)
+	}
+	if j.RunsOn != "ubuntu-latest" {
+		t.Errorf("%s: job %s has runs-on %v, want ubuntu-latest", file, id, j.RunsOn)
+	}
+	return j
+}
+
+// checkSetupSteps checks that a job starts with a pinned checkout, then a
+// pinned setup-go that reads go.mod.
+func checkSetupSteps(t *testing.T, file, id string, steps []step) {
+	t.Helper()
+	checkout := findStep(steps, "actions/checkout")
+	setup := findStep(steps, "actions/setup-go")
+	if checkout < 0 || setup < 0 {
+		t.Fatalf("%s: job %s has steps %v, want actions/checkout and actions/setup-go", file, id, stepNames(steps))
+	}
+	if setup < checkout {
+		t.Errorf("%s: job %s runs setup-go before checkout; checkout comes first", file, id)
+	}
+	for _, i := range []int{checkout, setup} {
+		if !pinned.MatchString(steps[i].Uses) {
+			t.Errorf("%s: job %s uses %s; pin it to a version, such as @v7", file, id, steps[i].Uses)
+		}
+	}
+	if got := steps[setup].With["go-version-file"]; got != "go.mod" {
+		t.Errorf("%s: job %s: setup-go has go-version-file %v, want go.mod", file, id, got)
+	}
+}

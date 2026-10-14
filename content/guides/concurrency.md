@@ -920,6 +920,13 @@ Then run the tests with `-race`.
 | pipeline | stages joined by channels, each doing one job |
 | workqueue | a Kubernetes queue of object keys feeding controller workers |
 
+## Watch
+
+- [Concurrency Vs Parallelism!](https://www.youtube.com/watch?v=RlM9AfWf1WU) · ByteByteGo · 4 min: a quick animated picture of the two words this guide pins down, good to watch first.
+- [Concurrency in Go](https://www.youtube.com/watch?v=LvgVSSpwND8) · Jake Wright · 19 min: the friendliest walk-through for a beginner, building goroutines, WaitGroup, channels, select and a worker pool one step at a time.
+- [Concurrency is not Parallelism by Rob Pike](https://www.youtube.com/watch?v=oV9rvDllKEg) · gnbitcom · 31 min: the classic talk behind this guide's framing, with gophers moving books to show how structure, not cores, makes a design concurrent.
+- [GopherCon 2017: Understanding Channels - Kavya Joshi](https://www.youtube.com/watch?v=KBZlN0izeiY) · Gopher Academy · 22 min: a deeper look at what a channel really is (a queue and a lock) and why a blocked goroutine waits; watch once the Tools sections feel solid.
+
 ## Go deeper
 
 - [Rob Pike, "Concurrency is not parallelism"](https://go.dev/blog/waza-talk):

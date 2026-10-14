@@ -1,0 +1,55 @@
+// Package certs is the Groundwork exercise "Named constants".
+package certs
+
+import "time"
+
+// TODO(1): Declare constants criticalDays (7) and warningDays (30) here, and
+// use them instead of the numbers in all three functions.
+
+// TODO(2): Declare constants urgentInterval and normalInterval here, built
+// from the time package's units, and use them in NextCheck.
+
+// TODO(3): The security team's new policy warns at 21 days instead of 30.
+// Make the change.
+
+// Cert is a TLS certificate the platform team watches.
+type Cert struct {
+	Domain   string
+	DaysLeft int // days until it expires; negative once it has expired
+}
+
+// CertStatus turns the days a certificate has left into an alert level.
+// See the README for the levels.
+func CertStatus(daysLeft int) string {
+	if daysLeft < 0 {
+		return "expired"
+	}
+	if daysLeft <= 7 {
+		return "critical"
+	}
+	if daysLeft <= 30 {
+		return "warning"
+	}
+	return "ok"
+}
+
+// RenewalList returns the domains of the certificates that are due for
+// renewal, in order: those at the warning level or worse.
+func RenewalList(certs []Cert) []string {
+	var due []string
+	for _, cert := range certs {
+		if cert.DaysLeft <= 30 {
+			due = append(due, cert.Domain)
+		}
+	}
+	return due
+}
+
+// NextCheck returns how long to wait before checking a certificate again:
+// every hour once it is critical or expired, every day otherwise.
+func NextCheck(daysLeft int) time.Duration {
+	if daysLeft <= 7 {
+		return 3600 * time.Second
+	}
+	return 86400 * time.Second
+}

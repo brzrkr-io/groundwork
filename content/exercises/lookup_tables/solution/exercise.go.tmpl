@@ -1,0 +1,74 @@
+// Package routing is the Groundwork exercise "Lookup tables".
+package routing
+
+import (
+	"fmt"
+	"slices"
+)
+
+// route says who gets paged for an alert, and how urgently.
+type route struct {
+	team     string
+	severity string
+}
+
+// routes maps an alert's name to its route.
+var routes = map[string]route{
+	"DiskFull":        {"infra", "critical"},
+	"DiskFillingUp":   {"infra", "warning"},
+	"NodeDown":        {"infra", "critical"},
+	"CertExpiring":    {"security", "warning"},
+	"LoginFailures":   {"security", "critical"},
+	"HighErrorRate":   {"payments", "critical"},
+	"SlowCheckout":    {"payments", "warning"},
+	"ReplicationLag":  {"data", "warning"},
+	"BackupFailed":    {"data", "critical"},
+	"PodCrashLooping": {"apps", "critical"},
+}
+
+// unknownRoute is where alerts that aren't in routes go.
+var unknownRoute = route{"platform", "info"}
+
+// Route returns the team to page and the severity for an alert, by the
+// alert's name. Alerts it doesn't know go to "platform" at "info".
+func Route(alert string) (team, severity string) {
+	r, ok := routes[alert]
+	if !ok {
+		r = unknownRoute
+	}
+	return r.team, r.severity
+}
+
+// exitReasons explains the exit codes that show up in deploy logs.
+var exitReasons = map[int]string{
+	0:   "success",
+	1:   "general error",
+	2:   "misuse of a shell builtin",
+	126: "command found but not executable",
+	127: "command not found",
+	130: "interrupted (Ctrl-C)",
+	137: "killed (SIGKILL, often out of memory)",
+	143: "terminated (SIGTERM)",
+}
+
+// ExitReason explains a process exit code for a deploy log, such as
+// "command not found" for 127.
+func ExitReason(code int) string {
+	if reason, ok := exitReasons[code]; ok {
+		return reason
+	}
+	return fmt.Sprintf("exit code %d", code)
+}
+
+// Teams returns every team that Route can page, sorted alphabetically, each
+// once: the teams in the routing table and the team for unknown alerts.
+func Teams() []string {
+	teams := []string{unknownRoute.team}
+	for _, r := range routes {
+		if !slices.Contains(teams, r.team) {
+			teams = append(teams, r.team)
+		}
+	}
+	slices.Sort(teams)
+	return teams
+}

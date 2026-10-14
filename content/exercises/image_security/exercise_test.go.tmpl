@@ -1,0 +1,182 @@
+package imagesecurity
+
+import (
+	"os"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+// The helpers readDockerfile, stages, find, keyValues and show are in
+// dockerfile_test.go.
+
+func TestRunAsNonRoot(t *testing.T) {
+	const file = "1_api.Dockerfile"
+	all := stages(readDockerfile(t, file))
+	if len(all) != 2 {
+		t.Fatalf("%s has %d stages, want 2: the build stage and the final stage", file, len(all))
+	}
+	build, final := all[0], all[1]
+
+	entrypoints := find(final.Instructions, "ENTRYPOINT")
+	if len(entrypoints) == 0 {
+		t.Fatalf(`%s: the final stage has no ENTRYPOINT; keep ENTRYPOINT ["/api"]`, file)
+	}
+	entrypoint := entrypoints[len(entrypoints)-1]
+
+	users := find(final.Instructions, "USER")
+	if len(users) == 0 {
+		for _, u := range find(build.Instructions, "USER") {
+			t.Errorf("%s line %d: %s is in the build stage; only the final stage's settings end up in the image", file, u.Line, show(u))
+		}
+		t.Fatalf("%s: the final stage has no USER, so the container runs as root (UID 0); want a numeric non-root USER before ENTRYPOINT", file)
+	}
+	user := users[len(users)-1] // the last USER is the one the container runs as
+	uid, gid, hasGroup := strings.Cut(user.Rest, ":")
+	n, err := strconv.Atoi(uid)
+	switch {
+	case uid == "root" || (err == nil && n == 0):
+		t.Errorf("%s line %d: %s runs the container as root (UID 0); the last USER wins, want a non-zero UID such as USER 65532:65532", file, user.Line, show(user))
+	case err != nil || n < 0:
+		t.Errorf("%s line %d: %s, want a number such as USER 65532:65532; Kubernetes runAsNonRoot can't check that a user name isn't root", file, user.Line, show(user))
+	}
+	if _, err := strconv.Atoi(gid); hasGroup && err != nil {
+		t.Errorf("%s line %d: %s, want the group as a number too, such as USER 65532:65532", file, user.Line, show(user))
+	}
+	if user.Line > entrypoint.Line {
+		t.Errorf("%s line %d: USER comes after ENTRYPOINT (line %d); put it before ENTRYPOINT, so readers see who the program runs as before it starts", file, user.Line, entrypoint.Line)
+	}
+}
+
+func TestPasswordNotInImage(t *testing.T) {
+	const file = "2_migrate.Dockerfile"
+	instructions := readDockerfile(t, file)
+	for _, in := range instructions {
+		if in.Cmd != "ENV" && in.Cmd != "ARG" && in.Cmd != "LABEL" {
+			continue
+		}
+		for _, kv := range keyValues(in) {
+			if secretName(kv.Key) {
+				t.Errorf("%s line %d: %s puts %s in the image's settings, where docker history and docker inspect show it; delete it and pass the value at run time", file, in.Line, show(in), kv.Key)
+			}
+		}
+	}
+
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, line := range strings.Split(string(raw), "\n") {
+		if strings.Contains(strings.ToLower(line), "hunter2") {
+			t.Errorf("%s line %d: %q still contains the password; the file is in Git, so delete it, comments too", file, i+1, strings.TrimSpace(line))
+		}
+	}
+
+	all := stages(instructions)
+	if len(all) == 0 {
+		t.Fatalf("%s has no FROM", file)
+	}
+	env := map[string]string{}
+	for _, in := range find(all[len(all)-1].Instructions, "ENV") {
+		for _, kv := range keyValues(in) {
+			env[kv.Key] = kv.Value
+		}
+	}
+	for _, want := range []keyValue{{"DATABASE_HOST", "db.internal"}, {"DATABASE_USER", "migrate"}} {
+		if got := env[want.Key]; got != want.Value {
+			t.Errorf("%s: the final stage sets %s to %q, want %q; it isn't secret, so keep ENV %s=%s", file, want.Key, got, want.Value, want.Key, want.Value)
+		}
+	}
+}
+
+// secretName reports whether a variable or label name looks like it holds a
+// secret.
+func secretName(name string) bool {
+	upper := strings.ToUpper(name)
+	for _, word := range []string{"PASSWORD", "TOKEN", "SECRET", "KEY"} {
+		if strings.Contains(upper, word) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBuildSecret(t *testing.T) {
+	const file = "3_private_deps.Dockerfile"
+	instructions := readDockerfile(t, file)
+	for _, in := range instructions {
+		if in.Cmd == "ARG" || in.Cmd == "ENV" {
+			for _, kv := range keyValues(in) {
+				if strings.Contains(strings.ToUpper(kv.Key), "TOKEN") {
+					t.Errorf("%s line %d: %s; a token in a build argument or ENV is recorded in the build's history, cache and provenance, so delete it", file, in.Line, show(in))
+				}
+			}
+		} else if strings.Contains(strings.ToUpper(show(in)), "TOKEN") {
+			t.Errorf("%s line %d: %s still uses the token; the secret mount replaces it", file, in.Line, show(in))
+		}
+	}
+
+	all := stages(instructions)
+	var download *instruction
+	var build stage
+	for _, s := range all {
+		for _, in := range find(s.Instructions, "RUN") {
+			if strings.Contains(strings.Join(in.Args, " "), "go mod download") {
+				download, build = &in, s
+			}
+		}
+	}
+	if download == nil {
+		t.Fatalf("%s has no RUN that runs go mod download; want one with a secret mount", file)
+	}
+	if got := strings.Join(download.Args, " "); got != "go mod download" {
+		t.Errorf("%s line %d: the command is %q, want just go mod download; the secret mount gives git and go the credentials", file, download.Line, got)
+	}
+	checkSecretMount(t, file, *download)
+
+	goprivate := ""
+	for _, in := range find(build.Instructions, "ENV") {
+		for _, kv := range keyValues(in) {
+			if kv.Key == "GOPRIVATE" && in.Line < download.Line {
+				goprivate = kv.Value
+			}
+		}
+	}
+	if goprivate != "github.com/acme/*" && goprivate != "github.com/acme" {
+		t.Errorf("%s: GOPRIVATE before go mod download is %q, want ENV GOPRIVATE=github.com/acme/*, so go fetches the private modules straight from GitHub", file, goprivate)
+	}
+}
+
+// checkSecretMount checks that run has a --mount flag for the netrc secret:
+// type=secret, id=netrc and target=/root/.netrc, in any order.
+func checkSecretMount(t *testing.T, file string, run instruction) {
+	t.Helper()
+	for _, flag := range run.Flags {
+		spec, ok := strings.CutPrefix(flag, "--mount=")
+		if !ok {
+			continue
+		}
+		options := map[string]string{}
+		for option := range strings.SplitSeq(spec, ",") {
+			key, value, _ := strings.Cut(option, "=")
+			options[strings.ToLower(key)] = value
+		}
+		if options["type"] != "secret" {
+			continue
+		}
+		if id := options["id"]; id != "netrc" {
+			t.Errorf("%s line %d: the secret mount's id is %q, want %q, the id that docker build --secret id=netrc,... gives it", file, run.Line, id, "netrc")
+		}
+		target := options["target"]
+		for _, alias := range []string{"dst", "destination"} {
+			if options[alias] != "" {
+				target = options[alias]
+			}
+		}
+		if target != "/root/.netrc" {
+			t.Errorf("%s line %d: the secret mount's target is %q, want %q, where git and go look for credentials", file, run.Line, target, "/root/.netrc")
+		}
+		return
+	}
+	t.Errorf("%s line %d: the go mod download step has no --mount=type=secret; want --mount=type=secret,id=netrc,target=/root/.netrc", file, run.Line)
+}

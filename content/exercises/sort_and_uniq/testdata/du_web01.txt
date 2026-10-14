@@ -1,0 +1,10 @@
+48	/var/log/nginx
+12804	/var/lib/docker
+96	/etc
+2310	/var/log/journal
+512	/home/deploy
+880	/var/cache/apt
+15	/tmp
+30412	/opt/app/releases
+7	/root
+1024	/var/log/app

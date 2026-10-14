@@ -1,0 +1,79 @@
+// Package queue is the Groundwork exercise "Work queues: bounded queues and backpressure".
+package queue
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"sync"
+)
+
+// ErrFull is returned by TryEnqueue when the queue has no room for another
+// job.
+var ErrFull = errors.New("queue is full")
+
+// Job is one build request from the deploy API.
+type Job struct {
+	ID      string `json:"id"`
+	Service string `json:"service"`
+}
+
+// Queue is a bounded queue of jobs, worked on by a fixed pool of workers. It
+// is safe for concurrent use.
+type Queue struct {
+	jobs chan Job       // waiting jobs; its capacity is the queue's limit
+	wg   sync.WaitGroup // tracks the running workers
+}
+
+// New returns an empty Queue that holds at most capacity waiting jobs.
+func New(capacity int) *Queue {
+	return &Queue{jobs: make(chan Job, capacity)}
+}
+
+// TryEnqueue adds j if there is room, without waiting. It returns ErrFull
+// when the queue is full.
+func (q *Queue) TryEnqueue(j Job) error {
+	// TODO(1): Send j on q.jobs if there is room right now. If there isn't,
+	// return ErrFull.
+	return nil
+}
+
+// Len returns how many jobs are waiting for a worker.
+func (q *Queue) Len() int {
+	// TODO(1): Return how many jobs are waiting in q.jobs.
+	return 0
+}
+
+// Enqueue adds j, waiting for room until ctx is done. If ctx is done first,
+// it returns ctx.Err() and j is not queued.
+func (q *Queue) Enqueue(ctx context.Context, j Job) error {
+	// TODO(2): Wait until j can be sent on q.jobs (return nil) or ctx is done
+	// (return ctx.Err()), whichever happens first.
+	return nil
+}
+
+// Start launches workers goroutines. Each one takes jobs from the queue and
+// calls handle with them, one at a time, until the queue is closed and empty.
+func (q *Queue) Start(workers int, handle func(Job)) {
+	// TODO(3): Start workers goroutines, tracked by q.wg, that each call
+	// handle for every job they take from q.jobs.
+}
+
+// Close stops the queue and waits until the workers have handled every
+// waiting job. Call it once, after the last Enqueue or TryEnqueue.
+func (q *Queue) Close() {
+	// TODO(3): Close q.jobs first, so the workers' loops can end.
+	q.wg.Wait()
+}
+
+// Handler returns an HTTP handler that queues the JSON Job in each request
+// body. It answers 202 Accepted when the job is queued, 503 Service
+// Unavailable with a Retry-After header when the queue is full, and 400 Bad
+// Request when the body is not a valid job.
+func (q *Queue) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// TODO(4): Decode a Job from r.Body (add "encoding/json" to the
+		// imports), check it, and queue it with q.TryEnqueue.
+		http.Error(w, "not implemented", http.StatusNotImplemented)
+	})
+}

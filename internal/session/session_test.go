@@ -8,7 +8,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/pjanderson/gopherlings/internal/course"
+	"github.com/pjanderson/groundwork/internal/course"
 )
 
 const starter = "package x\n\n// TODO(1): fix\nfunc F() int { return 0 }\n"
@@ -254,11 +254,11 @@ func TestFindRootWalksUpFromExerciseFolders(t *testing.T) {
 		t.Fatalf("FindRoot(exercise dir) = %q, %v; want %q", got, err, s.Root)
 	}
 	stray := t.TempDir()
-	if err := os.Mkdir(filepath.Join(stray, ".gopherlings"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(stray, ".groundwork"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := FindRoot(stray); err != ErrNoCourse {
-		t.Fatalf("FindRoot(dir with an empty .gopherlings) error = %v, want ErrNoCourse", err)
+		t.Fatalf("FindRoot(dir with an empty .groundwork) error = %v, want ErrNoCourse", err)
 	}
 }
 
@@ -309,5 +309,91 @@ func TestSyncWritesGuidesAndDropsStaleOnes(t *testing.T) {
 	}
 	if index, _ := os.ReadFile(filepath.Join(dir, "README.md")); !strings.Contains(string(index), "- **[State](01_state.md)**: state changes.") {
 		t.Errorf("README.md index lacks the guide:\n%s", index)
+	}
+}
+
+func TestNextGuideIsTheFirstUnreadUpToTheCurrentModule(t *testing.T) {
+	files := fstest.MapFS{
+		"course.json": {Data: []byte(`{"modules":[
+			{"title":"M1","dir":"one","guides":["g1","g2"],"exercises":[{"name":"a","title":"A"}]},
+			{"title":"M2","dir":"two","guides":["g3"],"exercises":[{"name":"b","title":"B"}]}]}`)},
+		"guides/g1.md": {Data: []byte("# G1\n")},
+		"guides/g2.md": {Data: []byte("# G2\n")},
+		"guides/g3.md": {Data: []byte("# G3\n")},
+	}
+	for _, name := range []string{"a", "b"} {
+		files["exercises/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n")}
+		files["exercises/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte(starter)}
+	}
+	c, err := course.Load(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := Init(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(root, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g1, g2 := c.Guides[0], c.Guides[1]
+	if got := s.NextGuide(); got != g1 {
+		t.Fatalf("NextGuide() = %v, want g1", got)
+	}
+	if err := s.SetRead(g1, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.NextGuide(); got != g2 {
+		t.Fatalf("after reading g1, NextGuide() = %v, want g2", got)
+	}
+	if err := s.SetRead(g2, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.NextGuide(); got != nil {
+		t.Errorf("module one's guides are read; NextGuide() = %s, want nil (g3 is for a later module)", got.Name)
+	}
+	reopened, err := Open(root, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reopened.Read(g1) {
+		t.Error("read marks weren't saved")
+	}
+	if err := reopened.SetRead(g1, false); err != nil || reopened.NextGuide() != g1 {
+		t.Error("unmarking g1 didn't make it next again")
+	}
+}
+
+func TestTodoFilesFindsScriptsButNotFixturesOrDocs(t *testing.T) {
+	s := newSession(t)
+	a := s.Course.Exercises[0]
+	if err := s.Prepare(a); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{
+		"exercise.go":        "package x\n",
+		"count_errors.sh":    "# TODO(1): count the ERROR lines\n",
+		"queries/report.sql": "-- TODO(2): join the tables\n",
+		"testdata/app.log":   "TODO(1) is just log text here\n",
+		"sandbox/notes.txt":  "TODO(3) in the learner's scratch repo\n",
+		"README.md":          "Each `TODO(n)` marks a task.\n",
+		"exercise_test.go":   "package x // TODO(1) mentioned in a test\n",
+	} {
+		path := filepath.Join(s.Dir(a), filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []string
+	for _, f := range s.TodoFiles(a) {
+		got = append(got, filepath.ToSlash(f))
+	}
+	want := "exercises/" + a.Dir() + "/count_errors.sh exercises/" + a.Dir() + "/queries/report.sql"
+	if strings.Join(got, " ") != want {
+		t.Errorf("TodoFiles = %v, want %s", got, want)
 	}
 }

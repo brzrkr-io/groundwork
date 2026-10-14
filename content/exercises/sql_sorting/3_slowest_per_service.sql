@@ -1,0 +1,6 @@
+-- Task 3: Sort by service, then slowest first
+--
+-- Show the service and duration_s of every deploy, sorted by service
+-- A to Z, and within each service the slowest deploy first.
+--
+-- TODO(3): Write your query below.

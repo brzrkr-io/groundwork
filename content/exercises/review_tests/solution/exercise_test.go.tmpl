@@ -1,0 +1,46 @@
+package retention
+
+import (
+	"testing"
+	"time"
+)
+
+// now is the moment every test case runs at.
+var now = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
+
+// day is 24 hours, to write ages like 7 * day.
+const day = 24 * time.Hour
+
+func TestExpired(t *testing.T) {
+	tests := []struct {
+		name   string
+		age    time.Duration // how long before now the backup was taken
+		weekly bool
+		pinned bool
+		want   bool
+	}{
+		{name: "fresh daily", age: 1 * day, want: false},
+
+		{name: "daily, 6 days", age: 6 * day, want: false},
+		{name: "daily, exactly 7 days", age: 7 * day, want: false},
+		{name: "daily, 7 days 1 hour", age: 7*day + time.Hour, want: true},
+
+		{name: "weekly, 10 days", age: 10 * day, weekly: true, want: false},
+		{name: "weekly, exactly 28 days", age: 28 * day, weekly: true, want: false},
+		{name: "weekly, 28 days 1 hour", age: 28*day + time.Hour, weekly: true, want: true},
+
+		{name: "pinned daily, 30 days", age: 30 * day, pinned: true, want: false},
+		{name: "pinned weekly, 60 days", age: 60 * day, weekly: true, pinned: true, want: false},
+		{name: "from the future", age: -time.Hour, want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b := Backup{Name: "db", Taken: now.Add(-tc.age), Weekly: tc.weekly, Pinned: tc.pinned}
+			if got := Expired(b, now); got != tc.want {
+				t.Errorf("Expired(backup taken %v before now, weekly %t, pinned %t) = %t, want %t",
+					tc.age, tc.weekly, tc.pinned, got, tc.want)
+			}
+		})
+	}
+}

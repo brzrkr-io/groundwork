@@ -1,0 +1,67 @@
+// Package balancer is the Groundwork exercise "Load balancing: fix the least-connections balancer".
+package balancer
+
+import (
+	"errors"
+	"sync"
+)
+
+// ErrNoBackends is returned by Acquire when the balancer has no backends.
+var ErrNoBackends = errors.New("balancer: no backends")
+
+// LeastConn sends each request to the backend with the fewest requests in
+// flight. It is safe for concurrent use.
+type LeastConn struct {
+	mu     sync.Mutex
+	addrs  []string       // in the order given to NewLeastConn
+	active map[string]int // address -> requests in flight
+}
+
+// NewLeastConn returns a LeastConn over the given addresses, all idle.
+func NewLeastConn(addrs ...string) *LeastConn {
+	lc := &LeastConn{addrs: addrs, active: make(map[string]int)}
+	for _, addr := range addrs {
+		lc.active[addr] = 0
+	}
+	return lc
+}
+
+// Acquire picks the backend with the fewest requests in flight (the earliest
+// in list order on a tie) and counts one more request on it. Call release
+// when the request finishes; calling it again does nothing. Acquire returns
+// ErrNoBackends if there are no backends.
+func (lc *LeastConn) Acquire() (addr string, release func(), err error) {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	if len(lc.addrs) == 0 {
+		return "", nil, ErrNoBackends
+	}
+	// Walk the slice, not the map: map order is random. Strict < keeps the
+	// earliest backend on a tie.
+	best := lc.addrs[0]
+	for _, a := range lc.addrs[1:] {
+		if lc.active[a] < lc.active[best] {
+			best = a
+		}
+	}
+	lc.active[best]++
+
+	var once sync.Once
+	release = func() {
+		once.Do(func() {
+			// release runs later, on whichever goroutine finishes the
+			// request, so it needs the lock too.
+			lc.mu.Lock()
+			defer lc.mu.Unlock()
+			lc.active[best]--
+		})
+	}
+	return best, release, nil
+}
+
+// Active returns how many requests are in flight on addr.
+func (lc *LeastConn) Active(addr string) int {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	return lc.active[addr]
+}

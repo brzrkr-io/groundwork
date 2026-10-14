@@ -1,0 +1,161 @@
+package capacity
+
+import (
+	"math"
+	"testing"
+)
+
+// near reports whether got is within 0.001 of want. Float answers are
+// rarely exact, so the tests never compare them with ==.
+func near(got, want float64) bool {
+	return math.Abs(got-want) < 0.001
+}
+
+func TestAverageAndPeakQPS(t *testing.T) {
+	averages := []struct {
+		name           string
+		requestsPerDay int
+		want           float64
+	}{
+		{"100 QPS", 8_640_000, 100},
+		{"one a second", 86_400, 1},
+		{"a million a day", 1_000_000, 11.574074},
+		{"no traffic", 0, 0},
+	}
+	for _, tc := range averages {
+		t.Run("AverageQPS "+tc.name, func(t *testing.T) {
+			if got := AverageQPS(tc.requestsPerDay); !near(got, tc.want) {
+				t.Errorf("AverageQPS(%d) = %v, want %v", tc.requestsPerDay, got, tc.want)
+			}
+		})
+	}
+
+	peaks := []struct {
+		name           string
+		requestsPerDay int
+		peakFactor     float64
+		want           float64
+	}{
+		{"three times 100", 8_640_000, 3, 300},
+		{"2.5 times 500", 43_200_000, 2.5, 1250},
+		{"twice a million a day", 1_000_000, 2, 23.148148},
+		{"flat traffic", 86_400, 1, 1},
+	}
+	for _, tc := range peaks {
+		t.Run("PeakQPS "+tc.name, func(t *testing.T) {
+			if got := PeakQPS(tc.requestsPerDay, tc.peakFactor); !near(got, tc.want) {
+				t.Errorf("PeakQPS(%d, %v) = %v, want %v", tc.requestsPerDay, tc.peakFactor, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStorageGB(t *testing.T) {
+	tests := []struct {
+		name                            string
+		itemsPerDay, bytesPerItem, days int
+		want                            float64
+	}{
+		{"one day of 50 KB logs", 200_000, 50_000, 1, 10},
+		{"a year of 50 KB logs", 200_000, 50_000, 365, 3650},
+		{"30 days of 2 MB files", 1_500, 2_000_000, 30, 90},
+		{"30 days of 200 KB logs", 4_320_000, 200_000, 30, 25920},
+		{"less than a gigabyte", 1_000, 1_000, 7, 0.007},
+		{"nothing stored", 0, 50_000, 30, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := StorageGB(tc.itemsPerDay, tc.bytesPerItem, tc.days)
+			if !near(got, tc.want) {
+				t.Errorf("StorageGB(%d, %d, %d) = %v, want %v",
+					tc.itemsPerDay, tc.bytesPerItem, tc.days, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBandwidthMbps(t *testing.T) {
+	tests := []struct {
+		name            string
+		qps             float64
+		bytesPerRequest int
+		want            float64
+	}{
+		{"50 KB at 300 QPS", 300, 50_000, 120},
+		{"2 KB at 1250 QPS", 1250, 2_000, 20},
+		{"1 MB every other second", 0.5, 1_000_000, 4},
+		{"200 KB at 150 QPS", 150, 200_000, 240},
+		{"no traffic", 0, 5_000, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := BandwidthMbps(tc.qps, tc.bytesPerRequest); !near(got, tc.want) {
+				t.Errorf("BandwidthMbps(%v, %d) = %v, want %v", tc.qps, tc.bytesPerRequest, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestServersNeeded(t *testing.T) {
+	tests := []struct {
+		name                  string
+		peakQPS, qpsPerServer float64
+		spare                 int
+		want                  int
+	}{
+		{"rounds 3.125 up", 1250, 400, 1, 5},
+		{"exactly 3 servers", 1200, 400, 1, 4},
+		{"just over 3 servers", 301, 100, 0, 4},
+		{"no spare", 300, 100, 0, 3},
+		{"two spares", 150, 40, 2, 6},
+		{"no traffic still runs the spare", 0, 400, 1, 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ServersNeeded(tc.peakQPS, tc.qpsPerServer, tc.spare); got != tc.want {
+				t.Errorf("ServersNeeded(%v, %v, %d) = %d, want %d",
+					tc.peakQPS, tc.qpsPerServer, tc.spare, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEstimate(t *testing.T) {
+	tests := []struct {
+		name string
+		w    Workload
+		want Plan
+	}{
+		{
+			name: "CI logs",
+			w: Workload{
+				RequestsPerDay:  4_320_000,
+				PeakFactor:      3,
+				BytesPerRequest: 200_000,
+				RetentionDays:   30,
+				QPSPerServer:    40,
+			},
+			want: Plan{PeakQPS: 150, StorageGB: 25920, PeakMbps: 240, Servers: 5},
+		},
+		{
+			name: "deploy events",
+			w: Workload{
+				RequestsPerDay:  864_000,
+				PeakFactor:      4,
+				BytesPerRequest: 5_000,
+				RetentionDays:   365,
+				QPSPerServer:    25,
+			},
+			want: Plan{PeakQPS: 40, StorageGB: 1576.8, PeakMbps: 1.6, Servers: 3},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Estimate(tc.w)
+			if !near(got.PeakQPS, tc.want.PeakQPS) || !near(got.StorageGB, tc.want.StorageGB) ||
+				!near(got.PeakMbps, tc.want.PeakMbps) || got.Servers != tc.want.Servers {
+				t.Errorf("Estimate(%+v) = %+v, want %+v", tc.w, got, tc.want)
+			}
+		})
+	}
+}

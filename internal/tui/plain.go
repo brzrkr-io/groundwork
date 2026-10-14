@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pjanderson/gopherlings/internal/course"
-	"github.com/pjanderson/gopherlings/internal/session"
-	"github.com/pjanderson/gopherlings/internal/workspace"
+	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/pjanderson/groundwork/internal/session"
+	"github.com/pjanderson/groundwork/internal/workspace"
 )
 
 const plainWidth = 100
 
-// CheckReport renders a one-shot check for `gopherlings check`.
+// CheckReport renders a one-shot check for `groundwork check`.
 func CheckReport(s *session.Session, e *course.Exercise, r *workspace.Result) string {
 	var b strings.Builder
 	b.WriteString(bold.Render(fmt.Sprintf("%03d  %s", e.Number, e.Title)) + dim.Render("  ·  "+e.Module.Title) + "\n\n")
@@ -25,12 +25,12 @@ func CheckReport(s *session.Session, e *course.Exercise, r *workspace.Result) st
 	return b.String()
 }
 
-// CourseList renders `gopherlings list`: every module with its progress,
+// CourseList renders `groundwork list`: every module with its progress,
 // expanding the current module (or all modules with all set).
 func CourseList(s *session.Session, all bool) string {
 	var b strings.Builder
 	done, total := s.DoneCount(), len(s.Course.Exercises)
-	b.WriteString(brand.Render("gopherlings") + "  " + progressBar(done, total, 30) + dim.Render(fmt.Sprintf("  %d/%d exercises done", done, total)) + "\n")
+	b.WriteString(brand.Render("groundwork") + "  " + progressBar(done, total, 30) + dim.Render(fmt.Sprintf("  %d/%d exercises done", done, total)) + "\n")
 	current := s.Current()
 	phase := ""
 	for _, mod := range s.Course.Modules {
@@ -74,17 +74,17 @@ func CourseList(s *session.Session, all bool) string {
 	}
 	b.WriteString("\n" + dim.Render("✓ done   ◐ solution seen before passing   ▸ current") + "\n")
 	if !all {
-		b.WriteString(dim.Render("gopherlings list --all shows every exercise.") + "\n")
+		b.WriteString(dim.Render("groundwork list --all shows every exercise.") + "\n")
 	}
 	return b.String()
 }
 
-// GuideList renders `gopherlings guides`: every guide by module, with the
-// summaries of the guides for current (the learner's module; nil outside a
-// course).
-func GuideList(c *course.Course, current *course.Module) string {
+// GuideList renders `groundwork guides`: every guide by module, ✓ for the
+// ones read, with summaries for the guides of current (the learner's module).
+// Outside a course, current and read are nil.
+func GuideList(c *course.Course, current *course.Module, read func(*course.Guide) bool) string {
 	var b strings.Builder
-	b.WriteString(brand.Render("gopherlings guides") + dim.Render("  ·  the computer science underneath the exercises") + "\n")
+	b.WriteString(brand.Render("groundwork guides") + dim.Render("  ·  the computer science underneath the exercises") + "\n")
 	var mod *course.Module
 	for _, g := range c.Guides {
 		if g.Module != mod {
@@ -95,17 +95,21 @@ func GuideList(c *course.Course, current *course.Module) string {
 			}
 			b.WriteString("\n" + head + "\n")
 		}
-		label := fmt.Sprintf("        %2d  %s", g.Number, g.Title)
+		icon := " "
+		if read != nil && read(g) {
+			icon = okStyle.Render("✓")
+		}
+		label := fmt.Sprintf("%2d  %s", g.Number, g.Title)
 		if mod != current {
-			b.WriteString(label + "\n")
+			b.WriteString("     " + icon + "  " + label + "\n")
 			continue
 		}
-		b.WriteString(bold.Render(label) + "\n")
+		b.WriteString("     " + icon + "  " + bold.Render(label) + "\n")
 		if g.Summary != "" {
 			b.WriteString(wrapIndent(dim.Render(g.Summary), 12, plainWidth) + "\n")
 		}
 	}
-	b.WriteString("\n" + keyCap.Render("gopherlings guides 10") + dim.Render(" reads guide 10 · in the watcher, press ") + keyCap.Render("g") + "\n")
+	b.WriteString("\n" + keyCap.Render("groundwork guides 10") + dim.Render(" reads guide 10 · in the watcher, press ") + keyCap.Render("g") + "\n")
 	return b.String()
 }
 

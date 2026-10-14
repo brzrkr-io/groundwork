@@ -1,0 +1,7 @@
+-- Task 1: Record a new deploy
+--
+-- Add a deploy of search (service_id 4), version v3.2.0, to staging,
+-- with status running, started at 2026-03-07 09:00:00. Let the
+-- database pick the id.
+--
+-- TODO(1): Write your statement below.

@@ -1,4 +1,4 @@
-// Package httptesting is the Gopherlings exercise "Testing HTTP: recorders and fake servers".
+// Package httptesting is the Groundwork exercise "Testing HTTP: recorders and fake servers".
 package httptesting
 
 import (
@@ -24,7 +24,7 @@ func FetchIP(client *http.Client, baseURL, host string) (string, error) {
 	return fetchIP(client, baseURL, host)
 }
 
-// newHandler and fetchIP point at the real implementations. Gopherlings'
+// newHandler and fetchIP point at the real implementations. Groundwork'
 // grader swaps in broken versions to check that your tests catch them.
 var (
 	newHandler = realNewHandler

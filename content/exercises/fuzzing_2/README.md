@@ -14,7 +14,7 @@ As in *Fuzzing*: a fuzz target calls `f.Add` with seeds and `f.Fuzz` with the
 function to run. A plain `go test` replays the seeds and the files in
 `testdata/fuzz/FuzzTruncate/`. `go test -run='^$' -fuzz=FuzzTruncate
 -fuzztime=10s` lets Go invent new inputs and saves any failure there.
-Gopherlings grades with plain `go test`, using *mutants* as before.
+Groundwork grades with plain `go test`, using *mutants* as before.
 
 ### Two inputs
 

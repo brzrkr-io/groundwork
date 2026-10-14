@@ -392,6 +392,13 @@ Two services that must always be deployed together are tightly coupled, however 
 | supply-chain attack | getting malicious code into a program through its dependencies |
 | distributed monolith | services so coupled they must be deployed together |
 
+## Watch
+
+- [Gopherfest 2015 | Go Proverbs with Rob Pike](https://www.youtube.com/watch?v=PAAkCSZUG1c) · The Go Programming Language · 22 min: Go's short design rules explained, including "a little copying is better than a little dependency".
+- [GopherCon 2018: How Do You Structure Your Go Apps - Kat Zien](https://www.youtube.com/watch?v=oL6JBUk6tj0) · Gopher Academy · 46 min: several ways to split one app into packages, and how dependency direction keeps the core free of details.
+- [Go Class: 40 Go Modules](https://www.youtube.com/watch?v=_N6BxmbLYBk) · Matt KØDVB · 18 min: `go.mod`, `go.sum`, semantic versioning and how Go picks dependency versions.
+- [XZ Exploit - Computerphile](https://www.youtube.com/watch?v=LY8_35a_DEA) · Computerphile · 15 min: the story of the xz backdoor, a real supply-chain attack that nearly reached every Linux server.
+
 ## Go deeper
 
 - [Go at Google: Language Design in the Service of Software Engineering](https://go.dev/talks/2012/splash.article) (Rob Pike): why Go handles imports, dependencies and cycles the way it does.

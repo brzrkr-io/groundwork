@@ -469,6 +469,13 @@ below says the same.
 | garbage collector | Frees heap memory the program can no longer reach. |
 | receiver | The value a method is called on: `d` in `func (d T)`. |
 
+## Watch
+
+- [Go Syntax - Pointers Part 1](https://www.youtube.com/watch?v=i5nyPaAwM3s) · Ardan Labs · 5 min: Bill Kennedy on how Go passes values by copying them, the rule behind *Go copies values*.
+- [Go Class: 14 Reference & Value Semantics](https://www.youtube.com/watch?v=904pyovPvXM) · Matt KØDVB · 24 min: when Go copies and when it shares, with the slice and map aliasing surprises from *Sharing surprises: aliasing*.
+- [Understanding Allocations: the Stack and the Heap - GopherCon SG 2019](https://www.youtube.com/watch?v=ZMZpH4yT7M0) · Singapore Gophers · 22 min: the deeper talk, with clear diagrams of what the compiler puts on the stack and the heap, and why.
+- [CS50x 2025 - Lecture 4 - Memory](https://www.youtube.com/watch?v=kcRdFGbzR1I) · CS50 · 147 min: Harvard's classic lecture on addresses and pointers in C, including the swap that fails on copies; watch the first hour if that's all you have.
+
 ## Go deeper
 
 - [A Tour of Go: Pointers](https://go.dev/tour/moretypes/1): short

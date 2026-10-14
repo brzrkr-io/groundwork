@@ -1,0 +1,132 @@
+package brokenimages
+
+import (
+	"path"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// The helpers readDockerfile, stages, find, envVars and show are in
+// dockerfile_test.go.
+
+const distroless = "gcr.io/distroless/static-debian13"
+
+func TestSmallRuntimeImage(t *testing.T) {
+	const file = "1_api.Dockerfile"
+	all := checkStages(t, file, readDockerfile(t, file))
+	final := all[1]
+	if final.Base != distroless && final.Base != distroless+":nonroot" {
+		t.Errorf("%s: the final stage starts FROM %s, want FROM %s: the image you ship needs only the binary, not the Go toolchain", file, final.Base, distroless)
+	}
+	checkEntrypoint(t, file, checkCopy(t, file, final, "/out/api"), final)
+}
+
+func TestStaticWorker(t *testing.T) {
+	const file = "2_worker.Dockerfile"
+	all := checkStages(t, file, readDockerfile(t, file))
+	build := goBuild(all[0])
+	if build == nil {
+		t.Fatalf("%s: the build stage has no RUN go build; keep the build line, -o /out/worker ./cmd/worker", file)
+	}
+	if !strings.Contains(build.Rest, "-o /out/worker ./cmd/worker") {
+		t.Errorf("%s line %d: %s, want it to still build ./cmd/worker with -o /out/worker", file, build.Line, show(*build))
+	}
+	if !slices.Contains(build.Args, "CGO_ENABLED=0") && envVars(all[0].Instructions)["CGO_ENABLED"] != "0" {
+		t.Errorf("%s line %d: %s builds with cgo on, so /worker needs a C library and loader that distroless static doesn't have; want CGO_ENABLED=0", file, build.Line, show(*build))
+	}
+	checkEntrypoint(t, file, checkCopy(t, file, all[1], "/out/worker"), all[1])
+}
+
+func TestStageNameAndEntrypoint(t *testing.T) {
+	const file = "3_reporter.Dockerfile"
+	all := checkStages(t, file, readDockerfile(t, file))
+	from := all[0].Name
+	if from == "" {
+		t.Fatalf("%s: the build stage has no name; keep FROM golang:1.26 AS build", file)
+	}
+	for _, in := range all[1].Instructions {
+		for _, flag := range in.Flags {
+			if name, ok := strings.CutPrefix(flag, "--from="); ok && name != from {
+				t.Errorf("%s line %d: %s copies from %q, but the build stage is named %q; Docker looks for an image called %s instead", file, in.Line, show(in), name, from, name)
+			}
+		}
+	}
+	checkEntrypoint(t, file, checkCopy(t, file, all[1], "/out/reporter"), all[1])
+}
+
+func TestEntrypointMatchesCopy(t *testing.T) {
+	const file = "4_cron.Dockerfile"
+	all := checkStages(t, file, readDockerfile(t, file))
+	checkEntrypoint(t, file, checkCopy(t, file, all[1], "/out/cron"), all[1])
+}
+
+// checkStages checks the Dockerfile still has its two stages and returns
+// them.
+func checkStages(t *testing.T, file string, instructions []instruction) []stage {
+	t.Helper()
+	all := stages(instructions)
+	if len(all) != 2 {
+		t.Fatalf("%s has %d stages (FROM lines), want 2: the build stage and the runtime stage", file, len(all))
+	}
+	return all
+}
+
+// goBuild returns the stage's RUN that runs go build, or nil.
+func goBuild(s stage) *instruction {
+	for _, in := range s.Instructions {
+		if in.Cmd == "RUN" && strings.Contains(in.Rest, "go build") {
+			return &in
+		}
+	}
+	return nil
+}
+
+// checkCopy checks the stage has a COPY of src, and returns where the file
+// lands in the image, or "".
+func checkCopy(t *testing.T, file string, s stage, src string) string {
+	t.Helper()
+	for _, in := range s.Instructions {
+		if in.Cmd != "COPY" || len(in.Args) < 2 || !slices.Contains(in.Args[:len(in.Args)-1], src) {
+			continue
+		}
+		dest := in.Args[len(in.Args)-1]
+		if strings.HasSuffix(dest, "/") {
+			dest += path.Base(src)
+		}
+		return dest
+	}
+	t.Errorf("%s: the final stage has no COPY --from=build %s ...; keep the line that copies the binary", file, src)
+	return ""
+}
+
+// checkEntrypoint checks the stage's ENTRYPOINT is in exec form and runs
+// the program at want. It does nothing when want is "".
+func checkEntrypoint(t *testing.T, file string, want string, s stage) {
+	t.Helper()
+	if want == "" {
+		return
+	}
+	var entry *instruction
+	for _, in := range s.Instructions {
+		if in.Cmd == "ENTRYPOINT" {
+			entry = &in
+		}
+	}
+	switch {
+	case entry == nil:
+		t.Errorf("%s: the final stage has no ENTRYPOINT; want ENTRYPOINT [%q]", file, want)
+	case !entry.Exec:
+		t.Errorf("%s line %d: %s is in shell form, which runs /bin/sh, and distroless has no shell; want the exec form ENTRYPOINT [%q]", file, entry.Line, show(*entry), want)
+	case len(entry.Args) == 0 || entry.Args[0] != want:
+		t.Errorf("%s line %d: %s runs %s, but the binary was copied to %s; make them match", file, entry.Line, show(*entry), firstArg(*entry), want)
+	}
+}
+
+// firstArg returns the program an exec-form instruction runs, or "".
+func firstArg(in instruction) string {
+	if len(in.Args) == 0 {
+		return ""
+	}
+	return in.Args[0]
+}

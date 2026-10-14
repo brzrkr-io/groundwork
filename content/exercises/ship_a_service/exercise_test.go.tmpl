@@ -1,0 +1,424 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// The helpers readDockerfile, find, stages, envVars, show and execForm are in
+// dockerfile_test.go. readWorkflow, triggers, needs, pinned, findStep,
+// findRun, eventNames, stepNames and stringList are in workflow_test.go.
+
+func TestDockerfile(t *testing.T) {
+	const file = "Dockerfile"
+	instructions := readDockerfile(t, file)
+	froms := find(instructions, "FROM")
+	all := stages(instructions)
+	if len(all) != 2 {
+		t.Fatalf("%s has %d stages (FROM lines), want 2: the build stage, then the final stage", file, len(all))
+	}
+	build, final := all[0], all[1]
+
+	// The build stage.
+	if build.Base != "golang:1.26" || build.Name != "build" {
+		t.Errorf("%s line %d: %s, want FROM golang:1.26 AS build", file, froms[0].Line, show(froms[0]))
+	}
+	modCopy, download, copyAll, versionArg, goBuild := -1, -1, -1, -1, -1
+	for i, in := range build.Instructions {
+		switch {
+		case in.Cmd == "COPY" && len(in.Flags) == 0 && len(in.Args) == 2 && in.Args[0] == ".":
+			copyAll = i
+		case in.Cmd == "COPY" && modCopy < 0 && slices.Contains(in.Args, "go.mod"):
+			modCopy = i
+			if len(in.Args) < 3 || !slices.Contains(in.Args[:len(in.Args)-1], "go.sum") {
+				t.Errorf("%s line %d: %s copies go.mod without go.sum; this folder has a go.sum, so copy both", file, in.Line, show(in))
+			}
+		case in.Cmd == "RUN" && strings.Join(in.Args, " ") == "go mod download":
+			download = i
+		case in.Cmd == "ARG" && slices.Equal(in.Args, []string{"VERSION=dev"}):
+			versionArg = i
+		case in.Cmd == "RUN" && strings.Contains(in.Rest, "go build"):
+			goBuild = i
+		}
+	}
+	at := func(i int) int { return build.Instructions[i].Line }
+	switch {
+	case modCopy < 0:
+		t.Errorf("%s: the build stage never copies go.mod on its own; want COPY go.mod go.sum ./ before go mod download", file)
+	case download < 0:
+		t.Errorf("%s: the build stage never runs go mod download; want RUN go mod download after copying go.mod and go.sum", file)
+	case download < modCopy:
+		t.Errorf("%s: go mod download (line %d) runs before go.mod is copied (line %d)", file, at(download), at(modCopy))
+	}
+	switch {
+	case copyAll < 0:
+		t.Errorf("%s: the build stage never copies the whole build context; want COPY . . after go mod download", file)
+	case download >= 0 && copyAll < download:
+		t.Errorf("%s: COPY . . (line %d) comes before go mod download (line %d), so every code change downloads the modules again", file, at(copyAll), at(download))
+	}
+	if versionArg < 0 {
+		msg := fmt.Sprintf("%s: the build stage doesn't declare ARG VERSION=dev", file)
+		for _, in := range find(instructions, "ARG") {
+			if in.Line < froms[0].Line {
+				msg += fmt.Sprintf("; the ARG on line %d is before FROM, outside every stage, so the build stage can't see it", in.Line)
+			}
+		}
+		t.Error(msg)
+	}
+	checkGoBuild(t, file, build, goBuild)
+	if goBuild >= 0 {
+		if copyAll >= 0 && goBuild < copyAll {
+			t.Errorf("%s: go build (line %d) runs before COPY . . (line %d), so there is no source to build yet", file, at(goBuild), at(copyAll))
+		}
+		if versionArg >= 0 && goBuild < versionArg {
+			t.Errorf("%s: go build (line %d) comes before ARG VERSION=dev (line %d), so ${VERSION} is empty there", file, at(goBuild), at(versionArg))
+		}
+	}
+
+	// The final stage.
+	if base := final.Base; base != "gcr.io/distroless/static-debian13" && base != "gcr.io/distroless/static-debian13:nonroot" {
+		t.Errorf("%s line %d: %s, want FROM gcr.io/distroless/static-debian13", file, froms[1].Line, show(froms[1]))
+	}
+	binary := ""
+	for _, in := range final.Instructions {
+		if in.Cmd == "COPY" && len(in.Args) == 2 && in.Args[0] == "/out/inventoryd" {
+			if !slices.Contains(in.Flags, "--from=build") {
+				t.Errorf("%s line %d: %s, want COPY --from=build: the binary is in the build stage", file, in.Line, show(in))
+			}
+			binary = in.Args[1]
+			if strings.HasSuffix(binary, "/") {
+				binary += "inventoryd"
+			}
+		}
+	}
+	if binary == "" {
+		t.Errorf("%s: the final stage never copies /out/inventoryd from the build stage; want COPY --from=build /out/inventoryd /inventoryd", file)
+	}
+	if user := find(final.Instructions, "USER"); len(user) == 0 {
+		t.Errorf("%s: the final stage has no USER, so inventoryd runs as root; want USER 65532:65532", file)
+	} else if in := user[len(user)-1]; in.Rest != "65532:65532" {
+		t.Errorf("%s line %d: %s, want USER 65532:65532 (numbers, so Kubernetes can check it isn't root)", file, in.Line, show(in))
+	}
+	exposed := false
+	for _, in := range find(final.Instructions, "EXPOSE") {
+		exposed = exposed || slices.Contains(in.Args, "8080") || slices.Contains(in.Args, "8080/tcp")
+	}
+	if !exposed {
+		t.Errorf("%s: the final stage doesn't expose port 8080; want EXPOSE 8080", file)
+	}
+	entrypoints := find(final.Instructions, "ENTRYPOINT")
+	if len(entrypoints) == 0 {
+		t.Fatalf("%s: the final stage has no ENTRYPOINT; want ENTRYPOINT %s", file, execForm([]string{"/inventoryd"}))
+	}
+	in := entrypoints[len(entrypoints)-1]
+	switch {
+	case !in.Exec:
+		t.Errorf("%s line %d: %s is in shell form, which needs a shell, and distroless has none; want ENTRYPOINT %s", file, in.Line, show(in), execForm([]string{"/inventoryd"}))
+	case binary != "" && (len(in.Args) == 0 || in.Args[0] != binary):
+		t.Errorf("%s line %d: %s, but the binary is copied to %s; want ENTRYPOINT %s", file, in.Line, show(in), binary, execForm([]string{binary}))
+	}
+}
+
+// checkGoBuild checks the RUN go build line, build.Instructions[i] (i is -1
+// when there is none). CGO_ENABLED=0 may be on the RUN line or set by ENV.
+func checkGoBuild(t *testing.T, file string, build stage, i int) {
+	t.Helper()
+	const command = `go build -ldflags "-X main.version=${VERSION}" -o /out/inventoryd .`
+	if i < 0 {
+		t.Errorf("%s: the build stage has no RUN go build ...; want RUN CGO_ENABLED=0 %s", file, command)
+		return
+	}
+	in := build.Instructions[i]
+	got := strings.Join(strings.Fields(in.Rest), " ")
+	cgoOff := envVars(build.Instructions)["CGO_ENABLED"] == "0"
+	if after, ok := strings.CutPrefix(got, "CGO_ENABLED=0 "); ok {
+		got, cgoOff = after, true
+	}
+	switch {
+	case got != command:
+		t.Errorf("%s line %d: %s, want RUN CGO_ENABLED=0 %s", file, in.Line, show(in), command)
+	case !cgoOff:
+		t.Errorf("%s line %d: %s doesn't set CGO_ENABLED=0, so the binary needs C libraries that distroless/static doesn't have", file, in.Line, show(in))
+	}
+}
+
+func TestDockerignore(t *testing.T) {
+	const file = "Dockerfile.dockerignore"
+	rules := readDockerignore(t, file)
+	for _, p := range []struct{ path, why string }{
+		{".git", "the Git history"},
+		{".git/config", "the Git history"},
+		{".env", "local secrets"},
+		{".env.local", "local secrets"},
+		{"bin/inventoryd", "old local builds"},
+		{"README.md", "docs"},
+		{"docs/runbook.md", "docs, in any folder"},
+	} {
+		if r := lastMatch(rules, p.path); r == nil {
+			t.Errorf("%s: %s is still in the build context; want it left out (%s)", file, p.path, p.why)
+		} else if r.Negate {
+			t.Errorf("%s line %d (%s) keeps %s; want it left out (%s)", file, r.Line, r.Text, p.path, p.why)
+		}
+	}
+	for _, p := range []string{"main.go", "go.mod", "go.sum", "internal/stock/stock.go", "internal/stock/testdata/stock.json"} {
+		if r := lastMatch(rules, p); r != nil && !r.Negate {
+			t.Errorf("%s line %d (%s) leaves out %s; want it kept, the build needs it", file, r.Line, r.Text, p)
+		}
+	}
+}
+
+// ignoreRule is one pattern line of a .dockerignore file.
+type ignoreRule struct {
+	Line   int
+	Text   string // the line as written, for messages
+	Negate bool   // the line starts with "!": an exception that keeps files
+	re     *regexp.Regexp
+}
+
+// readDockerignore parses the ignore file name the way Docker does: a "#" in
+// column 1 starts a comment, blank lines are skipped, and leading and
+// trailing slashes don't matter ("/bin/" is "bin").
+func readDockerignore(t *testing.T, name string) []ignoreRule {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	var rules []ignoreRule
+	for i, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		text := strings.TrimSpace(line)
+		pattern, negate := strings.CutPrefix(text, "!")
+		pattern = strings.Trim(path.Clean(strings.TrimSpace(pattern)), "/")
+		if pattern == "." || pattern == "" {
+			continue // a blank line, or the pattern ".", which Docker ignores
+		}
+		rules = append(rules, ignoreRule{Line: i + 1, Text: text, Negate: negate, re: globRegexp(pattern)})
+	}
+	return rules
+}
+
+// globRegexp turns an ignore pattern into a regular expression. "*" matches
+// within one folder name, "?" one character, and "**" any number of folders.
+func globRegexp(pattern string) *regexp.Regexp {
+	var b strings.Builder
+	b.WriteString("^")
+	for i := 0; i < len(pattern); i++ {
+		switch {
+		case strings.HasPrefix(pattern[i:], "**/"):
+			b.WriteString("(.*/)?") // zero or more folders
+			i += 2
+		case strings.HasPrefix(pattern[i:], "**"):
+			b.WriteString(".*")
+			i++
+		case pattern[i] == '*':
+			b.WriteString("[^/]*")
+		case pattern[i] == '?':
+			b.WriteString("[^/]")
+		default:
+			b.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
+		}
+	}
+	b.WriteString("$")
+	return regexp.MustCompile(b.String())
+}
+
+// lastMatch returns the last rule matching p or one of its parent folders (a
+// rule that leaves out "bin" leaves out "bin/inventoryd" too), or nil. The
+// last match decides: p is left out, unless that rule starts with "!".
+func lastMatch(rules []ignoreRule, p string) *ignoreRule {
+	var last *ignoreRule
+	for i, r := range rules {
+		for dir := p; dir != "."; dir = path.Dir(dir) {
+			if r.re.MatchString(dir) {
+				last = &rules[i]
+				break
+			}
+		}
+	}
+	return last
+}
+
+func TestCIWorkflow(t *testing.T) {
+	const file = "ci.yml"
+	wf := readWorkflow(t, file)
+	if wf.Name != "ci" {
+		t.Errorf("%s: name is %q, want %q", file, wf.Name, "ci")
+	}
+	if got := eventNames(wf); !slices.Equal(got, []string{"pull_request", "push"}) {
+		t.Errorf("%s: on has the events %q, want push and pull_request", file, got)
+	}
+	if push, ok := triggers(wf)["push"]; ok {
+		if branches := stringList(push, "branches"); !slices.Equal(branches, []string{"main"}) {
+			t.Errorf("%s: push has branches %q, want [main]", file, branches)
+		}
+	}
+	checkTestJob(t, file, wf)
+}
+
+func TestReleaseWorkflow(t *testing.T) {
+	const file = "release.yml"
+	wf := readWorkflow(t, file)
+	if wf.Name != "release" {
+		t.Errorf("%s: name is %q, want %q", file, wf.Name, "release")
+	}
+	if got := eventNames(wf); !slices.Equal(got, []string{"push"}) {
+		t.Errorf("%s: on has the events %q, want only push (of tags)", file, got)
+	}
+	push := triggers(wf)["push"]
+	if tags := stringList(push, "tags"); !slices.Equal(tags, []string{"v*"}) {
+		t.Errorf("%s: push has tags %q, want ['v*']", file, tags)
+	}
+	if branches := stringList(push, "branches"); branches != nil {
+		t.Errorf("%s: push also has branches %q, so pushing to them releases too; want only tags", file, branches)
+	}
+	checkTestJob(t, file, wf)
+
+	image := checkJob(t, file, wf, "image")
+	if got := needs(image); !slices.Contains(got, "test") {
+		t.Errorf("%s: job image needs %q, want it to need test", file, got)
+	}
+	if perms, _ := image.Permissions.(map[string]any); len(perms) != 2 || perms["contents"] != "read" || perms["packages"] != "write" {
+		t.Errorf("%s: job image has permissions %v, want exactly contents: read and packages: write", file, image.Permissions)
+	}
+
+	steps := image.Steps
+	checkout := findStep(steps, "actions/checkout")
+	login := findStep(steps, "docker/login-action")
+	buildPush := findStep(steps, "docker/build-push-action")
+	if checkout < 0 || login < 0 || buildPush < 0 {
+		t.Fatalf("%s: job image has steps %v, want actions/checkout, docker/login-action and docker/build-push-action", file, stepNames(steps))
+	}
+	if login < checkout || buildPush < login {
+		t.Errorf("%s: job image has steps in the order %v, want checkout, login-action, build-push-action", file, stepNames(steps))
+	}
+	for _, i := range []int{checkout, login, buildPush} {
+		if !pinned.MatchString(steps[i].Uses) {
+			t.Errorf("%s: job image uses %s; pin it to a version, such as @v4", file, steps[i].Uses)
+		}
+	}
+
+	with := steps[login].With
+	if got := with["registry"]; got != "ghcr.io" {
+		t.Errorf("%s: login-action has registry %v, want ghcr.io", file, got)
+	}
+	if got := expression(with["username"]); got != "${{ github.actor }}" {
+		t.Errorf("%s: login-action has username %v, want ${{ github.actor }}", file, with["username"])
+	}
+	if got := expression(with["password"]); got != "${{ secrets.GITHUB_TOKEN }}" && got != "${{ github.token }}" {
+		t.Errorf("%s: login-action has password %v, want ${{ secrets.GITHUB_TOKEN }}", file, with["password"])
+	}
+
+	with = steps[buildPush].With
+	if got := with["context"]; got != "." {
+		t.Errorf("%s: build-push-action has context %v, want . (the checked-out folder)", file, got)
+	}
+	if got := with["push"]; got != true && got != "true" {
+		t.Errorf("%s: build-push-action has push %v, want true", file, got)
+	}
+	if got := inputList(with["tags"]); !slices.Contains(got, "ghcr.io/acme/inventoryd:${{ github.ref_name }}") {
+		t.Errorf("%s: build-push-action has tags %q, want ghcr.io/acme/inventoryd:${{ github.ref_name }}", file, got)
+	}
+	if got := inputList(with["build-args"]); !slices.Contains(got, "VERSION=${{ github.ref_name }}") {
+		t.Errorf("%s: build-push-action has build-args %q, want VERSION=${{ github.ref_name }}", file, got)
+	}
+}
+
+// checkTestJob checks the job "test": on ubuntu-latest, a pinned checkout
+// and setup-go, then go vet ./... and go test -race ./..., in that order.
+func checkTestJob(t *testing.T, file string, wf workflow) {
+	t.Helper()
+	test := checkJob(t, file, wf, "test")
+	checkSetupSteps(t, file, "test", test.Steps)
+	setup := findStep(test.Steps, "actions/setup-go")
+	vet := findRun(test.Steps, "go vet ./...")
+	tests := findRun(test.Steps, "go test -race ./...")
+	switch {
+	case vet < 0:
+		t.Errorf("%s: job test has no step that runs go vet ./...", file)
+	case tests < 0:
+		t.Errorf("%s: job test has no step that runs go test -race ./...", file)
+	case vet < setup || tests < vet:
+		t.Errorf("%s: job test has steps in the order %v, want checkout, setup-go, go vet, go test", file, stepNames(test.Steps))
+	}
+}
+
+// checkJob checks that the workflow has the job id, running on
+// ubuntu-latest, and returns it.
+func checkJob(t *testing.T, file string, wf workflow, id string) job {
+	t.Helper()
+	j, ok := wf.Jobs[id]
+	if !ok {
+		var ids []string
+		for name := range wf.Jobs {
+			ids = append(ids, name)
+		}
+		slices.Sort(ids)
+		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, ids, id)
+	}
+	if j.RunsOn != "ubuntu-latest" {
+		t.Errorf("%s: job %s has runs-on %v, want ubuntu-latest", file, id, j.RunsOn)
+	}
+	return j
+}
+
+// checkSetupSteps checks that a job starts with a pinned checkout, then a
+// pinned setup-go that reads go.mod.
+func checkSetupSteps(t *testing.T, file, id string, steps []step) {
+	t.Helper()
+	checkout := findStep(steps, "actions/checkout")
+	setup := findStep(steps, "actions/setup-go")
+	if checkout < 0 || setup < 0 {
+		t.Fatalf("%s: job %s has steps %v, want actions/checkout and actions/setup-go", file, id, stepNames(steps))
+	}
+	if setup < checkout {
+		t.Errorf("%s: job %s runs setup-go before checkout; checkout comes first", file, id)
+	}
+	for _, i := range []int{checkout, setup} {
+		if !pinned.MatchString(steps[i].Uses) {
+			t.Errorf("%s: job %s uses %s; pin it to a version, such as @v7", file, id, steps[i].Uses)
+		}
+	}
+	if got := steps[setup].With["go-version-file"]; got != "go.mod" {
+		t.Errorf("%s: job %s: setup-go has go-version-file %v, want go.mod", file, id, got)
+	}
+}
+
+// spaced matches a GitHub expression, with any spacing inside the braces.
+var spaced = regexp.MustCompile(`\$\{\{\s*(.*?)\s*\}\}`)
+
+// expression returns v with every ${{ ... }} written with one space inside
+// the braces, as GitHub's docs write them: "${{github.actor}}" becomes
+// "${{ github.actor }}".
+func expression(v any) string {
+	s, _ := v.(string)
+	return spaced.ReplaceAllString(strings.TrimSpace(s), "${{ $1 }}")
+}
+
+// inputList reads an action input that holds a list, such as tags or
+// build-args: one item per line or separated by commas, or a YAML list.
+func inputList(v any) []string {
+	var raw []string
+	switch v := v.(type) {
+	case string:
+		raw = strings.FieldsFunc(v, func(r rune) bool { return r == '\n' || r == ',' })
+	case []any:
+		for _, item := range v {
+			raw = append(raw, fmt.Sprint(item))
+		}
+	}
+	var list []string
+	for _, item := range raw {
+		if item = expression(item); item != "" {
+			list = append(list, item)
+		}
+	}
+	return list
+}

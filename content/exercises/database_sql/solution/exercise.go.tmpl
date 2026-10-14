@@ -1,0 +1,99 @@
+// Package deploydb is the Groundwork exercise "database/sql: query deploys from Go".
+package deploydb
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+)
+
+// Deploy is one row of the deploys table.
+type Deploy struct {
+	ID          int64
+	Service     string
+	Version     string
+	Environment string
+	Status      string
+	StartedAt   string
+}
+
+// ErrNotFound means no deploy has the requested id.
+var ErrNotFound = errors.New("deploy not found")
+
+// CountFailed returns how many deploys of service have the status "failed".
+func CountFailed(db *sql.DB, service string) (int, error) {
+	var n int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM deploys WHERE service = ? AND status = 'failed'`,
+		service,
+	).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count failed deploys: %w", err)
+	}
+	return n, nil
+}
+
+// GetDeploy returns the deploy with the given id, or ErrNotFound if there is
+// none.
+func GetDeploy(db *sql.DB, id int64) (Deploy, error) {
+	var d Deploy
+	err := db.QueryRow(
+		`SELECT id, service, version, environment, status, started_at
+		 FROM deploys WHERE id = ?`,
+		id,
+	).Scan(&d.ID, &d.Service, &d.Version, &d.Environment, &d.Status, &d.StartedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Deploy{}, ErrNotFound
+	}
+	if err != nil {
+		return Deploy{}, fmt.Errorf("get deploy %d: %w", id, err)
+	}
+	return d, nil
+}
+
+// RecentDeploys returns up to limit deploys of service, newest first.
+func RecentDeploys(db *sql.DB, service string, limit int) ([]Deploy, error) {
+	rows, err := db.Query(
+		`SELECT id, service, version, environment, status, started_at
+		 FROM deploys
+		 WHERE service = ?
+		 ORDER BY started_at DESC
+		 LIMIT ?`,
+		service, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("recent deploys: %w", err)
+	}
+	defer rows.Close()
+
+	var deploys []Deploy
+	for rows.Next() {
+		var d Deploy
+		if err := rows.Scan(&d.ID, &d.Service, &d.Version, &d.Environment, &d.Status, &d.StartedAt); err != nil {
+			return nil, fmt.Errorf("recent deploys: %w", err)
+		}
+		deploys = append(deploys, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("recent deploys: %w", err)
+	}
+	return deploys, nil
+}
+
+// RecordDeploy inserts d as a new deploy, ignoring d.ID, and returns the id
+// the database gave it.
+func RecordDeploy(db *sql.DB, d Deploy) (int64, error) {
+	res, err := db.Exec(
+		`INSERT INTO deploys (service, version, environment, status, started_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		d.Service, d.Version, d.Environment, d.Status, d.StartedAt,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("record deploy: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("record deploy: %w", err)
+	}
+	return id, nil
+}

@@ -3,7 +3,7 @@
 //
 // A course directory looks like this:
 //
-//	.gopherlings/progress.json         progress
+//	.groundwork/progress.json         progress
 //	exercises/01_basics/001_hello_go/  every exercise, each its own Go module
 //	solutions/01_basics/001_hello_go/  reference solution, written once unlocked
 //	guides/01_how_programs_run.md      the guides, kept in step with the course
@@ -24,13 +24,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pjanderson/gopherlings/internal/course"
-	"github.com/pjanderson/gopherlings/internal/progress"
-	"github.com/pjanderson/gopherlings/internal/workspace"
+	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/pjanderson/groundwork/internal/progress"
+	"github.com/pjanderson/groundwork/internal/workspace"
 )
 
 // ErrNoCourse means no course directory was found.
-var ErrNoCourse = errors.New("no gopherlings course here")
+var ErrNoCourse = errors.New("no groundwork course here")
 
 // Session is one learner's course directory.
 type Session struct {
@@ -47,7 +47,7 @@ func FindRoot(start string) (string, error) {
 	}
 	for {
 		// The progress file, not just the directory, marks a course: a stray
-		// empty .gopherlings/ must not turn a home directory into one.
+		// empty .groundwork/ must not turn a home directory into one.
 		if info, err := os.Stat(progress.Path(dir)); err == nil && info.Mode().IsRegular() {
 			return dir, nil
 		}
@@ -96,6 +96,37 @@ func (s *Session) Done(e *course.Exercise) bool {
 func (s *Session) Revealed(e *course.Exercise) bool {
 	_, ok := s.State.Revealed[e.Name]
 	return ok
+}
+
+// Read reports whether the learner marked g as read.
+func (s *Session) Read(g *course.Guide) bool {
+	_, ok := s.State.Read[g.Name]
+	return ok
+}
+
+// SetRead marks g as read or unread and saves progress.
+func (s *Session) SetRead(g *course.Guide, read bool) error {
+	if read {
+		s.State.Read[g.Name] = time.Now().UTC()
+	} else {
+		delete(s.State.Read, g.Name)
+	}
+	return progress.Save(s.Root, s.State)
+}
+
+// NextGuide is the first unread guide for the current module or an earlier
+// one, or nil when they are all read: the reading that should come next.
+func (s *Session) NextGuide() *course.Guide {
+	current := s.Current().Module.Number
+	for _, g := range s.Course.Guides {
+		if g.Module.Number > current {
+			break
+		}
+		if !s.Read(g) {
+			return g
+		}
+	}
+	return nil
 }
 
 // DoneCount counts finished exercises that still exist in the course.
@@ -271,8 +302,8 @@ func GuideIndex(c *course.Course) string {
 	b.WriteString("# Guides\n\n" +
 		"The computer science underneath the exercises, one idea per guide. Read\n" +
 		"each one alongside its module, or whenever an idea feels shaky. In the\n" +
-		"watcher, press `g`; from a shell, run `gopherlings guides`.\n\n" +
-		"Gopherlings rewrites the numbered files here whenever the course changes,\n" +
+		"watcher, press `g`; from a shell, run `groundwork guides`.\n\n" +
+		"Groundwork rewrites the numbered files here whenever the course changes,\n" +
 		"so keep your own notes in another file.\n")
 	for _, m := range c.Modules {
 		if len(m.Guides) == 0 {
@@ -286,7 +317,7 @@ func GuideIndex(c *course.Course) string {
 	return b.String()
 }
 
-func module(e *course.Exercise) string { return "gopherlings.local/" + e.Leaf() }
+func module(e *course.Exercise) string { return "groundwork.local/" + e.Leaf() }
 
 // sync writes e's starter files that are missing, unedited and out of date,
 // or all of them with force. It returns the paths it wrote.
@@ -420,12 +451,20 @@ func (s *Session) Reset(e *course.Exercise) ([]string, error) {
 }
 
 // TodoFiles lists the files in e's folder that still contain a TODO marker,
-// relative to the course root. Exercises are edited where the TODOs are.
+// relative to the course root: Go code, or the shell scripts, SQL files,
+// Dockerfiles and so on that non-Go exercises are written in. Exercises are
+// edited where the TODOs are.
 func (s *Session) TodoFiles(e *course.Exercise) []string {
 	var files []string
 	dir := s.Dir(e)
 	_ = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") {
+		switch name := entry.Name(); {
+		case err != nil:
+			return nil
+		case entry.IsDir() && (name == "testdata" || name == "sandbox" || name == ".git"):
+			return fs.SkipDir // fixtures and scratch repos, not the learner's work
+		case entry.IsDir(), strings.HasSuffix(name, "_test.go"), strings.HasSuffix(name, ".md"),
+			name == "go.mod", name == "go.sum":
 			return nil
 		}
 		if raw, err := os.ReadFile(path); err == nil && strings.Contains(string(raw), "TODO(") {

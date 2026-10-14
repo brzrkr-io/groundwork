@@ -1,0 +1,60 @@
+package guard2
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestDiskAlert(t *testing.T) {
+	tests := []struct {
+		used int
+		want string
+	}{
+		{50, "ok"},
+		{79, "ok"},
+		{80, "warning"},
+		{81, "warning"},
+		{94, "warning"},
+		{95, "critical"},
+		{100, "critical"},
+	}
+	for _, tc := range tests {
+		if got := DiskAlert(tc.used); got != tc.want {
+			t.Errorf("DiskAlert(%d) = %q, want %q", tc.used, got, tc.want)
+		}
+	}
+}
+
+func TestRoutable(t *testing.T) {
+	pods := []Pod{
+		{Name: "api-1", Ready: true, Restarts: 0},
+		{Name: "api-2", Ready: false, Restarts: 0},
+		{Name: "api-3", Ready: true, Restarts: 3},
+		{Name: "api-4", Ready: false, Restarts: 7},
+		{Name: "api-5", Ready: true, Restarts: 2},
+	}
+	want := []string{"api-1", "api-5"}
+	if got := Routable(pods); !slices.Equal(got, want) {
+		t.Errorf("Routable(api-1 ready 0 restarts, api-2 not ready, api-3 ready 3 restarts, api-4 not ready 7 restarts, api-5 ready 2 restarts) = %q, want %q",
+			got, want)
+	}
+}
+
+func TestPatchPlan(t *testing.T) {
+	hosts := []Host{
+		{Name: "web-1", Up: true, DiskUsedPercent: 40},
+		{Name: "web-2", Up: false, DiskUsedPercent: 40},
+		{Name: "web-3", Up: true, DiskUsedPercent: 92},
+		{Name: "web-4", Up: false, DiskUsedPercent: 97},
+		{Name: "web-5", Up: true, DiskUsedPercent: 89},
+	}
+	patch, skipped := PatchPlan(hosts)
+	wantPatch := []string{"web-1", "web-5"}
+	wantSkipped := []string{"web-2: down", "web-3: disk full", "web-4: down"}
+	if !slices.Equal(patch, wantPatch) {
+		t.Errorf("PatchPlan(web-1 up 40%%, web-2 down, web-3 up 92%%, web-4 down 97%%, web-5 up 89%%) patches %q, want %q", patch, wantPatch)
+	}
+	if !slices.Equal(skipped, wantSkipped) {
+		t.Errorf("PatchPlan(web-1 up 40%%, web-2 down, web-3 up 92%%, web-4 down 97%%, web-5 up 89%%) skips %q, want %q", skipped, wantSkipped)
+	}
+}

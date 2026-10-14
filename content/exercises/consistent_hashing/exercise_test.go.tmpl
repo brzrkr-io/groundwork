@@ -1,0 +1,234 @@
+package ring
+
+import (
+	"fmt"
+	"slices"
+	"testing"
+)
+
+// buildKeys returns the 1000 artifact keys build-0.tar.gz to build-999.tar.gz.
+func buildKeys() []string {
+	keys := make([]string, 1000)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("build-%d.tar.gz", i)
+	}
+	return keys
+}
+
+// ownersOf returns the node r.Get picks for every key.
+func ownersOf(r *Ring, keys []string) map[string]string {
+	owners := make(map[string]string, len(keys))
+	for _, k := range keys {
+		owners[k] = r.Get(k)
+	}
+	return owners
+}
+
+func TestAdd(t *testing.T) {
+	t.Run("two nodes, two points each", func(t *testing.T) {
+		r := New(2)
+		r.Add("cache-1", "cache-2")
+		// hash("cache-1#0") = 2131531025, hash("cache-1#1") = 134980999,
+		// hash("cache-2#0") = 2102012744, hash("cache-2#1") = 172825566.
+		want := []uint32{134980999, 172825566, 2102012744, 2131531025}
+		if !slices.Equal(r.points, want) {
+			t.Fatalf("after New(2).Add(%q, %q), r.points = %v, want %v", "cache-1", "cache-2", r.points, want)
+		}
+		wantOwners := map[uint32]string{
+			134980999: "cache-1", 172825566: "cache-2", 2102012744: "cache-2", 2131531025: "cache-1",
+		}
+		for p, want := range wantOwners {
+			if got := r.owners[p]; got != want {
+				t.Errorf("r.owners[%d] = %q, want %q", p, got, want)
+			}
+		}
+		if len(r.owners) != 4 {
+			t.Errorf("len(r.owners) = %d, want 4", len(r.owners))
+		}
+	})
+
+	t.Run("every label is node#i", func(t *testing.T) {
+		r := New(50)
+		r.Add("cache-1", "cache-2", "cache-3")
+		if len(r.points) != 150 {
+			t.Fatalf("after New(50).Add of 3 nodes, len(r.points) = %d, want 150", len(r.points))
+		}
+		for _, node := range []string{"cache-1", "cache-2", "cache-3"} {
+			for i := range 50 {
+				label := fmt.Sprintf("%s#%d", node, i)
+				if got := r.owners[hash(label)]; got != node {
+					t.Fatalf("r.owners[hash(%q)] = %q, want %q", label, got, node)
+				}
+			}
+		}
+	})
+
+	t.Run("points stay sorted over several Adds", func(t *testing.T) {
+		r := New(2)
+		r.Add("cache-2")
+		r.Add("cache-3", "cache-1")
+		// hash("cache-3#0") = 2089304447, hash("cache-3#1") = 193950185.
+		want := []uint32{134980999, 172825566, 193950185, 2089304447, 2102012744, 2131531025}
+		if !slices.Equal(r.points, want) {
+			t.Errorf("after Add(%q) then Add(%q, %q), r.points = %v, want %v", "cache-2", "cache-3", "cache-1", r.points, want)
+		}
+	})
+
+	t.Run("adding a node twice changes nothing", func(t *testing.T) {
+		r := New(4)
+		r.Add("cache-1")
+		r.Add("cache-1")
+		r.Add("cache-2", "cache-2")
+		if len(r.points) != 8 || len(r.owners) != 8 {
+			t.Errorf("after adding cache-1 and cache-2 twice each with 4 replicas, len(r.points) = %d and len(r.owners) = %d, want 8 and 8",
+				len(r.points), len(r.owners))
+		}
+	})
+}
+
+func TestGet(t *testing.T) {
+	t.Run("empty ring", func(t *testing.T) {
+		r := New(100)
+		for _, key := range []string{"api/v1.4.2.tar.gz", "build-65.tar.gz"} {
+			if got := r.Get(key); got != "" {
+				t.Errorf("New(100).Get(%q) = %q, want %q", key, got, "")
+			}
+		}
+	})
+
+	t.Run("one point per node", func(t *testing.T) {
+		r := New(1)
+		r.Add("cache-1", "cache-2", "cache-3")
+		// Points: 2089304447 cache-3, 2102012744 cache-2, 2131531025 cache-1.
+		tests := []struct {
+			key  string
+			hash uint32
+			want string
+		}{
+			{"api/v1.4.2.tar.gz", 573056911, "cache-3"},  // before the first point
+			{"build-127.tar.gz", 2097901471, "cache-2"},  // between cache-3 and cache-2
+			{"build-201.tar.gz", 2124805533, "cache-1"},  // between cache-2 and cache-1
+			{"cache-2#0", 2102012744, "cache-2"},         // exactly on a point
+			{"cache-1#0", 2131531025, "cache-1"},         // exactly on the last point
+			{"web/v2.0.0.tar.gz", 3969333627, "cache-3"}, // past the last point: wraps
+			{"build-65.tar.gz", 4292568909, "cache-3"},   // past the last point: wraps
+		}
+		for _, tt := range tests {
+			if got := r.Get(tt.key); got != tt.want {
+				t.Errorf("Get(%q) with hash %d = %q, want %q", tt.key, tt.hash, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("100 points per node", func(t *testing.T) {
+		r := New(100)
+		r.Add("cache-1", "cache-2", "cache-3")
+		tests := []struct{ key, want string }{
+			{"api/v1.4.2.tar.gz", "cache-3"},
+			{"web/v2.0.0.tar.gz", "cache-1"},
+			{"go-mod-cache.tar.gz", "cache-2"},
+			{"build-65.tar.gz", "cache-3"}, // past the last point (a cache-2 point): wraps to the first (cache-3)
+		}
+		for _, tt := range tests {
+			if got := r.Get(tt.key); got != tt.want {
+				t.Errorf("Get(%q) = %q, want %q", tt.key, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("keys spread over every node", func(t *testing.T) {
+		r := New(100)
+		r.Add("cache-1", "cache-2", "cache-3")
+		counts := make(map[string]int)
+		for _, node := range ownersOf(r, buildKeys()) {
+			counts[node]++
+		}
+		for _, node := range []string{"cache-1", "cache-2", "cache-3"} {
+			if counts[node] < 200 {
+				t.Errorf("%s owns %d of 1000 keys, want at least 200 (all counts: %v)", node, counts[node], counts)
+			}
+		}
+	})
+
+	t.Run("adding a node moves only keys to it", func(t *testing.T) {
+		r := New(100)
+		r.Add("cache-1", "cache-2", "cache-3")
+		keys := buildKeys()
+		before := ownersOf(r, keys)
+		r.Add("cache-4")
+		moved := 0
+		for _, k := range keys {
+			got := r.Get(k)
+			if got == before[k] {
+				continue
+			}
+			moved++
+			if got != "cache-4" {
+				t.Errorf("after Add(%q), Get(%q) = %q, want %q or %q (where it was before)", "cache-4", k, got, before[k], "cache-4")
+			}
+		}
+		if moved < 150 || moved > 350 {
+			t.Errorf("after Add(%q), %d of 1000 keys moved, want between 150 and 350", "cache-4", moved)
+		}
+	})
+}
+
+func TestRemove(t *testing.T) {
+	t.Run("only the removed node's keys move", func(t *testing.T) {
+		r := New(100)
+		r.Add("cache-1", "cache-2", "cache-3", "cache-4")
+		keys := buildKeys()
+		before := ownersOf(r, keys)
+		r.Remove("cache-2")
+		for _, k := range keys {
+			got := r.Get(k)
+			switch {
+			case before[k] == "cache-2" && (got == "cache-2" || got == ""):
+				t.Fatalf("after Remove(%q), Get(%q) = %q, want another node", "cache-2", k, got)
+			case before[k] != "cache-2" && got != before[k]:
+				t.Fatalf("after Remove(%q), Get(%q) = %q, want %q (it was never on cache-2)", "cache-2", k, got, before[k])
+			}
+		}
+		if len(r.points) != 300 || len(r.owners) != 300 {
+			t.Errorf("after Remove(%q), len(r.points) = %d and len(r.owners) = %d, want 300 and 300", "cache-2", len(r.points), len(r.owners))
+		}
+		if !slices.IsSorted(r.points) {
+			t.Errorf("after Remove(%q), r.points is not sorted", "cache-2")
+		}
+
+		r.Add("cache-2")
+		for _, k := range keys {
+			if got := r.Get(k); got != before[k] {
+				t.Fatalf("after adding cache-2 back, Get(%q) = %q, want %q", k, got, before[k])
+			}
+		}
+	})
+
+	t.Run("removing a missing node does nothing", func(t *testing.T) {
+		r := New(10)
+		r.Add("cache-1", "cache-2")
+		r.Remove("cache-9")
+		r.Remove("")
+		if len(r.points) != 20 || len(r.owners) != 20 {
+			t.Errorf("after Remove(%q), len(r.points) = %d and len(r.owners) = %d, want 20 and 20", "cache-9", len(r.points), len(r.owners))
+		}
+	})
+
+	t.Run("removing every node empties the ring", func(t *testing.T) {
+		r := New(10)
+		r.Add("cache-1", "cache-2")
+		r.Remove("cache-1")
+		if got := r.Get("api/v1.4.2.tar.gz"); got != "cache-2" {
+			t.Errorf("with only cache-2 left, Get(%q) = %q, want %q", "api/v1.4.2.tar.gz", got, "cache-2")
+		}
+		r.Remove("cache-2")
+		for _, key := range []string{"api/v1.4.2.tar.gz", "build-65.tar.gz"} {
+			if got := r.Get(key); got != "" {
+				t.Errorf("after removing every node, Get(%q) = %q, want %q", key, got, "")
+			}
+		}
+		if len(r.points) != 0 || len(r.owners) != 0 {
+			t.Errorf("after removing every node, len(r.points) = %d and len(r.owners) = %d, want 0 and 0", len(r.points), len(r.owners))
+		}
+	})
+}

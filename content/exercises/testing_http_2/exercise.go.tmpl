@@ -1,4 +1,4 @@
-// Package httptesting is the Gopherlings exercise "Testing HTTP: a regression test for a bug report".
+// Package httptesting is the Groundwork exercise "Testing HTTP: a regression test for a bug report".
 package httptesting
 
 import (
@@ -29,7 +29,7 @@ func NewHandler() http.Handler {
 	return newHandler()
 }
 
-// newHandler points at the real implementation. Gopherlings' grader swaps in
+// newHandler points at the real implementation. Groundwork' grader swaps in
 // broken versions to check that your tests catch them.
 var newHandler = realNewHandler
 

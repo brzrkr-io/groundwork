@@ -1,0 +1,6 @@
+-- Task 1: Summarize every deploy
+--
+-- Return one row: how many deploys there are (deploys), the longest
+-- duration_s (slowest_s), and the earliest started_at (first_started).
+--
+-- TODO(1): Write your query below.

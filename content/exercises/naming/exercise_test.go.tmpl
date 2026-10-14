@@ -1,0 +1,90 @@
+package naming
+
+import (
+	"slices"
+	"testing"
+)
+
+// alertLog is a short slice of the alert stream. api has three critical
+// alerts, db has two, and cache only warnings.
+var alertLog = []string{
+	"2026-10-13T09:00:00Z critical api disk almost full",
+	"2026-10-13T09:01:00Z warning cache memory high",
+	"2026-10-13T09:02:00Z critical db replication lag",
+	"2026-10-13T09:03:00Z critical api disk full",
+	"garbage",
+	"2026-10-13T09:04:00Z critical api readiness failing",
+	"2026-10-13T09:05:00Z critical db replication lag",
+	"2026-10-13T09:06:00Z warning cache evictions",
+}
+
+// checkPages fails if Pages no longer does what it did before you started.
+// Renaming changes how code reads, never what it does.
+func checkPages(t *testing.T) {
+	t.Helper()
+	tests := []struct {
+		limit int
+		want  []string
+	}{
+		{1, []string{"api: 3 critical", "db: 2 critical"}},
+		{3, []string{"api: 3 critical"}},
+		{4, nil},
+	}
+	for _, tc := range tests {
+		got := Pages(alertLog, tc.limit)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("Pages(alertLog, %d) = %q, want %q; a rename changed what the code does", tc.limit, got, tc.want)
+		}
+	}
+}
+
+func TestRenameHelpers(t *testing.T) {
+	checkPages(t)
+	src := parseExercise(t)
+	renames := []struct{ old, want string }{
+		{"prs", "criticalService"},
+		{"fmtP", "pageLine"},
+	}
+	for _, r := range renames {
+		if src.fn(r.old) != nil {
+			t.Errorf("exercise.go still has a function named %s; rename it to %s", r.old, r.want)
+			continue
+		}
+		f := src.fn(r.want)
+		if f == nil {
+			t.Errorf("exercise.go has no function named %s", r.want)
+			continue
+		}
+		if !docStartsWith(f, r.want) {
+			t.Errorf("exercise.go:%d: the comment above %s should start with %q, the function's new name", src.line(f), r.want, r.want)
+		}
+	}
+}
+
+func TestRenamePagesVariables(t *testing.T) {
+	checkPages(t)
+	src := parseExercise(t)
+	pages := src.fn("Pages")
+	if pages == nil {
+		t.Fatal("exercise.go has no function named Pages; keep its name, the alert bot calls it")
+	}
+	checkNameLengths(t, src, pages)
+}
+
+func TestNameTheParts(t *testing.T) {
+	checkPages(t)
+	src := parseExercise(t)
+	for _, name := range []string{"criticalService", "pageLine"} {
+		f := src.fn(name)
+		if f == nil {
+			t.Fatalf("exercise.go has no function named %s; do task 1 first", name)
+		}
+		checkNameLengths(t, src, f)
+	}
+	f := src.fn("criticalService")
+	for _, name := range []string{"level", "service"} {
+		if !declares(f, name) {
+			t.Errorf("criticalService has no variable named %s; give that part of the alert line its own name", name)
+		}
+	}
+}

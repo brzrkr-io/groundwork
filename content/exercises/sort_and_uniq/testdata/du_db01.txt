@@ -1,0 +1,8 @@
+204800	/var/lib/postgresql
+64	/etc
+9216	/var/log/postgresql
+350	/home/deploy
+1530	/var/cache/apt
+51200	/backups/nightly
+12	/tmp
+770	/var/log/journal

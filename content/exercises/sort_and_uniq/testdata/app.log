@@ -1,0 +1,20 @@
+2026-10-13T09:15:06Z INFO search msg="query served" req=f2a74d
+2026-10-13T09:15:09Z ERROR payments msg="card declined" req=651327
+2026-10-13T09:15:10Z INFO api msg="GET /orders 200" req=128b2f
+2026-10-13T09:15:19Z WARN auth msg="slow token check" req=1818e8
+2026-10-13T09:15:25Z ERROR api msg="upstream timeout" req=953198
+2026-10-13T09:15:26Z INFO checkout msg="cart created" req=e8e25d
+2026-10-13T09:15:35Z ERROR payments msg="gateway unreachable" req=36f675
+2026-10-13T09:15:36Z INFO search msg="index refreshed" req=1600a3
+2026-10-13T09:15:43Z INFO payments msg="charge started" req=6b0d54
+2026-10-13T09:15:45Z ERROR checkout msg="stock check failed" req=3d9c17
+2026-10-13T09:15:47Z INFO auth msg="login ok" req=8d116e
+2026-10-13T09:15:54Z ERROR payments msg="card declined" req=0f21dd
+2026-10-13T09:15:56Z WARN payments msg="retrying charge" req=f28c10
+2026-10-13T09:16:00Z INFO api msg="GET /cart 200" req=a170b3
+2026-10-13T09:16:01Z ERROR api msg="upstream timeout" req=93bd04
+2026-10-13T09:16:08Z INFO checkout msg="order placed" req=0cb1e2
+2026-10-13T09:16:12Z ERROR payments msg="card declined" req=0becd7
+2026-10-13T09:16:21Z INFO search msg="query served" req=dbc496
+2026-10-13T09:16:24Z INFO auth msg="token refreshed" req=4a23d5
+2026-10-13T09:16:31Z INFO api msg="GET /orders 200" req=24ede6

@@ -1,0 +1,20 @@
+# Task 2: backupd still supports Go 1.20 for one old customer, so CI tests
+# it on that version and on the current one.
+# In a real repository: .github/workflows/backupd.yml.
+
+name: backupd
+
+on: push
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.20', '1.26']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go test ./...

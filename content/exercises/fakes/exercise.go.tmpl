@@ -1,4 +1,4 @@
-// Package diskwatch is the Gopherlings exercise "Fakes and dependency injection".
+// Package diskwatch is the Groundwork exercise "Fakes and dependency injection".
 package diskwatch
 
 import "fmt"
@@ -17,7 +17,7 @@ func CheckDisk(n Notifier, host string, usedPercent int) {
 	checkDisk(n, host, usedPercent)
 }
 
-// checkDisk points at the real implementation. Gopherlings' grader swaps in
+// checkDisk points at the real implementation. Groundwork' grader swaps in
 // broken versions to check that your test catches them.
 var checkDisk = realCheckDisk
 

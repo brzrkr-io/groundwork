@@ -1,0 +1,46 @@
+// Package ring is the Groundwork exercise "Consistent hashing: a ring with virtual nodes".
+package ring
+
+import "hash/crc32"
+
+// hash returns where s sits on the ring: a number from 0 to 4,294,967,295.
+func hash(s string) uint32 {
+	return crc32.ChecksumIEEE([]byte(s))
+}
+
+// Ring spreads keys across nodes with consistent hashing. Every node sits on
+// the ring at several points (its virtual nodes), and a key belongs to the
+// node at the first point at or after the key's hash, wrapping around after
+// the last point. A Ring is not safe for concurrent use.
+type Ring struct {
+	replicas int               // points per node
+	points   []uint32          // every point on the ring, sorted from low to high
+	owners   map[uint32]string // point -> the node that sits there
+}
+
+// New returns an empty Ring that places every node at replicas points.
+func New(replicas int) *Ring {
+	return &Ring{replicas: replicas, owners: make(map[uint32]string)}
+}
+
+// Add places each node on the ring at r.replicas points, labelled
+// node + "#" + the replica number. Points that are already on the ring are
+// skipped, so adding a node twice changes nothing.
+func (r *Ring) Add(nodes ...string) {
+	// TODO(1): Hash every label onto the ring, record its owner, and keep
+	// r.points sorted. Add "slices" and "strconv" to the imports.
+}
+
+// Get returns the node that owns key, or "" if the ring is empty.
+func (r *Ring) Get(key string) string {
+	// TODO(2): Find the first point at or after hash(key), wrapping around
+	// to the first point after the last one.
+	return ""
+}
+
+// Remove takes every point of node off the ring. Removing a node that is
+// not on the ring does nothing.
+func (r *Ring) Remove(node string) {
+	// TODO(3): Delete node's points from r.points and r.owners. Add "maps"
+	// to the imports.
+}

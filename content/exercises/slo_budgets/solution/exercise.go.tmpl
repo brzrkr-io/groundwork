@@ -1,0 +1,50 @@
+// Package slo is the Groundwork exercise "SLOs: error budgets and burn rates".
+package slo
+
+// SLI returns the fraction of requests that were good: good ÷ total. With no
+// requests (total 0) nothing failed, so it returns 1.
+func SLI(good, total int) float64 {
+	if total == 0 {
+		return 1
+	}
+	return float64(good) / float64(total)
+}
+
+// AllowedFailures returns how many of total requests may fail without
+// breaking an SLO with the given target (a fraction such as 0.999).
+func AllowedFailures(target float64, total int) float64 {
+	return float64(total) * (1 - target)
+}
+
+// BudgetRemaining returns the fraction of the error budget still left: 1
+// when nothing failed, 0 when it is spent, below 0 when it is blown. With no
+// requests (total 0) it returns 1.
+func BudgetRemaining(target float64, good, total int) float64 {
+	if total == 0 {
+		return 1
+	}
+	allowed := AllowedFailures(target, total)
+	failed := float64(total - good)
+	return (allowed - failed) / allowed
+}
+
+// BurnRate returns how fast the error budget is being spent: the error rate
+// divided by the error rate the target allows. 1 means exactly on schedule.
+func BurnRate(target float64, good, total int) float64 {
+	return (1 - SLI(good, total)) / (1 - target)
+}
+
+// Window holds the request counts seen over one time window, such as the
+// last hour or the last 5 minutes.
+type Window struct {
+	Good  int // requests that met the SLO
+	Total int // all requests
+}
+
+// ShouldPage reports whether on-call should be paged: true only when the
+// burn rates of both the long and the short window are greater than
+// threshold.
+func ShouldPage(target, threshold float64, long, short Window) bool {
+	return BurnRate(target, long.Good, long.Total) > threshold &&
+		BurnRate(target, short.Good, short.Total) > threshold
+}

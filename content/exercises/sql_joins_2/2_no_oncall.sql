@@ -1,0 +1,6 @@
+-- Task 2: Find the services nobody is on call for
+--
+-- Return the name (service) of every service with no on-call
+-- engineer, A to Z.
+--
+-- TODO(2): Write your query below.

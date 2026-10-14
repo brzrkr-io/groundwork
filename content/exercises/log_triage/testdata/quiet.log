@@ -1,0 +1,6 @@
+2026-10-13T03:00:01Z INFO api 12 GET /healthz 200
+2026-10-13T03:00:04Z INFO reports 2400 nightly report built
+2026-10-13T03:00:05Z INFO api 11 GET /healthz 200
+2026-10-13T03:00:09Z WARN reports 3100 report upload slow
+2026-10-13T03:00:10Z INFO api 13 GET /healthz 200
+2026-10-13T03:00:15Z INFO billing 870 invoices queued

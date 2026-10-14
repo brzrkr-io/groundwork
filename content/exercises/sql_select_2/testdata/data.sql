@@ -1,0 +1,17 @@
+INSERT INTO deploys (id, service, version, environment, status, started_at, duration_s) VALUES
+    (1,  'api',      'v1.4.0',        'staging',    'succeeded',   '2026-03-02 09:12:00', 95),
+    (2,  'api',      'v1.4.0',        'production', 'succeeded',   '2026-03-02 10:05:00', 140),
+    (3,  'checkout', 'v2.7.1',        'staging',    'succeeded',   '2026-03-02 11:30:00', 210),
+    (4,  'checkout', 'v2.7.1',        'production', 'failed',      '2026-03-02 13:02:00', 610),
+    (5,  'billing',  'v0.9.3',        'production', 'succeeded',   '2026-03-03 08:45:00', 88),
+    (6,  'search',   'v3.1.0',        'staging',    'failed',      '2026-03-03 09:20:00', 45),
+    (7,  'search',   'v3.1.1',        'staging',    'succeeded',   '2026-03-03 10:01:00', 52),
+    (8,  'checkout', 'v2.7.2',        'production', 'succeeded',   '2026-03-03 14:40:00', 395),
+    (9,  'api',      'v1.5.0-rc.1',   'staging',    'succeeded',   '2026-03-04 09:00:00', 101),
+    (10, 'billing',  'v1.0.0',        'staging',    'failed',      '2026-03-04 11:15:00', 302),
+    (11, 'billing',  'v1.0.0',        'production', 'rolled_back', '2026-03-04 16:50:00', 720),
+    (12, 'search',   'v3.1.1',        'production', 'succeeded',   '2026-03-05 07:30:00', 61),
+    (13, 'api',      'v1.4.1-hotfix', 'production', 'succeeded',   '2026-03-05 22:10:00', 77),
+    (14, 'checkout', 'v2.8.0',        'production', 'failed',      '2026-03-06 10:00:00', 455),
+    (15, 'search',   'v3.2.0',        'staging',    'rolled_back', '2026-03-06 15:30:00', 130),
+    (16, 'billing',  'v1.1.0-rc.1',   'staging',    'succeeded',   '2026-03-06 17:05:00', 96);

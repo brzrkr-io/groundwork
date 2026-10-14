@@ -379,6 +379,13 @@ If your program ignores SIGTERM, every deploy waits the full 30 seconds per pod,
 | signal | a numbered notice from the kernel, like SIGTERM |
 | OOM killer | the kernel feature that kills processes when memory runs out |
 
+## Watch
+
+- [Operating Systems: Crash Course Computer Science #18](https://www.youtube.com/watch?v=26QPDBe-NB8) · CrashCourse · 14 min: a quick, visual history of why kernels exist and how they share the CPU and memory between programs.
+- [Unix Pipeline (Brian Kernighan) - Computerphile](https://www.youtube.com/watch?v=bKzonnwoR2I) · Computerphile · 5 min: one of Unix's creators explains pipes and small tools joined by stdin and stdout.
+- [Terminating with Grace](https://www.youtube.com/watch?v=Z_l_kE1MDTc) · Google Cloud Tech · 5 min: how Kubernetes stops a pod with SIGTERM, a grace period and then SIGKILL, and what your program should do.
+- [Containers From Scratch • Liz Rice • GOTO 2018](https://www.youtube.com/watch?v=8fi7uSYlOdc) · GOTO Conferences · 43 min: Liz Rice builds a container in Go live, using processes, syscalls and the filesystem from this guide.
+
 ## Go deeper
 
 - [Operating Systems: Three Easy Pieces](https://pages.cs.wisc.edu/~remzi/OSTEP/): a free, friendly textbook; the chapters on processes and the process API are a great next step.

@@ -1,0 +1,7 @@
+-- Task 3: Average the duration per environment
+--
+-- For each environment, return the environment, its number of
+-- deploys (deploys) and its average duration_s rounded to one
+-- decimal place (avg_duration_s), A to Z by environment.
+--
+-- TODO(3): Write your query below.

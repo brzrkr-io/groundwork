@@ -1,0 +1,6 @@
+-- Task 2: Count failures per service
+--
+-- For each service with at least one failed deploy, return the
+-- service and its number of failed deploys (failures), A to Z.
+--
+-- TODO(2): Write your query below.

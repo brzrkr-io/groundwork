@@ -1,0 +1,75 @@
+package certs
+
+// This file reads exercise.go as a tree of Go syntax, the same way gofmt and
+// your editor do, so the tests can find numbers written straight into the
+// code. You don't need to change it, but you're welcome to read it.
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"slices"
+	"testing"
+)
+
+// source is exercise.go, parsed.
+type source struct {
+	fset *token.FileSet
+	file *ast.File
+}
+
+// parseExercise reads and parses exercise.go.
+func parseExercise(t *testing.T) source {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "exercise.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("can't read exercise.go: %v", err)
+	}
+	return source{fset, file}
+}
+
+// checkNoNumbers fails for every number written inside the function called
+// name, except the ones in allowed.
+func (s source) checkNoNumbers(t *testing.T, name string, allowed ...string) {
+	t.Helper()
+	for _, decl := range s.file.Decls {
+		f, ok := decl.(*ast.FuncDecl)
+		if !ok || f.Name.Name != name {
+			continue
+		}
+		ast.Inspect(f.Body, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if ok && (lit.Kind == token.INT || lit.Kind == token.FLOAT) && !slices.Contains(allowed, lit.Value) {
+				t.Errorf("exercise.go:%d: %s still uses the number %s; use a named constant that says what it means",
+					s.fset.Position(lit.Pos()).Line, name, lit.Value)
+			}
+			return true
+		})
+		return
+	}
+	t.Errorf("exercise.go has no function named %s; keep its name, the checker calls it", name)
+}
+
+// checkConstants fails for each name in names that isn't declared as a
+// package-level constant.
+func (s source) checkConstants(t *testing.T, names ...string) {
+	t.Helper()
+	declared := map[string]bool{}
+	for _, decl := range s.file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			for _, id := range spec.(*ast.ValueSpec).Names {
+				declared[id.Name] = true
+			}
+		}
+	}
+	for _, name := range names {
+		if !declared[name] {
+			t.Errorf("exercise.go has no constant named %s; declare it with const, outside any function", name)
+		}
+	}
+}

@@ -1,0 +1,96 @@
+package slowbuilds
+
+import (
+	"encoding/json"
+	"os"
+	"strings"
+	"testing"
+)
+
+// This file reads Dockerfiles for the tests. You don't need to change it,
+// but it's short: read it to see how Docker itself splits a Dockerfile up.
+
+// instruction is one Dockerfile instruction. For example
+//
+//	COPY --from=build /out/app /app
+//
+// becomes {Line: 7, Cmd: "COPY", Flags: ["--from=build"], Args: ["/out/app", "/app"]}.
+type instruction struct {
+	Line  int      // the line it starts on
+	Cmd   string   // the instruction in capitals: "FROM", "RUN", "CMD", ...
+	Flags []string // leading options such as "--from=build"
+	Args  []string // the rest, split into words (exec form: the JSON list)
+	Rest  string   // the rest as written, continuation lines joined
+	Exec  bool     // true when the rest is a JSON list: ["app", "-v"]
+}
+
+// readDockerfile parses the Dockerfile name in the exercise folder. It
+// handles what Docker handles: case-insensitive instructions, comment lines,
+// blank lines and lines continued with a trailing backslash.
+func readDockerfile(t *testing.T, name string) []instruction {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	var instructions []instruction
+	var current strings.Builder
+	start := 0
+	for i, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue // Docker skips these, even in the middle of a continued line
+		}
+		if current.Len() == 0 {
+			start = i + 1
+		}
+		if body, continued := strings.CutSuffix(trimmed, `\`); continued {
+			current.WriteString(strings.TrimSpace(body))
+			current.WriteByte(' ')
+			continue
+		}
+		current.WriteString(trimmed)
+		instructions = append(instructions, parseInstruction(start, current.String()))
+		current.Reset()
+	}
+	if current.Len() > 0 {
+		t.Fatalf("%s: the instruction on line %d ends with a backslash, but no line follows it", name, start)
+	}
+	return instructions
+}
+
+// parseInstruction splits one joined instruction line into its parts.
+func parseInstruction(line int, text string) instruction {
+	cmd, rest, _ := strings.Cut(text, " ")
+	in := instruction{Line: line, Cmd: strings.ToUpper(cmd)}
+	rest = strings.TrimSpace(rest)
+	for strings.HasPrefix(rest, "--") {
+		flag, after, _ := strings.Cut(rest, " ")
+		in.Flags = append(in.Flags, flag)
+		rest = strings.TrimSpace(after)
+	}
+	in.Rest = rest
+	if strings.HasPrefix(rest, "[") && json.Unmarshal([]byte(rest), &in.Args) == nil {
+		in.Exec = true
+	} else {
+		in.Args = strings.Fields(rest)
+	}
+	return in
+}
+
+// find returns the instructions with the given command, in file order.
+func find(instructions []instruction, cmd string) []instruction {
+	var found []instruction
+	for _, in := range instructions {
+		if in.Cmd == cmd {
+			found = append(found, in)
+		}
+	}
+	return found
+}
+
+// show prints an instruction the way it was written, for failure messages.
+func show(in instruction) string {
+	parts := append([]string{in.Cmd}, in.Flags...)
+	return strings.TrimSpace(strings.Join(append(parts, in.Rest), " "))
+}

@@ -19,7 +19,7 @@ func writeProgress(t *testing.T, body string) string {
 	return root
 }
 
-func TestLoadRefusesFoldersFromANewerGopherlings(t *testing.T) {
+func TestLoadRefusesFoldersFromANewerGroundwork(t *testing.T) {
 	_, err := Load(writeProgress(t, `{"version": 99, "done": {}}`))
 	if !errors.Is(err, ErrNewer) {
 		t.Fatalf("Load(version 99) error = %v, want ErrNewer", err)
@@ -34,7 +34,7 @@ func TestLoadUpgradesTheLastFormatKeepingProgress(t *testing.T) {
 	if _, done := s.Done["hello_go"]; !done || s.Current != "maps" || s.Version != version {
 		t.Fatalf("upgraded state = %+v, want hello_go done, current maps, version %d", s, version)
 	}
-	if s.Folders == nil || s.Revealed == nil || s.Starters == nil {
+	if s.Folders == nil || s.Revealed == nil || s.Starters == nil || s.Read == nil {
 		t.Fatal("upgraded state has nil maps; writes to them would panic")
 	}
 }

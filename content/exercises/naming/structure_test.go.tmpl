@@ -1,0 +1,106 @@
+package naming
+
+// This file reads exercise.go as a tree of Go syntax, the same way gofmt and
+// your editor do, so the tests can check names as well as behaviour. You
+// don't need to change it, but you're welcome to read it.
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strings"
+	"testing"
+)
+
+// source is exercise.go, parsed.
+type source struct {
+	fset *token.FileSet
+	file *ast.File
+}
+
+// parseExercise reads and parses exercise.go.
+func parseExercise(t *testing.T) source {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "exercise.go", nil, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("can't read exercise.go: %v", err)
+	}
+	return source{fset, file}
+}
+
+// fn returns the function called name, or nil if there is none.
+func (s source) fn(name string) *ast.FuncDecl {
+	for _, decl := range s.file.Decls {
+		if f, ok := decl.(*ast.FuncDecl); ok && f.Name.Name == name {
+			return f
+		}
+	}
+	return nil
+}
+
+// line returns the line of exercise.go that n starts on.
+func (s source) line(n ast.Node) int {
+	return s.fset.Position(n.Pos()).Line
+}
+
+// docStartsWith reports whether f's doc comment starts with word.
+func docStartsWith(f *ast.FuncDecl, word string) bool {
+	return f.Doc != nil && strings.HasPrefix(f.Doc.Text(), word+" ")
+}
+
+// names returns every parameter and variable that f declares: its
+// parameters, and the names on the left of := , in var lines and in range.
+func names(f *ast.FuncDecl) []*ast.Ident {
+	var found []*ast.Ident
+	for _, field := range f.Type.Params.List {
+		found = append(found, field.Names...)
+	}
+	ast.Inspect(f.Body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.AssignStmt:
+			if n.Tok == token.DEFINE {
+				for _, left := range n.Lhs {
+					if id, ok := left.(*ast.Ident); ok {
+						found = append(found, id)
+					}
+				}
+			}
+		case *ast.RangeStmt:
+			if n.Tok == token.DEFINE {
+				for _, e := range []ast.Expr{n.Key, n.Value} {
+					if id, ok := e.(*ast.Ident); ok {
+						found = append(found, id)
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			found = append(found, n.Names...)
+		}
+		return true
+	})
+	return found
+}
+
+// checkNameLengths fails for every name f declares that is shorter than three
+// letters. "_" (a value thrown away) and "ok" (Go's name for "did it work?")
+// are fine.
+func checkNameLengths(t *testing.T, src source, f *ast.FuncDecl) {
+	t.Helper()
+	for _, id := range names(f) {
+		if id.Name != "_" && id.Name != "ok" && len(id.Name) < 3 {
+			t.Errorf("exercise.go:%d: %s still has a variable or parameter named %q; give it a name that says what it holds",
+				src.line(id), f.Name.Name, id.Name)
+		}
+	}
+}
+
+// declares reports whether f declares a variable or parameter called name.
+func declares(f *ast.FuncDecl, name string) bool {
+	for _, id := range names(f) {
+		if id.Name == name {
+			return true
+		}
+	}
+	return false
+}

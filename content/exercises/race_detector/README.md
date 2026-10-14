@@ -45,7 +45,7 @@ Add `-race` to `go test`, `go run` or `go build`:
 go test -race ./...
 ```
 
-Gopherlings runs every test with `-race`. The detector only finds races in
+Groundwork runs every test with `-race`. The detector only finds races in
 code that actually runs, so test your concurrent code. Programs run slower
 with `-race`: use it in tests, not production builds.
 

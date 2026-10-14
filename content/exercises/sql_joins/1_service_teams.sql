@@ -1,0 +1,6 @@
+-- Task 1: Show which team owns each service
+--
+-- Return each service's name (service) and its team's name (team),
+-- A to Z by service. Services without a team are left out.
+--
+-- TODO(1): Write your query below.

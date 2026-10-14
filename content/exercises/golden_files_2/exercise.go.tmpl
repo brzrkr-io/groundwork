@@ -1,4 +1,4 @@
-// Package upstream is the Gopherlings exercise "Golden files: write your own".
+// Package upstream is the Groundwork exercise "Golden files: write your own".
 package upstream
 
 import (
@@ -22,7 +22,7 @@ func WriteUpstreamConfig(dir, name string, backends []string) error {
 	return writeUpstreamConfig(dir, name, backends)
 }
 
-// writeUpstreamConfig points at the real implementation. Gopherlings' grader
+// writeUpstreamConfig points at the real implementation. Groundwork' grader
 // swaps in broken versions to check that your test catches them.
 var writeUpstreamConfig = realWriteUpstreamConfig
 

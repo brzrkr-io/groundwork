@@ -83,7 +83,7 @@ test the client's error handling.
 > `HandleFunc` is an *anonymous function*: a handler with no name, written
 > inline. Go requires the same parameter types as a named handler.
 
-### How Gopherlings grades your tests
+### How Groundwork grades your tests
 
 `grader_test.go` holds `TestGrader`. It runs your `TestHostHandler` and
 `TestFetchIP` against the real code (they must pass), then against *mutants*:

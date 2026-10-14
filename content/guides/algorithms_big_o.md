@@ -446,6 +446,12 @@ cluster", look for loops inside it.
 | binary search | Halve a sorted range each step until you find the target. |
 | space vs time | Using more memory to do less work, or the reverse. |
 
+## Watch
+
+- [Why My Teenage Code Was Terrible: Sorting Algorithms and Big O Notation](https://www.youtube.com/watch?v=RGuJga2Gl_k) · Tom Scott · 10 min: a real story of code that worked on small data and crawled on big data, exactly *The nested-loop trap*.
+- [Big O Notation](https://www.youtube.com/watch?v=v4cd1O4zkGw) · HackerRank · 9 min: a clear walk-through of dropping constants, dropping smaller terms and the common growth rates.
+- [CS50x 2025 - Lecture 3 - Algorithms](https://www.youtube.com/watch?v=iCx3zwK8Ms8) · CS50 · 127 min: Harvard's famous lecture, with linear versus binary search and a live race between sorting algorithms; watch the searching part first, the sorting part when you have time.
+
 ## Go deeper
 
 - [Big O notation (Wikipedia)](https://en.wikipedia.org/wiki/Big_O_notation):

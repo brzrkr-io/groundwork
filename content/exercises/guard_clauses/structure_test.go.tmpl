@@ -1,0 +1,105 @@
+package gate
+
+// This file reads exercise.go as a tree of Go syntax, the same way gofmt and
+// your editor do, so the tests can check how deeply the code nests as well
+// as what it does. You don't need to change it, but you're welcome to read
+// it.
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"slices"
+	"testing"
+)
+
+// source is exercise.go, parsed.
+type source struct {
+	fset *token.FileSet
+	file *ast.File
+}
+
+// parseExercise reads and parses exercise.go.
+func parseExercise(t *testing.T) source {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "exercise.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("can't read exercise.go: %v", err)
+	}
+	return source{fset, file}
+}
+
+// line returns the line of exercise.go that n starts on.
+func (s source) line(n ast.Node) int {
+	return s.fset.Position(n.Pos()).Line
+}
+
+// checkFlat fails if the function called name nests deeper than maxDepth or
+// uses else anywhere. Depth counts the if, for and switch statements around
+// a line: an if at the top of the function is depth 1, an if inside a for
+// loop is depth 2. An "else if" is the same depth as the if it follows.
+func checkFlat(t *testing.T, name string, maxDepth int) {
+	t.Helper()
+	src := parseExercise(t)
+	var f *ast.FuncDecl
+	for _, decl := range src.file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == name {
+			f = fn
+		}
+	}
+	if f == nil {
+		t.Fatalf("exercise.go has no function named %s; keep its name, the deploy tools call it", name)
+	}
+
+	elseIf := map[ast.Node]bool{} // ifs that are the "else if" of another if
+	var open []ast.Node           // the nodes we are inside right now
+	var elseLines []int           // where each else starts
+	depth, deepest, deepestLine := 0, 0, 0
+	ast.Inspect(f.Body, func(n ast.Node) bool {
+		if n == nil { // leaving the node on top of open
+			if nests(open[len(open)-1], elseIf) {
+				depth--
+			}
+			open = open[:len(open)-1]
+			return true
+		}
+		open = append(open, n)
+		if ifStmt, ok := n.(*ast.IfStmt); ok {
+			if ifStmt.Else != nil {
+				elseLines = append(elseLines, src.line(ifStmt.Else))
+			}
+			if next, ok := ifStmt.Else.(*ast.IfStmt); ok {
+				elseIf[next] = true
+			}
+		}
+		if nests(n, elseIf) {
+			depth++
+			if depth > deepest {
+				deepest, deepestLine = depth, src.line(n)
+			}
+		}
+		return true
+	})
+	if deepest > maxDepth {
+		t.Errorf("%s nests %d levels deep (the block starting on exercise.go:%d is %d levels in), want at most %d; turn each check into a guard clause that leaves early",
+			name, deepest, deepestLine, deepest, maxDepth)
+	}
+	if len(elseLines) > 0 {
+		slices.Sort(elseLines)
+		t.Errorf("%s still uses else, on exercise.go lines %v; when the if above it returns (or continues), the code after the if already is the else",
+			name, elseLines)
+	}
+}
+
+// nests reports whether n opens a new level: an if (but not an else if), a
+// for loop or a switch.
+func nests(n ast.Node, elseIf map[ast.Node]bool) bool {
+	switch n.(type) {
+	case *ast.IfStmt:
+		return !elseIf[n]
+	case *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+		return true
+	}
+	return false
+}

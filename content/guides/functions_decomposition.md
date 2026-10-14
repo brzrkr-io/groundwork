@@ -387,9 +387,17 @@ That's *abstraction*: hiding the details behind a simple promise, so you can thi
 ## Check yourself
 
 1. In `func restart(pod string, graceSeconds int) error`, what is the function's name, what are its parameters, and what's its result type? In the call `restart("web-7", 30)`, what are the arguments?
-2. With `root := 30` and `size := 120`, what does `diskPercent(size, root)` return, and why?
-3. In the scope example, why can't `main` use `total`? How should it get the value?
-4. In the stack trace above, which line crashed, and which line holds the real mistake?
+2. `func diskPercent(usedGB int, totalGB int) int` returns `usedGB * 100 / totalGB`. With `root := 30` and `size := 120`, what does `diskPercent(size, root)` return, and why?
+3. `sumDisks` declares `total := 0` inside its body, adds to it, and returns it. Why can't `main` use `total` directly? How should it get the value?
+4. Which line crashed, and which line holds the real mistake?
+
+   ```text
+   panic: runtime error: integer divide by zero
+   main.diskPercent(...)   main.go:6    return usedGB * 100 / totalGB
+   main.report(...)        main.go:10   pct := diskPercent(usedGB, totalGB)
+   main.main()             main.go:16   report("web-2", 10, 0)
+   ```
+
 5. Pure or not? `func nextBackoff(seconds int) int { return seconds * 2 }` and `func logLine(msg string) { fmt.Println(msg) }`.
 6. Decompose "rotate the logs on a server" into three or four functions. Give each a name and say what it returns.
 
@@ -421,6 +429,12 @@ That's *abstraction*: hiding the details behind a simple promise, so you can thi
 | side effect | Anything a function does besides returning a value: printing, files, network |
 | decomposition | Splitting a task into smaller named steps |
 | abstraction | Hiding details behind a simple promise, like a function's signature |
+
+## Watch
+
+- [What are "Pure Functions" and "Side Effects"?](https://www.youtube.com/watch?v=4IIWib5MZKg) · Academind · 5 min: a quick, clear take on pure functions versus ones that change things outside themselves; the examples are JavaScript, but the idea is the same in Go.
+- [Call Stacks - CS50 Shorts](https://www.youtube.com/watch?v=aCPkszeKRa4) · CS50 · 8 min: Doug Lloyd draws stack frames piling up as functions call each other and coming off as they return.
+- [Functions - CS50 Shorts](https://www.youtube.com/watch?v=n1glFqt3g38) · CS50 · 20 min: Doug Lloyd on why we split programs into functions, and how to define and call one; the code is C, but the ideas carry straight over to Go.
 
 ## Go deeper
 

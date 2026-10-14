@@ -1,0 +1,6 @@
+name,ip,env,role
+eu-web-01,10.20.1.11,prod,web
+eu-web-02,10.20.2.12,preprod,web
+eu-db-01,10.20.1.21,prod,db
+eu-queue-01,10.20.3.31,staging,queue
+eu-db-02,10.20.1.22,prod,db

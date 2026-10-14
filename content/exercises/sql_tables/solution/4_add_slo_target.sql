@@ -1,0 +1,7 @@
+-- Task 4: Add a column with a migration
+--
+-- The services table already has rows. Add a column named slo_target:
+-- a REAL, required, with 99.9 for every existing and future service
+-- that doesn't set its own.
+
+ALTER TABLE services ADD COLUMN slo_target REAL NOT NULL DEFAULT 99.9;

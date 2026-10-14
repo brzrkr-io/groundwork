@@ -13,7 +13,7 @@ import (
 // Pack layout (see content/AUTHORING.md):
 //
 //	README.md            instructions, copied to the workspace
-//	hints.md             hints, shown only inside gopherlings
+//	hints.md             hints, shown only inside groundwork
 //	*.tmpl               starter files; the suffix keeps Go tooling away from them
 //	go.mod.tmpl          optional; packs without one get a generated go.mod
 //	solution/...         files that replace or add to the starter
@@ -106,9 +106,9 @@ func Write(dir string, files map[string][]byte) error {
 }
 
 // Materialize writes a complete starter (or, with solution, solved) exercise
-// into dir, as module "gopherlings.local/<base of dir>".
+// into dir, as module "groundwork.local/<base of dir>".
 func Materialize(pack fs.FS, dir string, solution bool) error {
-	module := "gopherlings.local/" + path.Base(filepath.ToSlash(dir))
+	module := "groundwork.local/" + path.Base(filepath.ToSlash(dir))
 	assemble := Starter
 	if solution {
 		assemble = Solution

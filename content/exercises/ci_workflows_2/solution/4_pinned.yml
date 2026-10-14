@@ -1,0 +1,23 @@
+# Task 4: lint statusd, and tell the team's chat when lint fails.
+# In a real repository: .github/workflows/lint.yml.
+
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+      - if: failure()
+        uses: acme/slack-notify@521900d1e65917abfbbe5ca9f186b195f932c7bd # v1.4.2
+        with:
+          channel: statusd-alerts

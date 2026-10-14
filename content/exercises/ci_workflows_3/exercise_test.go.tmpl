@@ -1,0 +1,205 @@
+package matrix
+
+import (
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// The helpers readWorkflow, needs, pinned, findStep, findRun and stepNames
+// are in workflow_test.go.
+
+func TestMatrix(t *testing.T) {
+	const file = "1_matrix.yml"
+	test := findJob(t, file, readWorkflow(t, file), "test")
+	matrix := test.Strategy.Matrix
+	if len(matrix) == 0 {
+		t.Errorf("%s: job test has no strategy.matrix, want one with the variables go and os", file)
+	} else {
+		if got := slices.Sorted(maps.Keys(matrix)); !slices.Equal(got, []string{"go", "os"}) {
+			t.Errorf("%s: job test has the matrix variables %q, want go and os", file, got)
+		}
+		checkList(t, file, "go", matrix["go"], "1.26", "1.27")
+		checkList(t, file, "os", matrix["os"], "ubuntu-latest", "macos-latest")
+	}
+	switch ff := test.Strategy.FailFast; {
+	case ff == nil && matrix["fail-fast"] != nil:
+		t.Errorf("%s: fail-fast is inside matrix, where it's a variable; want it under strategy, next to matrix", file)
+	case ff == nil:
+		t.Errorf("%s: job test has no fail-fast under strategy, so it is true; want fail-fast: false", file)
+	case *ff:
+		t.Errorf("%s: job test has fail-fast: true, want fail-fast: false", file)
+	}
+	if compact(test.RunsOn) != "${{matrix.os}}" {
+		t.Errorf("%s: job test has runs-on: %v, want ${{ matrix.os }}", file, test.RunsOn)
+	}
+
+	setup := findStep(test.Steps, "actions/setup-go")
+	if findStep(test.Steps, "actions/checkout") != 0 || setup != 1 || findRun(test.Steps, "go test ./...") != 2 {
+		t.Fatalf("%s: job test has the steps %q, want actions/checkout, actions/setup-go, go test ./..., in that order",
+			file, stepNames(test.Steps))
+	}
+	with := test.Steps[setup].With
+	switch v, ok := with["go-version"]; {
+	case !ok:
+		t.Errorf("%s: setup-go has no go-version, want go-version: ${{ matrix.go }}", file)
+	case compact(v) != "${{matrix.go}}":
+		t.Errorf("%s: setup-go has go-version: %v, want ${{ matrix.go }}", file, v)
+	}
+	if v, ok := with["go-version-file"]; ok {
+		t.Errorf("%s: setup-go still has go-version-file: %v; the version comes from the matrix now, so remove it", file, v)
+	}
+}
+
+func TestCache(t *testing.T) {
+	const file = "2_cache.yml"
+	test := findJob(t, file, readWorkflow(t, file), "test")
+	checkout := findStep(test.Steps, "actions/checkout")
+	setup := findStep(test.Steps, "actions/setup-go")
+	cache := findStep(test.Steps, "actions/cache")
+	run := findRun(test.Steps, "go test ./...")
+	if checkout < 0 || setup < 0 || cache < 0 || run < 0 {
+		t.Fatalf("%s: job test has the steps %q, want actions/checkout, actions/setup-go, actions/cache, go test ./...",
+			file, stepNames(test.Steps))
+	}
+	if checkout > setup || setup > cache || cache > run {
+		t.Errorf("%s: job test has the steps %q, want actions/checkout, actions/setup-go, actions/cache, go test ./..., in that order",
+			file, stepNames(test.Steps))
+	}
+
+	switch c, ok := test.Steps[setup].With["cache"]; {
+	case !ok:
+		t.Errorf("%s: setup-go has no cache setting, so its own cache is on; want cache: false", file)
+	case c != false && c != "false":
+		t.Errorf("%s: setup-go has cache: %v, want cache: false", file, c)
+	}
+
+	c := test.Steps[cache]
+	checkPinned(t, file, "test", c)
+	paths := lines(c.With["path"])
+	for _, want := range []string{"~/go/pkg/mod", "~/.cache/go-build"} {
+		if !slices.Contains(paths, want) {
+			t.Errorf("%s: actions/cache has the paths %q, want one line with %s", file, paths, want)
+		}
+	}
+	key := compact(c.With["key"])
+	for _, want := range []string{"${{ runner.os }}", "${{ hashFiles('**/go.sum') }}"} {
+		if !strings.Contains(key, compact(want)) {
+			t.Errorf("%s: actions/cache has key: %v, want it to contain %s", file, c.With["key"], want)
+		}
+	}
+	restore := lines(c.With["restore-keys"])
+	if len(restore) == 0 {
+		t.Errorf("%s: actions/cache has no restore-keys, want one line: the start of the key, up to the hash", file)
+	}
+	for _, r := range restore {
+		if prefix := compact(r); prefix == key || !strings.HasPrefix(key, prefix) || !strings.Contains(prefix, "${{runner.os}}") {
+			t.Errorf("%s: actions/cache has the restore key %s for the key %v; want the start of the key, with ${{ runner.os }} but without the hash",
+				file, r, c.With["key"])
+		}
+	}
+}
+
+func TestArtifacts(t *testing.T) {
+	const file = "3_artifacts.yml"
+	wf := readWorkflow(t, file)
+
+	build := findJob(t, file, wf, "build")
+	gobuild := findRun(build.Steps, "go build -o bin/statusd .")
+	upload := findStep(build.Steps, "actions/upload-artifact")
+	if gobuild < 0 || upload < gobuild {
+		t.Errorf("%s: job build has the steps %q, want go build -o bin/statusd . and then actions/upload-artifact",
+			file, stepNames(build.Steps))
+	}
+	if upload >= 0 {
+		up := build.Steps[upload]
+		checkPinned(t, file, "build", up)
+		if up.With["name"] != "statusd" {
+			t.Errorf("%s: upload-artifact has name: %v, want statusd", file, up.With["name"])
+		}
+		if path, _ := up.With["path"].(string); strings.TrimSpace(path) != "bin/statusd" {
+			t.Errorf("%s: upload-artifact has path: %v, want bin/statusd", file, up.With["path"])
+		}
+	}
+
+	smoke := findJob(t, file, wf, "smoke")
+	if got := needs(smoke); !slices.Contains(got, "build") {
+		t.Errorf("%s: job smoke needs %q, want it to need build", file, got)
+	}
+	if smoke.RunsOn != "ubuntu-latest" {
+		t.Errorf("%s: job smoke has runs-on: %v, want ubuntu-latest", file, smoke.RunsOn)
+	}
+	download := findStep(smoke.Steps, "actions/download-artifact")
+	const command = "chmod +x statusd && ./statusd -version"
+	if run := findRun(smoke.Steps, command); download < 0 || run < download {
+		t.Fatalf("%s: job smoke has the steps %q, want actions/download-artifact and then %s",
+			file, stepNames(smoke.Steps), command)
+	}
+	down := smoke.Steps[download]
+	checkPinned(t, file, "smoke", down)
+	if down.With["name"] != "statusd" {
+		t.Errorf("%s: download-artifact has name: %v, want statusd", file, down.With["name"])
+	}
+	if path, ok := down.With["path"]; ok {
+		t.Errorf("%s: download-artifact has path: %v; leave it out, so the file lands in the working folder", file, path)
+	}
+}
+
+// findJob returns the job with the id, or stops the test if there is none.
+func findJob(t *testing.T, file string, wf workflow, id string) job {
+	t.Helper()
+	j, ok := wf.Jobs[id]
+	if !ok {
+		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, slices.Sorted(maps.Keys(wf.Jobs)), id)
+	}
+	return j
+}
+
+// checkPinned checks that a step's action names a fixed version.
+func checkPinned(t *testing.T, file, id string, s step) {
+	t.Helper()
+	if !pinned.MatchString(s.Uses) {
+		t.Errorf("%s: job %s uses %s, want @ and a version tag (such as @v6) or a full commit SHA, never a branch", file, id, s.Uses)
+	}
+}
+
+// checkList checks that the matrix variable name lists the strings want, in
+// any order.
+func checkList(t *testing.T, file, name string, v any, want ...string) {
+	t.Helper()
+	items, _ := v.([]any)
+	var got []string
+	for _, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			s = fmt.Sprint(item)
+			t.Errorf("%s: matrix %s has %s, a number, not a string; put quotes around it", file, name, s)
+		}
+		got = append(got, s)
+	}
+	if !slices.Equal(slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values(want))) {
+		t.Errorf("%s: matrix %s is %q, want %q", file, name, got, want)
+	}
+}
+
+// compact returns v as text without spaces, so ${{ matrix.go }} and
+// ${{matrix.go}} compare equal.
+func compact(v any) string {
+	s, _ := v.(string)
+	return strings.ReplaceAll(s, " ", "")
+}
+
+// lines splits a multi-line setting such as a cache path into its lines,
+// without blanks, surrounding spaces or a trailing slash.
+func lines(v any) []string {
+	s, _ := v.(string)
+	var list []string
+	for line := range strings.Lines(s) {
+		if line = strings.TrimSuffix(strings.TrimSpace(line), "/"); line != "" {
+			list = append(list, line)
+		}
+	}
+	return list
+}

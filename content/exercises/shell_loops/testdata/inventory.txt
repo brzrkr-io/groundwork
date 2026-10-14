@@ -1,0 +1,7 @@
+# production web tier
+web-01.prod.example.com
+web-02.prod.example.com
+
+# databases (primary first)
+db-01.prod.example.com
+db-02.prod.example.com

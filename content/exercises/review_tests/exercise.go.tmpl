@@ -1,0 +1,42 @@
+// Package retention is the Groundwork exercise "Code review: catch the bugs
+// in a PR".
+package retention
+
+import "time"
+
+// Backup is one backup archive in the storage bucket.
+type Backup struct {
+	Name   string
+	Taken  time.Time // when the backup was taken
+	Weekly bool      // weekly backups are kept longer than daily ones
+	Pinned bool      // pinned by an engineer, for example during an incident
+}
+
+// How long backups are kept.
+const (
+	dailyRetention  = 7 * 24 * time.Hour
+	weeklyRetention = 28 * 24 * time.Hour
+)
+
+// Expired reports whether the cleanup job may delete b at time now. The
+// rules are in the pull request description in the README.
+func Expired(b Backup, now time.Time) bool {
+	return expired(b, now)
+}
+
+// expired points at the real implementation. Groundwork' grader swaps in
+// broken versions to check that your tests catch them.
+var expired = realExpired
+
+// realExpired is the code in the pull request.
+func realExpired(b Backup, now time.Time) bool {
+	// TODO(4): Fix the two bugs your tests found.
+	age := now.Sub(b.Taken)
+	if b.Weekly {
+		return age > weeklyRetention
+	}
+	if b.Pinned {
+		return false
+	}
+	return age >= dailyRetention
+}

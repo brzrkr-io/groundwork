@@ -1,0 +1,106 @@
+package pipeline
+
+import (
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// The helpers readWorkflow, needs, pinned, findStep, findRun and stepNames
+// are in workflow_test.go.
+
+func TestCheckoutFirst(t *testing.T) {
+	const file = "1_test.yml"
+	test := findJob(t, file, readWorkflow(t, file), "test")
+	checkout := findStep(test.Steps, "actions/checkout")
+	setup := findStep(test.Steps, "actions/setup-go")
+	run := findRun(test.Steps, "go test ./...")
+	if len(test.Steps) != 3 || checkout != 0 || setup != 1 || run != 2 {
+		t.Errorf("%s: job test has the steps %q, want actions/checkout, actions/setup-go, go test ./..., in that order",
+			file, stepNames(test.Steps))
+	}
+}
+
+func TestQuotedVersions(t *testing.T) {
+	const file = "2_versions.yml"
+	test := findJob(t, file, readWorkflow(t, file), "test")
+	versions, ok := test.Strategy.Matrix["go"].([]any)
+	if !ok {
+		t.Fatalf("%s: job test has the matrix go: %v, want a list of Go versions", file, test.Strategy.Matrix["go"])
+	}
+	var got []string
+	for _, v := range versions {
+		s, ok := v.(string)
+		if !ok {
+			s = fmt.Sprint(v)
+			t.Errorf("%s: matrix go has %s, a number, not a string; put quotes around every version", file, s)
+		}
+		got = append(got, s)
+	}
+	if want := []string{"1.20", "1.26"}; !slices.Equal(got, want) {
+		t.Errorf("%s: GitHub reads matrix go as %q, want %q", file, got, want)
+	}
+	setup := findStep(test.Steps, "actions/setup-go")
+	if setup < 0 {
+		t.Fatalf("%s: job test has the steps %q, want an actions/setup-go step", file, stepNames(test.Steps))
+	}
+	if got := test.Steps[setup].With["go-version"]; compact(got) != "${{matrix.go}}" {
+		t.Errorf("%s: setup-go has go-version: %v, want ${{ matrix.go }}", file, got)
+	}
+}
+
+func TestDeployWaits(t *testing.T) {
+	const file = "3_deploy.yml"
+	wf := readWorkflow(t, file)
+	for _, id := range []string{"lint", "test"} {
+		if _, ok := wf.Jobs[id]; !ok {
+			t.Errorf("%s: the %s job is gone; keep it, deploy has to wait for it", file, id)
+		}
+	}
+	deploy := findJob(t, file, wf, "deploy")
+	if got := needs(deploy); !slices.Contains(got, "lint") || !slices.Contains(got, "test") {
+		t.Errorf("%s: job deploy needs %q, want it to need both lint and test", file, got)
+	}
+	if findRun(deploy.Steps, "./scripts/deploy.sh production") < 0 {
+		t.Errorf("%s: job deploy has the steps %q, want it to keep ./scripts/deploy.sh production", file, stepNames(deploy.Steps))
+	}
+}
+
+func TestPinnedActions(t *testing.T) {
+	const file = "4_pinned.yml"
+	wf := readWorkflow(t, file)
+	lint := findJob(t, file, wf, "lint")
+	for _, action := range []string{"actions/checkout", "actions/setup-go", "golangci/golangci-lint-action", "acme/slack-notify"} {
+		if findStep(lint.Steps, action) < 0 {
+			t.Errorf("%s: job lint has the steps %q, want a step that uses %s; pin it, don't remove it",
+				file, stepNames(lint.Steps), action)
+		}
+	}
+	for _, id := range slices.Sorted(maps.Keys(wf.Jobs)) {
+		for i, s := range wf.Jobs[id].Steps {
+			if s.Uses != "" && !pinned.MatchString(s.Uses) {
+				t.Errorf("%s: job %s, step %d uses %s, want @ and a version tag (@v7, @v1.4.2) or a full 40-character commit SHA",
+					file, id, i+1, s.Uses)
+			}
+		}
+	}
+}
+
+// findJob returns the job with the id, or stops the test if there is none.
+func findJob(t *testing.T, file string, wf workflow, id string) job {
+	t.Helper()
+	j, ok := wf.Jobs[id]
+	if !ok {
+		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, slices.Sorted(maps.Keys(wf.Jobs)), id)
+	}
+	return j
+}
+
+// compact returns v as text without spaces, so ${{ matrix.go }} and
+// ${{matrix.go}} compare equal.
+func compact(v any) string {
+	s, _ := v.(string)
+	return strings.ReplaceAll(s, " ", "")
+}

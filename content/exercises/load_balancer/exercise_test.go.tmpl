@@ -1,0 +1,262 @@
+package balancer
+
+import (
+	"errors"
+	"slices"
+	"sync"
+	"testing"
+	"time"
+)
+
+const (
+	a = "10.0.1.5:8080"
+	b = "10.0.1.6:8080"
+	c = "10.0.1.7:8080"
+	d = "10.0.1.8:8080"
+)
+
+// wantNext calls rr.Next once per address in want and checks each answer.
+func wantNext(t *testing.T, rr *RoundRobin, want ...string) {
+	t.Helper()
+	for i, w := range want {
+		got, err := rr.Next()
+		if got != w || err != nil {
+			t.Errorf("call %d: Next() = %q, %v, want %q, <nil>", i+1, got, err, w)
+		}
+	}
+}
+
+// wantHealthy checks rr.Healthy().
+func wantHealthy(t *testing.T, rr *RoundRobin, want ...string) {
+	t.Helper()
+	if got := rr.Healthy(); !slices.Equal(got, want) {
+		t.Errorf("Healthy() = %q, want %q", got, want)
+	}
+}
+
+func TestNext(t *testing.T) {
+	t.Run("three backends take turns", func(t *testing.T) {
+		rr := New(a, b, c)
+		wantNext(t, rr, a, b, c, a, b, c, a)
+	})
+
+	t.Run("two backends take turns", func(t *testing.T) {
+		rr := New(c, a)
+		wantNext(t, rr, c, a, c, a)
+	})
+
+	t.Run("one backend gets every request", func(t *testing.T) {
+		rr := New(d)
+		wantNext(t, rr, d, d, d)
+	})
+
+	// Run with -race, this case catches a Next without locking.
+	t.Run("many goroutines share the work evenly", func(t *testing.T) {
+		rr := New(a, b, c, d)
+		var mu sync.Mutex
+		counts := map[string]int{}
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Go(func() {
+				for range 25 {
+					addr, _ := rr.Next()
+					mu.Lock()
+					counts[addr]++
+					mu.Unlock()
+				}
+			})
+		}
+		wg.Wait()
+		for _, addr := range []string{a, b, c, d} {
+			if counts[addr] != 50 {
+				t.Errorf("after 200 calls to Next() from 8 goroutines, %s got %d requests, want 50", addr, counts[addr])
+			}
+		}
+	})
+}
+
+func TestMarkDownUp(t *testing.T) {
+	t.Run("down backends are skipped", func(t *testing.T) {
+		rr := New(a, b, c)
+		rr.MarkDown(b)
+		wantHealthy(t, rr, a, c)
+		wantNext(t, rr, a, c, a, c)
+	})
+
+	t.Run("two down, one left", func(t *testing.T) {
+		rr := New(a, b, c, d)
+		rr.MarkDown(a)
+		rr.MarkDown(c)
+		wantHealthy(t, rr, b, d)
+		wantNext(t, rr, b, d, b)
+	})
+
+	t.Run("MarkUp brings a backend back", func(t *testing.T) {
+		rr := New(a, b, c)
+		rr.MarkDown(b)
+		wantNext(t, rr, a, c) // rr.next is back at a
+		rr.MarkUp(b)
+		wantHealthy(t, rr, a, b, c)
+		wantNext(t, rr, a, b, c)
+	})
+
+	t.Run("the rotation carries on where it was", func(t *testing.T) {
+		rr := New(a, b, c, d)
+		wantNext(t, rr, a) // rr.next is at b
+		rr.MarkDown(b)
+		rr.MarkDown(c)
+		wantNext(t, rr, d, a, d)
+	})
+
+	t.Run("unknown addresses are ignored", func(t *testing.T) {
+		rr := New(a, b)
+		rr.MarkDown("10.9.9.9:8080")
+		rr.MarkUp("10.9.9.8:8080")
+		wantHealthy(t, rr, a, b)
+		rr.MarkDown(a)
+		rr.MarkDown(a) // twice is the same as once
+		wantHealthy(t, rr, b)
+		rr.MarkUp(b) // already up
+		wantHealthy(t, rr, b)
+	})
+
+	// Run with -race, this case catches MarkDown or MarkUp without locking.
+	t.Run("safe for concurrent use", func(t *testing.T) {
+		rr := New(a, b, c, d)
+		var wg sync.WaitGroup
+		for _, addr := range []string{a, b, c, d} {
+			wg.Go(func() {
+				rr.MarkDown(addr)
+				rr.Next()
+				rr.MarkUp(addr)
+				rr.Next()
+			})
+		}
+		wg.Wait()
+		wantHealthy(t, rr, a, b, c, d)
+	})
+}
+
+func TestNoHealthy(t *testing.T) {
+	t.Run("every backend down", func(t *testing.T) {
+		rr := New(a, b)
+		rr.MarkDown(a)
+		rr.MarkDown(b)
+		for range 2 {
+			got, err := rr.Next()
+			if got != "" || !errors.Is(err, ErrNoHealthy) {
+				t.Errorf("Next() with every backend down = %q, %v, want \"\", %v", got, err, ErrNoHealthy)
+			}
+		}
+	})
+
+	t.Run("no backends at all", func(t *testing.T) {
+		rr := New()
+		for range 2 {
+			got, err := rr.Next()
+			if got != "" || !errors.Is(err, ErrNoHealthy) {
+				t.Errorf("Next() with no backends = %q, %v, want \"\", %v", got, err, ErrNoHealthy)
+			}
+		}
+	})
+
+	t.Run("recovers where the rotation left off", func(t *testing.T) {
+		rr := New(a, b, c)
+		wantNext(t, rr, a) // rr.next is at b
+		rr.MarkDown(a)
+		rr.MarkDown(b)
+		rr.MarkDown(c)
+		if got, err := rr.Next(); got != "" || !errors.Is(err, ErrNoHealthy) {
+			t.Errorf("Next() with every backend down = %q, %v, want \"\", %v", got, err, ErrNoHealthy)
+		}
+		rr.MarkUp(a)
+		rr.MarkUp(b)
+		rr.MarkUp(c)
+		wantNext(t, rr, b, c, a)
+	})
+}
+
+func TestCheckAll(t *testing.T) {
+	t.Run("stores the probe results", func(t *testing.T) {
+		rr := New(a, b, c, d)
+		up := map[string]bool{a: true, b: false, c: true, d: true}
+		if got := rr.CheckAll(func(addr string) bool { return up[addr] }); got != 3 {
+			t.Errorf("CheckAll() with %s down = %d, want 3", b, got)
+		}
+		wantHealthy(t, rr, a, c, d)
+		wantNext(t, rr, a, c, d, a)
+
+		up = map[string]bool{a: false, b: true, c: false, d: false}
+		if got := rr.CheckAll(func(addr string) bool { return up[addr] }); got != 1 {
+			t.Errorf("CheckAll() with only %s up = %d, want 1", b, got)
+		}
+		wantHealthy(t, rr, b)
+	})
+
+	t.Run("brings back marked-down backends", func(t *testing.T) {
+		rr := New(a, b)
+		rr.MarkDown(a)
+		rr.MarkDown(b)
+		if got := rr.CheckAll(func(string) bool { return true }); got != 2 {
+			t.Errorf("CheckAll() with every probe passing = %d, want 2", got)
+		}
+		wantHealthy(t, rr, a, b)
+	})
+
+	t.Run("every backend fails", func(t *testing.T) {
+		rr := New(a, b, c)
+		if got := rr.CheckAll(func(string) bool { return false }); got != 0 {
+			t.Errorf("CheckAll() with every probe failing = %d, want 0", got)
+		}
+		if _, err := rr.Next(); !errors.Is(err, ErrNoHealthy) {
+			t.Errorf("Next() after every probe failed: err = %v, want %v", err, ErrNoHealthy)
+		}
+	})
+
+	t.Run("probes every backend once, in list order", func(t *testing.T) {
+		rr := New(c, a, b)
+		var probed []string
+		rr.CheckAll(func(addr string) bool {
+			probed = append(probed, addr)
+			return true
+		})
+		if want := []string{c, a, b}; !slices.Equal(probed, want) {
+			t.Errorf("CheckAll() probed %q, want %q", probed, want)
+		}
+	})
+
+	t.Run("Next keeps answering during a slow probe", func(t *testing.T) {
+		rr := New(a, b)
+		probing := make(chan struct{}) // closed when the probe of a starts
+		finish := make(chan struct{})  // closed to let that probe return
+		checked := make(chan struct{}) // closed when CheckAll returns
+		go func() {
+			rr.CheckAll(func(addr string) bool {
+				if addr == a {
+					close(probing)
+					<-finish // a slow health check
+				}
+				return true
+			})
+			close(checked)
+		}()
+		select {
+		case <-probing:
+		case <-checked:
+			t.Fatalf("CheckAll() returned without probing %s", a)
+		}
+
+		answered := make(chan string, 1)
+		go func() {
+			addr, _ := rr.Next()
+			answered <- addr
+		}()
+		select {
+		case <-answered:
+		case <-time.After(time.Second):
+			t.Error("Next() waited for CheckAll's probe to finish; don't hold rr.mu while probe runs")
+		}
+		close(finish)
+		<-checked
+	})
+}

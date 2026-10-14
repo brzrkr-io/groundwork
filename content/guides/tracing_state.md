@@ -355,7 +355,7 @@ The `!` flips `false` to `true`, so `failed++` runs only when a check fails. `fa
 1. After `a := 5`, then `b := a`, then `a = a + 1`, what are `a` and `b`?
 2. How many times does the body of `for i := 2; i <= 6; i++` run, and what is `i` when the loop stops?
 3. Trace this backoff loop. What does it print? `wait := 1`, `total := 0`, then `for attempt := 1; attempt <= 4; attempt++ { total = total + wait; wait = wait * 2 }`, then `fmt.Println(wait, total)`.
-4. Which values of `usedPct` would you choose to test the `critical`/`warn`/`ok` code, and why?
+4. Code prints `critical` if `usedPct >= 90`, else `warn` if `usedPct >= 75`, else `ok`. Which values of `usedPct` would you choose to test it, and why?
 5. A colleague says "the job retries 2 times". How many attempts is that in total?
 
 ## Answers
@@ -379,6 +379,12 @@ The `!` flips `false` to `true`, so `failed++` runs only when a check fails. `fa
 | off-by-one error | A loop or count that's one too many or one too few |
 | fencepost error | An off-by-one from mixing up counting items and counting gaps |
 | loop invariant | A sentence about the variables that's true at the top of every pass |
+
+## Watch
+
+- [86. CAMBRIDGE IGCSE (0478-0984) 7 Trace tables](https://www.youtube.com/watch?v=-7_kyY88Y9Y) · Craig'n'Dave · 6 min: a short walk-through of filling in a trace table row by row, the same technique as this guide.
+- [Loops - CS50 Shorts](https://www.youtube.com/watch?v=WgX8e_O7eG8) · CS50 · 9 min: Doug Lloyd shows the order a `for` loop's parts run in; the code is C, but its `for` loop works like Go's.
+- [How to Read Complex Code? • Felienne Hermans • GOTO 2021](https://www.youtube.com/watch?v=az-MX_M11lg) · GOTO Conferences · 33 min: why reading code is hard work for your short-term memory, and techniques that make it easier; good for when a trace feels like too much to hold in your head.
 
 ## Go deeper
 

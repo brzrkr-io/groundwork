@@ -1,0 +1,63 @@
+package naming2
+
+// This file reads exercise.go as a tree of Go syntax, the same way gofmt and
+// your editor do, so the tests can check names as well as behaviour. You
+// don't need to change it, but you're welcome to read it.
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strings"
+	"testing"
+)
+
+// source is exercise.go, parsed.
+type source struct {
+	fset *token.FileSet
+	file *ast.File
+}
+
+// parseExercise reads and parses exercise.go.
+func parseExercise(t *testing.T) source {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "exercise.go", nil, parser.ParseComments|parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("can't read exercise.go: %v", err)
+	}
+	return source{fset, file}
+}
+
+// fn returns the function called name, or nil if there is none.
+func (s source) fn(name string) *ast.FuncDecl {
+	for _, decl := range s.file.Decls {
+		if f, ok := decl.(*ast.FuncDecl); ok && f.Name.Name == name {
+			return f
+		}
+	}
+	return nil
+}
+
+// line returns the line of exercise.go that n starts on.
+func (s source) line(n ast.Node) int {
+	return s.fset.Position(n.Pos()).Line
+}
+
+// checkRenamed fails unless exercise.go has a function called want instead of
+// one called old, with a comment that starts with the new name.
+func checkRenamed(t *testing.T, src source, old, want string) {
+	t.Helper()
+	if src.fn(old) != nil {
+		t.Errorf("exercise.go still has a function named %s; rename it to %s", old, want)
+		return
+	}
+	f := src.fn(want)
+	if f == nil {
+		t.Errorf("exercise.go has no function named %s", want)
+		return
+	}
+	if f.Doc == nil || !strings.HasPrefix(f.Doc.Text(), want+" ") {
+		t.Errorf("exercise.go:%d: the comment above %s should start with %q, the function's new name", src.line(f), want, want)
+	}
+}

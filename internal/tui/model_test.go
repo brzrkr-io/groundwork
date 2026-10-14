@@ -9,9 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/pjanderson/gopherlings/internal/course"
-	"github.com/pjanderson/gopherlings/internal/session"
-	"github.com/pjanderson/gopherlings/internal/workspace"
+	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/pjanderson/groundwork/internal/session"
+	"github.com/pjanderson/groundwork/internal/workspace"
 )
 
 func newModel(t *testing.T) (*Model, *session.Session) {
@@ -156,7 +156,7 @@ func TestResetNeedsConfirmation(t *testing.T) {
 	}
 }
 
-func TestGuidesOpenOnTheCurrentModuleAndEscGoesBackOneLevel(t *testing.T) {
+func TestGuidesOpenOnTheNextUnreadAndEscGoesBackOneLevel(t *testing.T) {
 	files := fstest.MapFS{
 		"course.json": {Data: []byte(`{"modules":[
 			{"title":"One","dir":"one","guides":["state","debugging"],"exercises":[{"name":"a","title":"A"}]},
@@ -182,9 +182,11 @@ func TestGuidesOpenOnTheCurrentModuleAndEscGoesBackOneLevel(t *testing.T) {
 	}
 
 	press(m, "g")
-	if m.pane != paneGuides || s.Course.Guides[m.guideIdx].Name != "concurrency" {
-		t.Fatalf("g: pane %v, cursor on %s; want the guide list on module Two's guide", m.pane, s.Course.Guides[m.guideIdx].Name)
+	if m.pane != paneGuides || s.Course.Guides[m.guideIdx].Name != "state" {
+		t.Fatalf("g: pane %v, cursor on %s; want the guide list on the first unread guide", m.pane, s.Course.Guides[m.guideIdx].Name)
 	}
+	press(m, "j")
+	press(m, "j")
 	if view := m.View(); !strings.Contains(view, "many tasks making progress") || strings.Contains(view, "a method, not luck") {
 		t.Errorf("only the guide under the cursor shows its summary:\n%s", view)
 	}
@@ -192,6 +194,13 @@ func TestGuidesOpenOnTheCurrentModuleAndEscGoesBackOneLevel(t *testing.T) {
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.pane != paneGuide || m.guide.Name != "debugging" {
 		t.Fatalf("k, enter: pane %v, guide %v; want the Debugging guide open", m.pane, m.guide)
+	}
+	press(m, "m")
+	if !s.Read(m.guide) {
+		t.Fatal("m in a guide didn't mark it read")
+	}
+	if view := m.View(); !strings.Contains(view, "✓ read") {
+		t.Errorf("the guide doesn't show it's read:\n%s", view)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if m.pane != paneGuides {

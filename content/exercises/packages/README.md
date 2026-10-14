@@ -55,7 +55,7 @@ module called `example.com/shop`:
 >   `package billing is not in std`.
 > - **Author's choice:** the module path. Real projects use their repository
 >   address, like `github.com/acme/deploy-tool`. This course uses
->   `gopherlings.local/<exercise>`. Look in `go.mod` to see this one.
+>   `groundwork.local/<exercise>`. Look in `go.mod` to see this one.
 
 ### Where the name comes from
 
@@ -120,7 +120,7 @@ for `inventory` at the same time.
 
 The deploy planner was split into two packages in a hurry, and now nothing
 compiles. Each task fixes one compiler error. Until all three are fixed,
-Gopherlings shows compiler errors instead of a test checklist. That's
+Groundwork shows compiler errors instead of a test checklist. That's
 expected.
 
 ```text

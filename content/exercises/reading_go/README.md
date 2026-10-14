@@ -154,7 +154,7 @@ Announce("worker") // => "deploy worker!"
 level, then make `Banner` return `Tool`, a space, and `Version`.
 
 ```go
-Banner() // => "gopherlings v1.0.0"
+Banner() // => "groundwork v1.0.0"
 ```
 
 **Think it through:**

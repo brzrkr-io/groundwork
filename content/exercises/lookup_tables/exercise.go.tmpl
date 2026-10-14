@@ -1,0 +1,70 @@
+// Package routing is the Groundwork exercise "Lookup tables".
+package routing
+
+import "fmt"
+
+// TODO(1): Declare a route struct type and a routes map here, then make
+// Route look the alert up in the map instead of using a switch.
+
+// Route returns the team to page and the severity for an alert, by the
+// alert's name. Alerts it doesn't know go to "platform" at "info".
+func Route(alert string) (team, severity string) {
+	switch alert {
+	case "DiskFull":
+		return "infra", "critical"
+	case "DiskFillingUp":
+		return "infra", "warning"
+	case "NodeDown":
+		return "infra", "critical"
+	case "CertExpiring":
+		return "security", "warning"
+	case "LoginFailures":
+		return "security", "critical"
+	case "HighErrorRate":
+		return "payments", "critical"
+	case "SlowCheckout":
+		return "payments", "warning"
+	case "ReplicationLag":
+		return "data", "warning"
+	case "BackupFailed":
+		return "data", "critical"
+	default:
+		return "platform", "info"
+	}
+}
+
+// TODO(2): Declare an exitReasons map here, then make ExitReason look the
+// code up in the map instead of using a switch.
+
+// ExitReason explains a process exit code for a deploy log, such as
+// "command not found" for 127.
+func ExitReason(code int) string {
+	switch code {
+	case 0:
+		return "success"
+	case 1:
+		return "general error"
+	case 2:
+		return "misuse of a shell builtin"
+	case 126:
+		return "command found but not executable"
+	case 127:
+		return "command not found"
+	case 130:
+		return "interrupted (Ctrl-C)"
+	case 137:
+		return "killed (SIGKILL, often out of memory)"
+	case 143:
+		return "terminated (SIGTERM)"
+	default:
+		return fmt.Sprintf("exit code %d", code)
+	}
+}
+
+// Teams returns every team that Route can page, sorted alphabetically, each
+// once: the teams in the routing table and the team for unknown alerts.
+func Teams() []string {
+	// TODO(3): Add the PodCrashLooping route, then build this list from the
+	// routes map.
+	return nil
+}

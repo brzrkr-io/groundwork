@@ -521,6 +521,13 @@ the config*.
 | Conversion | Turning a value into another type on purpose: `float64(n)`. |
 | Zero value | The value a variable has before you set one: `0`, `""`, `false`. |
 
+## Watch
+
+- [Representing Numbers and Letters with Binary: Crash Course Computer Science #4](https://www.youtube.com/watch?v=1GSjbWt0c9M) · CrashCourse · 11 min: bits, bytes, binary counting and how letters become numbers, in one quick episode.
+- [Floating Point Numbers - Computerphile](https://www.youtube.com/watch?v=PZRI1IfStY0) · Computerphile · 9 min: Tom Scott explains why a computer can't store 0.1 exactly, the reason `0.1 + 0.2` isn't quite `0.3`.
+- [Characters, Symbols and the Unicode Miracle - Computerphile](https://www.youtube.com/watch?v=MijmeoH9LT4) · Computerphile · 10 min: how text is stored as bytes with UTF-8, and why one letter can take more than one byte, so `len` counts bytes.
+- [End of Time (Unix) - Numberphile](https://www.youtube.com/watch?v=QJQ691PTKsA) · Numberphile · 8 min: a real overflow waiting to happen: Unix clocks count seconds in a fixed-size number that runs out in 2038.
+
 ## Go deeper
 
 - [Wikipedia: Binary number](https://en.wikipedia.org/wiki/Binary_number)

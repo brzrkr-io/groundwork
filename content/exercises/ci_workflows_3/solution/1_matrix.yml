@@ -1,0 +1,24 @@
+# Task 1: inventory ships for Linux and macOS, and must build with this Go
+# release and the next one. In a real repository: .github/workflows/test.yml.
+
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.26', '1.27']
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go test ./...

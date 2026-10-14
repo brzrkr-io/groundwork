@@ -1,0 +1,44 @@
+package retention
+
+import (
+	"testing"
+	"time"
+)
+
+// now is the moment every test case runs at.
+var now = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
+
+// day is 24 hours, to write ages like 7 * day.
+const day = 24 * time.Hour
+
+func TestExpired(t *testing.T) {
+	tests := []struct {
+		name   string
+		age    time.Duration // how long before now the backup was taken
+		weekly bool
+		pinned bool
+		want   bool
+	}{
+		{name: "fresh daily", age: 1 * day, want: false},
+
+		// TODO(1): Add rows for the daily rule: 6 days old, exactly 7 days
+		// old, and 7 days and 1 hour old.
+
+		// TODO(2): Add rows for the weekly rule: 10 days old, exactly 28
+		// days old, and 28 days and 1 hour old.
+
+		// TODO(3): Add rows for a pinned daily backup 30 days old, a pinned
+		// weekly backup 60 days old, and a backup taken 1 hour in the
+		// future.
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b := Backup{Name: "db", Taken: now.Add(-tc.age), Weekly: tc.weekly, Pinned: tc.pinned}
+			if got := Expired(b, now); got != tc.want {
+				t.Errorf("Expired(backup taken %v before now, weekly %t, pinned %t) = %t, want %t",
+					tc.age, tc.weekly, tc.pinned, got, tc.want)
+			}
+		})
+	}
+}

@@ -1,4 +1,4 @@
-// Package services is the Gopherlings exercise "Benchmarks: sub-benchmarks and preallocation".
+// Package services is the Groundwork exercise "Benchmarks: sub-benchmarks and preallocation".
 package services
 
 // Service is one entry in the deploy manifest.
@@ -16,7 +16,7 @@ func Ports(svcs []Service) []int {
 	return ports(svcs)
 }
 
-// ports points at the real implementation. Gopherlings' grader swaps in
+// ports points at the real implementation. Groundwork' grader swaps in
 // broken versions to check that your benchmark catches them.
 var ports = realPorts
 

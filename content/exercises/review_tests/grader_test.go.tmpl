@@ -1,0 +1,153 @@
+package retention
+
+// This file is how Groundwork grades the test you write. You don't need to
+// change it, but you are welcome to read it.
+//
+// TestGrader re-runs your tests against the real code, where they must pass,
+// and then against each mutant below, where they must fail. A mutant is a
+// copy of the code with one deliberate bug: the kind a reviewer should catch.
+
+import (
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+	"time"
+)
+
+// learnerTests selects the tests you write in exercise_test.go.
+const learnerTests = "^TestExpired$"
+
+// mutate installs a version of Expired that answers bug(b, age) when it
+// returns true, and the real answer otherwise.
+func mutate(bug func(b Backup, age time.Duration) (answer, buggy bool)) func() {
+	return func() {
+		expired = func(b Backup, now time.Time) bool {
+			if answer, buggy := bug(b, now.Sub(b.Taken)); buggy {
+				return answer
+			}
+			return realExpired(b, now)
+		}
+	}
+}
+
+// mutants are the bugs your tests must catch.
+var mutants = []mutant{
+	{
+		name: "deletes_daily_at_exactly_7_days",
+		bug:  "a daily backup exactly 7 days old was deleted (>= instead of >)",
+		install: mutate(func(b Backup, age time.Duration) (bool, bool) {
+			return true, !b.Weekly && !b.Pinned && age == dailyRetention
+		}),
+	},
+	{
+		name: "keeps_daily_for_8_days",
+		bug:  "a daily backup 7 days and 1 hour old was kept (daily backups kept for 8 days)",
+		install: mutate(func(b Backup, age time.Duration) (bool, bool) {
+			return false, !b.Weekly && !b.Pinned && age > dailyRetention && age <= 8*24*time.Hour
+		}),
+	},
+	{
+		name: "weekly_uses_daily_retention",
+		bug:  "a weekly backup 10 days old was deleted (weekly backups kept for only 7 days)",
+		install: mutate(func(b Backup, age time.Duration) (bool, bool) {
+			return true, b.Weekly && !b.Pinned && age > dailyRetention && age <= weeklyRetention
+		}),
+	},
+	{
+		name: "deletes_weekly_at_exactly_28_days",
+		bug:  "a weekly backup exactly 28 days old was deleted (>= instead of >)",
+		install: mutate(func(b Backup, age time.Duration) (bool, bool) {
+			return true, b.Weekly && !b.Pinned && age == weeklyRetention
+		}),
+	},
+	{
+		name: "keeps_weekly_forever",
+		bug:  "a weekly backup 28 days and 1 hour old was kept (weekly backups never expired)",
+		install: mutate(func(b Backup, age time.Duration) (bool, bool) {
+			return false, b.Weekly
+		}),
+	},
+	{
+		name: "deletes_pinned_daily",
+		bug:  "a pinned daily backup 30 days old was deleted",
+		install: mutate(func(b Backup, age time.Duration) (bool, bool) {
+			return true, b.Pinned && !b.Weekly && age > dailyRetention
+		}),
+	},
+	{
+		name: "deletes_pinned_weekly",
+		bug:  "a pinned weekly backup 60 days old was deleted",
+		install: mutate(func(b Backup, age time.Duration) (bool, bool) {
+			return true, b.Pinned && b.Weekly && age > weeklyRetention
+		}),
+	},
+	{
+		name: "deletes_future_backups",
+		bug:  "a backup taken in the future (clock skew) was deleted",
+		install: mutate(func(b Backup, age time.Duration) (bool, bool) {
+			return true, age < 0
+		}),
+	},
+	{
+		name: "never_deletes",
+		bug:  "nothing was ever deleted",
+		install: mutate(func(b Backup, age time.Duration) (bool, bool) {
+			return false, true
+		}),
+	},
+}
+
+// Everything below is the same in every exercise that grades your tests.
+
+// mutantEnv names the environment variable that tells a re-run which mutant
+// to install.
+const mutantEnv = "GROUNDWORK_MUTANT"
+
+type mutant struct {
+	name    string // short name, used in GROUNDWORK_MUTANT and test output
+	bug     string // completes "your tests didn't notice when ..."
+	install func() // swaps the bug into the package
+}
+
+// TestMain runs before any test. In a re-run started by TestGrader, it
+// installs the mutant named by GROUNDWORK_MUTANT.
+func TestMain(m *testing.M) {
+	if name := os.Getenv(mutantEnv); name != "" {
+		for _, mu := range mutants {
+			if mu.name == name {
+				mu.install()
+			}
+		}
+	}
+	os.Exit(m.Run())
+}
+
+func TestGrader(t *testing.T) {
+	if _, rerun := os.LookupEnv(mutantEnv); rerun {
+		t.Skip("TestGrader does not run inside its own re-runs")
+	}
+	out, err := runLearnerTests("")
+	if strings.Contains(out, "no tests to run") {
+		t.Fatalf("found no test matching %s in exercise_test.go", learnerTests)
+	}
+	if err != nil {
+		t.Fatalf("your tests must pass on the real code first, but they failed:\n%s", out)
+	}
+	for _, mu := range mutants {
+		t.Run(mu.name, func(t *testing.T) {
+			if _, err := runLearnerTests(mu.name); err == nil {
+				t.Errorf("your tests didn't notice when %s", mu.bug)
+			}
+		})
+	}
+}
+
+// runLearnerTests re-runs this test binary with only your tests selected and
+// the named mutant installed. An empty name means the real code.
+func runLearnerTests(mutant string) (string, error) {
+	cmd := exec.Command(os.Args[0], "-test.run="+learnerTests)
+	cmd.Env = append(os.Environ(), mutantEnv+"="+mutant)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

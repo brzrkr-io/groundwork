@@ -1,0 +1,63 @@
+// Package guard2 is the Groundwork exercise "Guard clauses: fix the flipped
+// conditions".
+package guard2
+
+// DiskAlert returns "critical" when a disk is 95% full or more, "warning" when
+// it is 80% full or more, and "ok" below that.
+func DiskAlert(usedPercent int) string {
+	// TODO(1): Fix the two guards. They flipped < the wrong way.
+	if usedPercent > 95 {
+		return "critical"
+	}
+	if usedPercent > 80 {
+		return "warning"
+	}
+	return "ok"
+}
+
+// Pod is one copy of a service running in the cluster.
+type Pod struct {
+	Name     string
+	Ready    bool // passing its readiness probe
+	Restarts int  // how many times its container has restarted
+}
+
+// Routable returns the names of the pods the load balancer may send traffic
+// to, in order: pods that are ready and have restarted fewer than 3 times.
+func Routable(pods []Pod) []string {
+	var names []string
+	for _, pod := range pods {
+		// TODO(2): Fix this guard. It flipped each half, but not the &&.
+		if !pod.Ready && pod.Restarts >= 3 {
+			continue
+		}
+		names = append(names, pod.Name)
+	}
+	return names
+}
+
+// Host is one server in the fleet.
+type Host struct {
+	Name            string
+	Up              bool
+	DiskUsedPercent int
+}
+
+// PatchPlan splits hosts into the ones to patch tonight and the ones to
+// skip, each with its reason, such as "web-2: down". A host is skipped when
+// it is down, or else when its disk is 90% full or more. Both lists keep the
+// hosts' order.
+func PatchPlan(hosts []Host) (patch, skipped []string) {
+	for _, host := range hosts {
+		// TODO(3): Fix this guard. It records the reason but doesn't leave.
+		if !host.Up {
+			skipped = append(skipped, host.Name+": down")
+		}
+		if host.DiskUsedPercent >= 90 {
+			skipped = append(skipped, host.Name+": disk full")
+			continue
+		}
+		patch = append(patch, host.Name)
+	}
+	return patch, skipped
+}

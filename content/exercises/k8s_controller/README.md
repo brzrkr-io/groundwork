@@ -1,7 +1,7 @@
 # Project: Kubernetes controller
 
 You build a small but real Kubernetes controller. Whenever a team labels a
-Deployment `gopherlings.dev/expose: "true"`, your controller gives it a
+Deployment `groundwork.dev/expose: "true"`, your controller gives it a
 Service, keeps that Service correct, and removes it when the label goes away.
 
 **New here:** Services, owner references and garbage collection, `metav1.IsControlledBy`, writing your own methods; plus practice wiring informers, workqueues and reconcile together.
@@ -13,7 +13,7 @@ Service, keeps that Service correct, and removes it when the label goes away.
 A developer runs:
 
 ```text
-kubectl label deployment web -n shop gopherlings.dev/expose=true
+kubectl label deployment web -n shop groundwork.dev/expose=true
 ```
 
 A moment later a Service called `web` appears in the `shop` namespace. It
@@ -209,13 +209,13 @@ writing Services. Finish the controller.
 - `Key(d)`: the namespace, then `/`, then the name. Same format as
   `cache.MetaNamespaceKeyFunc`.
 - `Exposed(d)`: true only when `d`'s labels contain `ExposeLabel`
-  (`"gopherlings.dev/expose"`) with exactly the value `"true"`. A missing
+  (`"groundwork.dev/expose"`) with exactly the value `"true"`. A missing
   label, `"false"`, `"yes"` or a nil labels map all mean false.
 
 ```go
 Key(web)       // => "shop/web"
-Exposed(web)   // labels {"gopherlings.dev/expose": "true"}  => true
-Exposed(api)   // labels {"gopherlings.dev/expose": "yes"}   => false
+Exposed(web)   // labels {"groundwork.dev/expose": "true"}  => true
+Exposed(api)   // labels {"groundwork.dev/expose": "yes"}   => false
 ```
 
 **Think it through:**
@@ -383,7 +383,7 @@ seconds for each:
 3. Removing the label from `web` deletes its Service.
 
 Finally it cancels the context and expects `Run` to return nil within 5
-seconds. Gopherlings runs tests with `-race`, so workers must not share data
+seconds. Groundwork runs tests with `-race`, so workers must not share data
 unsafely.
 
 **Think it through:**

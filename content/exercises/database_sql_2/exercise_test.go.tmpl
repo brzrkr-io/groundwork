@@ -1,0 +1,173 @@
+package deploydb
+
+import (
+	"database/sql"
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+
+	_ "modernc.org/sqlite" // the SQLite driver, registered as "sqlite"
+)
+
+func TestFailedVersions(t *testing.T) {
+	db := openDB(t)
+	tests := []struct {
+		service string
+		want    []string
+	}{
+		{"checkout", []string{"v2.7.1", "v2.8.0"}},
+		{"search", []string{"v3.1.0"}},
+		{"api", nil},
+		{"x' OR '1'='1", nil},               // an attacker's input: must match nothing
+		{"o'brien-api", nil},                // a quote in a real name: must not break the query
+		{"'; DELETE FROM deploys; --", nil}, // must not delete anything
+	}
+	for _, tt := range tests {
+		t.Run(tt.service, func(t *testing.T) {
+			got, err := FailedVersions(db, tt.service)
+			if err != nil {
+				t.Fatalf("FailedVersions(db, %q) error = %v, want nil", tt.service, err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("FailedVersions(db, %q) = %q, want %q", tt.service, got, tt.want)
+			}
+		})
+	}
+	if n := countRows(t, db, `SELECT COUNT(*) FROM deploys`); n != 15 {
+		t.Errorf("after the FailedVersions calls, deploys has %d rows, want 15", n)
+	}
+}
+
+func TestMarkRolledBack(t *testing.T) {
+	t.Run("14", func(t *testing.T) {
+		db := openDB(t)
+		if err := MarkRolledBack(db, "14"); err != nil {
+			t.Fatalf(`MarkRolledBack(db, "14") error = %v, want nil`, err)
+		}
+		got := rolledBack(t, db)
+		if want := []int64{11, 14}; !reflect.DeepEqual(got, want) {
+			t.Errorf(`after MarkRolledBack(db, "14"), the rolled back deploys are %v, want %v`, got, want)
+		}
+	})
+	for _, id := range []string{"999", "14 OR 1=1", "0 OR status = 'failed'"} {
+		t.Run(id, func(t *testing.T) {
+			db := openDB(t)
+			err := MarkRolledBack(db, id)
+			if !errors.Is(err, ErrNotFound) {
+				t.Errorf("MarkRolledBack(db, %q) error = %v, want ErrNotFound", id, err)
+			}
+			got := rolledBack(t, db)
+			if want := []int64{11}; !reflect.DeepEqual(got, want) {
+				t.Errorf("after MarkRolledBack(db, %q), the rolled back deploys are %v, want %v (unchanged)", id, got, want)
+			}
+		})
+	}
+}
+
+func TestGetDeploy(t *testing.T) {
+	db := openDB(t)
+	tests := []struct {
+		id   int64
+		want Deploy
+	}{
+		{4, Deploy{ID: 4, Service: "checkout", Version: "v2.7.1", Status: "failed", FinishedAt: "2026-03-02 13:12:10"}},
+		{15, Deploy{ID: 15, Service: "search", Version: "v3.2.0", Status: "running", FinishedAt: ""}},
+	}
+	for _, tt := range tests {
+		got, err := GetDeploy(db, tt.id)
+		if err != nil {
+			t.Errorf("GetDeploy(db, %d) error = %v, want nil", tt.id, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("GetDeploy(db, %d) = %+v, want %+v", tt.id, got, tt.want)
+		}
+	}
+	if _, err := GetDeploy(db, 999); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetDeploy(db, 999) error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRelease(t *testing.T) {
+	t.Run("both changes are saved", func(t *testing.T) {
+		db := openDB(t)
+		if err := Release(db, "checkout", "v2.8.1", "2026-03-07 10:00:00"); err != nil {
+			t.Fatalf(`Release(db, "checkout", "v2.8.1", ...) error = %v, want nil`, err)
+		}
+		if n := countRows(t, db, `SELECT COUNT(*) FROM deploys WHERE service = 'checkout' AND version = 'v2.8.1' AND status = 'succeeded'`); n != 1 {
+			t.Errorf("after Release, there are %d succeeded deploys of checkout v2.8.1, want 1", n)
+		}
+		if n := countRows(t, db, `SELECT COUNT(*) FROM services WHERE name = 'checkout' AND current_version = 'v2.8.1'`); n != 1 {
+			t.Errorf("after Release, checkout's current_version is not v2.8.1")
+		}
+	})
+
+	t.Run("a failed update undoes the insert", func(t *testing.T) {
+		db := openDB(t)
+		// Make updating services fail, as a full disk or a lost connection would.
+		if _, err := db.Exec(`CREATE TRIGGER broken BEFORE UPDATE ON services BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`); err != nil {
+			t.Fatal(err)
+		}
+		if err := Release(db, "checkout", "v2.8.1", "2026-03-07 10:00:00"); err == nil {
+			t.Fatal("Release returned nil although updating services failed, want the error")
+		}
+		if n := countRows(t, db, `SELECT COUNT(*) FROM deploys WHERE version = 'v2.8.1'`); n != 0 {
+			t.Errorf("after a failed Release, deploys still holds %d row(s) for v2.8.1, want 0: the insert must be rolled back", n)
+		}
+	})
+}
+
+// rolledBack returns the ids of the deploys with status rolled_back.
+func rolledBack(t *testing.T, db *sql.DB) []int64 {
+	t.Helper()
+	rows, err := db.Query(`SELECT id FROM deploys WHERE status = 'rolled_back' ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return ids
+}
+
+// countRows runs a SELECT COUNT(*) query and returns the count.
+func countRows(t *testing.T, db *sql.DB, query string) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(query).Scan(&n); err != nil {
+		t.Fatalf("%s: %v", query, err)
+	}
+	return n
+}
+
+// openDB creates a fresh SQLite database file in a temporary directory,
+// loaded with testdata/schema.sql and testdata/data.sql.
+func openDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "deploys.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	for _, file := range []string{"testdata/schema.sql", "testdata/data.sql"} {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(data)); err != nil {
+			t.Fatalf("loading %s: %v", file, err)
+		}
+	}
+	return db
+}

@@ -1,0 +1,53 @@
+// Package naming is the Groundwork exercise "Naming things".
+package naming
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Pages returns one line per service that had at least limit critical
+// alerts, such as "api: 3 critical", in the order the services first appear
+// in lines. Each alert line looks like
+// "2026-10-13T09:00:00Z critical api disk almost full": a timestamp, a
+// level, the service, then the message.
+func Pages(lines []string, limit int) []string {
+	counts := map[string]int{}
+	var services []string // in the order they first appear
+	for _, line := range lines {
+		service, ok := criticalService(line)
+		if !ok {
+			continue
+		}
+		if counts[service] == 0 {
+			services = append(services, service)
+		}
+		counts[service]++
+	}
+	var pages []string
+	for _, service := range services {
+		if counts[service] >= limit {
+			pages = append(pages, pageLine(service, counts[service]))
+		}
+	}
+	return pages
+}
+
+// criticalService returns the service named in a critical alert line, and
+// false for any other line.
+func criticalService(line string) (string, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < 3 {
+		return "", false
+	}
+	level, service := fields[1], fields[2]
+	if level != "critical" {
+		return "", false
+	}
+	return service, true
+}
+
+// pageLine formats one page line, such as "api: 3 critical".
+func pageLine(service string, count int) string {
+	return fmt.Sprintf("%s: %d critical", service, count)
+}

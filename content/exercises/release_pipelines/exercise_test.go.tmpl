@@ -1,0 +1,242 @@
+package release
+
+import (
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// The helpers readWorkflow, triggers, needs, pinned, findStep, findRun,
+// expr, eventNames, stepNames and stringList are in workflow_test.go.
+
+func TestReleaseOnTags(t *testing.T) {
+	const file = "1_release.yml"
+	wf := readWorkflow(t, file)
+	if got := eventNames(wf); !slices.Equal(got, []string{"push"}) {
+		t.Errorf("%s: on has the events %q, want only push", file, got)
+	}
+	push := triggers(wf)["push"]
+	if tags := stringList(push, "tags"); !slices.Equal(tags, []string{"v*"}) {
+		t.Errorf("%s: push has tags %q, want ['v*']", file, tags)
+	}
+	for _, key := range []string{"branches", "branches-ignore"} {
+		if branches := stringList(push, key); branches != nil {
+			t.Errorf("%s: push has %s %q; a release runs on tags only, so leave branches out", file, key, branches)
+		}
+	}
+
+	if _, ok := wf.Jobs["test"]; !ok {
+		t.Errorf("%s: the test job is gone; keep it, release needs it", file)
+	}
+	release := checkJob(t, file, wf, "release")
+	if got := needs(release); !slices.Contains(got, "test") {
+		t.Errorf("%s: job release needs %q, want it to need test", file, got)
+	}
+	checkSetupSteps(t, file, "release", release.Steps)
+	const build = `go build -ldflags "-X main.version=${{ github.ref_name }}" -o bin/statusd .`
+	run := findRun(release.Steps, build)
+	if run < 0 {
+		if other := findRun(release.Steps, "go build"); other >= 0 {
+			t.Errorf("%s: job release runs\n\t%s\nwant\n\t%s", file, strings.TrimSpace(release.Steps[other].Run), build)
+		} else {
+			t.Errorf("%s: job release has no step that runs %s", file, build)
+		}
+	} else if run < findStep(release.Steps, "actions/setup-go") {
+		t.Errorf("%s: job release has steps in the order %v, want checkout, setup-go, go build", file, stepNames(release.Steps))
+	}
+}
+
+func TestPushImage(t *testing.T) {
+	const file = "2_image.yml"
+	wf := readWorkflow(t, file)
+	image := checkJob(t, file, wf, "image")
+	checkPermissions(t, file, "job image", image.Permissions, map[string]string{"contents": "read", "packages": "write"})
+
+	steps := image.Steps
+	checkout := findStep(steps, "actions/checkout")
+	login := findStep(steps, "docker/login-action")
+	build := findStep(steps, "docker/build-push-action")
+	if checkout < 0 || login < 0 || build < 0 {
+		t.Fatalf("%s: job image has steps %v, want actions/checkout, docker/login-action and docker/build-push-action", file, stepNames(steps))
+	}
+	if login < checkout || build < login {
+		t.Errorf("%s: job image has steps in the order %v, want checkout, login, build-push", file, stepNames(steps))
+	}
+	for _, i := range []int{checkout, login, build} {
+		if !pinned.MatchString(steps[i].Uses) {
+			t.Errorf("%s: job image uses %s; pin it to a version, such as @v4", file, steps[i].Uses)
+		}
+	}
+
+	checkInput(t, file, steps[login], "registry", "ghcr.io")
+	checkInput(t, file, steps[login], "username", "${{ github.actor }}")
+	checkInput(t, file, steps[login], "password", "${{ secrets.GITHUB_TOKEN }}")
+
+	checkInput(t, file, steps[build], "context", ".")
+	checkInput(t, file, steps[build], "push", "true")
+	checkListInput(t, file, steps[build], "tags", "ghcr.io/acme/statusd:${{ github.ref_name }}")
+	checkListInput(t, file, steps[build], "build-args", "VERSION=${{ github.ref_name }}")
+}
+
+func TestPromote(t *testing.T) {
+	const file = "3_deploy.yml"
+	wf := readWorkflow(t, file)
+	if _, ok := wf.Jobs["image"]; !ok {
+		t.Errorf("%s: the image job is gone; keep it, the deploys need its image", file)
+	}
+
+	checkDeployJob(t, file, wf, "deploy-staging", "image", "staging")
+
+	production := checkDeployJob(t, file, wf, "deploy-production", "deploy-staging", "production")
+	switch c := production.Concurrency.(type) {
+	case string:
+		if c != "production" {
+			t.Errorf("%s: job deploy-production has concurrency %q, want production", file, c)
+		}
+	case map[string]any:
+		if c["group"] != "production" {
+			t.Errorf("%s: job deploy-production has concurrency group %v, want production", file, c["group"])
+		}
+		if c["cancel-in-progress"] == true {
+			t.Errorf("%s: job deploy-production has cancel-in-progress: true; a deploy stopped halfway is worse than a wait, so leave it out", file)
+		}
+	default:
+		t.Errorf("%s: job deploy-production has no concurrency; want concurrency: production, so two production deploys never overlap", file)
+	}
+}
+
+// checkJob checks that the workflow has the job id, running on
+// ubuntu-latest, and returns it.
+func checkJob(t *testing.T, file string, wf workflow, id string) job {
+	t.Helper()
+	j, ok := wf.Jobs[id]
+	if !ok {
+		ids := slices.Sorted(maps.Keys(wf.Jobs))
+		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, ids, id)
+	}
+	if j.RunsOn != "ubuntu-latest" {
+		t.Errorf("%s: job %s has runs-on %v, want ubuntu-latest", file, id, j.RunsOn)
+	}
+	return j
+}
+
+// checkSetupSteps checks that a job starts with a pinned checkout, then a
+// pinned setup-go that reads go.mod.
+func checkSetupSteps(t *testing.T, file, id string, steps []step) {
+	t.Helper()
+	checkout := findStep(steps, "actions/checkout")
+	setup := findStep(steps, "actions/setup-go")
+	if checkout < 0 || setup < 0 {
+		t.Fatalf("%s: job %s has steps %v, want actions/checkout and actions/setup-go", file, id, stepNames(steps))
+	}
+	if setup < checkout {
+		t.Errorf("%s: job %s runs setup-go before checkout; checkout comes first", file, id)
+	}
+	for _, i := range []int{checkout, setup} {
+		if !pinned.MatchString(steps[i].Uses) {
+			t.Errorf("%s: job %s uses %s; pin it to a version, such as @v7", file, id, steps[i].Uses)
+		}
+	}
+	if got := steps[setup].With["go-version-file"]; got != "go.mod" {
+		t.Errorf("%s: job %s: setup-go has go-version-file %v, want go.mod", file, id, got)
+	}
+}
+
+// checkPermissions checks that a permissions block grants exactly want.
+func checkPermissions(t *testing.T, file, where string, permissions any, want map[string]string) {
+	t.Helper()
+	got := map[string]string{}
+	block, ok := permissions.(map[string]any)
+	switch {
+	case permissions == nil:
+		t.Errorf("%s: %s has no permissions, want %s", file, where, describe(want))
+		return
+	case !ok:
+		t.Errorf("%s: %s has permissions: %v, want %s", file, where, permissions, describe(want))
+		return
+	}
+	for name, level := range block {
+		got[name] = fmt.Sprint(level)
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("%s: %s has permissions %s, want %s", file, where, describe(got), describe(want))
+	}
+}
+
+// describe writes permissions as "contents: read, packages: write".
+func describe(permissions map[string]string) string {
+	var parts []string
+	for _, name := range slices.Sorted(maps.Keys(permissions)) {
+		parts = append(parts, name+": "+permissions[name])
+	}
+	return strings.Join(parts, ", ")
+}
+
+// input returns an action input from the step's "with", as text.
+func input(s step, key string) string {
+	v, ok := s.With[key]
+	if !ok {
+		return ""
+	}
+	return expr(strings.TrimSpace(fmt.Sprint(v)))
+}
+
+// checkInput checks that the step's input key is want.
+func checkInput(t *testing.T, file string, s step, key, want string) {
+	t.Helper()
+	if got := input(s, key); got != want {
+		t.Errorf("%s: %s has %s: %q, want %q", file, s.Uses, key, got, want)
+	}
+}
+
+// checkListInput checks that the step's input key, a list with one item per
+// line (or separated by commas), has want as one of its items.
+func checkListInput(t *testing.T, file string, s step, key, want string) {
+	t.Helper()
+	items := strings.FieldsFunc(input(s, key), func(r rune) bool { return r == '\n' || r == ',' })
+	for i, item := range items {
+		items[i] = strings.TrimSpace(item)
+	}
+	if !slices.Contains(items, want) {
+		t.Errorf("%s: %s has %s %q, want %q among them", file, s.Uses, key, items, want)
+	}
+}
+
+// checkDeployJob checks a deploy job: it needs the job before it, uses the
+// environment, checks out the code (pinned), and then runs
+// ./deploy.sh <environment> ${{ github.ref_name }}. It must not build an
+// image of its own.
+func checkDeployJob(t *testing.T, file string, wf workflow, id, after, environment string) job {
+	t.Helper()
+	j := checkJob(t, file, wf, id)
+	if got := needs(j); !slices.Contains(got, after) {
+		t.Errorf("%s: job %s needs %q, want it to need %s", file, id, got, after)
+	}
+	env := j.Environment
+	if m, ok := env.(map[string]any); ok {
+		env = m["name"]
+	}
+	if env != environment {
+		t.Errorf("%s: job %s has environment %v, want %s", file, id, env, environment)
+	}
+	if findStep(j.Steps, "docker/build-push-action") >= 0 || findRun(j.Steps, "docker build") >= 0 {
+		t.Errorf("%s: job %s builds an image; deploy the one the image job pushed instead", file, id)
+	}
+	checkout := findStep(j.Steps, "actions/checkout")
+	if checkout < 0 {
+		t.Errorf("%s: job %s has steps %v, want actions/checkout first: deploy.sh is in the repository", file, id, stepNames(j.Steps))
+	} else if !pinned.MatchString(j.Steps[checkout].Uses) {
+		t.Errorf("%s: job %s uses %s; pin it to a version, such as @v7", file, id, j.Steps[checkout].Uses)
+	}
+	deploy := "./deploy.sh " + environment + " ${{ github.ref_name }}"
+	run := findRun(j.Steps, deploy)
+	switch {
+	case run < 0:
+		t.Errorf("%s: job %s has steps %v, want a step that runs %s", file, id, stepNames(j.Steps), deploy)
+	case run < checkout:
+		t.Errorf("%s: job %s runs deploy.sh before checkout; checkout comes first", file, id)
+	}
+	return j
+}

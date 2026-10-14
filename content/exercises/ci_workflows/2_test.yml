@@ -1,0 +1,4 @@
+# Task 2: vet and test statusd on pushes to main and on every pull request.
+# In a real repository: .github/workflows/test.yml.
+
+# TODO(2): Write the workflow named test, with one job "test".

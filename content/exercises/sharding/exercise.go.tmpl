@@ -1,0 +1,39 @@
+// Package sharding is the Groundwork exercise "Sharding: route keys and plan a rebalance".
+package sharding
+
+// Move is one key that has to be copied to another shard during a rebalance.
+type Move struct {
+	Key  string
+	From int // the key's shard before the rebalance
+	To   int // the key's shard after it
+}
+
+// ShardFor returns the shard, from 0 to n-1, that key lives on: the 32-bit
+// FNV-1a hash of key, modulo n. n must be at least 1.
+func ShardFor(key string, n int) int {
+	// TODO(1): Hash key with FNV-1a (32-bit) and return the hash modulo n.
+	// Add "hash/fnv" to the imports.
+	return 0
+}
+
+// Group returns n slices, one per shard, where slice i holds the keys that
+// live on shard i, in the order they appear in keys.
+func Group(keys []string, n int) [][]string {
+	// TODO(2): Make one slice per shard and append each key to its shard's.
+	return nil
+}
+
+// Plan returns a Move for every key whose shard changes when the number of
+// shards goes from from to to, in the order the keys appear in keys.
+func Plan(keys []string, from, to int) []Move {
+	// TODO(3): Compare each key's shard before and after, and list the
+	// keys that change.
+	return nil
+}
+
+// MovedFraction returns the share of keys, from 0 to 1, whose shard changes
+// when the number of shards goes from from to to. It returns 0 for no keys.
+func MovedFraction(keys []string, from, to int) float64 {
+	// TODO(4): Divide the number of moves by the number of keys.
+	return 0
+}

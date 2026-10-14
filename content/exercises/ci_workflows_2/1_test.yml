@@ -1,0 +1,22 @@
+# Task 1: test inventory on pushes to main and on every pull request.
+# In a real repository: .github/workflows/test.yml.
+
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # TODO(1): Every run fails in the "go test" step with
+    #   go: go.mod file not found in current directory or any parent directory
+    # but the same command passes on your laptop. Make the job find the code.
+    steps:
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+      - run: go test ./...
+      - uses: actions/checkout@v7

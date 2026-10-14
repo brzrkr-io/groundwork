@@ -1,4 +1,4 @@
-// Package retry is the Gopherlings exercise "Fakes: a fake clock for retries".
+// Package retry is the Groundwork exercise "Fakes: a fake clock for retries".
 package retry
 
 import (
@@ -31,7 +31,7 @@ func Retry(s Sleeper, attempts int, fn func() error) error {
 	return retry(s, attempts, fn)
 }
 
-// retry points at the real implementation. Gopherlings' grader swaps in
+// retry points at the real implementation. Groundwork' grader swaps in
 // broken versions to check that your tests catch them.
 var retry = realRetry
 

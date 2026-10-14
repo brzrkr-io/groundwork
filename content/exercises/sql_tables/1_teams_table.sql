@@ -1,0 +1,8 @@
+-- Task 1: Create the teams table
+--
+-- Create a table named teams with three columns:
+--   id             INTEGER, the primary key
+--   name           TEXT, required and unique
+--   slack_channel  TEXT, required
+--
+-- TODO(1): Write your statement below.

@@ -1,0 +1,7 @@
+-- Task 4: Rank the noisiest teams in March
+--
+-- Return each team with at least 2 incidents opened in March 2026:
+-- its name (team) and that number (incidents), most incidents
+-- first, then A to Z by team.
+--
+-- TODO(4): Write your query below.

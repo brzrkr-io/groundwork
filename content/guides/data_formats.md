@@ -472,6 +472,13 @@ You'll handle cert expiry and maintenance windows in *Time and durations*.
 | RFC 3339 | the standard timestamp format, e.g. `2026-10-11T01:31:00Z` |
 | UTC | the world's reference time zone; `Z` in a timestamp |
 
+## Watch
+
+- [Characters, Symbols and the Unicode Miracle - Computerphile](https://www.youtube.com/watch?v=MijmeoH9LT4) · Computerphile · 10 min: Tom Scott shows how UTF-8 turns characters into bytes, which is why `len("Malmö")` is 6.
+- [The Problem with Time & Timezones - Computerphile](https://www.youtube.com/watch?v=-5wpm-gesOY) · Computerphile · 10 min: a funny rant on why time zones are a mess, and why you store timestamps in UTC.
+- [Yaml Tutorial | Learn YAML in 18 mins](https://www.youtube.com/watch?v=1uFVr15xDGg) · TechWorld with Nana · 18 min: YAML syntax walked through with real Kubernetes manifests, the files you'll parse most in ops.
+- [Learn Regular Expressions In 20 Minutes](https://www.youtube.com/watch?v=rhzKDrUiJVk) · Web Dev Simplified · 21 min: a beginner-friendly tour of regex patterns built up one piece at a time in a live tester.
+
 ## Go deeper
 
 - [JSON and Go](https://go.dev/blog/json): the Go team's walkthrough of marshalling and unmarshalling, including how unknown fields are handled.

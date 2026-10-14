@@ -1,0 +1,111 @@
+package rotate
+
+import (
+	"slices"
+	"strings"
+	"testing"
+	"time"
+)
+
+// maxPlanLines is how long Plan may be once the decisions are helpers.
+const maxPlanLines = 12
+
+// checkPlan fails if Plan no longer does what it did before you started.
+// It runs first in every test: a refactor must never change behaviour.
+func checkPlan(t *testing.T) {
+	t.Helper()
+	now := time.Date(2026, 10, 13, 3, 0, 0, 0, time.UTC)
+	const mib = 1 << 20
+	files := []File{
+		{"app.log", 150 * mib, now},
+		{"worker.log", 100 * mib, now},
+		{"cron.log", 100*mib - 1, now},
+		{"app.log.1", 80 * mib, now.Add(-2 * time.Hour)},
+		{"app.log.2", 80 * mib, now.Add(-24 * time.Hour)},
+		{"app.log.3", 80 * mib, now.Add(-25 * time.Hour)},
+		{"app.log.4.gz", 9 * mib, now.Add(-3 * 24 * time.Hour)},
+		{"app.log.5.gz", 9 * mib, now.Add(-7 * 24 * time.Hour)},
+		{"app.log.6.gz", 9 * mib, now.Add(-7*24*time.Hour - time.Minute)},
+		{"worker.log.1", 60 * mib, now.Add(-10 * 24 * time.Hour)},
+	}
+	want := []string{
+		"rotate app.log",
+		"rotate worker.log",
+		"keep cron.log",
+		"keep app.log.1",
+		"keep app.log.2",
+		"compress app.log.3",
+		"keep app.log.4.gz",
+		"keep app.log.5.gz",
+		"delete app.log.6.gz",
+		"delete worker.log.1",
+	}
+	got := Plan(files, now)
+	if !slices.Equal(got, want) {
+		t.Fatalf("Plan(the README's example files) =\n%s\nwant\n%s\nthe refactor changed what the code does; undo your last step and try a smaller one",
+			strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestNames(t *testing.T) {
+	checkPlan(t)
+	src := parseExercise(t)
+	for _, f := range src.funcs() {
+		for _, id := range names(f) {
+			if id.Name != "_" && id.Name != "ok" && len(id.Name) < 3 {
+				t.Errorf("exercise.go:%d: %s still has a variable or parameter named %q; give it a name that says what it holds",
+					src.line(id), f.Name.Name, id.Name)
+			}
+		}
+	}
+}
+
+func TestNamedConstants(t *testing.T) {
+	checkPlan(t)
+	src := parseExercise(t)
+	declared := src.constants()
+	for _, name := range []string{"rotateSize", "compressAfter", "deleteAfter"} {
+		if !declared[name] {
+			t.Errorf("exercise.go has no constant named %s; declare it with const, outside any function", name)
+		}
+	}
+	for _, f := range src.funcs() {
+		for _, lit := range numbers(f) {
+			t.Errorf("exercise.go:%d: %s still uses the number %s; use a named constant that says what it means",
+				src.line(lit), f.Name.Name, lit.Value)
+		}
+	}
+}
+
+func TestExtractFunctions(t *testing.T) {
+	checkPlan(t)
+	src := parseExercise(t)
+	for _, name := range []string{"liveAction", "rotatedAction"} {
+		if src.fn(name) == nil {
+			t.Errorf("exercise.go has no function named %s yet", name)
+		}
+	}
+	plan := src.fn("Plan")
+	if plan == nil {
+		t.Fatal("exercise.go has no function named Plan; keep it, the rotator calls it")
+	}
+	if n := src.lines(plan); n > maxPlanLines {
+		t.Errorf("Plan is %d lines long, want %d or fewer: it should loop over the files and hand each decision to a helper", n, maxPlanLines)
+	}
+}
+
+func TestGuardClauses(t *testing.T) {
+	checkPlan(t)
+	src := parseExercise(t)
+	for _, f := range src.funcs() {
+		deepest, line, elseLines := src.shape(f)
+		if deepest > 2 {
+			t.Errorf("%s nests %d levels deep (the block starting on exercise.go:%d is %d levels in), want at most 2; turn each check into a guard clause that leaves early",
+				f.Name.Name, deepest, line, deepest)
+		}
+		if len(elseLines) > 0 {
+			t.Errorf("%s still uses else, on exercise.go lines %v; when the if above it returns (or continues), the code after the if already is the else",
+				f.Name.Name, elseLines)
+		}
+	}
+}

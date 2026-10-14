@@ -1,0 +1,195 @@
+package ci
+
+import (
+	"encoding/json"
+	"os"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+
+	"sigs.k8s.io/yaml"
+)
+
+// This file reads GitHub Actions workflows for the tests. You don't need to
+// change it. The structs below list the workflow fields the tests look at;
+// GitHub knows many more.
+
+// workflow is one workflow file.
+type workflow struct {
+	Name        string         `json:"name"`
+	On          any            `json:"on"` // see triggers
+	Permissions any            `json:"permissions"`
+	Env         map[string]any `json:"env"`
+	Jobs        map[string]job `json:"jobs"`
+}
+
+// job is one entry under "jobs:". Jobs run in parallel unless "needs" says
+// which jobs must succeed first.
+type job struct {
+	Name        string         `json:"name"`
+	RunsOn      any            `json:"runs-on"`
+	Needs       any            `json:"needs"` // one job name, or a list
+	If          string         `json:"if"`
+	Permissions any            `json:"permissions"`
+	Environment any            `json:"environment"`
+	Concurrency any            `json:"concurrency"`
+	Env         map[string]any `json:"env"`
+	Strategy    struct {
+		FailFast *bool          `json:"fail-fast"`
+		Matrix   map[string]any `json:"matrix"`
+	} `json:"strategy"`
+	Steps []step `json:"steps"`
+}
+
+// step is one entry under "steps:": either "uses" an action or "run"s
+// shell commands.
+type step struct {
+	ID   string         `json:"id"`
+	Name string         `json:"name"`
+	If   string         `json:"if"`
+	Uses string         `json:"uses"`
+	Run  string         `json:"run"`
+	With map[string]any `json:"with"`
+	Env  map[string]any `json:"env"`
+}
+
+// readWorkflow parses the workflow file name in the exercise folder.
+func readWorkflow(t *testing.T, name string) workflow {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("%s is not valid YAML: %v", name, err)
+	}
+	// This YAML library follows the older YAML 1.1 rules, where a bare `on`
+	// means the boolean true. GitHub reads it as the word "on", so put the
+	// triggers back under that name.
+	if on, ok := doc["true"]; ok {
+		doc["on"] = on
+		delete(doc, "true")
+	}
+	js, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	var wf workflow
+	if err := json.Unmarshal(js, &wf); err != nil {
+		t.Fatalf("%s doesn't have the shape of a workflow: %v", name, err)
+	}
+	return wf
+}
+
+// triggers returns the events under "on:" with their settings. GitHub allows
+// three spellings, and all of them end up the same here:
+//
+//	on: push                 -> {"push": nil}
+//	on: [push, pull_request] -> {"push": nil, "pull_request": nil}
+//	on:
+//	  push:
+//	    branches: [main]     -> {"push": {"branches": ["main"]}}
+func triggers(wf workflow) map[string]any {
+	events := map[string]any{}
+	switch on := wf.On.(type) {
+	case string:
+		events[on] = nil
+	case []any:
+		for _, event := range on {
+			if name, ok := event.(string); ok {
+				events[name] = nil
+			}
+		}
+	case map[string]any:
+		events = on
+	}
+	return events
+}
+
+// needs returns the jobs a job waits for. GitHub allows one name or a list.
+func needs(j job) []string {
+	switch n := j.Needs.(type) {
+	case string:
+		return []string{n}
+	case []any:
+		var names []string
+		for _, name := range n {
+			if s, ok := name.(string); ok {
+				names = append(names, s)
+			}
+		}
+		return names
+	}
+	return nil
+}
+
+// pinned matches an action reference that names a fixed version: a version
+// tag such as "actions/checkout@v7" or "@v7.0.1", or a full 40-character
+// commit hash.
+var pinned = regexp.MustCompile(`^[\w.-]+/[\w./-]+@(v\d+(\.\d+){0,2}|[0-9a-f]{40})$`)
+
+// findStep returns the index of the first step that uses action (such as
+// "actions/checkout", with or without a version), or -1.
+func findStep(steps []step, action string) int {
+	for i, s := range steps {
+		if s.Uses == action || strings.HasPrefix(s.Uses, action+"@") {
+			return i
+		}
+	}
+	return -1
+}
+
+// findRun returns the index of the first step whose "run" contains command,
+// or -1.
+func findRun(steps []step, command string) int {
+	for i, s := range steps {
+		if strings.Contains(s.Run, command) {
+			return i
+		}
+	}
+	return -1
+}
+
+// eventNames lists the workflow's trigger events, sorted.
+func eventNames(wf workflow) []string {
+	var names []string
+	for name := range triggers(wf) {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// stepNames describes each step briefly: the action it uses or its command.
+func stepNames(steps []step) []string {
+	var names []string
+	for _, s := range steps {
+		name := s.Uses
+		if name == "" {
+			name, _, _ = strings.Cut(strings.TrimSpace(s.Run), "\n")
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+// stringList reads settings[key] as a list of strings, such as the
+// branches of a push event. A single string counts as a list of one.
+func stringList(settings any, key string) []string {
+	m, _ := settings.(map[string]any)
+	switch v := m[key].(type) {
+	case string:
+		return []string{v}
+	case []any:
+		var list []string
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				list = append(list, s)
+			}
+		}
+		return list
+	}
+	return nil
+}

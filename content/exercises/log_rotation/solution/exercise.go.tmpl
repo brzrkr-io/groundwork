@@ -1,0 +1,58 @@
+// Package rotate is the Groundwork exercise "Practice: refactor the log
+// rotator".
+package rotate
+
+import (
+	"strings"
+	"time"
+)
+
+// File is one file in the service's log directory.
+type File struct {
+	Name     string    // such as "app.log", "app.log.1" or "app.log.2.gz"
+	Size     int64     // in bytes
+	Modified time.Time // when it was last written
+}
+
+// The rotation policy.
+const (
+	rotateSize    = 100 << 20          // rotate the live log at 100 MiB
+	compressAfter = 24 * time.Hour     // compress rotated logs after a day
+	deleteAfter   = 7 * 24 * time.Hour // delete rotated logs after a week
+)
+
+// Plan returns what the rotator should do with each file, one line per file
+// in the same order, such as "rotate app.log". See the README for the rules.
+func Plan(files []File, now time.Time) []string {
+	var actions []string
+	for _, file := range files {
+		if strings.Contains(file.Name, ".log.") {
+			actions = append(actions, rotatedAction(file, now)+" "+file.Name)
+			continue
+		}
+		actions = append(actions, liveAction(file)+" "+file.Name)
+	}
+	return actions
+}
+
+// liveAction decides what to do with the log the service is writing to now:
+// "rotate" or "keep".
+func liveAction(file File) string {
+	if file.Size >= rotateSize {
+		return "rotate"
+	}
+	return "keep"
+}
+
+// rotatedAction decides what to do with an old, rotated log: "delete",
+// "compress" or "keep".
+func rotatedAction(file File, now time.Time) string {
+	age := now.Sub(file.Modified)
+	if age > deleteAfter {
+		return "delete"
+	}
+	if strings.HasSuffix(file.Name, ".gz") || age <= compressAfter {
+		return "keep"
+	}
+	return "compress"
+}

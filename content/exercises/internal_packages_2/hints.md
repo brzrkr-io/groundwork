@@ -4,12 +4,12 @@
 
 ### Closer
 
-Replace the import with `gopherlings.local/internal_packages_2/deploy`, and replace `naming.Release(` with `deploy.ReleaseName(`. The arguments stay the same.
+Replace the import with `groundwork.local/internal_packages_2/deploy`, and replace `naming.Release(` with `deploy.ReleaseName(`. The arguments stay the same.
 
 ### Answer
 
 ```go
-import "gopherlings.local/internal_packages_2/deploy"
+import "groundwork.local/internal_packages_2/deploy"
 
 func Line(service, version string, healthy bool) string {
 	status := "DOWN"
@@ -42,12 +42,12 @@ Work out the release name once, then build one line per host in a loop.
 
 ### Closer
 
-Import `gopherlings.local/internal_packages_2/deploy/internal/naming`, which is allowed because `rollout` is inside `deploy/`. Use `name := naming.Release(service, version)`, then `append` `"deploy "+name+" to "+host` for each host.
+Import `groundwork.local/internal_packages_2/deploy/internal/naming`, which is allowed because `rollout` is inside `deploy/`. Use `name := naming.Release(service, version)`, then `append` `"deploy "+name+" to "+host` for each host.
 
 ### Answer
 
 ```go
-import "gopherlings.local/internal_packages_2/deploy/internal/naming"
+import "groundwork.local/internal_packages_2/deploy/internal/naming"
 
 func Steps(service, version string, hosts []string) []string {
 	name := naming.Release(service, version)

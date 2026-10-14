@@ -1,0 +1,8 @@
+-- Task 2: Report time to resolve per service
+--
+-- For every service, return its name (service), its number of
+-- incidents (incidents) and the average minutes_to_resolve of its
+-- resolved incidents, rounded to one decimal place (avg_minutes),
+-- A to Z. A service with no incidents shows 0 and NULL.
+--
+-- TODO(2): Write your query below.

@@ -1,0 +1,229 @@
+package findandxargs
+
+import (
+	"bytes"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestListLogs(t *testing.T) {
+	want := "" +
+		"sandbox/api/access.log\n" +
+		"sandbox/api/error.log\n" +
+		"sandbox/nginx/access.log\n" +
+		"sandbox/worker/jobs/cron.log\n" +
+		"sandbox/worker/old worker.log\n" +
+		"sandbox/worker/worker.log\n"
+	expect(t, build(t, "sandbox", sandbox), want, "1_list_logs.sh", "sandbox")
+
+	want = "" +
+		"srv/billing/billing.log\n" +
+		"srv/gateway/debug trace.log\n" +
+		"srv/gateway/gateway.log\n" +
+		"srv/scheduler.log\n"
+	expect(t, build(t, "srv", srv), want, "1_list_logs.sh", "srv")
+}
+
+func TestListOldLogs(t *testing.T) {
+	want := "" +
+		"sandbox/api/error.log\n" +
+		"sandbox/worker/jobs/cron.log\n" +
+		"sandbox/worker/old worker.log\n"
+	expect(t, build(t, "sandbox", sandbox), want, "2_list_old_logs.sh", "sandbox")
+
+	want = "" +
+		"srv/billing/billing.log\n" +
+		"srv/gateway/debug trace.log\n"
+	expect(t, build(t, "srv", srv), want, "2_list_old_logs.sh", "srv")
+}
+
+func TestCountConfLines(t *testing.T) {
+	expectNumber(t, build(t, "sandbox", sandbox), "14", "3_count_conf_lines.sh", "sandbox")
+	expectNumber(t, build(t, "srv", srv), "11", "3_count_conf_lines.sh", "srv")
+}
+
+func TestDeleteOldLogs(t *testing.T) {
+	expectFilesLeft(t, "sandbox", sandbox,
+		"sandbox/api/access.log",
+		"sandbox/api/access.log.1",
+		"sandbox/api/api.conf",
+		"sandbox/app.conf",
+		"sandbox/nginx/access.log",
+		"sandbox/nginx/nginx.conf",
+		"sandbox/worker/queue settings.conf",
+		"sandbox/worker/worker.log",
+	)
+	expectFilesLeft(t, "srv", srv,
+		"srv/billing/billing.conf",
+		"srv/billing/billing.log.2",
+		"srv/deploy notes.conf",
+		"srv/gateway/gateway.log",
+		"srv/gateway/routes.conf",
+		"srv/scheduler.log",
+	)
+}
+
+// file is one file in a test tree: its path, how many days ago it was last
+// modified, and how many lines it holds.
+type file struct {
+	path  string
+	days  int
+	lines int
+}
+
+// sandbox is the tree that setup.sh builds. Here the old files are 10 days
+// old and the others 2 days.
+var sandbox = []file{
+	{"app.conf", 2, 3},
+	{"api/access.log", 2, 4},
+	{"api/access.log.1", 10, 6},
+	{"api/api.conf", 10, 4},
+	{"api/error.log", 10, 2},
+	{"nginx/access.log", 2, 5},
+	{"nginx/nginx.conf", 2, 5},
+	{"worker/jobs/cron.log", 10, 3},
+	{"worker/old worker.log", 10, 2},
+	{"worker/queue settings.conf", 2, 2},
+	{"worker/worker.log", 2, 4},
+}
+
+// srv is a second tree, so a script can't just print the sandbox answer.
+var srv = []file{
+	{"billing/billing.conf", 2, 3},
+	{"billing/billing.log", 10, 7},
+	{"billing/billing.log.2", 10, 9},
+	{"deploy notes.conf", 10, 2},
+	{"gateway/debug trace.log", 10, 4},
+	{"gateway/gateway.log", 2, 8},
+	{"gateway/routes.conf", 10, 6},
+	{"scheduler.log", 2, 3},
+}
+
+// build creates a temporary folder holding the tree files in a folder
+// called name, and returns the temporary folder.
+func build(t *testing.T, name string, files []file) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, f := range files {
+		path := filepath.Join(dir, name, f.path)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(strings.Repeat("line\n", f.lines)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		modified := time.Now().Add(-time.Duration(f.days) * 24 * time.Hour)
+		if err := os.Chtimes(path, modified, modified); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// expectNumber is like expect, for a script that prints one number. Spaces
+// around the number don't matter.
+func expectNumber(t *testing.T, dir, want, script string, args ...string) {
+	t.Helper()
+	got, stderr, code := run(t, dir, script, args...)
+	command := commandLine(script, args...)
+	if code != 0 {
+		t.Errorf("%s exited with status %d, want 0. bash said:\n%s", command, code, stderr)
+		return
+	}
+	if strings.TrimSpace(got) != want {
+		t.Errorf("%s printed %q, want %q", command, got, want+"\n")
+	}
+}
+
+// expectFilesLeft builds the tree, runs 4_delete_old_logs.sh on it, and
+// checks which files are left.
+func expectFilesLeft(t *testing.T, name string, files []file, want ...string) {
+	t.Helper()
+	dir := build(t, name, files)
+	_, stderr, code := run(t, dir, "4_delete_old_logs.sh", name)
+	command := commandLine("4_delete_old_logs.sh", name)
+	if code != 0 {
+		t.Errorf("%s exited with status %d, want 0. bash said:\n%s", command, code, stderr)
+		return
+	}
+	var left []string
+	err := filepath.WalkDir(filepath.Join(dir, name), func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			rel, _ := filepath.Rel(dir, path)
+			left = append(left, filepath.ToSlash(rel))
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(left)
+	if !slices.Equal(left, want) {
+		t.Errorf("after %s these files are left:\n%s\n\nwant:\n%s",
+			command, strings.Join(left, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// expect runs the script with bash from dir, just as you run it from the
+// exercise folder after bash setup.sh, and checks that it succeeds and
+// prints want.
+func expect(t *testing.T, dir, want, script string, args ...string) {
+	t.Helper()
+	got, stderr, code := run(t, dir, script, args...)
+	command := commandLine(script, args...)
+	if code != 0 {
+		t.Errorf("%s exited with status %d, want 0. bash said:\n%s", command, code, stderr)
+		return
+	}
+	switch {
+	case got == want:
+		return
+	case got == "":
+		t.Errorf("%s printed nothing, want:\n%s", command, want)
+	case strings.Count(want, "\n") > 1:
+		t.Errorf("%s printed:\n%s\nwant:\n%s", command, got, want)
+	default:
+		t.Errorf("%s printed %q, want %q", command, got, want)
+	}
+	if stderr != "" {
+		t.Errorf("%s also printed to stderr:\n%s", command, stderr)
+	}
+}
+
+// run runs "bash script args..." from dir and returns what it printed to
+// stdout and stderr, and its exit status.
+func run(t *testing.T, dir, script string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	path, err := filepath.Abs(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", append([]string{path}, args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C", "TZ=UTC")
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); cmd.ProcessState == nil {
+		t.Fatalf("could not start bash: %v", err)
+	}
+	return out.String(), errOut.String(), cmd.ProcessState.ExitCode()
+}
+
+// commandLine shows how to run the script by hand: bash, the script and its
+// arguments, with quotes around any argument that has a space.
+func commandLine(script string, args ...string) string {
+	line := "bash " + script
+	for _, arg := range args {
+		if strings.Contains(arg, " ") {
+			arg = `"` + arg + `"`
+		}
+		line += " " + arg
+	}
+	return line
+}

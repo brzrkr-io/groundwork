@@ -1,0 +1,147 @@
+package balancer
+
+import (
+	"errors"
+	"sync"
+	"testing"
+)
+
+const (
+	a = "10.0.2.1:8080"
+	b = "10.0.2.2:8080"
+	c = "10.0.2.3:8080"
+)
+
+// acquire calls lc.Acquire and checks that it picked want.
+func acquire(t *testing.T, lc *LeastConn, want string) func() {
+	t.Helper()
+	got, release, err := lc.Acquire()
+	if got != want || err != nil {
+		t.Fatalf("Acquire() = %q, %v, want %q, <nil>", got, err, want)
+	}
+	return release
+}
+
+// wantActive checks lc.Active(addr).
+func wantActive(t *testing.T, lc *LeastConn, addr string, want int) {
+	t.Helper()
+	if got := lc.Active(addr); got != want {
+		t.Errorf("Active(%q) = %d, want %d", addr, got, want)
+	}
+}
+
+func TestAcquire(t *testing.T) {
+	t.Run("idle backends are used in list order", func(t *testing.T) {
+		// Map order changes from run to run, so check several times.
+		for range 20 {
+			lc := NewLeastConn(a, b, c)
+			acquire(t, lc, a)
+			acquire(t, lc, b)
+			acquire(t, lc, c)
+			acquire(t, lc, a)
+			acquire(t, lc, b)
+		}
+	})
+
+	t.Run("list order, not alphabetical order", func(t *testing.T) {
+		for range 20 {
+			lc := NewLeastConn(c, a, b)
+			acquire(t, lc, c)
+			acquire(t, lc, a)
+			acquire(t, lc, b)
+		}
+	})
+
+	t.Run("fewest in flight wins, ties go to the earliest", func(t *testing.T) {
+		for range 20 {
+			lc := NewLeastConn(a, b, c)
+			releaseA := acquire(t, lc, a)
+			acquire(t, lc, b)
+			releaseA() // a: 0, b: 1, c: 0
+			acquire(t, lc, a)
+			acquire(t, lc, c)
+			wantActive(t, lc, a, 1)
+			wantActive(t, lc, b, 1)
+			wantActive(t, lc, c, 1)
+		}
+	})
+
+	t.Run("a backend busy with a slow request is avoided", func(t *testing.T) {
+		lc := NewLeastConn(a, b)
+		releaseReport := acquire(t, lc, a) // a slow report: a stays at 1
+		for range 3 {
+			release := acquire(t, lc, b) // a quick health check
+			release()
+		}
+		releaseReport()
+		acquire(t, lc, a) // both idle again: the tie goes to a
+	})
+
+	t.Run("no backends", func(t *testing.T) {
+		lc := NewLeastConn()
+		got, _, err := lc.Acquire()
+		if got != "" || !errors.Is(err, ErrNoBackends) {
+			t.Errorf("Acquire() with no backends = %q, %v, want \"\", %v", got, err, ErrNoBackends)
+		}
+	})
+}
+
+func TestReleaseOnce(t *testing.T) {
+	t.Run("a second release does nothing", func(t *testing.T) {
+		lc := NewLeastConn(a, b)
+		release := acquire(t, lc, a)
+		release()
+		release()
+		wantActive(t, lc, a, 0)
+		acquire(t, lc, a)
+		wantActive(t, lc, a, 1)
+	})
+
+	t.Run("each request releases its own slot", func(t *testing.T) {
+		lc := NewLeastConn(a, b)
+		release1 := acquire(t, lc, a)
+		acquire(t, lc, b)
+		release3 := acquire(t, lc, a)
+		wantActive(t, lc, a, 2)
+		release1()
+		release1()
+		wantActive(t, lc, a, 1)
+		release3()
+		release3()
+		release3()
+		wantActive(t, lc, a, 0)
+		wantActive(t, lc, b, 1)
+	})
+}
+
+func TestConcurrentRelease(t *testing.T) {
+	// Run with -race, this test catches a release that changes lc.active
+	// without holding lc.mu.
+	t.Run("acquire and release from many goroutines", func(t *testing.T) {
+		lc := NewLeastConn(a, b, c)
+		var wg sync.WaitGroup
+		for range 30 {
+			wg.Go(func() {
+				_, release, _ := lc.Acquire()
+				release()
+			})
+		}
+		wg.Wait()
+		for _, addr := range []string{a, b, c} {
+			wantActive(t, lc, addr, 0)
+		}
+	})
+
+	t.Run("releases finish on other goroutines", func(t *testing.T) {
+		lc := NewLeastConn(a, b)
+		var wg sync.WaitGroup
+		for range 20 {
+			_, release, _ := lc.Acquire()
+			wg.Go(release)
+			wg.Go(release) // a retry path that releases again
+		}
+		wg.Wait()
+		wantActive(t, lc, a, 0)
+		wantActive(t, lc, b, 0)
+	})
+}

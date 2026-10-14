@@ -14,9 +14,9 @@ testable on the way.
 
 | Word | What it is | Where it's set |
 |---|---|---|
-| *module* | the whole project, versioned as one | `go.mod` (`module gopherlings.local/project_layout`) |
+| *module* | the whole project, versioned as one | `go.mod` (`module groundwork.local/project_layout`) |
 | *package* | one folder of `.go` files | the `package` line at the top of each file |
-| *import path* | module path + folder | `gopherlings.local/project_layout/internal/disk` |
+| *import path* | module path + folder | `groundwork.local/project_layout/internal/disk` |
 
 - **Go requires:** every `.go` file in one folder has the same `package`
   name. One folder = one package.
@@ -124,7 +124,7 @@ $ echo $?
 
 ```text
 .
-├── go.mod                       module gopherlings.local/project_layout
+├── go.mod                       module groundwork.local/project_layout
 ├── cmd/
 │   └── diskcheck/
 │       ├── main.go              package main: old all-in-one main + a started run
@@ -197,7 +197,7 @@ so it prints one report line per argument and returns the exit code.
 `run` already handles the no-arguments case. Its loop only echoes each
 argument for now.
 
-- Import `gopherlings.local/project_layout/internal/disk`.
+- Import `groundwork.local/project_layout/internal/disk`.
 - Parse every argument with `disk.Parse`, and get each status from
   `disk.Status`.
 - Write one line per reading to `stdout`, in order: the host, a space, the

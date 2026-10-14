@@ -1,0 +1,310 @@
+package queue
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http/httptest"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+)
+
+// job returns a test job with the given ID.
+func job(id string) Job {
+	return Job{ID: id, Service: "api"}
+}
+
+func TestTryEnqueue(t *testing.T) {
+	for _, capacity := range []int{1, 2, 5} {
+		t.Run(fmt.Sprintf("capacity %d", capacity), func(t *testing.T) {
+			q := New(capacity)
+			if got := q.Len(); got != 0 {
+				t.Errorf("Len() of a new queue = %d, want 0", got)
+			}
+			for i := range capacity {
+				id := fmt.Sprintf("b%d", i+1)
+				if err := q.TryEnqueue(job(id)); err != nil {
+					t.Fatalf("TryEnqueue(%q) with room left = %v, want nil", id, err)
+				}
+			}
+			if got := q.Len(); got != capacity {
+				t.Errorf("Len() after %d jobs = %d, want %d", capacity, got, capacity)
+			}
+			for _, id := range []string{"extra-1", "extra-2"} {
+				if err := q.TryEnqueue(job(id)); !errors.Is(err, ErrFull) {
+					t.Errorf("TryEnqueue(%q) on a full queue = %v, want ErrFull", id, err)
+				}
+			}
+			if got := q.Len(); got != capacity {
+				t.Errorf("Len() after rejected jobs = %d, want %d", got, capacity)
+			}
+		})
+	}
+
+	t.Run("room again after a job is taken", func(t *testing.T) {
+		q := New(2)
+		q.TryEnqueue(job("b1"))
+		q.TryEnqueue(job("b2"))
+		if got := q.Len(); got != 2 {
+			t.Fatalf("Len() after 2 jobs = %d, want 2", got)
+		}
+		if got := <-q.jobs; got.ID != "b1" {
+			t.Errorf("first job taken = %q, want %q (first in, first out)", got.ID, "b1")
+		}
+		if got := q.Len(); got != 1 {
+			t.Errorf("Len() after a worker took one job = %d, want 1", got)
+		}
+		if err := q.TryEnqueue(job("b3")); err != nil {
+			t.Errorf("TryEnqueue(%q) after a job was taken = %v, want nil", "b3", err)
+		}
+		if err := q.TryEnqueue(job("b4")); !errors.Is(err, ErrFull) {
+			t.Errorf("TryEnqueue(%q) on a full queue = %v, want ErrFull", "b4", err)
+		}
+	})
+}
+
+// The Enqueue tests run inside a synctest bubble: time is fake, and
+// synctest.Wait() returns once every goroutine in the bubble is blocked.
+func TestEnqueue(t *testing.T) {
+	t.Run("room left: returns at once", func(t *testing.T) {
+		q := New(2)
+		for _, id := range []string{"b1", "b2"} {
+			if err := q.Enqueue(context.Background(), job(id)); err != nil {
+				t.Errorf("Enqueue(%q) with room left = %v, want nil", id, err)
+			}
+		}
+		if got := q.Len(); got != 2 {
+			t.Errorf("Len() after 2 Enqueue calls = %d, want 2", got)
+		}
+	})
+
+	t.Run("full: waits for room", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			q := New(1)
+			q.TryEnqueue(job("b1"))
+
+			var err error
+			done := false
+			go func() {
+				err = q.Enqueue(context.Background(), job("b2"))
+				done = true
+			}()
+			synctest.Wait()
+			if done {
+				t.Fatalf("Enqueue(%q) on a full queue returned %v at once, want it to wait for room", "b2", err)
+			}
+
+			<-q.jobs // a worker takes b1, which makes room
+			synctest.Wait()
+			if !done {
+				t.Fatalf("Enqueue(%q) still waiting after a job was taken, want it to return", "b2")
+			}
+			if err != nil {
+				t.Errorf("Enqueue(%q) after room was made = %v, want nil", "b2", err)
+			}
+			if got := <-q.jobs; got.ID != "b2" {
+				t.Errorf("job in the queue = %q, want %q", got.ID, "b2")
+			}
+		})
+	})
+
+	t.Run("full: gives up at the deadline", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			q := New(1)
+			q.TryEnqueue(job("b1"))
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			start := time.Now()
+			err := q.Enqueue(ctx, job("b2"))
+			waited := time.Since(start)
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Errorf("Enqueue(%q) on a full queue with a 2s timeout = %v, want context.DeadlineExceeded", "b2", err)
+			}
+			if waited != 2*time.Second {
+				t.Errorf("Enqueue(%q) returned after %v, want 2s (the timeout)", "b2", waited)
+			}
+			if got := q.Len(); got != 1 {
+				t.Errorf("Len() after the timeout = %d, want 1", got)
+			}
+		})
+	})
+
+	t.Run("full: gives up when cancelled", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			q := New(1)
+			q.TryEnqueue(job("b1"))
+			ctx, cancel := context.WithCancel(context.Background())
+
+			var err error
+			done := false
+			go func() {
+				err = q.Enqueue(ctx, job("b2"))
+				done = true
+			}()
+			synctest.Wait()
+			if done {
+				t.Fatalf("Enqueue(%q) on a full queue returned %v at once, want it to wait", "b2", err)
+			}
+
+			cancel()
+			synctest.Wait()
+			if !done {
+				t.Fatalf("Enqueue(%q) still waiting after cancel(), want it to return", "b2")
+			}
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("Enqueue(%q) after cancel() = %v, want context.Canceled", "b2", err)
+			}
+			if got := q.Len(); got != 1 {
+				t.Errorf("Len() after the cancel = %d, want 1", got)
+			}
+		})
+	})
+}
+
+// recorder is a job handler that takes 1s (of fake time) per job and
+// remembers the IDs it handled.
+type recorder struct {
+	mu  sync.Mutex
+	ids []string
+}
+
+func (r *recorder) handle(j Job) {
+	time.Sleep(time.Second)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ids = append(r.ids, j.ID)
+}
+
+// handled returns the handled IDs, sorted.
+func (r *recorder) handled() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Sorted(slices.Values(r.ids))
+}
+
+func TestWorkers(t *testing.T) {
+	tests := []struct {
+		workers int
+		jobs    int
+		want    time.Duration // jobs take 1s each, so 2 workers do 6 jobs in 3s
+	}{
+		{workers: 1, jobs: 4, want: 4 * time.Second},
+		{workers: 2, jobs: 6, want: 3 * time.Second},
+		{workers: 3, jobs: 7, want: 3 * time.Second},
+		{workers: 5, jobs: 5, want: 1 * time.Second},
+	}
+	for _, tt := range tests {
+		name := fmt.Sprintf("%d workers, %d jobs", tt.workers, tt.jobs)
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				q := New(tt.jobs)
+				var want []string
+				for i := range tt.jobs {
+					id := fmt.Sprintf("b%d", i+1)
+					q.TryEnqueue(job(id))
+					want = append(want, id)
+				}
+				slices.Sort(want)
+
+				var rec recorder
+				start := time.Now()
+				q.Start(tt.workers, rec.handle)
+				q.Close()
+				took := time.Since(start)
+
+				if got := rec.handled(); !slices.Equal(got, want) {
+					t.Errorf("handled when Close() returned = %q, want %q", got, want)
+				}
+				if took != tt.want {
+					t.Errorf("Start(%d, ...) then Close() took %v, want %v", tt.workers, took, tt.want)
+				}
+			})
+		})
+	}
+
+	t.Run("jobs enqueued after Start", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			q := New(2)
+			var rec recorder
+			q.Start(3, rec.handle)
+
+			var want []string
+			for i := range 10 {
+				id := fmt.Sprintf("b%02d", i+1)
+				if err := q.Enqueue(context.Background(), job(id)); err != nil {
+					t.Fatalf("Enqueue(%q) = %v, want nil", id, err)
+				}
+				want = append(want, id)
+			}
+			q.Close()
+
+			if got := rec.handled(); !slices.Equal(got, want) {
+				t.Errorf("handled when Close() returned = %q, want %q", got, want)
+			}
+		})
+	})
+}
+
+func TestHandler(t *testing.T) {
+	tests := []struct {
+		name      string
+		capacity  int
+		fill      int // jobs already in the queue
+		body      string
+		wantCode  int
+		wantRetry string // "" means no Retry-After header
+		wantLen   int
+	}{
+		{"valid job", 5, 0, `{"id":"b7","service":"billing"}`, 202, "", 1},
+		{"valid job behind others", 5, 3, `{"id":"b8","service":"api"}`, 202, "", 4},
+		{"full queue", 1, 1, `{"id":"b9","service":"api"}`, 503, "1", 1},
+		{"full queue, bigger", 3, 3, `{"id":"b10","service":"web"}`, 503, "1", 3},
+		{"broken JSON", 5, 0, `{"id":"b11",`, 400, "", 0},
+		{"not JSON", 5, 0, `deploy billing please`, 400, "", 0},
+		{"missing service", 5, 0, `{"id":"b12"}`, 400, "", 0},
+		{"missing id", 5, 0, `{"service":"api"}`, 400, "", 0},
+		{"bad job on a full queue", 1, 1, `{"service":"api"}`, 400, "", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := New(tt.capacity)
+			for i := range tt.fill {
+				q.TryEnqueue(job(fmt.Sprintf("old-%d", i)))
+			}
+
+			r := httptest.NewRequest("POST", "/builds", strings.NewReader(tt.body))
+			rec := httptest.NewRecorder()
+			q.Handler().ServeHTTP(rec, r)
+
+			if rec.Code != tt.wantCode {
+				t.Errorf("POST %s: status = %d, want %d", tt.body, rec.Code, tt.wantCode)
+			}
+			if got := rec.Header().Get("Retry-After"); got != tt.wantRetry {
+				t.Errorf("POST %s: Retry-After header = %q, want %q", tt.body, got, tt.wantRetry)
+			}
+			if got := q.Len(); got != tt.wantLen {
+				t.Errorf("POST %s: Len() afterwards = %d, want %d", tt.body, got, tt.wantLen)
+			}
+		})
+	}
+
+	t.Run("queues the decoded job", func(t *testing.T) {
+		q := New(5)
+		for _, want := range []Job{{ID: "b20", Service: "billing"}, {ID: "b21", Service: "search"}} {
+			body := fmt.Sprintf(`{"id":%q,"service":%q}`, want.ID, want.Service)
+			r := httptest.NewRequest("POST", "/builds", strings.NewReader(body))
+			q.Handler().ServeHTTP(httptest.NewRecorder(), r)
+			if q.Len() == 0 {
+				t.Fatalf("POST %s: nothing was queued", body)
+			}
+			if got := <-q.jobs; got != want {
+				t.Errorf("POST %s: queued %+v, want %+v", body, got, want)
+			}
+		}
+	})
+}

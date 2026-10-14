@@ -1,4 +1,4 @@
-# Authoring Gopherlings exercises
+# Authoring Groundwork exercises
 
 The course is `course.json` (module and exercise order) plus one pack per
 exercise in `exercises/<name>/`. Exercise numbers come from their position in
@@ -27,9 +27,9 @@ exercises/variables/
 - `solution/` mirrors the pack layout. Its files are written over the starter
   files. Include only the files that change.
 - Every exercise is its own Go module in the learner's folder. Packs without a
-  `go.mod.tmpl` get a generated one (`module gopherlings.local/<folder>`,
+  `go.mod.tmpl` get a generated one (`module groundwork.local/<folder>`,
   `go 1.26`). Packs with **third-party dependencies** or **subpackages**
-  ship their own `go.mod.tmpl` (module path `gopherlings.local/<name>`,
+  ship their own `go.mod.tmpl` (module path `groundwork.local/<name>`,
   `go 1.26`) and, with dependencies, a `go.sum`.
 - Learner folders are `exercises/<NN>_<module dir>/<NNN>_<topic>`, where the
   topic is the pack name without a `_2`/`_3` suffix. Numbers come from the
@@ -175,7 +175,7 @@ return deployment + "-" + hash + "-" + suffix
   renames something instead, the TODO says to rename it in the comment too.
   TestPacks enforces this.
 - Every non-test package (starter and solution) has a package comment, such as
-  `// Package variables is the Gopherlings exercise "Variables".` Otherwise
+  `// Package variables is the Groundwork exercise "Variables".` Otherwise
   editors warn on every file. TestPacks enforces this.
 - Use a short package name that fits the topic (`package variables`, not
   `package exercise`).
@@ -229,11 +229,57 @@ Use exactly these versions so every pack shares one module cache:
 | github.com/aws/aws-sdk-go-v2/service/s3 | v1.114.3 |
 | github.com/aws/aws-sdk-go-v2/service/ec2 | v1.338.4 |
 | github.com/aws/smithy-go | v1.28.5 |
+| modernc.org/sqlite | v1.60.1 |
 
 To produce `go.mod.tmpl` and `go.sum`, copy the starter, tests and solution
 into a scratch directory and run `go mod tidy`. Then copy `go.mod` back as
 `go.mod.tmpl` and copy `go.sum` back as `go.sum`. Tests never touch the
 network: use fake clientsets, fake API clients, or `httptest` servers.
+
+## Exercises that aren't Go code
+
+The tracks on the shell, Git, SQL, containers and CI are practised in their
+own languages, but every pack is still checked by `go test`: the learner
+edits a script, query or config file, and the pack's `exercise_test.go`
+runs or reads it. The watcher re-runs on any saved file, and opens the first
+file with a `TODO(n)` in it, whatever its type.
+
+- **One file per task**, named for what it does and numbered in task order:
+  `1_count_errors.sh`, `2_top_ips.sh`; `1_failed_deploys.sql`. Each test
+  function checks one file, so the hints open on the right task.
+- **Starter files** hold the task as a comment, any boilerplate (a shebang
+  and `set -euo pipefail` for scripts), and a `# TODO(n): ...` (or
+  `-- TODO(n): ...` in SQL) where the learner's lines go. The solution
+  overlay in `solution/` replaces those files.
+- **Fixtures** go in `testdata/`, and the README tells the learner to look
+  at them: `testdata/app.log` is what their script reads. The learner can
+  run their script by hand from the exercise folder, so tests run it there
+  too, against the same fixtures (in a temporary copy if it writes files).
+- **Tests are hermetic.** Run scripts with `exec.Command("bash", file)`,
+  `LC_ALL=C`, `TZ=UTC`, and for Git `GIT_CONFIG_GLOBAL=/dev/null`,
+  `GIT_CONFIG_NOSYSTEM=1` and fixed author and committer names, emails and
+  dates. Use only bash, coreutils, grep, sed, awk, find, xargs, sort, uniq,
+  cut, tr, wc, head, tail, diff and git: never jq, docker, a network or a
+  database server.
+- **Failure messages teach**, in the course's got/want style:
+  `1_count_errors.sh printed "12", want "3"`; for multi-line output, show
+  both in full. If the script exits non-zero, show its stderr: that's where
+  bash explains the mistake.
+- **Git** packs ship a `setup.sh` that builds the scenario repo in a
+  directory given as `$1` (default `sandbox`). The README says to run
+  `bash setup.sh` and explore `sandbox/` freely; tests run `setup.sh` in a
+  temporary directory, then the learner's script inside the repo, then
+  inspect the result with git commands.
+- **SQL** packs use SQLite through `modernc.org/sqlite` (pure Go; see
+  Dependencies), in memory: load `testdata/schema.sql` and
+  `testdata/data.sql`, run the learner's query, and compare rows. Later
+  packs call the database from Go with `database/sql`.
+- **Config** packs (Dockerfiles, CI workflows) are read and checked by the
+  test, not executed: parse the file in Go (`sigs.k8s.io/yaml` for YAML) and
+  check each rule the task states. Names starting with `.` can't be
+  embedded, so a workflow is `ci.yml`, not `.github/workflows/ci.yml`; the
+  README says where it would live in a real repository.
+- A pack with only `_test.go` Go files needs no package comment.
 
 ## Guides
 
@@ -242,7 +288,7 @@ how a program runs, state, abstraction, data structures, concurrency, and so
 on. Each guide is one Markdown file, `guides/<name>.md`. A module lists the
 guides to read with it under `"guides"` in `course.json`, and the order there
 numbers them. The learner reads them in the watcher (`g`), with
-`gopherlings guides`, or in their course folder's `guides/`.
+`groundwork guides`, or in their course folder's `guides/`.
 
 A guide teaches **ideas**, not syntax. Its Go examples use only what the
 course has taught by the end of its module; for anything later, use plain
@@ -266,6 +312,7 @@ minutes; probing them concurrently takes about as long as the slowest one.
 ## Check yourself      (numbered questions, at least three)
 ## Answers             (numbered, one per question, with the reasoning)
 ## Key terms           (a table: Term | Meaning)
+## Watch               (2–5 videos: `- [Title](url) · Channel · N min: why`)
 ## Go deeper           (2–5 links, each with one line on why it's worth it)
 ```
 
@@ -277,11 +324,23 @@ minutes; probing them concurrently takes about as long as the slowest one.
   new term in *italics* with a plain definition, and list it in Key terms.
 - **Show, then trace.** Code examples are small and complete, and compile.
   After an example, say what happens step by step.
+- **Questions stand alone.** Every *Check yourself* question and *Key
+  terms* row also becomes a flashcard (`groundwork cards`), read on a
+  phone without the guide. So never write "the example above": restate
+  what the question needs, briefly.
 - **Refer by title.** Name an exercise, module or another guide by its exact
   title in italics: "see the *Abstraction* guide", "as in *Slices*". Never by
   number. TestCrossReferences checks these.
 - **Links** must be real pages you have opened: go.dev, pkg.go.dev,
   kubernetes.io, docs.aws.amazon.com, Wikipedia, well-known books and talks.
+- **Videos** are the best few on the guide's idea, for watching away from
+  the keyboard (the learner reads guides on a phone too). Prefer talks and
+  lectures that age well (conference talks, university lectures, well-known
+  educators) over listicles. Verify each one exists and copy its exact title
+  and channel from
+  `https://www.youtube.com/oembed?url=<video url>&format=json`; take the
+  length from the video page. Under about 60 minutes unless it's a
+  classic; say which part to watch if only part is relevant.
 
 TestGuides enforces the layout.
 

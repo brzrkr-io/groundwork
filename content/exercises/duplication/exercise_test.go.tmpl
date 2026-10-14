@@ -1,0 +1,109 @@
+package svcconfig
+
+import (
+	"slices"
+	"strings"
+	"testing"
+)
+
+// good is a valid config. Each test case changes one or two fields.
+var good = Config{Environment: "production", HTTPPort: 8080, MetricsPort: 9090, AdminPort: 9091, GRPCPort: 50051}
+
+// checkValidate runs Validate on each config and compares the problems.
+func checkValidate(t *testing.T, tests []validateCase) {
+	t.Helper()
+	for _, tc := range tests {
+		c := good
+		tc.change(&c)
+		got := Validate(c)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%s: Validate(%+v) =\n%s\nwant\n%s", tc.name, c, show(got), show(tc.want))
+		}
+	}
+}
+
+// show lists problems one per line, or says there are none.
+func show(problems []string) string {
+	if len(problems) == 0 {
+		return "(no problems)"
+	}
+	return strings.Join(problems, "\n")
+}
+
+type validateCase struct {
+	name   string
+	change func(c *Config)
+	want   []string
+}
+
+func TestCheckPort(t *testing.T) {
+	checkValidate(t, []validateCase{
+		{"valid", func(c *Config) {}, nil},
+		{"http too high", func(c *Config) { c.HTTPPort = 70000 }, []string{"http_port 70000 is out of range 1-65535"}},
+		{"http needs root", func(c *Config) { c.HTTPPort = 80 }, []string{"http_port 80 needs root; use 1024 or above"}},
+		{"metrics zero", func(c *Config) { c.MetricsPort = 0 }, []string{"metrics_port 0 is out of range 1-65535"}},
+		{"admin needs root", func(c *Config) { c.AdminPort = 443 }, []string{"admin_port 443 needs root; use 1024 or above"}},
+		{"admin negative", func(c *Config) { c.AdminPort = -1 }, []string{"admin_port -1 is out of range 1-65535"}},
+		{"two bad ports", func(c *Config) { c.HTTPPort, c.AdminPort = 1023, 65536 }, []string{
+			"http_port 1023 needs root; use 1024 or above",
+			"admin_port 65536 is out of range 1-65535",
+		}},
+	})
+
+	src := parseExercise(t)
+	if !src.hasFunc("checkPort") {
+		t.Fatal("exercise.go has no function named checkPort yet")
+	}
+	validate := src.fn(t, "Validate")
+	if n := countCalls(validate, "checkPort"); n < 3 {
+		t.Errorf("Validate calls checkPort %d times, want once for each port", n)
+	}
+	if lines := src.numberLines(validate); len(lines) > 0 {
+		t.Errorf("Validate still has port numbers in it (exercise.go lines %v); the port rule belongs in checkPort, written once", lines)
+	}
+}
+
+func TestEnvironments(t *testing.T) {
+	checkValidate(t, []validateCase{
+		{"development", func(c *Config) { c.Environment = "development" }, nil},
+		{"staging", func(c *Config) { c.Environment = "staging" }, nil},
+		{"unknown", func(c *Config) { c.Environment = "prod" }, []string{`environment "prod" is not one of development, staging, production`}},
+	})
+	channels := []struct{ env, want string }{
+		{"staging", "#alerts-staging"},
+		{"production", "#alerts-production"},
+		{"qa", "#alerts-unknown"},
+	}
+	for _, tc := range channels {
+		if got := AlertChannel(tc.env); got != tc.want {
+			t.Errorf("AlertChannel(%q) = %q, want %q", tc.env, got, tc.want)
+		}
+	}
+
+	src := parseExercise(t)
+	for _, env := range []string{"development", "staging", "production"} {
+		if lines := src.stringLines(env); len(lines) > 1 {
+			t.Errorf("%q is written %d times in exercise.go (lines %v); write the list of environments once and use it everywhere",
+				env, len(lines), lines)
+		}
+	}
+}
+
+func TestGRPCPort(t *testing.T) {
+	checkValidate(t, []validateCase{
+		{"grpc zero", func(c *Config) { c.GRPCPort = 0 }, []string{"grpc_port 0 is out of range 1-65535"}},
+		{"grpc needs root", func(c *Config) { c.GRPCPort = 50 }, []string{"grpc_port 50 needs root; use 1024 or above"}},
+		{"everything wrong", breakEverything, []string{
+			`environment "qa" is not one of development, staging, production`,
+			"http_port 80 needs root; use 1024 or above",
+			"metrics_port 80 needs root; use 1024 or above",
+			"admin_port 80 needs root; use 1024 or above",
+			"grpc_port 80 needs root; use 1024 or above",
+		}},
+	})
+}
+
+// breakEverything gives every field of c a bad value.
+func breakEverything(c *Config) {
+	*c = Config{Environment: "qa", HTTPPort: 80, MetricsPort: 80, AdminPort: 80, GRPCPort: 80}
+}

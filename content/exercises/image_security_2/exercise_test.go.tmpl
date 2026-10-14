@@ -1,0 +1,201 @@
+package auditfixes
+
+import (
+	"os"
+	"strings"
+	"testing"
+)
+
+// The Dockerfile helpers (readDockerfile, stages, find, keyValues, show) are
+// in dockerfile_test.go, the .dockerignore ones (readIgnoreFile, excludedBy)
+// in dockerignore_test.go.
+
+// approved lists the base images the security team approved: the tag people
+// read and the digest Docker pulls. The README has the same table.
+var approved = []struct{ Name, Tag, Digest string }{
+	{"golang", "1.26", "sha256:727841129a8d3bbd6b99dc9f63427b62bb5a98f6e6e856a5b1399bf19152c03e"},
+	{"gcr.io/distroless/static-debian13", "nonroot", "sha256:f0b02dd57038ad9b032fcb6ad271ebeaf4cc1804bd067250270908b22f4b0114"},
+}
+
+func TestPinnedBaseImages(t *testing.T) {
+	const file = "1_api.Dockerfile"
+	stageNames := map[string]bool{}
+	used := map[string]bool{}
+	for _, from := range find(readDockerfile(t, file), "FROM") {
+		if len(from.Args) == 0 {
+			t.Errorf("%s line %d: FROM names no image", file, from.Line)
+			continue
+		}
+		ref := from.Args[0]
+		earlierStage := stageNames[strings.ToLower(ref)]
+		if len(from.Args) == 3 {
+			stageNames[strings.ToLower(from.Args[2])] = true
+		}
+		if earlierStage {
+			continue // FROM build starts from an earlier stage of this file, not an image
+		}
+		name, tag, digest := splitRef(ref)
+		i := approvedIndex(name)
+		if i < 0 {
+			t.Errorf("%s line %d: FROM %s isn't an approved image; use one from the README's table", file, from.Line, ref)
+			continue
+		}
+		want := approved[i]
+		used[want.Name] = true
+		switch {
+		case tag == "":
+			t.Errorf("%s line %d: FROM %s has no tag, so Docker uses latest, which moves; want %s:%s plus its digest", file, from.Line, ref, want.Name, want.Tag)
+		case tag == "latest":
+			t.Errorf("%s line %d: FROM %s uses the tag latest, which moves; want %s:%s plus its digest", file, from.Line, ref, want.Name, want.Tag)
+		case tag != want.Tag:
+			t.Errorf("%s line %d: FROM %s has the tag %s, want %s, the tag the approved digest belongs to", file, from.Line, ref, tag, want.Tag)
+		}
+		switch {
+		case digest == "":
+			t.Errorf("%s line %d: FROM %s has no digest, and a tag can be pushed again; want %s:%s@sha256:... with the digest from the README's table", file, from.Line, ref, want.Name, want.Tag)
+		case digest != want.Digest:
+			t.Errorf("%s line %d: FROM %s: %s isn't the approved digest for %s in the README's table; copy all 64 characters after sha256:", file, from.Line, ref, digest, want.Name)
+		}
+	}
+	for _, a := range approved {
+		if !used[a.Name] {
+			t.Errorf("%s has no FROM %s; keep both stages, and pin their images", file, a.Name)
+		}
+	}
+}
+
+// splitRef splits an image reference such as "golang:1.26@sha256:72f3..."
+// into its name, tag and digest. A missing tag or digest is "".
+func splitRef(ref string) (name, tag, digest string) {
+	ref, digest, _ = strings.Cut(ref, "@")
+	name = strings.TrimPrefix(ref, "docker.io/library/")
+	if i := strings.LastIndex(name, ":"); i > strings.LastIndex(name, "/") {
+		name, tag = name[:i], name[i+1:]
+	}
+	return name, tag, digest
+}
+
+// approvedIndex returns the position of the image name in approved, or -1.
+func approvedIndex(name string) int {
+	for i, a := range approved {
+		if a.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestImageLabels(t *testing.T) {
+	const file = "2_worker.Dockerfile"
+	all := stages(readDockerfile(t, file))
+	if len(all) != 2 {
+		t.Fatalf("%s has %d stages, want 2: the build stage and the final stage", file, len(all))
+	}
+	for _, in := range find(all[0].Instructions, "LABEL") {
+		t.Errorf("%s line %d: %s is in the build stage; only the final stage's labels end up in the image", file, in.Line, show(in))
+	}
+
+	labels := map[string]label{}
+	args := map[string]int{} // ARG name -> the line that declares it
+	for _, in := range all[1].Instructions {
+		for _, kv := range keyValues(in) {
+			switch in.Cmd {
+			case "ARG":
+				if _, ok := args[kv.Key]; !ok {
+					args[kv.Key] = in.Line
+				}
+			case "LABEL":
+				labels[kv.Key] = label{kv, in.Line} // a later LABEL with the same key wins
+			}
+		}
+	}
+
+	const source = "org.opencontainers.image.source"
+	if l, ok := labels[source]; !ok {
+		t.Errorf("%s: the final stage has no label %s; want it set to %s", file, source, "https://github.com/acme/worker")
+	} else if want := "https://github.com/acme/worker"; l.Value != want {
+		t.Errorf("%s line %d: the label %s is %q, want %q", file, l.Line, source, l.Value, want)
+	}
+	checkArgLabel(t, file, labels, args, "org.opencontainers.image.revision", "REVISION")
+	checkArgLabel(t, file, labels, args, "org.opencontainers.image.version", "VERSION")
+}
+
+// label is one label the final stage sets, and the line that sets it.
+type label struct {
+	keyValue
+	Line int
+}
+
+// checkArgLabel checks that the label key is set to the build argument arg,
+// and that the final stage declares that ARG before the label uses it.
+func checkArgLabel(t *testing.T, file string, labels map[string]label, args map[string]int, key, arg string) {
+	t.Helper()
+	l, ok := labels[key]
+	if !ok {
+		t.Errorf("%s: the final stage has no label %s; want it set to ${%s}", file, key, arg)
+		return
+	}
+	if strings.Contains(l.Raw, "'") {
+		t.Errorf("%s line %d: %s=%s is in single quotes, which stop Docker from filling in $%s; use double quotes or none", file, l.Line, key, l.Raw, arg)
+		return
+	}
+	if l.Value != "$"+arg && l.Value != "${"+arg+"}" {
+		t.Errorf("%s line %d: the label %s is %q, want ${%s}, the value CI passes with --build-arg %s=...", file, l.Line, key, l.Value, arg, arg)
+		return
+	}
+	declared, ok := args[arg]
+	switch {
+	case !ok:
+		t.Errorf("%s line %d: the label uses $%s, but the final stage doesn't declare ARG %s; an ARG only exists in the stage that declares it, so the label would be empty", file, l.Line, arg, arg)
+	case declared > l.Line:
+		t.Errorf("%s line %d: the label uses $%s, but ARG %s comes later, on line %d; an ARG only exists from the line that declares it", file, l.Line, arg, arg, declared)
+	}
+}
+
+func TestKeepSecretsOutOfContext(t *testing.T) {
+	const file = "3_ingest.Dockerfile.dockerignore"
+	patterns := readIgnoreFile(t, file)
+
+	raw, err := os.ReadFile("testdata/context.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inContext := map[string]bool{}
+	for line := range strings.FieldsSeq(string(raw)) {
+		inContext[line] = true
+	}
+
+	const history = "the Git history is large, and it keeps every secret ever committed"
+	mustExclude := []struct{ file, why string }{
+		{".git/HEAD", history},
+		{".git/config", history},
+		{".git/index", history},
+		{".git/objects/pack/pack-4f1c2b9e.pack", history},
+		{".git/refs/heads/main", history},
+		{".env", "it holds local secrets"},
+		{".env.production", "it holds the production secrets"},
+		{"deploy/tls/server.key", "it's the TLS private key"},
+		{"deploy/tls/server.pem", "it's the TLS certificate, deployed separately"},
+		{"bin/ingest", "it's an old build; the image compiles its own"},
+		{"bin/ingest-linux-arm64", "it's an old build; the image compiles its own"},
+		{"secrets/db.txt", "it's the database password"},
+	}
+	for _, want := range mustExclude {
+		if !inContext[want.file] {
+			t.Fatalf("testdata/context.txt no longer lists %s; restore the file", want.file)
+		}
+		if excludedBy(patterns, want.file) == nil {
+			t.Errorf("%s keeps %s in the build context, want it excluded: %s", file, want.file, want.why)
+		}
+	}
+
+	mustKeep := []string{"go.mod", "go.sum", "main.go", "README.md", "internal/parser/parser.go", "internal/store/store.go"}
+	for _, keep := range mustKeep {
+		if !inContext[keep] {
+			t.Fatalf("testdata/context.txt no longer lists %s; restore the file", keep)
+		}
+		if p := excludedBy(patterns, keep); p != nil {
+			t.Errorf("%s line %d: %q excludes %s, but go build needs it, want it kept", file, p.Line, p.Text, keep)
+		}
+	}
+}

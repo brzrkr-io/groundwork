@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pjanderson/gopherlings/content"
-	"github.com/pjanderson/gopherlings/internal/course"
-	"github.com/pjanderson/gopherlings/internal/workspace"
+	"github.com/pjanderson/groundwork/content"
+	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/pjanderson/groundwork/internal/workspace"
 )
 
 var lintPacks = flag.String("packs", "", "comma-separated pack names for TestLint (default: all)")

@@ -1,0 +1,95 @@
+package auditfixes
+
+import (
+	"os"
+	"path"
+	"strings"
+	"testing"
+)
+
+// This file reads a .dockerignore file and decides, the way Docker does,
+// which files of the build context it leaves out. You don't need to change
+// it.
+
+// ignorePattern is one pattern line of a .dockerignore file.
+type ignorePattern struct {
+	Line      int      // the line it's on
+	Text      string   // the line as written, for failure messages
+	Exception bool     // true when the line starts with "!": keep what matches
+	Segments  []string // the pattern split at "/": "deploy/*.key" is ["deploy", "*.key"]
+}
+
+// readIgnoreFile parses the ignore file name in the exercise folder. Like
+// Docker, it skips lines starting with "#" (comments) and blank lines, trims
+// spaces, and ignores leading and trailing slashes, so "/bin/", "bin/" and
+// "bin" are the same pattern.
+func readIgnoreFile(t *testing.T, name string) []ignorePattern {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	var patterns []ignorePattern
+	for i, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(line, "#") {
+			continue // only a # in the first column starts a comment
+		}
+		text := strings.TrimSpace(line)
+		p := ignorePattern{Line: i + 1, Text: text}
+		text, p.Exception = strings.CutPrefix(text, "!")
+		text = strings.Trim(path.Clean(strings.TrimSpace(text)), "/")
+		if text == "" || text == "." {
+			continue // blank, or only slashes and dots: Docker skips it
+		}
+		p.Segments = strings.Split(text, "/")
+		for _, segment := range p.Segments {
+			if _, err := path.Match(segment, ""); err != nil {
+				t.Fatalf("%s line %d: %q is not a valid pattern: %v", name, p.Line, p.Text, err)
+			}
+		}
+		patterns = append(patterns, p)
+	}
+	return patterns
+}
+
+// excludedBy returns the pattern that leaves file out of the build context,
+// or nil when the file stays in. Every pattern is tried in order and the
+// last one that matches wins: a normal pattern excludes the file, an
+// exception ("!") brings it back. A pattern matches a file when it matches
+// the file's path or the path of one of its parent folders, so "bin"
+// excludes bin/ingest too.
+func excludedBy(patterns []ignorePattern, file string) *ignorePattern {
+	var decided *ignorePattern
+	parts := strings.Split(file, "/")
+	for i, p := range patterns {
+		for n := 1; n <= len(parts); n++ {
+			if matchSegments(p.Segments, parts[:n]) {
+				decided = &patterns[i]
+				break
+			}
+		}
+	}
+	if decided == nil || decided.Exception {
+		return nil
+	}
+	return decided
+}
+
+// matchSegments reports whether a path, split at "/", matches a pattern,
+// split the same way. Within one segment, "*" matches any run of characters
+// and "?" any single character (path.Match does that part). A whole segment
+// "**" matches any number of folders, including none, so "**/*.key" matches
+// server.key and deploy/tls/server.key.
+func matchSegments(pattern, parts []string) bool {
+	if len(pattern) == 0 {
+		return len(parts) == 0
+	}
+	if pattern[0] == "**" {
+		return matchSegments(pattern[1:], parts) || (len(parts) > 0 && matchSegments(pattern, parts[1:]))
+	}
+	if len(parts) == 0 {
+		return false
+	}
+	ok, _ := path.Match(pattern[0], parts[0])
+	return ok && matchSegments(pattern[1:], parts[1:])
+}

@@ -116,7 +116,7 @@ which call failed. It changes only the message, not whether the test passes.
 > `t.Helper()` on the first line is also convention. Names like
 > `assertPort` are your choice.
 
-### How Gopherlings grades your test
+### How Groundwork grades your test
 
 As in *Your first test*, `TestGrader` runs your test against the real code
 (it must pass) and against *mutants*, copies with one bug each (it must fail
@@ -151,7 +151,7 @@ the helper `assertHosts`.
   "got …, want …" message.
 
 Then the existing case catches a `ParseHosts` that drops the last host.
-Gopherlings can't check that you called `t.Helper()`, since it only improves
+Groundwork can't check that you called `t.Helper()`, since it only improves
 the messages, but do it anyway.
 
 **Think it through:**

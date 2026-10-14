@@ -1,0 +1,67 @@
+package deploystatus
+
+import "container/list"
+
+// Cache is a least-recently-used cache of statuses by service name. It is
+// not safe for concurrent use on its own: Service only touches it while
+// holding its mutex.
+type Cache struct {
+	capacity int
+	order    *list.List               // front = most recently used; values are *cacheEntry
+	items    map[string]*list.Element // service name -> its element in order
+}
+
+// cacheEntry is one cached status and the key it is stored under.
+type cacheEntry struct {
+	key    string
+	status Status
+}
+
+// NewCache returns an empty Cache that holds at most capacity statuses.
+func NewCache(capacity int) *Cache {
+	return &Cache{
+		capacity: capacity,
+		order:    list.New(),
+		items:    make(map[string]*list.Element),
+	}
+}
+
+// Get returns the status cached under key and true, and marks it most
+// recently used. On a miss it returns the zero Status and false.
+func (c *Cache) Get(key string) (Status, bool) {
+	e, ok := c.items[key]
+	if !ok {
+		return Status{}, false
+	}
+	c.order.MoveToFront(e)
+	return e.Value.(*cacheEntry).status, true
+}
+
+// Put stores st under key as the most recently used entry, evicting the
+// least recently used entry when the cache is full.
+func (c *Cache) Put(key string, st Status) {
+	if e, ok := c.items[key]; ok {
+		e.Value.(*cacheEntry).status = st
+		c.order.MoveToFront(e)
+		return
+	}
+	c.items[key] = c.order.PushFront(&cacheEntry{key: key, status: st})
+	if c.order.Len() > c.capacity {
+		oldest := c.order.Back()
+		c.order.Remove(oldest)
+		delete(c.items, oldest.Value.(*cacheEntry).key)
+	}
+}
+
+// Remove deletes key from the cache. Removing a missing key does nothing.
+func (c *Cache) Remove(key string) {
+	if e, ok := c.items[key]; ok {
+		c.order.Remove(e)
+		delete(c.items, key)
+	}
+}
+
+// Len returns how many statuses the cache holds.
+func (c *Cache) Len() int {
+	return c.order.Len()
+}

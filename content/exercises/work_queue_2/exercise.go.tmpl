@@ -1,0 +1,47 @@
+// Package consumer is the Groundwork exercise "Work queues: fix the at-least-once consumer".
+package consumer
+
+// Deployer runs one deploy of version to service, and returns an error if
+// the deploy failed.
+type Deployer func(service, version string) error
+
+// Consumer takes deploy requests from a Broker and runs each one exactly
+// once in effect, even though the Broker may deliver a message more than
+// once.
+type Consumer struct {
+	broker *Broker
+	deploy Deployer
+	done   map[string]bool // IDs of messages that were deployed
+}
+
+// New returns a Consumer that reads from b and deploys with deploy.
+func New(b *Broker, deploy Deployer) *Consumer {
+	return &Consumer{broker: b, deploy: deploy, done: make(map[string]bool)}
+}
+
+// HandleNext receives one message and handles it. It returns false if no
+// message was ready. Otherwise it returns true and the deploy's error, if
+// any. A failed deploy is nacked so the Broker delivers it again, and a
+// message that was already deployed is acked without deploying again.
+func (c *Consumer) HandleNext() (bool, error) {
+	m, ok := c.broker.Receive()
+	if !ok {
+		return false, nil
+	}
+
+	// TODO(1): Fix the lost deploys: ack only after the deploy succeeds, and
+	// nack the message when the deploy fails.
+	c.broker.Ack(m.ID)
+
+	// TODO(2): Fix the double deploys: if m.ID was already deployed, ack the
+	// message and return without deploying.
+
+	// TODO(3): Fix the skipped retries: record m.ID only after the deploy
+	// succeeds.
+	c.done[m.ID] = true
+
+	if err := c.deploy(m.Service, m.Version); err != nil {
+		return true, err
+	}
+	return true, nil
+}

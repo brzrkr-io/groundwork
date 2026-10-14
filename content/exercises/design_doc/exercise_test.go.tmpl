@@ -1,0 +1,181 @@
+package designdoc
+
+import (
+	"os"
+	"regexp"
+	"strings"
+	"testing"
+	"unicode"
+)
+
+// The tests read design.md, drop the <!-- comments -->, split it into its
+// "## " sections, and check each section has real content. They can't tell
+// whether your design is good: that's what reviewers are for. They check
+// that nothing a reviewer needs is missing.
+
+func TestProblem(t *testing.T) {
+	problem := section(t, "Problem")
+	if n := wordCount(problem); n < 40 {
+		t.Errorf("Problem has %d words, want at least 40: say what breaks, who it hurts, and how you know", n)
+	}
+	if !strings.ContainsFunc(problem, unicode.IsDigit) {
+		t.Error("Problem has no numbers in it; numbers (how many incidents, how full, how fast) turn a complaint into evidence")
+	}
+}
+
+func TestConstraints(t *testing.T) {
+	constraints := section(t, "Constraints")
+	bullets := 0
+	for line := range strings.SplitSeq(constraints, "\n") {
+		text, ok := strings.CutPrefix(line, "- ")
+		if !ok {
+			continue
+		}
+		bullets++
+		if n := wordCount(text); n < 4 {
+			t.Errorf("the constraint %q has %d words, want at least 4: say what must hold, not just a topic", line, n)
+		}
+	}
+	if bullets < 3 {
+		t.Errorf(`Constraints has %d bullet points (lines starting "- "), want at least 3`, bullets)
+	}
+}
+
+func TestOptions(t *testing.T) {
+	options := subsections(section(t, "Options"))
+	if len(options) < 2 {
+		t.Fatalf(`Options has %d options (### headings), want at least 2; a decision needs something to choose between`, len(options))
+	}
+	for _, option := range options {
+		var description []string
+		pros, cons := 0, 0
+		for line := range strings.SplitSeq(option.body, "\n") {
+			switch {
+			case strings.HasPrefix(line, "- Pro:"):
+				if wordCount(strings.TrimPrefix(line, "- Pro:")) < 3 {
+					t.Errorf("%s: %q is too short; write the advantage in at least 3 words", option.title, line)
+				}
+				pros++
+			case strings.HasPrefix(line, "- Con:"):
+				if wordCount(strings.TrimPrefix(line, "- Con:")) < 3 {
+					t.Errorf("%s: %q is too short; write the disadvantage in at least 3 words", option.title, line)
+				}
+				cons++
+			default:
+				description = append(description, line)
+			}
+		}
+		if n := wordCount(strings.Join(description, " ")); n < 10 {
+			t.Errorf("%s: the description has %d words, want at least 10: say what the option is before weighing it", option.title, n)
+		}
+		if pros == 0 || cons == 0 {
+			t.Errorf(`%s has %d "- Pro:" and %d "- Con:" lines, want at least one of each; every option has a cost`, option.title, pros, cons)
+		}
+	}
+}
+
+func TestDecision(t *testing.T) {
+	decision := section(t, "Decision")
+	if n := wordCount(decision); n < 40 {
+		t.Errorf("Decision has %d words, want at least 40", n)
+	}
+
+	var letters []string
+	for _, option := range subsections(sectionText(t, "Options")) {
+		if m := optionLetter.FindStringSubmatch(option.title); m != nil {
+			letters = append(letters, m[1])
+		}
+	}
+	chosen := false
+	for _, letter := range letters {
+		if strings.Contains(decision, "Option "+letter) {
+			chosen = true
+		}
+	}
+	switch {
+	case len(letters) == 0:
+		t.Error(`Decision can't name an option yet: Options has no heading like "### Option A: ..." (task 3)`)
+	case !chosen:
+		t.Errorf(`Decision doesn't name an option; write "Option" and its letter, one of %q, as in the ### headings`, letters)
+	}
+
+	lower := strings.ToLower(decision)
+	if !strings.Contains(lower, "because") {
+		t.Error(`Decision doesn't say why; use the word "because" and give the reason`)
+	}
+	if !strings.Contains(lower, "roll back") && !strings.Contains(lower, "rollback") &&
+		!strings.Contains(lower, "revert") && !strings.Contains(lower, "undo") {
+		t.Error(`Decision doesn't say how to undo the change; mention how you would roll back, revert or undo it if it goes wrong`)
+	}
+}
+
+// optionLetter finds the letter in a heading like "Option B: ship the logs".
+var optionLetter = regexp.MustCompile(`^Option ([A-Z])\b`)
+
+// comments matches <!-- HTML comments -->, which Markdown doesn't show.
+var comments = regexp.MustCompile(`(?s)<!--.*?-->`)
+
+// section returns the text under the "## name" heading of design.md, without
+// comments. It fails the test if that text still has a TODO or a
+// <placeholder>.
+func section(t *testing.T, name string) string {
+	t.Helper()
+	text := sectionText(t, name)
+	if strings.Contains(text, "TODO") {
+		t.Errorf("the %s section still says TODO", name)
+	}
+	if m := placeholder.FindString(text); m != "" {
+		t.Errorf("the %s section still has the placeholder %s; replace it with your own words", name, m)
+	}
+	return text
+}
+
+// sectionText returns the text under the "## name" heading of design.md,
+// without comments, or stops the test if there is no such heading.
+func sectionText(t *testing.T, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile("design.md")
+	if err != nil {
+		t.Fatalf("can't read design.md: %v", err)
+	}
+	doc := comments.ReplaceAllString(string(raw), "")
+	_, text, found := strings.Cut(doc, "\n## "+name+"\n")
+	if !found {
+		t.Fatalf(`design.md has no "## %s" heading; keep the template's headings`, name)
+	}
+	if next := strings.Index(text, "\n## "); next >= 0 {
+		text = text[:next]
+	}
+	return text
+}
+
+// placeholder matches template text like <name> or <what it is>.
+var placeholder = regexp.MustCompile(`<[a-z][a-z ]*>`)
+
+// option is one "### " part of a section.
+type option struct {
+	title string
+	body  string
+}
+
+// subsections splits text at its "### " headings.
+func subsections(text string) []option {
+	var options []option
+	for _, part := range strings.Split(text, "\n### ")[1:] {
+		title, body, _ := strings.Cut(part, "\n")
+		options = append(options, option{strings.TrimSpace(title), body})
+	}
+	return options
+}
+
+// wordCount counts the words in text, ignoring Markdown punctuation such as
+// "-" and "*".
+func wordCount(text string) int {
+	count := 0
+	for field := range strings.FieldsSeq(text) {
+		if strings.ContainsFunc(field, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+			count++
+		}
+	}
+	return count
+}

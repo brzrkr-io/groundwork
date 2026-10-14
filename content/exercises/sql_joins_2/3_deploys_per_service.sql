@@ -1,0 +1,6 @@
+-- Task 3: Count deploys per service, including zero
+--
+-- Return every service's name (service) and its number of deploys
+-- (deploys), A to Z. A service that never deployed shows 0.
+--
+-- TODO(3): Write your query below.

@@ -4,7 +4,7 @@ import appsv1 "k8s.io/api/apps/v1"
 
 // ExposeLabel is the label that asks this controller for a Service.
 // Only the exact value "true" counts.
-const ExposeLabel = "gopherlings.dev/expose"
+const ExposeLabel = "groundwork.dev/expose"
 
 // Key returns the work-queue key for d: "namespace/name".
 func Key(d *appsv1.Deployment) string {

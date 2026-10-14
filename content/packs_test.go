@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjanderson/gopherlings/content"
-	"github.com/pjanderson/gopherlings/internal/course"
-	"github.com/pjanderson/gopherlings/internal/workspace"
+	"github.com/pjanderson/groundwork/content"
+	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/pjanderson/groundwork/internal/workspace"
 )
 
 // TestPacks proves every exercise is solvable and starts unsolved: the starter

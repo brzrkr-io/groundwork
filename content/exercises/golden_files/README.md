@@ -106,7 +106,7 @@ project, `git diff testdata/`) and check the change is the one you wanted.
 `-update` makes the test agree with the code, whatever the code does, so the
 review is your real check.
 
-### How Gopherlings grades your test
+### How Groundwork grades your test
 
 As in *Your first test*, `TestGrader` runs your test against the real code
 (it must pass) and against *mutants*, copies with one bug each (it must fail

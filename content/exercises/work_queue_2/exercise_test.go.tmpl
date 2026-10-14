@@ -1,0 +1,184 @@
+package consumer
+
+import (
+	"errors"
+	"slices"
+	"testing"
+)
+
+// fakeDeployer records every deploy and fails the ones it is told to.
+type fakeDeployer struct {
+	deploys  []string       // "service@version" of every call, in order
+	failures map[string]int // "service@version" -> how many more calls fail
+	during   func()         // if set, runs in the middle of every deploy
+}
+
+func (f *fakeDeployer) deploy(service, version string) error {
+	key := service + "@" + version
+	f.deploys = append(f.deploys, key)
+	if f.during != nil {
+		f.during()
+	}
+	if f.failures[key] > 0 {
+		f.failures[key]--
+		return errors.New("rollout of " + key + " timed out")
+	}
+	return nil
+}
+
+// handle calls c.HandleNext and checks it received a message, and whether
+// the deploy failed.
+func handle(t *testing.T, c *Consumer, wantErr bool) {
+	t.Helper()
+	ok, err := c.HandleNext()
+	switch {
+	case !ok:
+		t.Fatalf("HandleNext() = false, %v, want true (a message was ready)", err)
+	case wantErr && err == nil:
+		t.Errorf("HandleNext() = true, nil, want true and the deploy's error")
+	case !wantErr && err != nil:
+		t.Errorf("HandleNext() = true, %v, want true, nil", err)
+	}
+}
+
+// wantDeploys checks the deploys that ran, in order.
+func wantDeploys(t *testing.T, f *fakeDeployer, want ...string) {
+	t.Helper()
+	if !slices.Equal(f.deploys, want) {
+		t.Errorf("deploys run = %q, want %q", f.deploys, want)
+	}
+}
+
+// wantPending checks how many messages the broker still holds.
+func wantPending(t *testing.T, b *Broker, want int) {
+	t.Helper()
+	if got := b.Pending(); got != want {
+		t.Errorf("broker Pending() = %d, want %d", got, want)
+	}
+}
+
+func TestAckAfterSuccess(t *testing.T) {
+	t.Run("a failed deploy is nacked, not lost", func(t *testing.T) {
+		b := NewBroker()
+		b.Publish(Message{ID: "d1", Service: "api", Version: "v2"})
+		f := &fakeDeployer{failures: map[string]int{"api@v2": 1}}
+		c := New(b, f.deploy)
+
+		handle(t, c, true)
+		wantPending(t, b, 1)
+		if m, ok := b.Receive(); !ok || m.ID != "d1" {
+			t.Errorf("after the failed deploy, broker Receive() = %q, %t, want %q, true", m.ID, ok, "d1")
+		}
+	})
+
+	t.Run("two failed deploys both stay in the queue", func(t *testing.T) {
+		b := NewBroker()
+		b.Publish(Message{ID: "d1", Service: "api", Version: "v2"})
+		b.Publish(Message{ID: "d2", Service: "web", Version: "v7"})
+		f := &fakeDeployer{failures: map[string]int{"api@v2": 1, "web@v7": 1}}
+		c := New(b, f.deploy)
+
+		handle(t, c, true)
+		handle(t, c, true)
+		wantDeploys(t, f, "api@v2", "web@v7")
+		wantPending(t, b, 2)
+	})
+
+	t.Run("successful deploys are acked", func(t *testing.T) {
+		b := NewBroker()
+		b.Publish(Message{ID: "d1", Service: "api", Version: "v2"})
+		b.Publish(Message{ID: "d2", Service: "web", Version: "v7"})
+		f := &fakeDeployer{}
+		c := New(b, f.deploy)
+
+		handle(t, c, false)
+		handle(t, c, false)
+		wantDeploys(t, f, "api@v2", "web@v7")
+		wantPending(t, b, 0)
+		if ok, err := c.HandleNext(); ok || err != nil {
+			t.Errorf("HandleNext() on an empty broker = %t, %v, want false, nil", ok, err)
+		}
+	})
+}
+
+func TestSkipDuplicates(t *testing.T) {
+	t.Run("the same message published twice", func(t *testing.T) {
+		b := NewBroker()
+		b.Publish(Message{ID: "d1", Service: "api", Version: "v2"})
+		b.Publish(Message{ID: "d1", Service: "api", Version: "v2"}) // the publisher retried
+		f := &fakeDeployer{}
+		c := New(b, f.deploy)
+
+		handle(t, c, false)
+		handle(t, c, false)
+		wantDeploys(t, f, "api@v2")
+		wantPending(t, b, 0)
+	})
+
+	t.Run("redelivered because the deploy outlived the visibility timeout", func(t *testing.T) {
+		b := NewBroker()
+		b.Publish(Message{ID: "d1", Service: "billing", Version: "v14"})
+		f := &fakeDeployer{}
+		f.during = func() {
+			b.Expire() // the deploy is slow: d1 goes back in the queue
+			f.during = nil
+		}
+		c := New(b, f.deploy)
+
+		handle(t, c, false)
+		wantPending(t, b, 1) // the late ack came after the redelivery was queued
+		handle(t, c, false)
+		wantDeploys(t, f, "billing@v14")
+		wantPending(t, b, 0)
+	})
+
+	t.Run("different IDs are different requests", func(t *testing.T) {
+		b := NewBroker()
+		b.Publish(Message{ID: "d1", Service: "api", Version: "v2"})
+		b.Publish(Message{ID: "d2", Service: "api", Version: "v2"}) // a deliberate redeploy
+		b.Publish(Message{ID: "d1", Service: "api", Version: "v2"}) // a duplicate
+		f := &fakeDeployer{}
+		c := New(b, f.deploy)
+
+		handle(t, c, false)
+		handle(t, c, false)
+		handle(t, c, false)
+		wantDeploys(t, f, "api@v2", "api@v2")
+		wantPending(t, b, 0)
+	})
+}
+
+func TestRetryAfterFailure(t *testing.T) {
+	t.Run("fails once, retried, then a duplicate is skipped", func(t *testing.T) {
+		b := NewBroker()
+		b.Publish(Message{ID: "d1", Service: "api", Version: "v2"})
+		f := &fakeDeployer{failures: map[string]int{"api@v2": 1}}
+		c := New(b, f.deploy)
+
+		handle(t, c, true)  // fails, nacked
+		handle(t, c, false) // the retry deploys
+		b.Publish(Message{ID: "d1", Service: "api", Version: "v2"})
+		handle(t, c, false) // a duplicate: skipped
+		wantDeploys(t, f, "api@v2", "api@v2")
+		wantPending(t, b, 0)
+	})
+
+	t.Run("fails twice with another message in between", func(t *testing.T) {
+		b := NewBroker()
+		b.Publish(Message{ID: "d1", Service: "web", Version: "v7"})
+		b.Publish(Message{ID: "d2", Service: "db", Version: "v3"})
+		f := &fakeDeployer{failures: map[string]int{"web@v7": 2}}
+		c := New(b, f.deploy)
+
+		handle(t, c, true)  // d1 fails
+		handle(t, c, false) // d2 deploys
+		handle(t, c, true)  // d1 fails again
+		handle(t, c, false) // d1 deploys
+		b.Publish(Message{ID: "d2", Service: "db", Version: "v3"})
+		b.Publish(Message{ID: "d1", Service: "web", Version: "v7"})
+		handle(t, c, false) // duplicate d2: skipped
+		handle(t, c, false) // duplicate d1: skipped
+		wantDeploys(t, f, "web@v7", "db@v3", "web@v7", "web@v7")
+		wantPending(t, b, 0)
+	})
+}

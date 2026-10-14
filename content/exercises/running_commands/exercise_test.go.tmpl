@@ -153,7 +153,7 @@ func TestExitStatus(t *testing.T) {
 
 	missing := []string{
 		filepath.Join(t.TempDir(), "no-such-tool"),
-		"gopherlings-no-such-tool",
+		"groundwork-no-such-tool",
 	}
 	for _, name := range missing {
 		t.Run("cannot start "+filepath.Base(name), func(t *testing.T) {

@@ -1,0 +1,6 @@
+-- Task 3: Stop duplicate deploy records
+--
+-- Create a unique index named deploys_one_per_release so the same
+-- version of a service can't be recorded twice for one environment.
+--
+-- TODO(3): Write your statement below.

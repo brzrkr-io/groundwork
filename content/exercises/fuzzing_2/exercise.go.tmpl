@@ -1,4 +1,4 @@
-// Package alerts is the Gopherlings exercise "Fuzzing: properties of a truncated alert".
+// Package alerts is the Groundwork exercise "Fuzzing: properties of a truncated alert".
 package alerts
 
 // Truncate shortens an alert message to at most limit bytes, because chat and
@@ -11,7 +11,7 @@ func Truncate(msg string, limit int) string {
 	return truncate(msg, limit)
 }
 
-// truncate points at the real implementation. Gopherlings' grader swaps in
+// truncate points at the real implementation. Groundwork' grader swaps in
 // broken versions to check that your test catches them.
 var truncate = realTruncate
 

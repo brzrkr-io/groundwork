@@ -244,7 +244,7 @@ go build      # makes ./hello
 ```
 
 `go run` is for trying things out. `go build` is what a pipeline does,
-because the binary is the thing you ship. `go test` is what Gopherlings runs
+because the binary is the thing you ship. `go test` is what Groundwork runs
 every time you save an exercise. It also runs a few of `go vet`'s checks,
 which look for code that compiles but is almost certainly wrong.
 
@@ -412,6 +412,13 @@ how you build for arm64 Graviton nodes from an amd64 laptop.
 | Runtime | Code Go puts in every binary to manage memory and tasks. |
 | Standard streams | stdin, stdout and stderr: a process's input, output and error output. |
 | Exit code | The number a process returns when it ends: 0 for success. |
+
+## Watch
+
+- [Go in 100 Seconds](https://www.youtube.com/watch?v=446E-r0rXHI) · Fireship · 2 min: a fast, fun overview of what Go is and why it compiles to one fast program file.
+- [The Central Processing Unit (CPU): Crash Course Computer Science #7](https://www.youtube.com/watch?v=FZGugFqdr60) · CrashCourse · 12 min: shows, step by step, how the CPU fetches and runs one tiny instruction at a time from memory, the picture behind "the CPU follows instructions".
+- [How do computers read code?](https://www.youtube.com/watch?v=QXjU9qTsYCc) · Frame of Essence · 12 min: an animated walk from the code a person types down to the instructions the CPU actually runs.
+- [AT&T Archives: The UNIX Operating System](https://www.youtube.com/watch?v=tc4ROCJYbm0) · AT&T Tech Channel · 27 min: a classic 1982 film from Bell Labs; watch Brian Kernighan chain small programs into a pipeline, the idea behind stdin and stdout.
 
 ## Go deeper
 

@@ -1,0 +1,27 @@
+# Task 4: lint statusd, and tell the team's chat when lint fails.
+# In a real repository: .github/workflows/lint.yml.
+
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    # TODO(4): GitHub refuses to start this workflow:
+    #   Expected format {org}/{repo}[/path]@ref. Actual 'acme/slack-notify'
+    # and the security review flagged two more steps that run whatever code
+    # their owners push next. Make every action run a version you chose.
+    steps:
+      - uses: actions/checkout@main
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@master
+      - if: failure()
+        uses: acme/slack-notify
+        with:
+          channel: statusd-alerts

@@ -1,0 +1,46 @@
+# Task 3: ship alertd, the team's second service: build its image once,
+# deploy it to staging, then promote the same image to production.
+# In a real repository: .github/workflows/deliver.yml.
+
+name: deliver
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/acme/alertd:${{ github.ref_name }}
+          build-args: VERSION=${{ github.ref_name }}
+
+  deploy-staging:
+    needs: image
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./deploy.sh staging ${{ github.ref_name }}
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency: production
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./deploy.sh production ${{ github.ref_name }}

@@ -1,0 +1,6 @@
+-- Task 1: List every deploy
+--
+-- Show the service, version and environment of every deploy,
+-- in that order.
+--
+-- TODO(1): Write your query below.

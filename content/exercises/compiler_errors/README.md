@@ -19,7 +19,7 @@ method that works for any error.
 ```
 
 Go to that **line** first. The **column** counts characters from the left and
-points at the exact word. Gopherlings shows errors in this form when your code
+points at the exact word. Groundwork shows errors in this form when your code
 doesn't compile.
 
 ### A method for any compile error
@@ -55,7 +55,7 @@ doesn't compile.
 
 ## Your task
 
-When you start, Gopherlings shows four errors, one per task, in line order.
+When you start, Groundwork shows four errors, one per task, in line order.
 Fix them one at a time. After each save, the list gets shorter. When the code
 compiles, the tests run and check that each function returns the right thing.
 

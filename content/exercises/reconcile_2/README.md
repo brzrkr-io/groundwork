@@ -137,7 +137,7 @@ Then `Update` the copy. You won't need the `ResourceVersion` line any more.
 
 ```go
 // Deployment: 2 replicas of .../worker:2.3.0, label team=payments,
-// annotation gopherlings.dev/owner=payments-team, env LOG_LEVEL=debug
+// annotation groundwork.dev/owner=payments-team, env LOG_LEVEL=debug
 // ConfigMap: replicas "4", image ".../worker:2.3.0"
 Reconcile(ctx, cs, "payments", "worker")
 // => 4 replicas, and the label, annotation and env var are all still there

@@ -18,7 +18,7 @@ An import path for your own package is the module path from `go.mod`, then the f
 
 ### Closer
 
-`go.mod` says `module gopherlings.local/packages`. Add `/inventory` to the end and use that in the import in `deploy/deploy.go`.
+`go.mod` says `module groundwork.local/packages`. Add `/inventory` to the end and use that in the import in `deploy/deploy.go`.
 
 ### Answer
 
@@ -26,7 +26,7 @@ An import path for your own package is the module path from `go.mod`, then the f
 import (
 	"strings"
 
-	"gopherlings.local/packages/inventory"
+	"groundwork.local/packages/inventory"
 )
 ```
 
@@ -59,7 +59,7 @@ func NormalizeHost(name string) string {
 In `deploy/deploy.go`:
 
 ```go
-import "gopherlings.local/packages/inventory"
+import "groundwork.local/packages/inventory"
 
 // in the loop in Targets:
 targets = append(targets, inventory.Address(inventory.NormalizeHost(host), port))

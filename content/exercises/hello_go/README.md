@@ -1,7 +1,7 @@
 # Hello, Go
 
-Welcome to Gopherlings. Every exercise is a small Go program that is nearly
-finished. You fix it, save, and Gopherlings re-runs the tests straight away.
+Welcome to Groundwork. Every exercise is a small Go program that is nearly
+finished. You fix it, save, and Groundwork re-runs the tests straight away.
 
 **New here:** packages, comments, functions, `return`, string literals.
 
@@ -17,7 +17,7 @@ Each exercise folder holds a few files:
 | `exercise_test.go` | Tests that check your code. Read them, but don't change them. |
 | `README.md` | These instructions. |
 
-Gopherlings shows each test as ✓ (passing) or ✗ (failing). A failure message
+Groundwork shows each test as ✓ (passing) or ✗ (failing). A failure message
 reads "you returned X, the test wanted Y".
 
 Look for `// TODO(1)`, `// TODO(2)` and so on in `exercise.go`. Each one marks
@@ -115,7 +115,7 @@ It is all lowercase, with one space between words.
 **Think it through:**
 - This is the same kind of change as task 1, in a different function.
 
-When both tests pass, Gopherlings marks the exercise done. Press `n` to move
+When both tests pass, Groundwork marks the exercise done. Press `n` to move
 on.
 
 ## Learn more

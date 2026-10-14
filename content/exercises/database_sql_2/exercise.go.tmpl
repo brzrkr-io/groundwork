@@ -1,0 +1,102 @@
+// Package deploydb is the Groundwork exercise "database/sql: fix the SQL injection".
+package deploydb
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+)
+
+// Deploy is the part of a deploys row the status API shows.
+type Deploy struct {
+	ID         int64
+	Service    string
+	Version    string
+	Status     string
+	FinishedAt string // "" while the deploy is still running
+}
+
+// ErrNotFound means no deploy has the requested id.
+var ErrNotFound = errors.New("deploy not found")
+
+// FailedVersions returns the versions of service's failed deploys, by id.
+func FailedVersions(db *sql.DB, service string) ([]string, error) {
+	// TODO(1): service comes from a web form. Pass it as a ? placeholder
+	// value instead of gluing it into the SQL.
+	query := "SELECT version FROM deploys WHERE service = '" + service + "' AND status = 'failed' ORDER BY id"
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed versions: %w", err)
+	}
+	defer rows.Close()
+
+	var versions []string
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, fmt.Errorf("failed versions: %w", err)
+		}
+		versions = append(versions, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed versions: %w", err)
+	}
+	return versions, nil
+}
+
+// MarkRolledBack sets the status of the deploy with the given id to
+// "rolled_back". id comes straight from the URL, as in
+// /deploys/14/rollback. It returns ErrNotFound if no deploy matched.
+func MarkRolledBack(db *sql.DB, id string) error {
+	// TODO(2): Stop id from changing the SQL: pass it as a placeholder value.
+	res, err := db.Exec("UPDATE deploys SET status = 'rolled_back' WHERE id = " + id)
+	if err != nil {
+		return fmt.Errorf("mark %s rolled back: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark %s rolled back: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// GetDeploy returns the deploy with the given id, or ErrNotFound.
+func GetDeploy(db *sql.DB, id int64) (Deploy, error) {
+	var d Deploy
+	// TODO(3): finished_at is NULL while a deploy runs, and a string can't
+	// hold NULL. Scan it into a sql.NullString, then fill d.FinishedAt.
+	err := db.QueryRow(
+		`SELECT id, service, version, status, finished_at FROM deploys WHERE id = ?`,
+		id,
+	).Scan(&d.ID, &d.Service, &d.Version, &d.Status, &d.FinishedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Deploy{}, ErrNotFound
+	}
+	if err != nil {
+		return Deploy{}, fmt.Errorf("get deploy %d: %w", id, err)
+	}
+	return d, nil
+}
+
+// Release records a succeeded production deploy of version and makes it
+// service's current version, both or neither.
+func Release(db *sql.DB, service, version, startedAt string) error {
+	// TODO(4): Run both statements in one transaction: if the second fails,
+	// the first must be undone.
+	_, err := db.Exec(
+		`INSERT INTO deploys (service, version, environment, status, started_at)
+		 VALUES (?, ?, 'production', 'succeeded', ?)`,
+		service, version, startedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("release %s %s: %w", service, version, err)
+	}
+	_, err = db.Exec(`UPDATE services SET current_version = ? WHERE name = ?`, version, service)
+	if err != nil {
+		return fmt.Errorf("release %s %s: %w", service, version, err)
+	}
+	return nil
+}

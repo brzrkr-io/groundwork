@@ -1,0 +1,57 @@
+// Package svcconfig is the Groundwork exercise "Removing duplication".
+package svcconfig
+
+import "fmt"
+
+// Config is a service's settings, read from its config file.
+type Config struct {
+	Environment string
+	HTTPPort    int
+	MetricsPort int
+	AdminPort   int
+	GRPCPort    int
+}
+
+// TODO(2): Declare the list of environments once, here, and use it in
+// Validate and AlertChannel.
+
+// Validate returns every problem with c, one message per problem, in the
+// order of the fields. A valid config returns nil. See the README for the
+// rules.
+func Validate(c Config) []string {
+	var problems []string
+	if c.Environment != "development" && c.Environment != "production" {
+		problems = append(problems, fmt.Sprintf("environment %q is not one of development, production", c.Environment))
+	}
+
+	// TODO(1): Move the port rule into checkPort(name string, port int) error,
+	// and call it for each port.
+	if c.HTTPPort < 1 || c.HTTPPort > 65535 {
+		problems = append(problems, fmt.Sprintf("http_port %d is out of range 1-65535", c.HTTPPort))
+	} else if c.HTTPPort < 1024 {
+		problems = append(problems, fmt.Sprintf("http_port %d needs root; use 1024 or above", c.HTTPPort))
+	}
+	if c.MetricsPort < 1 || c.MetricsPort > 65535 {
+		problems = append(problems, fmt.Sprintf("metrics_port %d is out of range 1-65535", c.MetricsPort))
+	} else if c.MetricsPort < 1024 {
+		problems = append(problems, fmt.Sprintf("metrics_port %d needs root; use 1024 or above", c.MetricsPort))
+	}
+	if c.AdminPort < 1 || c.AdminPort > 65535 {
+		problems = append(problems, fmt.Sprintf("metrics_port %d is out of range 1-65535", c.AdminPort))
+	} else if c.AdminPort < 1024 {
+		problems = append(problems, fmt.Sprintf("metrics_port %d needs root; use 1024 or above", c.AdminPort))
+	}
+
+	// TODO(3): Check GRPCPort too.
+	return problems
+}
+
+// AlertChannel returns the chat channel for alerts from env: "#alerts-" and
+// the environment for a known environment, "#alerts-unknown" otherwise.
+func AlertChannel(env string) string {
+	switch env {
+	case "development", "staging", "production":
+		return "#alerts-" + env
+	}
+	return "#alerts-unknown"
+}

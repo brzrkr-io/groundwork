@@ -1,0 +1,19 @@
+# Task 2: build the statusd image and push it to GitHub's container
+# registry, tagged with the version.
+# In a real repository: .github/workflows/image.yml.
+
+name: image
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    # TODO(2): Give this job's token only what it needs: read the code,
+    # write packages.
+
+    steps:
+      # TODO(2): Check out the code, log in to ghcr.io, then build and push
+      # ghcr.io/acme/statusd tagged with the version.

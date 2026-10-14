@@ -57,7 +57,7 @@ if got != want {
 > `Unmarshal` can fill the variable in. `t.Fatalf` here is the author's choice:
 > if the body isn't JSON, the next checks are meaningless.
 
-### How Gopherlings grades this exercise
+### How Groundwork grades this exercise
 
 As in *Testing HTTP: recorders and fake servers*, `TestGrader` runs your
 `TestDeployAccepted` and `TestDeployRejectsEmptyService` against the real

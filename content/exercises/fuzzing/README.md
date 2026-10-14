@@ -62,7 +62,7 @@ parameter, written like a Go conversion: `string("")`, `int(2)`,
 A plain `go test` runs each entry as a subtest, such as
 `FuzzParseTarget/seed#0`, or `FuzzParseTarget/empty_target` for a file named
 `empty_target`. Nothing random happens, so it is fast and repeatable.
-Gopherlings grades with plain `go test` too.
+Groundwork grades with plain `go test` too.
 
 ### Real fuzzing (going further)
 
@@ -86,7 +86,7 @@ never come back unnoticed.
 The two files in this exercise's `testdata/fuzz/FuzzParseTarget/` are exactly
 that: crashes a fuzzer found, renamed so you can tell them apart.
 
-### How Gopherlings grades your fuzz target
+### How Groundwork grades your fuzz target
 
 - `TestGrader` runs `FuzzParseTarget` with plain `go test` against the real
   `ParseTarget`, where it must pass, and against *mutants* that each put back

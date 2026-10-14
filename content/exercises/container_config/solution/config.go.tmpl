@@ -1,0 +1,91 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"net/url"
+	"slices"
+	"strconv"
+	"strings"
+)
+
+// Config holds every setting the inventory service reads at startup.
+type Config struct {
+	Port        int    // PORT
+	Env         string // APP_ENV
+	DatabaseURL string // DATABASE_URL
+	LogLevel    string // LOG_LEVEL
+}
+
+// Lookup returns the value of the environment variable key without
+// surrounding spaces, or fallback when the variable is unset or blank.
+// lookupEnv works like os.LookupEnv.
+func Lookup(lookupEnv func(string) (string, bool), key, fallback string) string {
+	value, ok := lookupEnv(key)
+	value = strings.TrimSpace(value)
+	if !ok || value == "" {
+		return fallback
+	}
+	return value
+}
+
+// Port returns the PORT setting as a number, 8080 when it's unset, or an
+// error when it isn't a whole number from 1 to 65535.
+func Port(lookupEnv func(string) (string, bool)) (int, error) {
+	value := Lookup(lookupEnv, "PORT", "8080")
+	port, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("PORT %q is not a number", value)
+	}
+	if port < 1 || port > 65535 {
+		return 0, fmt.Errorf("PORT %d is out of range 1-65535", port)
+	}
+	return port, nil
+}
+
+// Load reads every setting through lookupEnv. If any setting is wrong, it
+// returns Config{} and one error that lists every problem.
+func Load(lookupEnv func(string) (string, bool)) (Config, error) {
+	var errs []error
+
+	port, err := Port(lookupEnv)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	env := Lookup(lookupEnv, "APP_ENV", "dev")
+	if !slices.Contains([]string{"dev", "staging", "production"}, env) {
+		errs = append(errs, fmt.Errorf("APP_ENV %q must be dev, staging or production", env))
+	}
+
+	// Lookup can't tell unset from blank, so ask lookupEnv directly.
+	databaseURL, ok := lookupEnv("DATABASE_URL")
+	databaseURL = strings.TrimSpace(databaseURL)
+	if !ok {
+		errs = append(errs, errors.New("DATABASE_URL is not set"))
+	} else if databaseURL == "" {
+		errs = append(errs, errors.New("DATABASE_URL is set but empty"))
+	}
+
+	if err := errors.Join(errs...); err != nil {
+		return Config{}, err
+	}
+	return Config{
+		Port:        port,
+		Env:         env,
+		DatabaseURL: databaseURL,
+		LogLevel:    Lookup(lookupEnv, "LOG_LEVEL", "info"),
+	}, nil
+}
+
+// String returns the settings as one line for the startup log, with the
+// password in DatabaseURL replaced by xxxxx.
+func (c Config) String() string {
+	// url.Parse's error contains the whole URL, password included, so a URL
+	// that doesn't parse isn't shown at all.
+	db := "invalid"
+	if u, err := url.Parse(c.DatabaseURL); err == nil {
+		db = u.Redacted()
+	}
+	return fmt.Sprintf("port=%d env=%s log=%s db=%s", c.Port, c.Env, c.LogLevel, db)
+}

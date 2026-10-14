@@ -1,0 +1,4 @@
+# Vets and tests inventoryd on pushes to main and on every pull request.
+# In the real repository: .github/workflows/ci.yml.
+
+# TODO(3): Write the workflow named ci, with one job "test".

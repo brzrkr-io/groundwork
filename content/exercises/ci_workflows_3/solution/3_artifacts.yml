@@ -1,0 +1,32 @@
+# Task 3: build statusd once, then smoke-test that very binary in a second
+# job. In a real repository: .github/workflows/ci.yml.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go build -o bin/statusd .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: statusd
+          path: bin/statusd
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: statusd
+      - run: chmod +x statusd && ./statusd -version

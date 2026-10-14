@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: registry.example.com/api:1.4.1
+          ports:
+            - containerPort: 8080
+        - name: log-shipper
+          image: registry.example.com/log-shipper:1.4.1
+          env:
+            - name: LOG_PATH
+              value: /var/log/api

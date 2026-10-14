@@ -1,4 +1,4 @@
-// Package target is the Gopherlings exercise "Fuzzing".
+// Package target is the Groundwork exercise "Fuzzing".
 package target
 
 import (
@@ -15,7 +15,7 @@ func ParseTarget(s string) (host string, port int, err error) {
 	return parseTarget(s)
 }
 
-// parseTarget points at the real implementation. Gopherlings' grader swaps in
+// parseTarget points at the real implementation. Groundwork' grader swaps in
 // broken versions to check that your test catches them.
 var parseTarget = realParseTarget
 

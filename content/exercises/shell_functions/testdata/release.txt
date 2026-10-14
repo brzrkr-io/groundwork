@@ -1,0 +1,3 @@
+api 1.4.2
+worker 1.4.2
+billing 3.0.0

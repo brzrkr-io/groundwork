@@ -1,6 +1,6 @@
 # Your first test
 
-Until now Gopherlings wrote the tests and you wrote the code. From here on you
+Until now Groundwork wrote the tests and you wrote the code. From here on you
 write tests too. A test is a small program that checks your real program, so
 you find a broken config parser on your laptop, not during a deploy.
 
@@ -111,7 +111,7 @@ if _, err := ParseSize("lots"); err == nil {
 
 ### Running tests yourself
 
-Gopherlings runs the tests whenever you save. You can also run them in a
+Groundwork runs the tests whenever you save. You can also run them in a
 terminal from the exercise folder:
 
 ```text
@@ -120,9 +120,9 @@ go test -v                  also print each test's name and result
 go test -run TestDouble     run only tests whose names match
 ```
 
-### How Gopherlings grades your test
+### How Groundwork grades your test
 
-A test that never fails is useless, so Gopherlings checks that yours catches
+A test that never fails is useless, so Groundwork checks that yours catches
 bugs. `TestGrader` (in `grader_test.go`) does two things:
 
 1. It runs your test against the real code. Your test must **pass**.

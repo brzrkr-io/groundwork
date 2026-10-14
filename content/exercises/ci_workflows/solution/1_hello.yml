@@ -1,0 +1,12 @@
+# Task 1: a first workflow. In a real repository this file would be
+# .github/workflows/hello.yml.
+
+name: hello
+
+on: push
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - run: go version

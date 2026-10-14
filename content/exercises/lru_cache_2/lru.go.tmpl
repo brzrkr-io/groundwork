@@ -1,0 +1,74 @@
+package flags
+
+import (
+	"container/list"
+	"sync"
+)
+
+// lruEntry is one cached key and its value. Every element in LRU.order holds
+// an *lruEntry.
+type lruEntry struct {
+	key   string
+	value string
+}
+
+// LRU holds at most a fixed number of strings and evicts the least recently
+// used one when it is full. It is safe for concurrent use.
+type LRU struct {
+	mu       sync.Mutex
+	capacity int
+	order    *list.List               // front: most recently used, back: least
+	items    map[string]*list.Element // key -> its element in order
+}
+
+// NewLRU returns an empty LRU that holds at most capacity entries. capacity
+// must be at least 1.
+func NewLRU(capacity int) *LRU {
+	return &LRU{
+		capacity: capacity,
+		order:    list.New(),
+		items:    make(map[string]*list.Element),
+	}
+}
+
+// Get returns the value stored under key and true, and marks key as the
+// most recently used. If key is missing it returns "" and false.
+func (c *LRU) Get(key string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	el, ok := c.items[key]
+	if !ok {
+		return "", false
+	}
+	c.order.MoveToFront(el)
+	return el.Value.(*lruEntry).value, true
+}
+
+// Put stores value under key and marks key as the most recently used. If a
+// new key takes the LRU over capacity, Put evicts the least recently used
+// entry.
+func (c *LRU) Put(key, value string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if el, ok := c.items[key]; ok {
+		el.Value.(*lruEntry).value = value
+		c.order.MoveToFront(el)
+		return
+	}
+	c.items[key] = c.order.PushFront(&lruEntry{key: key, value: value})
+	if c.order.Len() > c.capacity {
+		oldest := c.order.Back()
+		c.order.Remove(oldest)
+		delete(c.items, oldest.Value.(*lruEntry).key)
+	}
+}
+
+// Remove deletes key from the LRU. Removing a missing key does nothing.
+func (c *LRU) Remove(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if el, ok := c.items[key]; ok {
+		c.order.Remove(el)
+		delete(c.items, key)
+	}
+}

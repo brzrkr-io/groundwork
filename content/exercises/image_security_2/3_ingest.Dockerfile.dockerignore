@@ -1,0 +1,7 @@
+# Task 3: what "docker build -f 3_ingest.Dockerfile ." leaves out of the build
+# context. testdata/context.txt lists every file in the ingest repository.
+# One pattern per line; a line starting with # is a comment.
+
+# TODO(3): Finding 3: "the build context holds the Git history, .env files,
+# the TLS key and certificate, old binaries and secrets/". Leave them out, and
+# keep what the build needs.

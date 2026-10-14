@@ -1,0 +1,117 @@
+package rollout
+
+// This file reads exercise.go as a tree of Go syntax, the same way gofmt and
+// your editor do, so the tests can check how the code is shaped as well as
+// what it does. You don't need to change it, but you're welcome to read it.
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
+	"testing"
+)
+
+// source is exercise.go, parsed.
+type source struct {
+	fset *token.FileSet
+	file *ast.File
+}
+
+// parseExercise reads and parses exercise.go.
+func parseExercise(t *testing.T) source {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "exercise.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("can't read exercise.go: %v", err)
+	}
+	return source{fset, file}
+}
+
+// fn returns the function called name, or nil if there is none.
+func (s source) fn(name string) *ast.FuncDecl {
+	for _, decl := range s.file.Decls {
+		if f, ok := decl.(*ast.FuncDecl); ok && f.Name.Name == name {
+			return f
+		}
+	}
+	return nil
+}
+
+// plan returns Plan, or stops the test if it's gone.
+func (s source) plan(t *testing.T) *ast.FuncDecl {
+	t.Helper()
+	f := s.fn("Plan")
+	if f == nil {
+		t.Fatal("exercise.go has no function named Plan; keep it, the deploy bot calls it")
+	}
+	return f
+}
+
+// lines returns how many lines f takes, from "func" to the closing brace.
+func (s source) lines(f *ast.FuncDecl) int {
+	return s.fset.Position(f.End()).Line - s.fset.Position(f.Pos()).Line + 1
+}
+
+// calledFuncs returns the names of the functions that f calls, such as
+// "validate" and "errors.New".
+func calledFuncs(f *ast.FuncDecl) map[string]bool {
+	called := map[string]bool{}
+	ast.Inspect(f.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch fun := call.Fun.(type) {
+		case *ast.Ident:
+			called[fun.Name] = true
+		case *ast.SelectorExpr:
+			if pkg, ok := fun.X.(*ast.Ident); ok {
+				called[pkg.Name+"."+fun.Sel.Name] = true
+			}
+		}
+		return true
+	})
+	return called
+}
+
+// stringsIn returns the text of every string literal in f.
+func stringsIn(f *ast.FuncDecl) map[string]bool {
+	found := map[string]bool{}
+	ast.Inspect(f.Body, func(n ast.Node) bool {
+		if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			if text, err := strconv.Unquote(lit.Value); err == nil {
+				found[text] = true
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// loops counts the for loops in f.
+func loops(f *ast.FuncDecl) int {
+	count := 0
+	ast.Inspect(f.Body, func(n ast.Node) bool {
+		switch n.(type) {
+		case *ast.ForStmt, *ast.RangeStmt:
+			count++
+		}
+		return true
+	})
+	return count
+}
+
+// checkExtracted fails unless exercise.go has a function called name and Plan
+// calls it.
+func checkExtracted(t *testing.T, src source, name string) {
+	t.Helper()
+	if src.fn(name) == nil {
+		t.Errorf("exercise.go has no function named %s yet", name)
+		return
+	}
+	if !calledFuncs(src.plan(t))[name] {
+		t.Errorf("%s exists, but Plan doesn't call it; Plan should use it instead of doing the work itself", name)
+	}
+}

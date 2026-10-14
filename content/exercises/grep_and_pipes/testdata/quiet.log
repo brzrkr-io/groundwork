@@ -1,0 +1,6 @@
+2026-10-14T03:00:00Z INFO api msg="GET /healthz 200" req=2c8e51
+2026-10-14T03:00:04Z INFO auth msg="token refreshed" req=7b0f3d
+2026-10-14T03:00:10Z INFO api msg="GET /healthz 200" req=d9461a
+2026-10-14T03:00:13Z WARN checkout msg="cache miss rate high" req=58e2c7
+2026-10-14T03:00:20Z INFO api msg="GET /healthz 200" req=a3f70e
+2026-10-14T03:00:26Z INFO payments msg="charge settled" req=0e9b84

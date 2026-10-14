@@ -1,0 +1,75 @@
+// Package rollout is the Groundwork exercise "Extract function".
+package rollout
+
+import (
+	"errors"
+	"fmt"
+)
+
+// Request asks for a new image to be rolled out to a service.
+type Request struct {
+	Service  string // the service to deploy, such as "api"
+	Registry string // where the image lives; "" means "docker.io"
+	Tag      string // the image version, such as "v1.4.2"
+	Replicas int    // how many pods run the service
+	MaxSurge int    // how many pods may be replaced at the same time
+}
+
+// Plan returns the steps of a rolling deploy, one line per step, or an error
+// if the request is invalid. See the README for the exact rules and output.
+func Plan(r Request) ([]string, error) {
+	if err := validate(r); err != nil {
+		return nil, err
+	}
+	steps := []string{fmt.Sprintf("deploy %s to %d replicas", imageRef(r), r.Replicas)}
+	steps = append(steps, batchSteps(r)...)
+	steps = append(steps, "verify "+r.Service)
+	return steps, nil
+}
+
+// validate returns the first problem with r, or nil if it can be deployed.
+func validate(r Request) error {
+	if r.Service == "" {
+		return errors.New("service is required")
+	}
+	if r.Tag == "" {
+		return errors.New("tag is required")
+	}
+	if r.Tag == "latest" {
+		return errors.New(`tag "latest" is not allowed; pin a version`)
+	}
+	if r.Replicas < 1 {
+		return fmt.Errorf("replicas must be at least 1, got %d", r.Replicas)
+	}
+	if r.MaxSurge < 1 {
+		return fmt.Errorf("max surge must be at least 1, got %d", r.MaxSurge)
+	}
+	return nil
+}
+
+// imageRef returns the full image reference, such as
+// "docker.io/api:v1.4.2".
+func imageRef(r Request) string {
+	registry := r.Registry
+	if registry == "" {
+		registry = "docker.io"
+	}
+	return registry + "/" + r.Service + ":" + r.Tag
+}
+
+// batchSteps returns one step per batch, replacing at most MaxSurge pods at a
+// time.
+func batchSteps(r Request) []string {
+	var steps []string
+	done := 0
+	for batch := 1; done < r.Replicas; batch++ {
+		size := min(r.MaxSurge, r.Replicas-done)
+		done += size
+		unit := "pods"
+		if size == 1 {
+			unit = "pod"
+		}
+		steps = append(steps, fmt.Sprintf("batch %d: replace %d %s (%d/%d)", batch, size, unit, done, r.Replicas))
+	}
+	return steps
+}

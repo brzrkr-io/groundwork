@@ -42,7 +42,7 @@ if got != want {
 
 ### Make sure your test can fail
 
-Before you trust a new test, watch it fail once. Here Gopherlings' mutants
+Before you trust a new test, watch it fail once. Here Groundwork' mutants
 do that for you. In your own projects, break the code on purpose for a moment
 (return a wrong value, say), run `go test`, and check that the test turns
 red.

@@ -1,0 +1,22 @@
+# Task 2: billing's tests spend most of their time downloading modules and
+# compiling. In a real repository: .github/workflows/test.yml.
+
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # TODO(2): Turn off setup-go's built-in cache, and cache the Go modules
+      # and the build cache yourself with actions/cache, keyed on the
+      # runner's OS and go.sum.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go test ./...

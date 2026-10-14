@@ -1,0 +1,56 @@
+// Package rotate is the Groundwork exercise "Practice: refactor the log
+// rotator".
+package rotate
+
+import (
+	"strings"
+	"time"
+)
+
+// File is one file in the service's log directory.
+type File struct {
+	Name     string    // such as "app.log", "app.log.1" or "app.log.2.gz"
+	Size     int64     // in bytes
+	Modified time.Time // when it was last written
+}
+
+// TODO(1): Give every variable and parameter a name of three letters or more.
+
+// TODO(2): Declare constants rotateSize, compressAfter and deleteAfter, and
+// use them instead of the numbers.
+
+// TODO(3): Move the decisions into liveAction(file File) string and
+// rotatedAction(file File, now time.Time) string, and keep Plan to 12 lines.
+
+// TODO(4): Flatten every function into guard clauses: no else, and no
+// deeper than a loop with one if inside.
+
+// Plan returns what the rotator should do with each file, one line per file
+// in the same order, such as "rotate app.log". See the README for the rules.
+func Plan(fs []File, t time.Time) []string {
+	var r []string
+	for _, f := range fs {
+		if !strings.Contains(f.Name, ".log.") {
+			if f.Size >= 104857600 {
+				r = append(r, "rotate "+f.Name)
+			} else {
+				r = append(r, "keep "+f.Name)
+			}
+		} else {
+			if t.Sub(f.Modified) > 604800*time.Second {
+				r = append(r, "delete "+f.Name)
+			} else {
+				if !strings.HasSuffix(f.Name, ".gz") {
+					if t.Sub(f.Modified) > 86400*time.Second {
+						r = append(r, "compress "+f.Name)
+					} else {
+						r = append(r, "keep "+f.Name)
+					}
+				} else {
+					r = append(r, "keep "+f.Name)
+				}
+			}
+		}
+	}
+	return r
+}

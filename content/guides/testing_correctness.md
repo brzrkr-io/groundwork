@@ -14,7 +14,7 @@
 
 ## A test is an executable example
 
-You've been running tests since *Hello, Go*: every Gopherlings exercise is checked by one. Now you write them.
+You've been running tests since *Hello, Go*: every Groundwork exercise is checked by one. Now you write them.
 
 Say your alerting job needs the percentage of failed requests:
 
@@ -315,7 +315,7 @@ In ops terms, it's the action item from the postmortem that actually gets done, 
 
 ## Red, green, refactor
 
-You already know this loop. It's how every Gopherlings exercise works.
+You already know this loop. It's how every Groundwork exercise works.
 
 ```text
    ┌─────────┐  write code   ┌─────────┐   tidy up    ┌────────────┐
@@ -326,7 +326,7 @@ You already know this loop. It's how every Gopherlings exercise works.
         └──────────────── next small behaviour ─────────────┘
 ```
 
-- **Red:** write a test for the next small piece of behaviour. It fails, because the code doesn't do it yet. In Gopherlings, the exercise starts here.
+- **Red:** write a test for the next small piece of behaviour. It fails, because the code doesn't do it yet. In Groundwork, the exercise starts here.
 - **Green:** write the simplest code that makes it pass.
 - **Refactor:** clean the code up: better names, less repetition. The tests prove you didn't change behaviour.
 
@@ -378,6 +378,12 @@ Working this way is called *test-driven development* (TDD). You don't have to us
 | fake | a simple stand-in for a real dependency, used in tests |
 | regression test | a test that stops a fixed bug from coming back |
 | TDD | test-driven development: the red, green, refactor loop |
+
+## Watch
+
+- [Software Testing Explained in 100 Seconds](https://www.youtube.com/watch?v=u6QfIXgjwGQ) · Fireship · 2 min: a fast overview of unit, integration and end-to-end tests before you dive in.
+- [Go Class: 38 Testing](https://www.youtube.com/watch?v=PIPfNIWVbc8) · Matt KØDVB · 36 min: a patient lecture on Go's `testing` package, with table tests and subtests written live.
+- [GopherCon 2017: Advanced Testing with Go - Mitchell Hashimoto](https://www.youtube.com/watch?v=8hQG7QlcLBk) · Gopher Academy · 45 min: how HashiCorp tests real ops tools like Terraform; the first half on table tests and test helpers fits this guide best.
 
 ## Go deeper
 

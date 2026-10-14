@@ -10,8 +10,9 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// Watcher reports (debounced) saves of Go sources, go.mod/go.sum and
-// testdata files anywhere under a directory. Editor swap and backup files are
+// Watcher reports (debounced) saves of any file under a directory: Go code,
+// and the scripts, SQL and configs that non-Go exercises are written in.
+// Editor swap and backup files, and the scratch repos under sandbox/, are
 // ignored so a save triggers exactly one check.
 type Watcher struct {
 	Changes <-chan struct{}
@@ -88,10 +89,11 @@ func (w *Watcher) loop(changes chan<- struct{}) {
 func relevant(path string) bool {
 	base := filepath.Base(path)
 	switch {
-	case strings.HasPrefix(base, ".") || strings.HasSuffix(base, "~") || strings.HasSuffix(base, ".swp"):
+	case strings.HasPrefix(base, "."), strings.HasSuffix(base, "~"),
+		strings.HasSuffix(base, ".swp"), strings.HasSuffix(base, ".swx"),
+		base == "4913": // vim probes whether it may write the directory
 		return false
-	case strings.HasSuffix(base, ".go"), base == "go.mod", base == "go.sum":
-		return true
 	}
-	return strings.Contains(filepath.ToSlash(path), "/testdata/")
+	slash := "/" + filepath.ToSlash(path)
+	return !strings.Contains(slash, "/sandbox/") && !strings.Contains(slash, "/.git/")
 }

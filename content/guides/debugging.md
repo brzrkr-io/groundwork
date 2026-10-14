@@ -333,9 +333,17 @@ Two ops-specific habits:
 ## Check yourself
 
 1. A health check says `db-1` is down, but `curl` from your laptop to `db-1` works. Give one hypothesis, a prediction, and a test.
-2. In `./main.go:7:14: invalid operation: ...`, what do `7` and `14` mean, and which part of the message tells you the cause?
-3. In the panic above, which frame do you look at first, and where did the zero come from?
-4. Why didn't `fmt.Println(host, host == "db-1")` reveal the bug, and what did?
+2. In `./main.go:7:14: invalid operation: "listening on :" + port (mismatched types untyped string and int)`, what do `7` and `14` mean, and which part of the message tells you the cause?
+3. A program crashes with this panic. Which frame do you look at first, and where did the zero come from?
+
+   ```text
+   panic: runtime error: integer divide by zero
+   main.diskPercent(...)        main.go:6    return usedGB * 100 / totalGB
+   main.report(...)             main.go:10   pct := diskPercent(usedGB, totalGB)
+   main.main()                  main.go:16   report("web-2", 10, 0)
+   ```
+
+4. `host` was read from config, and `host == "db-1"` is false. `fmt.Println(host, host == "db-1")` prints `db-1  false`. Why didn't that reveal the bug, and what print would?
 5. There are 128 commits between a good release and a broken one. At most how many tests does `git bisect` need?
 6. You've tried six things in 40 minutes and none changed the result. What should you do next?
 
@@ -344,7 +352,7 @@ Two ops-specific habits:
 1. One option: hypothesis "the check reads the host name from config with a trailing space". Prediction: printing the host with `%q` shows `"db-1 "`. Test: add the print and run the check. Another: hypothesis "the checker runs somewhere that can't reach `db-1`, unlike my laptop". Prediction: `curl` from the checker's machine fails. Test: run that `curl` there. Any answer with a checkable guess, a prediction and a way to look is right.
 2. `7` is the line, `14` the column (character) where the problem starts. `mismatched types untyped string and int` tells you the cause: `+` can't join text and a number.
 3. Start with the top frame, `main.diskPercent` at `main.go:6`, where it crashed. Then walk down: `report` at line 10 passed `totalGB` along, and `main` at line 16 called `report("web-2", 10, 0)`. The zero came from line 16.
-4. `Println` prints the space, but next to the space before `false` it's invisible. `fmt.Printf("%q\n", host)` showed `"db-1 "`, with the space inside the quotes.
+4. `Println` prints the space, but next to the space before `false` it's invisible. `fmt.Printf("%q\n", host)` shows `"db-1 "`, with the space inside the quotes: a trailing space.
 5. 7. Each test halves the range: 128, 64, 32, 16, 8, 4, 2, 1.
 6. Stop. Write down what you know and what you've ruled out, then take a short break. When you come back, write one new hypothesis before you change anything, or explain the code to a duck or a colleague.
 
@@ -364,6 +372,13 @@ Two ops-specific habits:
 | git bisect | Git's binary search over commits to find the one that broke things |
 | rubber duck debugging | Explaining code out loud, line by line, to find the gap |
 | bug journal | Short notes on each bug: symptom, tries, cause, fix, lesson |
+
+## Watch
+
+- [What is "rubber duck debugging?"](https://www.youtube.com/watch?v=f98ogUP80KI) · MIT OpenCourseWare · 5 min: why explaining your code out loud finds the bug, with a real duck.
+- [Git Bisect - Your History's Saviour](https://www.youtube.com/watch?v=pEew75MjiG8) · Boot dev · 2 min: `git bisect` shown on a real repo, so the binary search over commits clicks.
+- [Debugging - CS50P Shorts](https://www.youtube.com/watch?v=2hsn7AxXKmg) · CS50 · 18 min: a calm beginner walk-through of print debugging, a debugger and the rubber duck; the code is Python but every idea carries over to Go.
+- [Debugging Under Fire: Keep your Head when Systems have Lost their Mind • Bryan Cantrill • GOTO 2017](https://www.youtube.com/watch?v=30jNsCVLpAE) · GOTO Conferences · 53 min: the deeper talk, on debugging production outages without panicking; it goes with *Incidents use the same loop*.
 
 ## Go deeper
 

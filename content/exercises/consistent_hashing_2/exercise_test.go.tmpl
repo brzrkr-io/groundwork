@@ -1,0 +1,171 @@
+package ring
+
+import (
+	"fmt"
+	"slices"
+	"testing"
+)
+
+// pointsPerNode counts how many points each node owns in r.owners.
+func pointsPerNode(r *Ring) map[string]int {
+	counts := make(map[string]int)
+	for _, node := range r.owners {
+		counts[node]++
+	}
+	return counts
+}
+
+// buildKeys returns the 1000 artifact keys build-0.tar.gz to build-999.tar.gz.
+func buildKeys() []string {
+	keys := make([]string, 1000)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("build-%d.tar.gz", i)
+	}
+	return keys
+}
+
+func TestLabelsAreUnique(t *testing.T) {
+	t.Run("label format", func(t *testing.T) {
+		tests := []struct {
+			node string
+			i    int
+			want string
+		}{
+			{"web-1", 12, "web-1#12"},
+			{"web-11", 2, "web-11#2"},
+			{"cache-3", 0, "cache-3#0"},
+		}
+		for _, tt := range tests {
+			if got := label(tt.node, tt.i); got != tt.want {
+				t.Errorf("label(%q, %d) = %q, want %q", tt.node, tt.i, got, tt.want)
+			}
+		}
+	})
+
+	tests := []struct {
+		replicas int
+		nodes    []string
+	}{
+		{20, []string{"web-1", "web-11"}},
+		{30, []string{"cache-1", "cache-12"}},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s and %s", tt.nodes[0], tt.nodes[1]), func(t *testing.T) {
+			r := New(tt.replicas)
+			r.Add(tt.nodes...)
+			counts := pointsPerNode(r)
+			for _, node := range tt.nodes {
+				if counts[node] != tt.replicas {
+					t.Errorf("New(%d).Add(%q): %s owns %d points, want %d", tt.replicas, tt.nodes, node, counts[node], tt.replicas)
+				}
+			}
+			if want := tt.replicas * len(tt.nodes); len(r.points) != want {
+				t.Errorf("New(%d).Add(%q): len(r.points) = %d, want %d", tt.replicas, tt.nodes, len(r.points), want)
+			}
+		})
+	}
+}
+
+func TestGetWrapsAround(t *testing.T) {
+	t.Run("hand-built ring", func(t *testing.T) {
+		r := New(1)
+		r.points = []uint32{1_000_000_000, 2_000_000_000, 3_000_000_000}
+		r.owners = map[uint32]string{1_000_000_000: "cache-1", 2_000_000_000: "cache-2", 3_000_000_000: "cache-3"}
+		tests := []struct {
+			key  string
+			hash uint32
+			want string
+		}{
+			{"api/v1.4.2.tar.gz", 573056911, "cache-1"},
+			{"pip-cache.tar.gz", 1353761354, "cache-2"},
+			{"docker-layer-3f9a", 2008459103, "cache-3"},
+			{"go-mod-cache.tar.gz", 3633428373, "cache-1"},  // past the last point: wraps
+			{"worker/v0.9.1.tar.gz", 4197156465, "cache-1"}, // past the last point: wraps
+		}
+		for _, tt := range tests {
+			if got := r.Get(tt.key); got != tt.want {
+				t.Errorf("points %v: Get(%q) with hash %d = %q, want %q", r.points, tt.key, tt.hash, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("one point per node", func(t *testing.T) {
+		r := New(1)
+		r.Add("cache-1", "cache-2", "cache-3")
+		// Points: 2089304447 cache-3, 2102012744 cache-2, 2131531025 cache-1.
+		tests := []struct{ key, want string }{
+			{"build-127.tar.gz", "cache-2"},
+			{"web/v2.0.0.tar.gz", "cache-3"}, // past the last point: wraps
+			{"build-65.tar.gz", "cache-3"},   // past the last point: wraps
+		}
+		for _, tt := range tests {
+			if got := r.Get(tt.key); got != tt.want {
+				t.Errorf("Get(%q) = %q, want %q", tt.key, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("no key is left without a node", func(t *testing.T) {
+		r := New(100)
+		r.Add("cache-1", "cache-2", "cache-3")
+		for _, k := range buildKeys() {
+			if got := r.Get(k); got == "" {
+				t.Fatalf("Get(%q) = %q, want one of the three nodes", k, got)
+			}
+		}
+	})
+
+	t.Run("empty ring", func(t *testing.T) {
+		r := New(100)
+		for _, key := range []string{"api/v1.4.2.tar.gz", "build-65.tar.gz"} {
+			if got := r.Get(key); got != "" {
+				t.Errorf("New(100).Get(%q) = %q, want %q", key, got, "")
+			}
+		}
+	})
+}
+
+func TestAddKeepsPointsSorted(t *testing.T) {
+	t.Run("points after two Adds", func(t *testing.T) {
+		r := New(1)
+		r.Add("cache-1", "cache-2")
+		r.Add("cache-3")
+		want := []uint32{2089304447, 2102012744, 2131531025}
+		if !slices.Equal(r.points, want) {
+			t.Errorf("after Add(%q, %q) then Add(%q), r.points = %v, want %v", "cache-1", "cache-2", "cache-3", r.points, want)
+		}
+	})
+
+	t.Run("lookups after two Adds", func(t *testing.T) {
+		r := New(1)
+		r.Add("cache-1", "cache-2")
+		r.Add("cache-3")
+		tests := []struct{ key, want string }{
+			{"api/v1.4.2.tar.gz", "cache-3"},
+			{"web/v2.0.0.tar.gz", "cache-3"},
+			{"build-127.tar.gz", "cache-2"},
+		}
+		for _, tt := range tests {
+			if got := r.Get(tt.key); got != tt.want {
+				t.Errorf("after Add(%q, %q) then Add(%q), Get(%q) = %q, want %q", "cache-1", "cache-2", "cache-3", tt.key, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("one Add or three give the same answers", func(t *testing.T) {
+		all := New(100)
+		all.Add("cache-1", "cache-2", "cache-3")
+		oneByOne := New(100)
+		oneByOne.Add("cache-2")
+		oneByOne.Add("cache-3")
+		oneByOne.Add("cache-1")
+		if !slices.IsSorted(oneByOne.points) {
+			t.Errorf("after three Adds, r.points is not sorted")
+		}
+		for _, k := range buildKeys() {
+			if got, want := oneByOne.Get(k), all.Get(k); got != want {
+				t.Fatalf("Get(%q) = %q after three Adds, but %q after one Add of the same nodes", k, got, want)
+			}
+		}
+	})
+}

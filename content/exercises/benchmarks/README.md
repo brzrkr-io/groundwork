@@ -89,7 +89,7 @@ Without `Grow`, the builder enlarges its buffer a few times as text arrives.
 If you tell `Grow` the total number of bytes first, it allocates once.
 `len(s)` gives a string's length in bytes.
 
-### How Gopherlings grades your benchmark
+### How Groundwork grades your benchmark
 
 - `TestGrader` runs `BenchmarkFormatTags` once. It must pass and print
   `allocs/op`. Then it runs it with a *mutant* `FormatTags` that panics; your

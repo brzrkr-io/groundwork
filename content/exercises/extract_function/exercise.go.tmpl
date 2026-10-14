@@ -1,0 +1,67 @@
+// Package rollout is the Groundwork exercise "Extract function".
+package rollout
+
+import (
+	"errors"
+	"fmt"
+)
+
+// Request asks for a new image to be rolled out to a service.
+type Request struct {
+	Service  string // the service to deploy, such as "api"
+	Registry string // where the image lives; "" means "docker.io"
+	Tag      string // the image version, such as "v1.4.2"
+	Replicas int    // how many pods run the service
+	MaxSurge int    // how many pods may be replaced at the same time
+}
+
+// Plan returns the steps of a rolling deploy, one line per step, or an error
+// if the request is invalid. See the README for the exact rules and output.
+func Plan(r Request) ([]string, error) {
+	// TODO(1): Move the checks into a function validate(r Request) error,
+	// and call it from here.
+	// Check the request.
+	if r.Service == "" {
+		return nil, errors.New("service is required")
+	}
+	if r.Tag == "" {
+		return nil, errors.New("tag is required")
+	}
+	if r.Tag == "latest" {
+		return nil, errors.New(`tag "latest" is not allowed; pin a version`)
+	}
+	if r.Replicas < 1 {
+		return nil, fmt.Errorf("replicas must be at least 1, got %d", r.Replicas)
+	}
+	if r.MaxSurge < 1 {
+		return nil, fmt.Errorf("max surge must be at least 1, got %d", r.MaxSurge)
+	}
+
+	// TODO(2): Move the image reference into a function
+	// imageRef(r Request) string, and call it from here.
+	// Build the image reference.
+	registry := r.Registry
+	if registry == "" {
+		registry = "docker.io"
+	}
+	image := registry + "/" + r.Service + ":" + r.Tag
+
+	steps := []string{fmt.Sprintf("deploy %s to %d replicas", image, r.Replicas)}
+
+	// TODO(3): Move the batches into a function batchSteps(r Request) []string,
+	// and call it from here.
+	// Replace the pods in batches of at most MaxSurge.
+	done := 0
+	for batch := 1; done < r.Replicas; batch++ {
+		size := min(r.MaxSurge, r.Replicas-done)
+		done += size
+		unit := "pods"
+		if size == 1 {
+			unit = "pod"
+		}
+		steps = append(steps, fmt.Sprintf("batch %d: replace %d %s (%d/%d)", batch, size, unit, done, r.Replicas))
+	}
+
+	steps = append(steps, "verify "+r.Service)
+	return steps, nil
+}

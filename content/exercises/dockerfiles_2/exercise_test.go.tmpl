@@ -1,0 +1,145 @@
+package slowbuilds
+
+import (
+	"slices"
+	"strings"
+	"testing"
+)
+
+// The helpers readDockerfile, find and show are in dockerfile_test.go.
+
+func TestModulesBeforeCode(t *testing.T) {
+	const file = "1_api.Dockerfile"
+	instructions := readDockerfile(t, file)
+
+	modCopy := firstCopy(instructions, "go.mod")
+	if modCopy == nil {
+		t.Fatalf("%s has no COPY of go.mod on its own; want COPY go.mod go.sum ./ before RUN go mod download", file)
+	}
+	if !slices.Contains(sources(*modCopy), "go.sum") {
+		t.Errorf("%s line %d: %s doesn't copy go.sum; want COPY go.mod go.sum ./ (go mod download checks the sums in go.sum)", file, modCopy.Line, show(*modCopy))
+	}
+
+	copyAll := firstCopy(instructions, ".")
+	if copyAll == nil {
+		t.Fatalf("%s has no COPY . .; the build still needs the rest of the code", file)
+	}
+	if copyAll.Line < modCopy.Line {
+		t.Errorf("%s: COPY . . (line %d) comes before %s (line %d); every commit changes the code, so everything after COPY . . reruns", file, copyAll.Line, show(*modCopy), modCopy.Line)
+	}
+
+	downloads := 0
+	for _, in := range find(instructions, "RUN") {
+		if !strings.Contains(in.Rest, "go mod download") {
+			continue
+		}
+		downloads++
+		if in.Line < modCopy.Line {
+			t.Errorf("%s line %d: RUN go mod download comes before %s (line %d), so there is no go.mod to read yet", file, in.Line, show(*modCopy), modCopy.Line)
+		}
+		if in.Line > copyAll.Line {
+			t.Errorf("%s line %d: RUN go mod download comes after COPY . . (line %d), so it reruns on every commit; move it above COPY . .", file, in.Line, copyAll.Line)
+		}
+	}
+	if downloads == 0 {
+		t.Errorf("%s has no RUN go mod download; want it between COPY go.mod go.sum ./ and COPY . .", file)
+	}
+
+	build := checkRun(t, file, instructions, "go build -o /usr/local/bin/api ./cmd/api")
+	if build != nil && build.Line < copyAll.Line {
+		t.Errorf("%s: RUN go build (line %d) comes before COPY . . (line %d), so there is no code to build yet", file, build.Line, copyAll.Line)
+	}
+}
+
+func TestOneStepAptInstall(t *testing.T) {
+	const file = "2_worker.Dockerfile"
+	instructions := readDockerfile(t, file)
+
+	var install *instruction
+	for _, in := range find(instructions, "RUN") {
+		updates := strings.Contains(in.Rest, "apt-get update")
+		installs := strings.Contains(in.Rest, "apt-get install")
+		if updates && !installs {
+			t.Errorf("%s line %d: %s updates the package list in a RUN of its own; its cached layer goes stale, so put apt-get update and apt-get install in one RUN", file, in.Line, show(in))
+		}
+		if installs && install == nil {
+			install = &in
+		}
+	}
+	if install == nil {
+		t.Fatalf("%s has no RUN with apt-get install; want one RUN that runs apt-get update && apt-get install ...", file)
+	}
+
+	update := strings.Index(install.Rest, "apt-get update")
+	if update < 0 || update > strings.Index(install.Rest, "apt-get install") {
+		t.Errorf("%s line %d: %s, want apt-get update && first, in the same RUN as apt-get install", file, install.Line, show(*install))
+	}
+	if !strings.Contains(install.Rest, "&&") {
+		t.Errorf("%s line %d: %s, want the commands joined with &&, so the step stops at the first failure", file, install.Line, show(*install))
+	}
+	for _, want := range []string{"-y", "--no-install-recommends", "ca-certificates", "curl"} {
+		if !slices.Contains(install.Args, want) {
+			t.Errorf("%s line %d: apt-get install has no %s; want apt-get install -y --no-install-recommends ca-certificates curl", file, install.Line, want)
+		}
+	}
+	if !strings.Contains(install.Rest, "rm -rf /var/lib/apt/lists/*") {
+		t.Errorf("%s line %d: the RUN doesn't end with rm -rf /var/lib/apt/lists/*; without it the package lists stay in the layer", file, install.Line)
+	}
+}
+
+func TestToolsBeforeCode(t *testing.T) {
+	const file = "3_tools.Dockerfile"
+	instructions := readDockerfile(t, file)
+
+	install := checkRun(t, file, instructions, "go install golang.org/x/tools/cmd/stringer@v0.52.0")
+	copyAll := firstCopy(instructions, ".")
+	if install == nil || copyAll == nil {
+		if copyAll == nil {
+			t.Errorf("%s has no COPY . /app/; go generate and go build still need the code", file)
+		}
+		return
+	}
+	if install.Line > copyAll.Line {
+		t.Errorf("%s: RUN go install (line %d) comes after %s (line %d), so every commit reinstalls stringer; move it above the COPY", file, install.Line, show(*copyAll), copyAll.Line)
+	}
+
+	for _, step := range []string{"go generate ./...", "go build -o /usr/local/bin/reportgen ./cmd/reportgen"} {
+		run := checkRun(t, file, instructions, step)
+		if run != nil && run.Line < copyAll.Line {
+			t.Errorf("%s: RUN %s (line %d) comes before %s (line %d), so there is no code yet; only the tool install moves", file, step, run.Line, show(*copyAll), copyAll.Line)
+		}
+	}
+}
+
+// firstCopy returns the first COPY that copies src, or nil.
+func firstCopy(instructions []instruction, src string) *instruction {
+	for _, in := range find(instructions, "COPY") {
+		srcs := sources(in)
+		if slices.Contains(srcs, src) || src == "." && slices.Contains(srcs, "./") {
+			return &in
+		}
+	}
+	return nil
+}
+
+// sources returns what a COPY copies: every argument but the last, the
+// destination.
+func sources(in instruction) []string {
+	if len(in.Args) < 2 {
+		return nil
+	}
+	return in.Args[:len(in.Args)-1]
+}
+
+// checkRun checks there is a RUN with exactly the command want, and returns
+// it, or nil.
+func checkRun(t *testing.T, file string, instructions []instruction, want string) *instruction {
+	t.Helper()
+	for _, in := range find(instructions, "RUN") {
+		if in.Rest == want {
+			return &in
+		}
+	}
+	t.Errorf("%s has no RUN %s; keep that line as it was", file, want)
+	return nil
+}

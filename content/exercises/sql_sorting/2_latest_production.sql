@@ -1,0 +1,6 @@
+-- Task 2: Show the three latest production deploys
+--
+-- Show the id, service and version of the three most recent
+-- production deploys, newest first.
+--
+-- TODO(2): Write your query below.
