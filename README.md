@@ -72,33 +72,32 @@ solution, and **n** to move to the next exercise. Truly stuck? After a task's
 Answer hint, **s** shows the solution early (you confirm first).
 
 ```text
-groundwork  ·  module 1 of 24: Basics                     ━━━━━━━━━━━━━━━━━━━━  2/400 done
+groundwork  1 · Basics                                         3-day streak  ·  ━━━━━━━━━━━  2/400
 
-003  Variables                                                         ✗ 2 of 3 failing
-edit  exercises/01_basics/003_variables/exercise.go
-
- Results   Instructions i   Hints h   Solution s   Exercises l   Guides g   Keys ?
-─────────────────────────────────────────────────────────────────────────────────────────
-✗ 2 of 3 tests failing
-
-  ✗ TestImageRef
-    ✗ github registry
-        exercise_test.go:40: ImageRef("ghcr.io/acme", "api", "v1.4.2") = "", want
-        "ghcr.io/acme/api:v1.4.2"
-  ✗ TestDeployPath
-    ✗ api in production
-        exercise_test.go:60: DeployPath("production", "api") = "/v1/environments/production",
-        want "/v1/environments/production/services/api"
-
-  ✓ TestServiceLabel
-
-Not sure what to do? Press i for the instructions or h for a hint.
-─────────────────────────────────────────────────────────────────────────────────────────
-Checked in 0.3s. Save any file to re-run.
-n next unfinished  ·  ←/→ prev/next  ·  r re-run  ·  e edit  ·  x reset  ·  q quit
+003  Variables                                                                  ✗ 2 of 3 failing
+ Results   Instructions i   Hints h   Solution s   Progress l   Guides g   Keys ?
+╭─ Results ───────────────────────────────────────────────────┬─ This exercise ────────────────╮
+│  ✗ 2 of 3 tests failing                                     │ TASKS                          │
+│                                                             │   ✓ 1 Label a service          │
+│    ✗ TestImageRef                                           │ ▸ ✗ 2 Build an image reference │
+│        exercise_test.go:40: ImageRef("ghcr.io/acme", "api", │   ✗ 3 Build a deploy path      │
+│        "v1.4.2") = "", want "ghcr.io/acme/api:v1.4.2"       │                                │
+│    ✗ TestDeployPath                                         │ EDIT                           │
+│        exercise_test.go:60: DeployPath("production", "api") │ 003_variables/exercise.go      │
+│        = "/v1/environments/production", want                │ press e to open it             │
+│        "/v1/environments/production/services/api"           │                                │
+│    ✓ TestServiceLabel                                       │ HINTS                          │
+│                                                             │ 0 of 9 seen · h                │
+╰─────────────────────────────────────────────────────────────┴────────────────────────────────╯
+Checked in 0.3s · save any file to re-run
+n next  ·  ←/→ prev/next  ·  r re-run  ·  e edit  ·  x reset  ·  q quit
 ```
 
-The tab row shows which view you're looking at. The results always come first.
+The tab row shows which view you're looking at; the results come first.
+Every view sits in the same frame, and on a wide window (about 100+
+columns) a sidebar shows context: the exercise's tasks next to the results,
+the outline of a document, your stats next to the course list. The bottom
+line lists the keys that work on the current view.
 
 ### Keys
 

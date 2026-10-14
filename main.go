@@ -103,7 +103,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprint(stdout, tui.CourseList(s, *all))
 		return nil
 	case "stats":
-		fmt.Fprint(stdout, tui.Brand("groundwork stats")+"\n\n"+tui.Stats(s, 100))
+		fmt.Fprint(stdout, tui.Stats(s, 100))
 		return nil
 	case "check":
 		e := s.Current()

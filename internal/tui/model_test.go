@@ -232,7 +232,7 @@ func TestDueReviewStartsFromScratchAndTheSolutionCountsAsALapse(t *testing.T) {
 	s.State.Done[b.Name] = time.Now().Add(-72 * time.Hour)
 	s.State.Reviews[b.Name] = progress.Review{Due: time.Now().Add(-time.Hour)}
 	m.Update(checkedMsg{seq: m.checkSeq, result: &workspace.Result{Status: workspace.Failed}})
-	if view := m.View(); !strings.Contains(view, "Review due") {
+	if view := m.View(); !strings.Contains(view, "REVIEW DUE") && !strings.Contains(view, "Review due") {
 		t.Errorf("results don't mention the due review:\n%s", view)
 	}
 

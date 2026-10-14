@@ -8,12 +8,11 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Documents (instructions, hints, guides, the solution, keys) are shown in a
-// frame that fills the window's width, with the title in its top edge. The
-// frame stays put and only the text inside scrolls, like a pane in lazygit
-// or k9s. Text keeps a comfortable reading width on the left; on a wide
-// window the space to its right holds an "On this page" outline that follows
-// the scroll position.
+// Every view sits in the same frame: a rounded border with the title in its
+// top edge. The frame stays put and only the text inside scrolls, like a pane
+// in lazygit or k9s. On a wide window a sidebar to the right of the text
+// holds context for the view: the outline of a document, the exercise's
+// tasks next to the test results, stats next to the course list.
 
 const (
 	pagePad       = 2  // spaces between the frame and the text
@@ -22,11 +21,23 @@ const (
 	frameRowsUsed = 2 // the frame's top and bottom edges
 )
 
-// docLayout is how a framed document divides the window.
+// docLayout is how a frame divides the window.
 type docLayout struct {
 	width   int // whole frame
 	text    int // text column
-	outline int // outline column, 0 when there's no room or no outline
+	outline int // sidebar column, 0 when there's no room or no sidebar
+}
+
+// layoutWide splits a frame w columns wide for lists and test output: the
+// text takes most of it, the sidebar about a third, between 30 and 44
+// columns, when there's room for both.
+func layoutWide(w int) docLayout {
+	inner := w - 2 - 2*pagePad
+	if inner < 60+3+30 {
+		return docLayout{width: w, text: max(20, inner)}
+	}
+	side := min(44, max(30, inner/3))
+	return docLayout{width: w, text: inner - 3 - side, outline: side}
 }
 
 // layoutDoc splits a frame w columns wide. With an outline, the text keeps
@@ -106,9 +117,9 @@ func currentSection(items []outlineItem, top int) int {
 	return cur
 }
 
-// frame draws the document frame around the visible text lines, with the
-// outline column (if the layout has one).
-func frame(l docLayout, title string, text []string, items []outlineItem, top int) string {
+// frame draws the frame around the visible text lines, with the sidebar
+// lines (if the layout has a sidebar) under sideTitle.
+func frame(l docLayout, title, sideTitle string, text, side []string) string {
 	edge := func(s string) string { return rule.Render(s) }
 	head := " " + bold.Render(ansi.Truncate(title, max(10, l.text-4), "…")) + " "
 	textSpan := pagePad + l.text + pagePad
@@ -118,23 +129,25 @@ func frame(l docLayout, title string, text []string, items []outlineItem, top in
 	b.WriteString(edge("╭─") + head)
 	if l.outline > 0 {
 		b.WriteString(edge(strings.Repeat("─", max(0, textSpan-1-lipgloss.Width(head))) + "┬─"))
-		oh := " " + dim.Render("On this page") + " "
+		oh := " " + dim.Render(sideTitle) + " "
 		b.WriteString(oh + edge(strings.Repeat("─", max(0, l.outline+1-lipgloss.Width(oh)))+"╮"))
 	} else {
 		b.WriteString(edge(strings.Repeat("─", max(0, textSpan-1-lipgloss.Width(head))) + "╮"))
 	}
 	b.WriteString("\n")
 
-	outline := outlineLines(items, l.outline, currentSection(items, top), len(text))
-	side, pad := edge("│"), strings.Repeat(" ", pagePad)
+	bar, pad := edge("│"), strings.Repeat(" ", pagePad)
 	for i, t := range text {
 		t = ansi.Truncate(strings.ReplaceAll(t, "\t", "    "), l.text, "")
-		b.WriteString(side + pad + t + strings.Repeat(" ", max(0, l.text-lipgloss.Width(t))) + pad)
+		b.WriteString(bar + pad + t + strings.Repeat(" ", max(0, l.text-lipgloss.Width(t))) + pad)
 		if l.outline > 0 {
-			o := outline[i]
-			b.WriteString(side + " " + o + strings.Repeat(" ", max(0, l.outline-lipgloss.Width(o))) + " ")
+			o := ""
+			if i < len(side) {
+				o = ansi.Truncate(side[i], l.outline, "…")
+			}
+			b.WriteString(bar + " " + o + strings.Repeat(" ", max(0, l.outline-lipgloss.Width(o))) + " ")
 		}
-		b.WriteString(side + "\n")
+		b.WriteString(bar + "\n")
 	}
 
 	// Bottom edge.
@@ -192,7 +205,7 @@ func page(title, body string, w int) string {
 	for _, line := range lines {
 		wrapped = append(wrapped, strings.Split(ansi.Hardwrap(strings.TrimRight(line, " "), l.text, true), "\n")...)
 	}
-	return frame(l, title, wrapped, nil, 0)
+	return frame(l, title, "", wrapped, nil)
 }
 
 // sectionRules puts a horizontal rule before every "## " section after the
@@ -214,4 +227,26 @@ func sectionRules(md string) string {
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n")
+}
+
+// framed frames ready-made lines for the plain CLI (groundwork list, check,
+// guides), w columns wide.
+func framed(title, body string, w int) string {
+	l := docLayout{width: w, text: w - 2 - 2*pagePad}
+	lines := strings.Split("\n"+strings.Trim(body, "\n")+"\n", "\n")
+	var wrapped []string
+	for _, line := range lines {
+		wrapped = append(wrapped, strings.Split(ansi.Hardwrap(strings.TrimRight(line, " "), l.text, true), "\n")...)
+	}
+	return frame(l, title, "", wrapped, nil) + "\n"
+}
+
+// sideSection renders a sidebar block: a dim heading, then its lines.
+func sideSection(title string, lines ...string) []string {
+	return append([]string{dim.Render(strings.ToUpper(title))}, lines...)
+}
+
+// wrapSide wraps text for a sidebar w columns wide.
+func wrapSide(text string, w int) []string {
+	return strings.Split(ansi.Wrap(text, w, " "), "\n")
 }

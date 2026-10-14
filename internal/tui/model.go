@@ -74,12 +74,11 @@ type Model struct {
 	md      *glamour.TermRenderer
 	mdWidth int
 
-	// A document pane (instructions, hints, guide...) is drawn in a fixed
-	// frame; only the text inside scrolls.
-	doc      bool
-	docTitle string
-	layout   docLayout
-	outline  []outlineItem
+	// Every pane is drawn in a fixed frame; only the text inside scrolls.
+	title     string // in the frame's top edge
+	sideTitle string // above the sidebar, when the layout has one
+	layout    docLayout
+	outline   []outlineItem // headings of the document shown, if any
 }
 
 type (
@@ -598,13 +597,12 @@ func (m *Model) refresh() {
 	}
 	m.todoFiles = m.s.TodoFiles(m.ex)
 	w := m.contentWidth()
-	m.body.Width = w
-	m.body.Height = max(3, m.height-lipgloss.Height(m.header())-lipgloss.Height(m.footer()))
-	m.doc, m.outline = false, nil
+	m.body.Height = max(3, m.height-lipgloss.Height(m.header())-lipgloss.Height(m.footer())-frameRowsUsed)
+	m.outline, m.sideTitle = nil, ""
 	var content string
 	switch m.pane {
 	case paneInstructions:
-		inner := m.startDoc(m.ex.Title, true)
+		inner := m.startDoc(m.ex.Title, "On this page", true)
 		readme, _ := m.s.Course.README(m.ex)
 		where := relative(filepath.Join(m.s.Dir(m.ex), "README.md"))
 		meta := dim.Render("Also in " + where + ".")
@@ -618,24 +616,25 @@ func (m *Model) refresh() {
 		src := dropTitle(readme)
 		content = m.docText(meta, m.markdown(src, inner), src)
 	case paneHints:
-		content = m.docText("", m.hintsView(m.startDoc("Hints", false)), "")
+		content = m.docText("", m.hintsView(m.startDoc("Hints", "Tasks", true)), "")
 	case paneList:
-		content = m.listView(w)
+		m.startWide("Progress", "Stats")
+		content = m.listView(m.layout.text)
 	case paneHelp:
-		content = m.docText("", m.helpView(m.startDoc("Keys", false)), "")
+		content = m.docText("", m.helpView(m.startDoc("Keys", "", false)), "")
 	case paneSolution:
-		content = m.docText("", m.solutionView(m.startDoc("Reference solution", false)), "")
+		content = m.docText("", m.solutionView(m.startDoc("Reference solution", "", false)), "")
 	case paneGuides:
-		content = m.guidesView(w)
+		m.startWide("Guides", "About this guide")
+		content = m.guidesView(m.layout.text)
 	case paneGuide:
 		content = m.guideView(w)
 	default:
-		content = m.resultView(w)
+		m.startWide("Results", "This exercise")
+		content = m.resultView(m.layout.text)
 	}
+	m.body.Width = m.layout.text
 	m.body.SetContent(content)
-	if m.doc {
-		m.body.Width = m.layout.text
-	}
 	switch m.pane {
 	case paneList:
 		m.scrollTo(m.listLine)
@@ -701,6 +700,10 @@ func dropTitle(readme string) string {
 
 func (m *Model) resultView(width int) string {
 	var b strings.Builder
+	wide := m.layout.outline > 0
+	if !wide { // no sidebar: say where to edit at the top
+		b.WriteString(dim.Render("edit ") + m.editPath() + "\n\n")
+	}
 	switch {
 	case m.checkErr != nil:
 		b.WriteString(badBold.Render("✗ Couldn't run the checks") + "\n\n  " + m.checkErr.Error())
@@ -709,49 +712,141 @@ func (m *Model) resultView(width int) string {
 	default:
 		b.WriteString(RenderResult(m.result, width))
 	}
-	if m.result != nil && m.result.Status == workspace.Passed && m.checkErr == nil {
-		b.WriteString("\n\n" + m.successView())
-	} else if m.result != nil && m.s.DoneCount() == 0 {
-		file := relative(m.s.Dir(m.ex))
-		if len(m.todoFiles) > 0 {
-			file = relative(filepath.Join(m.s.Root, m.todoFiles[0]))
-		}
+	switch {
+	case m.result != nil && m.result.Status == workspace.Passed && m.checkErr == nil:
+		b.WriteString("\n\n" + m.successView(width))
+	case m.result != nil && m.s.DoneCount() == 0:
 		b.WriteString("\n\n" + bold.Render("How this works") + "\n" +
-			wrapIndent("1. Open "+bold.Render(file)+" in your editor (keep this window open next to it).", 2, width) + "\n" +
+			wrapIndent("1. Open "+bold.Render(m.editPath())+" in your editor (keep this window open next to it).", 2, width) + "\n" +
 			wrapIndent("2. Press "+keyCap.Render("i")+" to read the instructions, then change the code where it says TODO.", 2, width) + "\n" +
 			wrapIndent("3. Save the file. The tests above re-run by themselves. Stuck? Press "+keyCap.Render("h")+" for a hint.", 2, width))
-	} else if m.result != nil {
+	case m.result != nil && !wide:
 		b.WriteString("\n\n" + dim.Render("Not sure what to do? Press ") + keyCap.Render("i") + dim.Render(" for the instructions or ") + keyCap.Render("h") + dim.Render(" for a hint."))
 	}
-	if due := m.s.DueReviews(); len(due) > 0 && m.result != nil && !m.inReview() {
-		e := due[0]
-		more := ""
-		if len(due) > 1 {
-			more = fmt.Sprintf(" (+%d more)", len(due)-1)
+	if !wide && m.result != nil {
+		if due := m.s.DueReviews(); len(due) > 0 && !m.inReview() {
+			b.WriteString("\n\n" + wrapIndent(warn.Render("↻ Review due: ")+bold.Render(fmt.Sprintf("%03d %s", due[0].Number, due[0].Title))+dim.Render(". Solving it again from scratch, days later, is what makes it stick. Press ")+keyCap.Render("v")+dim.Render(" to start."), 0, width))
 		}
-		b.WriteString("\n\n" + wrapIndent(warn.Render("↻ Review due: ")+bold.Render(fmt.Sprintf("%03d %s", e.Number, e.Title))+dim.Render(more+". Solving it again from scratch, days later, is what makes it stick. Press ")+keyCap.Render("v")+dim.Render(" to start."), 0, width))
-	}
-	if g := m.s.NextGuide(); g != nil && m.result != nil {
-		b.WriteString("\n\n" + wrapIndent(dim.Render("Background reading: ")+bold.Render(g.Title)+dim.Render(fmt.Sprintf(" (guide %d), for module %d. Press ", g.Number, g.Module.Number))+keyCap.Render("g")+dim.Render(" to read it."), 0, width))
+		if g := m.s.NextGuide(); g != nil {
+			b.WriteString("\n\n" + wrapIndent(dim.Render("Background reading: ")+bold.Render(g.Title)+dim.Render(". Press ")+keyCap.Render("g")+dim.Render(" to read it."), 0, width))
+		}
 	}
 	return b.String()
 }
 
-func (m *Model) successView() string {
+// editPath is the file to edit: the first with a TODO, else the folder.
+func (m *Model) editPath() string {
+	where := relative(m.s.Dir(m.ex)) + string(filepath.Separator)
+	if files := m.todoFiles; len(files) > 0 {
+		where = relative(filepath.Join(m.s.Root, files[0]))
+		if len(files) > 1 {
+			where += dim.Render(fmt.Sprintf(" (+%d more)", len(files)-1))
+		}
+	}
+	return where
+}
+
+// taskMarks returns each task's state for the sidebar: passed, failing or
+// unknown (when tests don't map one-to-one onto tasks).
+func (m *Model) taskMarks() []string {
+	marks := make([]string, len(m.tasks))
+	for i := range marks {
+		marks[i] = dim.Render("·")
+	}
+	if m.result == nil {
+		return marks
+	}
+	if m.result.Status == workspace.Passed {
+		for i := range marks {
+			marks[i] = okStyle.Render("✓")
+		}
+		return marks
+	}
+	var tests []*workspace.Test
+	for _, t := range m.result.Tests {
+		if !strings.HasSuffix(t.Name, "TestGrader") {
+			tests = append(tests, t)
+		}
+	}
+	if len(tests) != len(m.tasks) {
+		return marks
+	}
+	for i, t := range tests {
+		switch {
+		case t.Passed:
+			marks[i] = okStyle.Render("✓")
+		case !t.Skipped:
+			marks[i] = bad.Render("✗")
+		}
+	}
+	return marks
+}
+
+// resultSide is the results sidebar: the tasks, where to edit, hints used,
+// and what's waiting (a due review, the next guide).
+func (m *Model) resultSide(w int) []string {
+	var out []string
+	if len(m.tasks) > 0 {
+		marks, cur := m.taskMarks(), m.stuckTask()
+		var rows []string
+		for i, t := range m.tasks {
+			label := ansi.Truncate(fmt.Sprintf("%d %s", t.Number, t.Title), w-4, "…")
+			if i == cur && m.result != nil && m.result.Status != workspace.Passed {
+				rows = append(rows, keyCap.Render("▸ ")+marks[i]+" "+bold.Render(label))
+			} else {
+				rows = append(rows, "  "+marks[i]+" "+label)
+			}
+		}
+		out = append(out, sideSection("Tasks", rows...)...)
+		out = append(out, "")
+	}
+	dir := filepath.Base(m.s.Dir(m.ex))
+	edit := dir + "/"
+	if files := m.todoFiles; len(files) > 0 {
+		edit = dir + "/" + filepath.Base(files[0])
+		if len(files) > 1 {
+			edit += dim.Render(fmt.Sprintf(" +%d", len(files)-1))
+		}
+	}
+	out = append(out, sideSection("Edit", edit, dim.Render("press ")+keyCap.Render("e")+dim.Render(" to open it"))...)
+	if len(m.tasks) > 0 {
+		seen, total := 0, 0
+		for i, t := range m.tasks {
+			seen += m.hintLevels[i]
+			total += len(t.Hints)
+		}
+		out = append(out, "")
+		out = append(out, sideSection("Hints", fmt.Sprintf("%d of %d seen", seen, total)+dim.Render(" · ")+keyCap.Render("h"))...)
+	}
+	if due := m.s.DueReviews(); len(due) > 0 && !m.inReview() {
+		out = append(out, "")
+		out = append(out, sideSection("Review due", append(wrapSide(fmt.Sprintf("%03d %s", due[0].Number, due[0].Title), w),
+			dim.Render("press ")+keyCap.Render("v")+dim.Render(" to start"))...)...)
+	}
+	if g := m.s.NextGuide(); g != nil {
+		out = append(out, "")
+		out = append(out, sideSection("Read next", append(wrapSide(g.Title, w),
+			dim.Render("press ")+keyCap.Render("g"))...)...)
+	}
+	return out
+}
+
+func (m *Model) successView(width int) string {
 	var b strings.Builder
+	line := func(s string) { b.WriteString(wrapIndent(s, 2, width) + "\n\n") }
 	b.WriteString(okBold.Render("★ Exercise complete!") + "\n\n")
-	b.WriteString("  " + bold.Render("Explain it back.") + " Before moving on, say in a sentence or two why your code\n  works. If you can't, that's the part to reread.\n\n")
+	line(bold.Render("Explain it back.") + " Before moving on, say in a sentence or two why your code works. If you can't, that's the part to reread.")
 	if r, ok := m.s.Review(m.ex); ok && !r.Active {
 		days := max(1, int(time.Until(r.Due).Hours()/24+0.5))
-		b.WriteString("  " + dim.Render(fmt.Sprintf("This one comes back for a review in %d days, to solve again from memory.", days)) + "\n\n")
+		line(dim.Render(fmt.Sprintf("This one comes back for a review in %d days, to solve again from memory.", days)))
 	}
-	b.WriteString("  Press " + keyCap.Render("s") + " to compare your code with the reference solution\n  (also saved in " + bold.Render(relative(m.s.SolutionDir(m.ex))) + ").\n\n")
+	line("Press " + keyCap.Render("s") + " to compare your code with the reference solution (also saved in " + bold.Render(relative(m.s.SolutionDir(m.ex))) + ").")
 	if next := m.s.NextPending(m.ex); next != nil {
-		b.WriteString("  When you're ready, press " + keyCap.Render("n") + " for " + bold.Render(fmt.Sprintf("%03d %s", next.Number, next.Title)) + ".")
+		b.WriteString(wrapIndent("When you're ready, press "+keyCap.Render("n")+" for "+bold.Render(fmt.Sprintf("%03d %s", next.Number, next.Title))+".", 2, width))
 	} else {
 		b.WriteString(okBold.Render("  You finished every exercise in Groundwork. Brilliant work! 🎉"))
 	}
-	return b.String()
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // stuckTask guesses which task the learner is on: the task of the first
@@ -809,7 +904,7 @@ func (m *Model) hintsView(width int) string {
 	default:
 		b.WriteString(dim.Render("That's the answer for this task. Want the whole solution? Press ") + keyCap.Render("s") + dim.Render("."))
 	}
-	if len(m.tasks) > 1 {
+	if len(m.tasks) > 1 && m.layout.outline == 0 { // the sidebar lists them otherwise
 		var others []string
 		for i, o := range m.tasks {
 			label := keyCap.Render(fmt.Sprint(o.Number)) + dim.Render(" "+o.Title)
@@ -824,8 +919,10 @@ func (m *Model) hintsView(width int) string {
 }
 
 func (m *Model) listView(width int) string {
-	lines := strings.Split(strings.TrimRight(Stats(m.s, width), "\n"), "\n")
-	lines = append(lines, "", rule.Render(strings.Repeat("─", width)), "")
+	var lines []string
+	if m.layout.outline == 0 { // no sidebar: stats on top
+		lines = append(statsRows(courseStats(m.s), width), "", rule.Render(strings.Repeat("─", width)), "")
+	}
 	for _, mod := range m.s.Course.Modules {
 		done := 0
 		for _, e := range mod.Exercises {
@@ -869,7 +966,7 @@ func (m *Model) listView(width int) string {
 // guide's one-sentence summary.
 func (m *Model) guidesView(width int) string {
 	lines := []string{
-		wrapIndent(dim.Render("The computer science underneath the exercises, one idea per guide. Each module has its own, but any guide is worth reading whenever an idea feels shaky. They're also in "+relative(filepath.Join(m.s.Root, "guides"))+string(filepath.Separator)+", for your editor."), 1, width),
+		wrapIndent(dim.Render("The ideas underneath the exercises, one per guide. Also in "+relative(filepath.Join(m.s.Root, "guides"))+string(filepath.Separator)+" for your editor."), 0, width),
 		"",
 	}
 	var mod *course.Module
@@ -896,7 +993,7 @@ func (m *Model) guidesView(width int) string {
 		}
 		m.guideLine = len(lines)
 		lines = append(lines, keyCap.Render("  ▸ ")+icon+"  "+bold.Render(label))
-		if g.Summary != "" {
+		if g.Summary != "" && m.layout.outline == 0 {
 			lines = append(lines, wrapIndent(dim.Render(g.Summary), 11, width))
 		}
 	}
@@ -910,7 +1007,7 @@ func (m *Model) guideView(int) string {
 	if err != nil {
 		return badBold.Render("✗ ") + err.Error()
 	}
-	inner := m.startDoc(g.Title, true)
+	inner := m.startDoc(g.Title, "On this page", true)
 	status := dim.Render("press ") + keyCap.Render("m") + dim.Render(" when you've read it")
 	if m.s.Read(g) {
 		status = okStyle.Render("✓ read")
@@ -920,13 +1017,19 @@ func (m *Model) guideView(int) string {
 	return m.docText(meta, m.markdown(src, inner), src)
 }
 
-// startDoc makes the body a framed document titled title and returns the
-// text width to render it at.
-func (m *Model) startDoc(title string, withOutline bool) int {
-	m.doc, m.docTitle = true, title
-	m.layout = layoutDoc(m.contentWidth(), withOutline)
-	m.body.Height = max(3, m.body.Height-frameRowsUsed)
+// startDoc frames a document titled title (with a sidebar titled
+// sideTitle when withSide and there's room) and returns the text width to
+// render it at.
+func (m *Model) startDoc(title, sideTitle string, withSide bool) int {
+	m.title, m.sideTitle = title, sideTitle
+	m.layout = layoutDoc(m.contentWidth(), withSide)
 	return m.layout.text
+}
+
+// startWide frames a list or test output, with a sidebar when there's room.
+func (m *Model) startWide(title, sideTitle string) {
+	m.title, m.sideTitle = title, sideTitle
+	m.layout = layoutWide(m.contentWidth())
 }
 
 // docText puts an optional meta line above rendered text and, when src is
@@ -943,11 +1046,9 @@ func (m *Model) docText(meta, rendered, src string) string {
 	if src != "" && m.layout.outline > 0 {
 		m.outline = findOutline(src, text)
 	}
-	if len(m.outline) == 0 {
-		m.layout = layoutDoc(m.contentWidth(), false)
-		if src != "" { // re-render at the wider text width
-			return m.docText(meta, m.markdown(src, m.layout.text), "")
-		}
+	if src != "" && len(m.outline) == 0 && m.layout.outline > 0 {
+		m.layout = layoutDoc(m.contentWidth(), false) // nothing to outline: hug the text
+		return m.docText(meta, m.markdown(src, m.layout.text), "")
 	}
 	return text
 }
@@ -1050,51 +1151,82 @@ func (m *Model) View() string {
 	if m.ex == nil {
 		return ""
 	}
-	body := m.body.View()
-	if m.doc {
-		lines := strings.Split(body, "\n")
-		for len(lines) < m.body.Height {
-			lines = append(lines, "")
-		}
-		body = frame(m.layout, m.docTitle, lines[:m.body.Height], m.outline, m.body.YOffset)
+	lines := strings.Split(m.body.View(), "\n")
+	for len(lines) < m.body.Height {
+		lines = append(lines, "")
 	}
+	body := frame(m.layout, m.title, m.sideTitle, lines[:m.body.Height], m.sidebar(m.body.Height))
 	return lipgloss.JoinVertical(lipgloss.Left, m.header(), body, m.footer())
+}
+
+// sidebar is the current pane's sidebar, rows lines tall.
+func (m *Model) sidebar(rows int) []string {
+	w := m.layout.outline
+	if w == 0 {
+		return nil
+	}
+	switch m.pane {
+	case paneInstructions, paneGuide:
+		return outlineLines(m.outline, w, currentSection(m.outline, m.body.YOffset), rows)
+	case paneHints:
+		var out []string
+		for i, t := range m.tasks {
+			dots := strings.Repeat("●", m.hintLevels[i]) + strings.Repeat("○", len(t.Hints)-m.hintLevels[i])
+			label := ansi.Truncate(fmt.Sprintf("%d %s", t.Number, t.Title), w-len(t.Hints)-3, "…")
+			if i == m.hintTask {
+				out = append(out, keyCap.Render("▸ ")+bold.Render(label)+" "+keyCap.Render(dots))
+			} else {
+				out = append(out, "  "+label+" "+dim.Render(dots))
+			}
+		}
+		return append(out, "", dim.Render("press a task's number"), dim.Render("for its hints"))
+	case paneList:
+		st := courseStats(m.s)
+		out := sideSection("This course", statsRows(st, w)...)
+		out = append(out, "")
+		return append(out, sideSection(fmt.Sprintf("Last %d weeks", statsWeeks), statsGrid(st)...)...)
+	case paneGuides:
+		g := m.s.Course.Guides[m.guideIdx]
+		out := wrapSide(bold.Render(g.Title), w)
+		out = append(out, dim.Render(fmt.Sprintf("Module %d · %s", g.Module.Number, g.Module.Title)))
+		if m.s.Read(g) {
+			out = append(out, okStyle.Render("✓ read"))
+		} else {
+			out = append(out, dim.Render("not read yet"))
+		}
+		if g.Summary != "" {
+			out = append(out, "")
+			out = append(out, wrapSide(g.Summary, w)...)
+		}
+		return out
+	case paneResult:
+		return m.resultSide(w)
+	}
+	return nil
 }
 
 func (m *Model) header() string {
 	w := m.contentWidth()
 	done, total := m.s.DoneCount(), len(m.s.Course.Exercises)
-	left := brand.Render("groundwork") + dim.Render(fmt.Sprintf("  ·  module %d of %d: %s", m.ex.Module.Number, len(m.s.Course.Modules), m.ex.Module.Title))
-	right := progressBar(done, total, min(20, w/5)) + dim.Render(fmt.Sprintf("  %d/%d done", done, total))
+	left := brand.Render("groundwork") + dim.Render(fmt.Sprintf("  %d · %s", m.ex.Module.Number, m.ex.Module.Title))
+	right := progressBar(done, total, min(20, w/6)) + dim.Render(fmt.Sprintf("  %d/%d", done, total))
 	if streak := m.s.Stats(1).Streak; streak > 1 && lipgloss.Width(left)+lipgloss.Width(right) < w-16 {
-		right = okStyle.Render(fmt.Sprintf("%d days in a row", streak)) + dim.Render("  ·  ") + right
+		right = okStyle.Render(fmt.Sprintf("%d-day streak", streak)) + dim.Render("  ·  ") + right
 	}
 
 	title := bold.Render(fmt.Sprintf("%03d  %s", m.ex.Number, m.ex.Title))
 	if m.ex.Kind != course.Concept {
-		title += "  " + dim.Render("["+string(m.ex.Kind)+"]")
+		title += "  " + dim.Render(string(m.ex.Kind))
 	}
 	if m.inReview() {
 		title += "  " + warn.Render("↻ review")
-	}
-
-	files := m.todoFiles
-	where := relative(m.s.Dir(m.ex)) + string(filepath.Separator)
-	if len(files) > 0 {
-		where = relative(filepath.Join(m.s.Root, files[0]))
-		if len(files) > 1 {
-			where += dim.Render(fmt.Sprintf("  (+%d more with TODOs)", len(files)-1))
-		}
 	}
 
 	return strings.Join([]string{
 		spread(left, right, w),
 		"",
 		spread(title, m.statusBadge(), w),
-		dim.Render("edit  ") + where,
-		"",
 		m.tabs(),
-		rule.Render(strings.Repeat("─", w)),
 	}, "\n")
 }
 
@@ -1163,29 +1295,48 @@ func (m *Model) footer() string {
 		status = warn.Render(m.flash)
 	case m.checking && m.result == nil:
 		status = dim.Render("Compiling and running the tests. The first run of an exercise takes a moment.")
-	case m.pane == paneInstructions || m.pane == paneHints || m.pane == paneHelp || m.pane == paneSolution:
-		status = dim.Render("↑/↓ scroll · [ ] sections · esc back to the results")
-	case m.pane == paneList:
-		status = dim.Render("↑/↓ move · enter open · esc back to the results")
-	case m.pane == paneGuides:
-		status = dim.Render("↑/↓ move · enter read · m mark read · o open in editor · esc back")
-	case m.pane == paneGuide:
-		status = dim.Render("↑/↓ scroll · space next page · m mark read · o open in editor · esc back")
-	case m.result != nil && m.result.Duration > 0:
-		status = dim.Render(fmt.Sprintf("Checked in %.1fs. Save any file to re-run.", m.result.Duration.Seconds()))
+	case m.pane == paneResult && m.result != nil && m.result.Duration > 0:
+		status = dim.Render(fmt.Sprintf("Checked in %.1fs · save any file to re-run", m.result.Duration.Seconds()))
 	}
-	keys := []string{"n next unfinished", "←/→ prev/next", "r re-run", "e edit", "x reset", "q quit"}
+	if m.body.TotalLineCount() > m.body.Height {
+		status = spread(status, dim.Render(fmt.Sprintf("%.0f%%", m.body.ScrollPercent()*100)), w)
+	}
+
+	var keys []string
+	switch m.pane {
+	case paneResult:
+		keys = []string{"n next", "←/→ prev/next", "r re-run", "e edit", "x reset"}
+		if len(m.s.DueReviews()) > 0 {
+			keys = append(keys, "v review")
+		}
+	case paneInstructions, paneGuide:
+		keys = []string{"↑/↓ scroll"}
+		if len(m.outline) > 0 {
+			keys = append(keys, "[ ] sections")
+		}
+		if m.pane == paneGuide {
+			keys = append(keys, "m mark read", "o open in editor")
+		} else {
+			keys = append(keys, "e edit")
+		}
+		keys = append(keys, "esc back")
+	case paneHints:
+		keys = []string{"h stronger hint", "1-9 another task", "s solution", "esc back"}
+	case paneList:
+		keys = []string{"↑/↓ move", "enter open", "esc back"}
+	case paneGuides:
+		keys = []string{"↑/↓ move", "enter read", "m mark read", "o open in editor", "esc back"}
+	default:
+		keys = []string{"↑/↓ scroll", "esc back"}
+	}
+	keys = append(keys, "q quit")
 	var parts []string
 	for _, k := range keys {
 		name, desc, _ := strings.Cut(k, " ")
 		parts = append(parts, keyCap.Render(name)+" "+dim.Render(desc))
 	}
-	help := lipgloss.NewStyle().Width(w).Render(strings.Join(parts, dim.Render("  ·  ")))
-	scroll := ""
-	if m.body.TotalLineCount() > m.body.Height {
-		scroll = dim.Render(fmt.Sprintf("  ·  %.0f%% scrolled", m.body.ScrollPercent()*100))
-	}
-	return strings.Join([]string{rule.Render(strings.Repeat("─", w)), status + scroll, help}, "\n")
+	help := ansi.Truncate(strings.Join(parts, dim.Render("  ·  ")), w, "…")
+	return status + "\n" + help
 }
 
 // spread puts left and right on one line, pushed to opposite edges.

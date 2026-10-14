@@ -18,15 +18,15 @@ const plainWidth = 100
 // CheckReport renders a one-shot check for `groundwork check`.
 func CheckReport(s *session.Session, e *course.Exercise, r *workspace.Result) string {
 	var b strings.Builder
-	b.WriteString(bold.Render(fmt.Sprintf("%03d  %s", e.Number, e.Title)) + dim.Render("  ·  "+e.Module.Title) + "\n\n")
-	b.WriteString(RenderResult(r, plainWidth) + "\n")
+	b.WriteString(dim.Render(fmt.Sprintf("Module %d · %s", e.Module.Number, e.Module.Title)) + "\n\n")
+	b.WriteString(RenderResult(r, plainWidth-6) + "\n")
 	if r.Status == workspace.Passed {
 		b.WriteString("\n" + okBold.Render("★ Exercise complete!") + " Reference solution: " + bold.Render(relative(s.SolutionDir(e))) + "\n")
 		if next := s.NextPending(e); next != nil {
 			b.WriteString(dim.Render(fmt.Sprintf("Next up: %03d %s", next.Number, next.Title)) + "\n")
 		}
 	}
-	return b.String()
+	return framed(fmt.Sprintf("%03d  %s", e.Number, e.Title), b.String(), plainWidth)
 }
 
 // CourseList renders `groundwork list`: every module with its progress,
@@ -34,7 +34,7 @@ func CheckReport(s *session.Session, e *course.Exercise, r *workspace.Result) st
 func CourseList(s *session.Session, all bool) string {
 	var b strings.Builder
 	done, total := s.DoneCount(), len(s.Course.Exercises)
-	b.WriteString(brand.Render("groundwork") + "  " + progressBar(done, total, 30) + dim.Render(fmt.Sprintf("  %d/%d exercises done", done, total)) + "\n")
+	b.WriteString(progressBar(done, total, 30) + dim.Render(fmt.Sprintf("  %d/%d exercises done", done, total)) + "\n")
 	if st := s.Stats(7); st.Streak > 0 || st.Week > 0 {
 		b.WriteString(dim.Render(fmt.Sprintf("streak %d · %d of 7 days this week · ", st.Streak, st.Week)) + keyCap.Render("groundwork stats") + dim.Render(" for more") + "\n")
 	}
@@ -86,15 +86,18 @@ func CourseList(s *session.Session, all bool) string {
 	if !all {
 		b.WriteString(dim.Render("groundwork list --all shows every exercise.") + "\n")
 	}
-	return b.String()
+	return framed("Progress", b.String(), listWidth)
 }
+
+// listWidth is the frame width of groundwork list and groundwork guides.
+const listWidth = 80
 
 // GuideList renders `groundwork guides`: every guide by module, ✓ for the
 // ones read, with summaries for the guides of current (the learner's module).
 // Outside a course, current and read are nil.
 func GuideList(c *course.Course, current *course.Module, read func(*course.Guide) bool) string {
 	var b strings.Builder
-	b.WriteString(brand.Render("groundwork guides") + dim.Render("  ·  the computer science underneath the exercises") + "\n")
+	b.WriteString(dim.Render("The ideas underneath the exercises, one per guide.") + "\n")
 	var mod *course.Module
 	for _, g := range c.Guides {
 		if g.Module != mod {
@@ -116,11 +119,11 @@ func GuideList(c *course.Course, current *course.Module, read func(*course.Guide
 		}
 		b.WriteString("     " + icon + "  " + bold.Render(label) + "\n")
 		if g.Summary != "" {
-			b.WriteString(wrapIndent(dim.Render(g.Summary), 12, plainWidth) + "\n")
+			b.WriteString(wrapIndent(dim.Render(g.Summary), 12, listWidth-6) + "\n")
 		}
 	}
 	b.WriteString("\n" + keyCap.Render("groundwork guides 10") + dim.Render(" reads guide 10 · in the watcher, press ") + keyCap.Render("g") + "\n")
-	return b.String()
+	return framed("Guides", b.String(), listWidth)
 }
 
 // Guide renders one guide for the terminal, framed like the watcher's
@@ -165,80 +168,82 @@ func Dim(s string) string { return dim.Render(s) }
 // statsWeeks is how many weeks the activity grid shows.
 const statsWeeks = 12
 
-// Stats renders the progress summary: streak, this week, today, totals and
-// a grid of the last weeks, one column per week and one row per weekday.
-func Stats(s *session.Session, width int) string {
-	today := time.Now()
-	offset := (int(today.Weekday()) + 6) % 7 // days since Monday
-	st := s.Stats(7*(statsWeeks-1) + offset + 1)
+// courseStats is the learner's stats with enough days for the grid.
+func courseStats(s *session.Session) session.Stats {
+	offset := (int(time.Now().Weekday()) + 6) % 7 // days since Monday
+	return s.Stats(7*(statsWeeks-1) + offset + 1)
+}
 
-	var b strings.Builder
+// statsRows are the summary rows (label, value), each fitting in width
+// columns: streak, this week, today, totals.
+func statsRows(st session.Stats, width int) []string {
+	var rows []string
 	row := func(label, value string) {
-		b.WriteString("  " + dim.Render(fmt.Sprintf("%-11s", label)) + " " + value + "\n")
+		rows = append(rows, dim.Render(fmt.Sprintf("%-10s", label))+" "+value)
 	}
 	streak := bold.Render(plural(st.Streak, "1 day", fmt.Sprintf("%d days", st.Streak)))
 	if st.Longest > st.Streak {
-		streak += dim.Render(fmt.Sprintf("  (longest %d)", st.Longest))
+		streak += dim.Render(fmt.Sprintf(" · best %d", st.Longest))
 	}
 	if st.Streak == 0 {
-		streak = dim.Render("none yet: any practice today starts one")
+		streak = dim.Render("starts with any practice")
 	}
 	row("Streak", streak)
 	row("This week", fmt.Sprintf("%d of 7 days", st.Week))
-	var todayParts []string
+	var today []string
 	for _, c := range []struct {
 		n           int
 		one, plural string
 	}{
-		{st.Today.Checks, "test run", "test runs"},
-		{st.Today.Passed, "exercise passed", "exercises passed"},
+		{st.Today.Checks, "run", "runs"},
+		{st.Today.Passed, "passed", "passed"},
 		{st.Today.Reviews, "review", "reviews"},
-		{st.Today.Guides, "guide read", "guides read"},
+		{st.Today.Guides, "guide", "guides"},
 	} {
 		if c.n > 0 {
-			todayParts = append(todayParts, fmt.Sprintf("%d %s", c.n, plural(c.n, c.one, c.plural)))
+			today = append(today, fmt.Sprintf("%d %s", c.n, plural(c.n, c.one, c.plural)))
 		}
 	}
-	if len(todayParts) == 0 {
-		todayParts = []string{dim.Render("nothing yet")}
+	if len(today) == 0 {
+		today = []string{dim.Render("nothing yet")}
 	}
-	row("Today", strings.Join(todayParts, dim.Render(" · ")))
-	bar := min(24, max(8, width/5))
-	row("Exercises", progressBar(st.Passed, st.Exercises, bar)+dim.Render(fmt.Sprintf("  %d/%d", st.Passed, st.Exercises)))
-	row("Guides", progressBar(st.GuidesRead, st.Guides, bar)+dim.Render(fmt.Sprintf("  %d/%d read", st.GuidesRead, st.Guides)))
+	row("Today", strings.Join(today, dim.Render(" · ")))
+	bar := max(6, min(20, width-11-10))
+	row("Exercises", progressBar(st.Passed, st.Exercises, bar)+dim.Render(fmt.Sprintf(" %d/%d", st.Passed, st.Exercises)))
+	row("Guides", progressBar(st.GuidesRead, st.Guides, bar)+dim.Render(fmt.Sprintf(" %d/%d", st.GuidesRead, st.Guides)))
 	reviews := fmt.Sprintf("%d passed", st.ReviewsPassed)
 	if st.ReviewsDue > 0 {
 		reviews = warn.Render(fmt.Sprintf("%d due", st.ReviewsDue)) + dim.Render(" · ") + reviews
 	}
 	row("Reviews", reviews)
+	return rows
+}
 
-	var grid strings.Builder
-	grid.WriteString(dim.Render(fmt.Sprintf("Last %d weeks", statsWeeks)) + "\n")
+// statsGrid is the activity grid: one column per week, one row per weekday.
+func statsGrid(st session.Stats) []string {
+	var lines []string
 	for weekday, name := range []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"} {
-		grid.WriteString(dim.Render(name) + " ")
+		var b strings.Builder
+		b.WriteString(dim.Render(name))
 		for week := range statsWeeks {
 			i := week*7 + weekday
 			if i >= len(st.Days) {
 				break
 			}
-			grid.WriteString(" " + cell(st.Days[i]))
+			b.WriteString(" " + cell(st.Days[i]))
 		}
-		grid.WriteString("\n")
+		lines = append(lines, b.String())
 	}
-	grid.WriteString(dim.Render("·") + dim.Render(" none ") + cell(progress.Day{Checks: 1}) + dim.Render(" practised ") +
-		cell(progress.Day{Passed: 1}) + dim.Render(" passed ") + cell(progress.Day{Passed: 3}) + dim.Render(" 3+"))
+	return append(lines, dim.Render("·")+dim.Render(" none ")+cell(progress.Day{Checks: 1})+dim.Render(" practised ")+
+		cell(progress.Day{Passed: 1})+dim.Render(" passed ")+cell(progress.Day{Passed: 3})+dim.Render(" 3+"))
+}
 
-	summary := strings.TrimRight(b.String(), "\n")
-	activity := strings.TrimRight(grid.String(), "\n")
-	if width >= 90 { // side by side
-		joined := lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(52).Render(summary), activity)
-		lines := strings.Split(joined, "\n")
-		for i, l := range lines {
-			lines[i] = strings.TrimRight(l, " ")
-		}
-		return strings.Join(lines, "\n") + "\n"
-	}
-	return summary + "\n\n" + lipgloss.NewStyle().PaddingLeft(2).Render(activity) + "\n"
+// Stats renders groundwork stats: the summary next to the activity grid.
+func Stats(s *session.Session, width int) string {
+	st := courseStats(s)
+	left := strings.Join(statsRows(st, 46), "\n")
+	right := dim.Render(fmt.Sprintf("Last %d weeks", statsWeeks)) + "\n" + strings.Join(statsGrid(st), "\n")
+	return framed("Stats", lipgloss.JoinHorizontal(lipgloss.Top, lipgloss.NewStyle().Width(50).Render(left), right), min(width, 88))
 }
 
 // cell is one day in the activity grid.
