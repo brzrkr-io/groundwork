@@ -3,7 +3,7 @@
 A rolling deploy never touches every host at once. It deploys the canaries
 first, then the rest in small batches, so a bad release only hurts a few hosts.
 
-**New here:** slices of slices (`[][]string`), stepping a loop by more than 1.
+**New here:** nothing; practice with `append` and `copy`. (Slices of slices are from *Slices: rolling-deploy batches*, stepping a loop from *For loops: plan a rollout*.)
 
 ## Learn
 

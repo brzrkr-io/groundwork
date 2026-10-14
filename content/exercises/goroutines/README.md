@@ -1,5 +1,9 @@
 # Goroutines
 
+*Practice: endpoint health checker* closed *Networking and HTTP*, checking
+endpoints one after another. This module adds concurrency, so a program can
+do many of those things at once.
+
 A *goroutine* is a function running at the same time as the rest of your
 program. Ops tools use them to restart ten services at once, or check fifty
 hosts in the time it takes to check one.

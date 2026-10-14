@@ -4,8 +4,9 @@ Most internal platform tools talk to each other through small JSON APIs: a
 service catalog, a deploy API, an alert manager. Here you finish one that
 sends and receives JSON the way clients expect.
 
-**New here:** JSON responses with `json.NewEncoder`, the `any` type, safe
-request reading with `http.MaxBytesReader` and `DisallowUnknownFields`.
+**New here:** JSON responses with `json.NewEncoder` on a `ResponseWriter`,
+safe request reading with `http.MaxBytesReader`. (`any` is from
+*Interfaces*; `DisallowUnknownFields` from *Decoding JSON: load a service config*.)
 
 ## Learn
 

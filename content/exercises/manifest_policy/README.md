@@ -5,9 +5,10 @@ resource limits, add probes, don't run as root, don't deploy `:latest`.
 You'll build `kubepolicy`, a command-line tool that checks Kubernetes YAML
 against those rules in CI, and publish it on GitHub as a portfolio project.
 
-**New here:** multi-document YAML streams, `bytes.Lines`, `kind: List`, the
-`securityContext` fields, a property check for a fuzz target. Everything
-else is practice from across the course.
+**New here:** `bytes.Lines`, `kind: List`. Everything else is practice from
+across the course, including multi-document YAML (*YAML manifests: reading
+them into Go*), `securityContext` (*Security contexts: least privilege for
+pods*) and property checks in a fuzz target (*Testing*).
 
 ## Learn
 

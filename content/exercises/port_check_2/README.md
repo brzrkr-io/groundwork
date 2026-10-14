@@ -4,7 +4,7 @@ Containers often start before their database is ready. A *wait-for-it* step
 keeps knocking on the database port and only lets migrations run once it
 answers. Here you fix and finish one.
 
-**New here:** `net.JoinHostPort`, `net.SplitHostPort`, `strconv.Atoi`, passing a sleep function.
+**New here:** `net.JoinHostPort`, `net.SplitHostPort`, passing a sleep function.
 
 ## Learn
 

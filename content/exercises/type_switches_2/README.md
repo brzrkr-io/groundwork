@@ -5,7 +5,7 @@ anyone knows exactly what is in them. To read a setting safely you check its
 type first, because `replicas: 3` can arrive as an `int`, a `float64` or even
 a `string`.
 
-**New here:** whole-number checks on `float64`, `strconv.Atoi`; otherwise practice with type assertions and switches.
+**New here:** whole-number checks on `float64`; otherwise practice with type assertions and switches.
 
 ## Learn
 

@@ -3,7 +3,7 @@
 The nightly drift check pages the on-call engineer every night, even though
 nobody touched the payments stack. Two bugs make the report useless; fix them.
 
-**New here:** AWS-managed `aws:` tags, `strings.HasPrefix`, `continue`.
+**New here:** AWS-managed `aws:` tags; otherwise practice.
 
 ## Learn
 

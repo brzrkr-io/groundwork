@@ -4,7 +4,7 @@ Ignoring an error is the classic way a config typo turns into an outage:
 `replicas: three` silently becomes zero replicas. Here you fix a parser that
 does exactly that, and write two more that check every result.
 
-**New here:** named results, `strings.TrimSpace`, `strings.CutSuffix`, `if` with a short statement.
+**New here:** named results, `strings.TrimSpace`, `strings.CutSuffix`.
 
 ## Learn
 

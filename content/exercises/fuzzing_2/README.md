@@ -4,7 +4,7 @@
 don't crash; they return the wrong answer. This exercise checks *properties*
 of the answer, on inputs you never wrote down.
 
-**New here:** checking properties in a fuzz target, two-parameter fuzz inputs, bytes vs. characters, `unicode/utf8`.
+**New here:** checking properties in a fuzz target, two-parameter fuzz inputs. (Bytes vs. characters and `unicode/utf8` are from *Bytes, runes and UTF-8*.)
 
 ## Learn
 

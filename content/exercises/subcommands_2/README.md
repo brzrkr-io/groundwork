@@ -4,7 +4,7 @@ A `switch` is fine for three commands. Real tools have dozens, and each needs
 a line in the help text. Here you drive a tool from a *command table*, so
 adding a command means adding one entry.
 
-**New here:** functions stored in struct fields, map lookup for dispatch, sorted map keys, `%-9s` padding.
+**New here:** functions stored in struct fields, map lookup for dispatch. (Sorted map keys are from *Sorting*, `%-9s` padding from *Formatting with fmt*.)
 
 ## Learn
 

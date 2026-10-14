@@ -4,7 +4,7 @@ You wrote Services by hand in *Services: selectors, ports and endpoints*.
 Here you build them in Go: you fix a buggy Service builder and write a
 check that catches a broken Deployment before you send it to the cluster.
 
-**New here:** `corev1.Service` in Go, `intstr.IntOrString`, sorting map keys with `slices.Sorted(maps.Keys(m))`.
+**New here:** `corev1.Service` in Go, `intstr.IntOrString`. (Sorting map keys with `slices.Sorted(maps.Keys(m))` is from *Sorting*.)
 
 ## Learn
 

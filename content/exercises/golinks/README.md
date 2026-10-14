@@ -1,12 +1,16 @@
 # Capstone: go links, built and shipped
 
+*Practice: cloud inventory report* closed *Cloud automation with the AWS SDK*
+and the last new topic. The capstones add nothing big and new: they combine
+the whole course into finished projects.
+
 You'll build *go links*, the link shortener from the *System design
 fundamentals* guide, and take it all the way: a tested Go service with a
 SQLite store, a container image, Kubernetes manifests, a CI pipeline that
 publishes the image, and a README that sells it. At the end it runs on a
 real cluster on your laptop, and it's a project you can show an employer.
 
-**New here:** `INSERT ... ON CONFLICT DO NOTHING`, `url.Parse`, `r.Pattern`, PersistentVolumeClaims, kustomize overlays, kind. Everything else is practice from earlier modules.
+**New here:** `INSERT ... ON CONFLICT DO NOTHING`, `r.Pattern`, PersistentVolumeClaims. Everything else is practice from earlier modules, including `url.Parse` (*Container config: settings from the environment*), kustomize overlays (*Kustomize: one base, many environments*) and kind clusters (*Kubernetes fundamentals*).
 
 ## Learn
 

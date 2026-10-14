@@ -1,5 +1,9 @@
 # SELECT and WHERE: find the failed deploys
 
+*Project: access log report* closed *Text and data*: you can parse files and
+streams. This module adds databases, where most long-lived data is kept and
+queried.
+
 Deploy history, incidents, users, feature flags: most of the data an ops
 team cares about lives in a *database*, and you ask it questions with SQL
 (*Structured Query Language*). Here you write your first queries against a

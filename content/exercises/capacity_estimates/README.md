@@ -1,5 +1,9 @@
 # Capacity estimates: QPS, storage and bandwidth
 
+*Practice: containerize and ship a service* closed *Containers and CI/CD*:
+you can ship one service. This module adds thinking about whole systems:
+load, reliability, caching, sharding and queues.
+
 Before you build or buy anything, you ask: how busy will this be, how much
 disk will it fill, and how many servers does it need? You'll turn those
 napkin sums into small Go functions you can rerun whenever the numbers change.

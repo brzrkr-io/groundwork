@@ -1,5 +1,9 @@
 # IP addresses: classify, allowlist, overlap
 
+*Project: ops inventory CLI* closed *Packages and project layout*: a
+multi-package tool that works on local data. This module adds the network:
+addresses, connections and HTTP.
+
 Firewall rules, security groups, VPC subnets and Kubernetes network policies
 are all written as IP addresses and ranges. Go's `net/netip` package lets you
 check them in code instead of by eye.

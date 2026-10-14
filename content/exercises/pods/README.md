@@ -1,6 +1,7 @@
 # Pods: your first manifest
 
-You can build an image and run it with Docker. Kubernetes runs the same
+*Practice: deploy-status service* closed *System design*, and you can build
+an image and run it with Docker. Kubernetes runs the same
 images, but on a whole group of machines, and keeps them running for you.
 Here you write your first Kubernetes *manifests*: three Pods.
 

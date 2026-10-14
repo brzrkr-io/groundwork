@@ -4,7 +4,7 @@ Ops code is full of things that must be undone: a connection must be closed,
 a lock must be released. `defer` makes sure the cleanup happens, even when the
 function returns early because something failed.
 
-**New here:** `defer`, last-in first-out order, deferred closures, named results.
+**New here:** `defer`, last-in first-out order, deferred closures, changing named results (from *Multiple return values: don't drop the error*) in a deferred function.
 
 ## Learn
 

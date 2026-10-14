@@ -5,8 +5,8 @@ It protects your service from a noisy neighbour, a buggy retry loop or a
 runaway script. You build the classic algorithm, the token bucket, and put
 it in front of an HTTP handler.
 
-**New here:** the token bucket, the built-in `min`, `http.HandlerFunc`
-middleware, `429` with `Retry-After`, `net.SplitHostPort`.
+**New here:** the token bucket, `429` with `Retry-After`. (`min`,
+`http.HandlerFunc` middleware and `net.SplitHostPort` are practice.)
 
 ## Learn
 

@@ -321,6 +321,8 @@ echo "ok"
 
 The first line is the *shebang*. When you run `./restart.sh`, the kernel reads it and runs the file with the program it names; `/usr/bin/env bash` means "find bash on the PATH". `chmod +x restart.sh` makes the file executable. Or skip both and run `bash restart.sh`, as the exercises do.
 
+A script that works by hand can still fail under cron or CI, which start it with their own `PATH` and working directory: `command not found`, or a relative path that points nowhere. `echo "$PATH"`, `command -v tool` and `pwd` tell you which; you'll diagnose and fix one in *Processes and permissions: an incident on the box*.
+
 ### `set -euo pipefail`
 
 By default bash keeps going after a failed command. A deploy script that fails at "build" then carries on to "push" and "restart". These options make the script fail fast, like returning an error in Go:

@@ -4,7 +4,7 @@ An event bus carries many kinds of messages: deploys, scaling changes, alerts.
 When they all arrive as plain values of type `any`, your code has to ask
 "what is this, really?" before it can use them.
 
-**New here:** `any`, type assertions `x.(T)`, the comma-ok form, type switches `switch v := x.(type)`, the `%T` verb.
+**New here:** type assertions `x.(T)`, the comma-ok form, type switches `switch v := x.(type)`, the `%T` verb. (`any` is from *Interfaces*.)
 
 ## Learn
 

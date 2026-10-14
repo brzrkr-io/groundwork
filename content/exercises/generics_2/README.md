@@ -4,7 +4,7 @@ Capacity reports add up numbers of every kind: request counts, CPU seconds,
 bytes of disk. Here you meet a constraint that lets one `Sum` handle them all,
 and you fix two more generic helpers.
 
-**New here:** union constraints (`~int | ~float64`), the `~` tilde, generic functions with two type parameters, `slices.Sort`.
+**New here:** union constraints (`~int | ~float64`), the `~` tilde, generic functions with two type parameters. (`slices.Sort` is from *Sorting*.)
 
 ## Learn
 

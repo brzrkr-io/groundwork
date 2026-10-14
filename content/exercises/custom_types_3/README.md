@@ -4,7 +4,7 @@ Kubernetes writes memory as *quantities* like `512Mi` and `2Gi`. In this
 exercise you give memory sizes their own type, parse quantities, and check
 whether a set of pods fits on a node.
 
-**New here:** constants built from constants, `strings.CutSuffix`, mixing a custom type with `int` and `float64`.
+**New here:** constants built from constants, mixing a custom type with `int` and `float64`. (`strings.CutSuffix` is from *Multiple return values: don't drop the error*.)
 
 ## Learn
 

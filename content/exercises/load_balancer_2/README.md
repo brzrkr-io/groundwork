@@ -5,8 +5,8 @@ the slow report endpoint kept piling up on one backend. The new balancer has
 three bugs: it picks at random when backends tie, its in-flight counts go
 negative, and `go test -race` reports a data race. Fix all three.
 
-**New here:** least-connections balancing, map order is random, releasing
-exactly once with `sync.Once`, reading a race report.
+**New here:** least-connections balancing. (Random map order is from *Maps*,
+`sync.Once` and race reports from *The race detector* exercises.)
 
 ## Learn
 

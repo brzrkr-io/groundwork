@@ -4,7 +4,7 @@ A monitoring agent runs many kinds of health checks: HTTP, TCP, DNS. They all
 share a name and a schedule. Here you put the shared part in one embedded
 struct and let promotion make every check type satisfy one interface.
 
-**New here:** promoted methods satisfying an interface, the `%` (remainder) operator.
+**New here:** promoted methods satisfying an interface. (`%`, the remainder, is from *Numbers and arithmetic*.)
 
 ## Learn
 

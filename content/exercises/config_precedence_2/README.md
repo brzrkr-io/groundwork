@@ -4,7 +4,7 @@ The nightly database backup job reads defaults, a JSON file, environment
 variables and flags. A teammate wrote the loader, but it ignores what on-call
 asks for. Fix two bugs and fill one gap.
 
-**New here:** `time.ParseDuration`, `strconv.ParseBool`, "set but empty".
+**New here:** `strconv.ParseBool`, "set but empty". (`time.ParseDuration` is from *Time and durations: cert expiry, uptime, maintenance windows*.)
 
 ## Learn
 

@@ -1,5 +1,9 @@
 # Packages and imports
 
+*Practice: preflight check CLI* closed *CLI tools and the OS* with a whole
+tool in one package. This module adds splitting a program into packages and
+laying out a project.
+
 Real tools are split into packages: one for the inventory, one for planning
 deploys, one for the command line. This exercise shows how Go finds your
 packages and how one package calls another.

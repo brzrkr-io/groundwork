@@ -4,7 +4,7 @@ Go matches arguments to parameters by position, not by name. Pass two
 numbers in the wrong order and the compiler can't help you. This exercise
 starts with exactly that bug, then has you pull a helper out of a function.
 
-**New here:** argument order, `%%` in format strings, small helper functions.
+**New here:** argument order, small helper functions. (`%%` is from *Formatting with fmt*.)
 
 ## Learn
 

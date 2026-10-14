@@ -4,7 +4,7 @@ Amazon S3 is where most AWS teams keep files: build artifacts, backups, logs
 and config. Here you upload a service config, download it again with a
 checksum check, and list every config under a "folder".
 
-**New here:** `PutObject`, `GetObject`, object keys and prefixes, user metadata, `bytes.NewReader`, `io.ReadAll`.
+**New here:** `PutObject`, `GetObject`, object keys and prefixes, user metadata. (`bytes.NewReader` and `io.ReadAll` are practice from *Networking and HTTP*.)
 
 ## Learn
 

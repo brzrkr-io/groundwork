@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# healthcheck FILE checks every host:port listed in FILE, one per line.
+# This is a stand-in for a real checker: it only prints "ok" for each one.
+# bash setup.sh makes it executable.
+
+while read -r target; do
+	echo "ok $target"
+done < "$1"

@@ -1,5 +1,9 @@
 # Your first test
 
+*Practice: config validator* closed *Errors*: your code now reports what went
+wrong. This module adds the other half: proving it works, with tests you
+write yourself.
+
 Until now Groundwork wrote the tests and you wrote the code. From here on you
 write tests too. A test is a small program that checks your real program, so
 you find a broken config parser on your laptop, not during a deploy.

@@ -6,8 +6,8 @@ used refactoring there is: move a block of code into its own function with
 a name that says what it does. This exercise breaks a long deploy planner
 into steps you can read at a glance.
 
-**New here:** refactoring, extract function, `append(a, b...)`, the
-`if err := f(); err != nil` form.
+**New here:** refactoring, extract function. (`append(a, b...)` is from
+*append and copy*; `if err := f(); err != nil` from *if and else*.)
 
 ## Learn
 

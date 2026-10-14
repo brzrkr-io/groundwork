@@ -4,7 +4,7 @@ In *Checksums and archives: verify and extract safely* you consumed a
 release. Now you produce one: pack the build output into a `.tar.gz` and
 publish a `SHA256SUMS` file next to it, the way a CI release job does.
 
-**New here:** close order of stacked writers, `defer` order, `os.ReadDir`, `os.MkdirAll`.
+**New here:** close order of stacked writers, `os.ReadDir`. (`defer` order is from *defer*, `os.MkdirAll` from *Files: an append-only audit log*.)
 
 ## Learn
 

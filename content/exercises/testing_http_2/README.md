@@ -4,7 +4,7 @@ When a bug report comes in, the professional move is to write a test that
 shows the bug *before* you fix it. The test fails, you fix the code, the test
 passes, and it guards against the bug coming back. That's a *regression test*.
 
-**New here:** request bodies in tests, checking JSON responses with `json.Unmarshal`, test-first bug fixing.
+**New here:** request bodies in tests, checking JSON responses, test-first bug fixing.
 
 ## Learn
 

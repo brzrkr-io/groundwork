@@ -1,10 +1,14 @@
 # Command-line arguments: os.Args and usage errors
 
+*Practice: refactor the log rotator* closed *Software engineering practice*.
+This module turns your functions into real command-line tools that read
+arguments, files and the environment.
+
 Almost every ops tool starts the same way: someone types `scale api 3` in a
 terminal or a CI script. Here you read those words in Go, check them, and give
 a clear error when they're wrong.
 
-**New here:** `os.Args`, `strconv.Atoi`, exit codes, printing to stderr.
+**New here:** `os.Args`, and the Go wiring of ideas you know from *Exit codes, && and ||*: returning an exit code with `os.Exit` and printing errors to stderr. `strconv.Atoi` is a recap from *Multiple return values*.
 
 ## Learn
 

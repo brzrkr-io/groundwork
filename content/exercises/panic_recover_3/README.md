@@ -4,7 +4,7 @@ A web server handles thousands of requests. If one handler hits a bug, that
 request should fail with a 500 error and the bug should be logged, but the
 server must keep serving everyone else. You build that safety net here.
 
-**New here:** middleware (a function that returns a function), type switch on a recovered value, the `%T` verb.
+**New here:** middleware (a function that returns a function, as in *Functions as values*), type switch on a recovered value. (`%T` is from *Type assertions and switches*.)
 
 ## Learn
 

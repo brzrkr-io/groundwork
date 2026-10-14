@@ -1,5 +1,9 @@
 # Structs
 
+*Practice: log level counter* closed *Collections* with slices and maps of
+plain strings and numbers. This module adds your own types, so a value can
+be "a deployment" with fields and behaviour.
+
 A deployment has a name, an image, a replica count, environment variables and
 resource limits. A *struct* keeps all of those together in one value, so you
 pass around "a deployment" instead of five loose variables.

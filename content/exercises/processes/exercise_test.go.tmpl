@@ -1,0 +1,431 @@
+package processes
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+)
+
+func TestFindRunaway(t *testing.T) {
+	needLinux(t)
+	// The names end in the test's own PID, so two test runs at the same
+	// time never see each other's processes.
+	me := strconv.Itoa(os.Getpid())
+	exporter := startNamed(t, "export-"+me)
+	indexer := startNamed(t, "indexer-"+me)
+
+	expectPIDs(t, "export-"+me, exporter.pid, os.Getpid())
+	expectPIDs(t, "indexer-"+me, indexer.pid, os.Getpid())
+}
+
+func TestStop(t *testing.T) {
+	needLinux(t)
+	polite := start(t, ".", "bash", "-c", waitForever)
+	expectStop(t, polite, syscall.SIGTERM, "stopped by TERM (exit code 143)")
+
+	// trap '' TERM makes bash ignore TERM.
+	stubborn := start(t, ".", "bash", "-c", "trap '' TERM; "+waitForever)
+	expectStop(t, stubborn, syscall.SIGKILL, "killed by KILL (exit code 137)")
+}
+
+func TestOpenFiles(t *testing.T) {
+	needLinux(t)
+	dir := tempDir(t)
+
+	reports := filepath.Join(dir, "reports")
+	writeFile(t, filepath.Join(reports, "config.yaml"), "format: csv\n", 0o644)
+	// exec 3>> file opens file as fd 3 and keeps it open.
+	exporter := start(t, reports, "bash", "-c", "exec 3>> export.csv 4< config.yaml; "+waitForever)
+	expectOpenFiles(t, exporter)
+
+	warm := filepath.Join(dir, "cache warm")
+	if err := os.Mkdir(warm, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	warmer := start(t, warm, "bash", "-c", "exec 7>> warm.log; "+waitForever)
+	expectOpenFiles(t, warmer)
+}
+
+func TestFixPermissions(t *testing.T) {
+	expectPermissions(t, 0o644, 0o644, "tok-alpha-1")
+	expectPermissions(t, 0o666, 0o600, "tok-bravo-2")
+}
+
+func TestRunChecks(t *testing.T) {
+	expectChecks(t, "job", "api.internal:8080", "db.internal:5432")
+	expectChecks(t, "nightly checks", "cache.internal:6379")
+}
+
+// needLinux skips the test anywhere but Linux: only Linux has /proc.
+func needLinux(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("this task reads /proc, which only Linux has; " +
+			"run it on Linux, or in a Linux virtual machine or container")
+	}
+}
+
+// helper is a process the test started for your script to work on.
+type helper struct {
+	pid    int
+	exited chan struct{}    // closed once the process has ended
+	state  *os.ProcessState // how it ended; read it after exited is closed
+}
+
+// waitForever ends every helper's bash script: it tells the test that the
+// helper is ready, then waits for an input line that never comes.
+const waitForever = "echo ready; read -r _"
+
+// start runs command from dir as a helper process, and waits until it
+// prints "ready". The test stops it when it ends.
+func start(t *testing.T, dir string, command ...string) *helper {
+	t.Helper()
+	cmd := exec.Command(command[0], command[1:]...)
+	cmd.Dir = dir
+	// A pipe the test never writes to: the helper's read waits forever.
+	if _, err := cmd.StdinPipe(); err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("could not start %s: %v", command[0], err)
+	}
+	h := &helper{pid: cmd.Process.Pid, exited: make(chan struct{})}
+	ready := make(chan bool, 1)
+	go func() {
+		line, _ := bufio.NewReader(stdout).ReadString('\n')
+		ready <- line == "ready\n"
+		// Wait collects the exit status as soon as the process ends, so
+		// it disappears from the process list right away.
+		_ = cmd.Wait()
+		h.state = cmd.ProcessState
+		close(h.exited)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-h.exited
+	})
+
+	select {
+	case ok := <-ready:
+		if !ok {
+			t.Fatalf("helper process %s ended before it was ready", command[0])
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("helper process %s wasn't ready after 5 seconds", command[0])
+	}
+	return h
+}
+
+// startNamed starts a helper process called name: a bash script file with
+// that name.
+func startNamed(t *testing.T, name string) *helper {
+	t.Helper()
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(t.TempDir(), name)
+	// Naming bash by its full path keeps the script's own name as the
+	// process name (#!/usr/bin/env bash would make it "bash").
+	writeFile(t, script, "#!"+bash+"\n"+waitForever+"\n", 0o755)
+	return start(t, ".", script)
+}
+
+// expectPIDs runs 1_find_runaway.sh name and checks that it prints pid and
+// then ppid.
+func expectPIDs(t *testing.T, name string, pid, ppid int) {
+	t.Helper()
+	got, stderr, code := run(t, ".", "1_find_runaway.sh", name)
+	command := commandLine("1_find_runaway.sh", name)
+	if code != 0 {
+		exitFailure(t, command, code, got, stderr)
+		return
+	}
+	want := []string{strconv.Itoa(pid), strconv.Itoa(ppid)}
+	if !slices.Equal(strings.Fields(got), want) {
+		t.Errorf("%s printed %q, want %q: the PID, then the parent PID",
+			command, got, strings.Join(want, " ")+"\n")
+	}
+}
+
+// signalNames are the names kill uses for the signals the tests expect.
+var signalNames = map[syscall.Signal]string{syscall.SIGTERM: "TERM", syscall.SIGKILL: "KILL"}
+
+// expectStop runs 2_stop.sh on the helper, and checks that the helper was
+// stopped by signal and that the script printed want.
+func expectStop(t *testing.T, h *helper, signal syscall.Signal, want string) {
+	t.Helper()
+	pid := strconv.Itoa(h.pid)
+	began := time.Now()
+	got, stderr, code := run(t, ".", "2_stop.sh", pid)
+	took := time.Since(began)
+	command := commandLine("2_stop.sh", pid)
+	if code != 0 {
+		exitFailure(t, command, code, got, stderr)
+		return
+	}
+	select {
+	case <-h.exited:
+	case <-time.After(time.Second):
+		t.Errorf("%s finished, but PID %s is still running: send TERM, and KILL if it's still there after 1 second", command, pid)
+		return
+	}
+	status, _ := h.state.Sys().(syscall.WaitStatus)
+	switch {
+	case !status.Signaled():
+		t.Errorf("PID %s ended by itself (%v), want it stopped by %s", pid, h.state, signalNames[signal])
+	case status.Signal() == syscall.SIGKILL && signal == syscall.SIGTERM:
+		t.Errorf("%s stopped PID %s with KILL, but it would have stopped on TERM: "+
+			"send TERM first, and KILL only if it's still running after 1 second", command, pid)
+	case status.Signal() != signal:
+		t.Errorf("PID %s was stopped by %v, want %s", pid, status.Signal(), signalNames[signal])
+	case signal == syscall.SIGKILL && took < 500*time.Millisecond:
+		t.Errorf("%s sent KILL after only %v: give a process up to 1 second to stop after TERM",
+			command, took.Round(10*time.Millisecond))
+	}
+	if strings.TrimSpace(got) != want {
+		t.Errorf("%s printed %q, want %q", command, got, want+"\n")
+	}
+}
+
+// expectOpenFiles runs 3_open_files.sh on the helper and compares its
+// output with what /proc says.
+func expectOpenFiles(t *testing.T, h *helper) {
+	t.Helper()
+	proc := fmt.Sprintf("/proc/%d", h.pid)
+	cwd, err := os.Readlink(proc + "/cwd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(proc + "/fd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, e := range entries {
+		target, err := os.Readlink(proc + "/fd/" + e.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, e.Name()+" "+target)
+	}
+	want := "cwd " + cwd + "\n" + strings.Join(files, "\n") + "\n"
+
+	pid := strconv.Itoa(h.pid)
+	got, stderr, code := run(t, ".", "3_open_files.sh", pid)
+	command := commandLine("3_open_files.sh", pid)
+	if code != 0 {
+		exitFailure(t, command, code, got, stderr)
+		return
+	}
+	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
+	slices.Sort(lines[1:]) // the fd lines may come in any order
+	if strings.Join(lines, "\n")+"\n" != want {
+		t.Errorf("%s printed:\n%s\nwant (the fd lines in any order):\n%s", command, got, want)
+	}
+}
+
+// expectPermissions builds a folder app/ holding secret.env and deploy.sh
+// with the given modes, runs 4_fix_permissions.sh app token, and checks
+// the modes and the new token file.
+func expectPermissions(t *testing.T, secretMode, scriptMode fs.FileMode, token string) {
+	t.Helper()
+	dir := t.TempDir()
+	app := filepath.Join(dir, "app")
+	writeFile(t, filepath.Join(app, "secret.env"), "DB_PASSWORD=hunter2\n", secretMode)
+	writeFile(t, filepath.Join(app, "deploy.sh"), "#!/usr/bin/env bash\necho deploying\n", scriptMode)
+
+	stdout, stderr, code := run(t, dir, "4_fix_permissions.sh", "app", token)
+	command := commandLine("4_fix_permissions.sh", "app", token)
+	if code != 0 {
+		exitFailure(t, command, code, stdout, stderr)
+		return
+	}
+	expectMode(t, command, dir, "app/secret.env", 0o600)
+	expectMode(t, command, dir, "app/deploy.sh", 0o755)
+	if !expectMode(t, command, dir, "app/token", 0o600) {
+		return
+	}
+	got, err := os.ReadFile(filepath.Join(app, "token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != token+"\n" {
+		t.Errorf("after %s, app/token holds %q, want %q", command, got, token+"\n")
+	}
+}
+
+// expectMode checks the mode of dir/name and reports whether the file
+// exists.
+func expectMode(t *testing.T, command, dir, name string, want fs.FileMode) bool {
+	t.Helper()
+	info, err := os.Stat(filepath.Join(dir, name))
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("after %s, %s doesn't exist", command, name)
+		return false
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		msg := fmt.Sprintf("after %s, %s has mode %03o (%s), want %03o (%s)",
+			command, name, got, got.String()[1:], want, want.String()[1:])
+		if name == "app/token" {
+			msg += ". The tests run with umask 022: what makes a new file start as 600?"
+		}
+		t.Error(msg)
+	}
+	return true
+}
+
+// expectChecks copies 5_run_checks.sh and bin/healthcheck into a new folder
+// called folder, with a checks.conf listing targets, and runs the script
+// from a different folder, the way cron would.
+func expectChecks(t *testing.T, folder string, targets ...string) {
+	t.Helper()
+	dir := tempDir(t)
+	job := filepath.Join(dir, folder)
+	copyFile(t, "5_run_checks.sh", filepath.Join(job, "5_run_checks.sh"), 0o644)
+	copyFile(t, filepath.Join("bin", "healthcheck"), filepath.Join(job, "bin", "healthcheck"), 0o755)
+	writeFile(t, filepath.Join(job, "checks.conf"), strings.Join(targets, "\n")+"\n", 0o644)
+	home := filepath.Join(dir, "home")
+	if err := os.Mkdir(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	script := filepath.Join(job, "5_run_checks.sh")
+	stdout, stderr, code := run(t, home, script)
+	command := "cd " + home + " && " + commandLine(script)
+	if code != 0 {
+		exitFailure(t, command, code, stdout, stderr)
+		return
+	}
+	want := ""
+	for _, target := range targets {
+		want += "ok " + target + "\n"
+	}
+	if stdout != want {
+		t.Errorf("%s printed:\n%s\nwant:\n%s", command, stdout, want)
+	}
+
+	healthcheck := filepath.Join(job, "bin", "healthcheck")
+	for line := range strings.Lines(stderr) {
+		if path, ok := strings.CutPrefix(strings.TrimSpace(line), "using "); ok {
+			if path != healthcheck {
+				t.Errorf("%s printed %q to stderr, want %q: the full path that command -v finds, "+
+					"which needs the absolute bin folder on PATH", command, "using "+path, "using "+healthcheck)
+			}
+			return
+		}
+	}
+	t.Errorf("%s printed no \"using ...\" line to stderr, want %q", command, "using "+healthcheck)
+}
+
+// tempDir is t.TempDir with any symbolic links in its path resolved, the way
+// /proc shows paths.
+func tempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// writeFile writes text to path with exactly the given mode, creating any
+// missing folders.
+func writeFile(t *testing.T, path, text string, mode fs.FileMode) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(text), mode); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, mode); err != nil { // WriteFile's mode is cut by the umask
+		t.Fatal(err)
+	}
+}
+
+// copyFile copies the exercise file from to path, with the given mode.
+func copyFile(t *testing.T, from, path string, mode fs.FileMode) {
+	t.Helper()
+	text, err := os.ReadFile(from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, string(text), mode)
+}
+
+// exitFailure explains a script that stopped with a non-zero status: what it
+// printed before it stopped, and what bash said on stderr.
+func exitFailure(t *testing.T, command string, code int, stdout, stderr string) {
+	t.Helper()
+	msg := fmt.Sprintf("%s exited with status %d, want 0.", command, code)
+	if stdout != "" {
+		msg += "\nIt printed:\n" + strings.TrimRight(stdout, "\n")
+	}
+	if stderr != "" {
+		msg += "\nbash said:\n" + stderr
+	} else {
+		msg += "\nbash said nothing: a command failed without a message " +
+			"(pgrep does that when nothing matches), and set -e stopped the script there."
+	}
+	t.Error(msg)
+}
+
+// run runs "bash script args..." from dir with umask 022, the usual
+// default, and returns what it printed to stdout and stderr, and its exit
+// status. A script still running after 10 seconds is stopped.
+func run(t *testing.T, dir, script string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	path, err := filepath.Abs(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bash", append([]string{"-c", `umask 022 && exec bash "$0" "$@"`, path}, args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C", "TZ=UTC")
+	cmd.WaitDelay = time.Second
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); cmd.ProcessState == nil {
+		t.Fatalf("could not start bash: %v", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("%s was still running after 10 seconds", commandLine(script, args...))
+	}
+	return out.String(), errOut.String(), cmd.ProcessState.ExitCode()
+}
+
+// commandLine shows how to run the script by hand: bash, the script and its
+// arguments, with quotes around any argument that has a space.
+func commandLine(script string, args ...string) string {
+	line := "bash"
+	for _, arg := range append([]string{script}, args...) {
+		if strings.Contains(arg, " ") {
+			arg = `"` + arg + `"`
+		}
+		line += " " + arg
+	}
+	return line
+}

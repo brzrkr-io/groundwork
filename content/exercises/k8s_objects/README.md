@@ -1,11 +1,12 @@
 # Kubernetes objects: building a Deployment
 
-In *Kubernetes fundamentals* you wrote objects as YAML and sent them with
+In *Kubernetes fundamentals*, ending with *Practice: deploy and debug a
+service*, you wrote objects as YAML and sent them with
 `kubectl`. Deploy bots, operators and platform CLIs build the same objects
 in Go, and so does every controller. Here you build a Deployment with the
 real Kubernetes Go types.
 
-**New here:** the `k8s.io/api` and `k8s.io/apimachinery` Go types, `metav1.ObjectMeta`, pointer fields with `new(value)`, `resource.Quantity` in Go.
+**New here:** the `k8s.io/api` and `k8s.io/apimachinery` Go types, `metav1.ObjectMeta`, `resource.Quantity` in Go. (Pointer fields with `new(value)` are from *Pointers: optional config fields*.)
 
 ## Learn
 

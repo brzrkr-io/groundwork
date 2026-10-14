@@ -5,7 +5,7 @@ Kubernetes too little and your app is killed or never scheduled; tell it
 too much and you pay for idle machines. Two numbers per resource decide
 it: the *request* and the *limit*.
 
-**New here:** `resources.requests` and `resources.limits`, CPU millicores, scheduling on requests, OOMKilled and exit code 137, CPU throttling, QoS classes (Guaranteed, Burstable, BestEffort), `kubectl describe node`.
+**New here:** `resources.requests` and `resources.limits`, CPU millicores, scheduling on requests, why an OOMKilled container exits with 137 (128 + 9, the signal arithmetic from *Signals: graceful stop for a rolling drain*), CPU throttling, QoS classes (Guaranteed, Burstable, BestEffort), `kubectl describe node`.
 
 ## Learn
 

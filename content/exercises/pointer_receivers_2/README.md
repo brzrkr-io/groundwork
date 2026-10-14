@@ -4,7 +4,7 @@ A rate limiter protects an API from being flooded. This one has three bugs,
 and all three are the same kind: a change that lands on a copy instead of the
 real limiter.
 
-**New here:** pointer methods called on copies, `for range n`, `min`.
+**New here:** pointer methods called on copies. (`for range n` and `min` are from *For loops: backoff and progress bars* and *For loops: plan a rollout*.)
 
 ## Learn
 

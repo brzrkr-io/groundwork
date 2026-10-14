@@ -72,7 +72,7 @@ solution, and **n** to move to the next exercise. Truly stuck? After a task's
 Answer hint, **s** shows the solution early (you confirm first).
 
 ```text
-groundwork  ·  module 1 of 23: Basics                     ━━━━━━━━━━━━━━━━━━━━  2/375 done
+groundwork  ·  module 1 of 24: Basics                     ━━━━━━━━━━━━━━━━━━━━  2/400 done
 
 003  Variables                                                         ✗ 2 of 3 failing
 edit  exercises/01_basics/003_variables/exercise.go
@@ -178,7 +178,7 @@ Reading and reviewing work on a phone; exercises are for the computer.
 │   │   │   └── go.mod            every exercise is its own little Go module
 │   │   └── …
 │   ├── 02_control_flow/
-│   └── …                         23 modules, 375 exercises, numbered in order
+│   └── …                         24 modules, 400 exercises, numbered in order
 └── solutions/                    reference solutions, same layout, unlocked when you pass
 ```
 

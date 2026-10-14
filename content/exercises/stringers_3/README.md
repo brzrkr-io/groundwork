@@ -4,7 +4,7 @@
 Here you build the same kind of output for your own rollout tool: small
 `String` methods that combine into one report.
 
-**New here:** Stringers inside Stringers, `strings.Builder`, `fmt.Fprintf` and `fmt.Fprintln`.
+**New here:** Stringers inside Stringers, `fmt.Fprintf` and `fmt.Fprintln`. (`strings.Builder` is from *For loops: backoff and progress bars*.)
 
 ## Learn
 
@@ -68,7 +68,7 @@ b.String()
 `Fprintln` calls `String` on your values, just like `Println`.
 
 > **Why is it written like this?**
-> - **Go requires** `&b`, not `b`: the builder must be changed in place, so you pass a pointer. (`Fprintf` accepts any `io.Writer`, and `*strings.Builder` is one.)
+> - **Go requires** `&b`, not `b`: the builder must be changed in place, so you pass a pointer. (`Fprintf` writes into anything with the right `Write` method, and `*strings.Builder` has one; *Interfaces* shows how that works.)
 > - **Go requires** `"strings"` in the imports to use `strings.Builder`.
 > - **Convention:** `var b strings.Builder`. The zero value is ready to use; no constructor needed.
 > - **Author's choice:** the name `b`.

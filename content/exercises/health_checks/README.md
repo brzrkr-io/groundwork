@@ -4,8 +4,9 @@ Kubernetes asks every pod two questions, many times a minute: "are you
 alive?" and "are you ready for traffic?" Answer well and deploys go smoothly.
 Answer badly and Kubernetes can restart every pod you have at the worst moment.
 
-**New here:** liveness and readiness probes, `context.WithTimeout`, setting a
-status code and header on an HTTP response.
+**New here:** liveness and readiness probes. (`context.WithTimeout` is from
+*DNS: lookups, timeouts and failure types*; status codes and headers from
+*Networking and HTTP*.)
 
 ## Learn
 

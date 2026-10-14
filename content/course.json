@@ -113,9 +113,9 @@
       "title": "Types and methods",
       "dir": "types",
       "phase": "Go foundations",
-      "summary": "Structs, pointers, methods and interfaces: modelling real things like servers, deployments and alerts.",
-      "outcome": "Model real things (deployments, hosts, alerts) with structs, pointers, methods, enums, interfaces, embedding and generics.",
-      "guides": ["memory_pointers", "abstraction"],
+      "summary": "Structs, pointers, methods and your own types: modelling real things like servers, deployments and alerts.",
+      "outcome": "Model real things (deployments, hosts, alerts) with structs, pointers, methods, pointer receivers, enums and String methods.",
+      "guides": ["memory_pointers"],
       "exercises": [
         { "name": "structs", "title": "Structs", "minutes": 25 },
         { "name": "structs_2", "title": "Structs: changes that vanish", "minutes": 15 },
@@ -132,12 +132,23 @@
         { "name": "custom_types", "title": "Custom types and enums", "minutes": 25 },
         { "name": "custom_types_2", "title": "Custom types: fix the deploy phase enum", "minutes": 15 },
         { "name": "custom_types_3", "title": "Custom types: Kubernetes memory quantities", "minutes": 25 },
-        { "name": "interfaces", "title": "Interfaces", "minutes": 25 },
-        { "name": "interfaces_2", "title": "Interfaces: fix the health checks", "minutes": 15 },
-        { "name": "interfaces_3", "title": "Interfaces: swap in a fake for tests", "minutes": 20 },
         { "name": "stringers", "title": "Stringers", "minutes": 20 },
         { "name": "stringers_2", "title": "Stringers: pod phases and uptime", "minutes": 20 },
         { "name": "stringers_3", "title": "Stringers: a kubectl-style deployment report", "minutes": 25 },
+        { "name": "incident_board", "title": "Practice: incident board", "minutes": 40, "kind": "practice" }
+      ]
+    },
+    {
+      "title": "Interfaces and generics",
+      "dir": "interfaces",
+      "phase": "Go foundations",
+      "summary": "Code that works with many types: interfaces describe what a value can do, and generics let one function fit any element type.",
+      "outcome": "Write code that works with many types: define and satisfy interfaces, swap in fakes, embed structs, branch with type switches, and write generic functions and types.",
+      "guides": ["abstraction"],
+      "exercises": [
+        { "name": "interfaces", "title": "Interfaces", "minutes": 25 },
+        { "name": "interfaces_2", "title": "Interfaces: fix the health checks", "minutes": 15 },
+        { "name": "interfaces_3", "title": "Interfaces: swap in a fake for tests", "minutes": 20 },
         { "name": "embedding", "title": "Struct embedding", "minutes": 25 },
         { "name": "embedding_2", "title": "Struct embedding: fix the Secret bugs", "minutes": 20 },
         { "name": "embedding_3", "title": "Struct embedding: a shared health-check base", "minutes": 25 },
@@ -209,7 +220,7 @@
       "dir": "shell",
       "phase": "Everyday tools",
       "summary": "Bash and the classic text tools: the glue of every server, container and CI job.",
-      "outcome": "Move files around and redirect output safely, write bash scripts with variables, the environment, quoting, conditions, loops and functions, and slice logs with grep, sed, awk, sort, uniq, cut, find and xargs.",
+      "outcome": "Move files around and redirect output safely, write bash scripts with variables, the environment, quoting, conditions, loops and functions, and slice logs with grep, sed, awk, sort, uniq, cut, find and xargs, and diagnose processes and permissions on a Linux box.",
       "guides": ["operating_systems", "shell"],
       "exercises": [
         { "name": "shell_commands", "title": "Shell commands and quoting", "minutes": 15 },
@@ -227,6 +238,7 @@
         { "name": "text_columns", "title": "Columns with cut and awk", "minutes": 30 },
         { "name": "sed_substitutions", "title": "Editing text with sed", "minutes": 25 },
         { "name": "find_and_xargs", "title": "Find and xargs: clean up old logs", "minutes": 25 },
+        { "name": "processes", "title": "Processes and permissions: an incident on the box", "minutes": 45 },
         { "name": "log_triage", "title": "Practice: log triage report", "minutes": 40, "kind": "practice" }
       ]
     },

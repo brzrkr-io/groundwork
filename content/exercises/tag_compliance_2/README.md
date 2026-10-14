@@ -4,7 +4,7 @@ S3 buckets need tags too, and a bucket nobody owns is worse than a stray
 server: it may hold customer data. This time you audit buckets and check that
 tag *values* make sense, not just that keys exist.
 
-**New here:** `GetBucketTagging`, the `NoSuchTagSet` error, `slices.Contains`, `%q`.
+**New here:** `GetBucketTagging`, the `NoSuchTagSet` error.
 
 ## Learn
 

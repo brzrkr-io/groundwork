@@ -4,7 +4,7 @@ A *cache* keeps the answer to a slow question so you don't have to ask again.
 A *TTL* (time to live) says how long that answer can be trusted. You'll build
 a small generic cache that forgets entries when their TTL runs out.
 
-**New here:** TTL expiry, `time.Time.Before`, `var zero V`, deleting from a map while you `range` over it.
+**New here:** TTL expiry, `time.Time.Before`. (`var zero V` is from *Generics*; deleting from a map while you `range` over it from *Rate limiting: fix the bucket*.)
 
 ## Learn
 

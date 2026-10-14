@@ -1,5 +1,9 @@
 # Shell commands and quoting
 
+*Practice: reproduce a bug report* closed *Testing*, and with it the Go
+foundations. Now you step outside Go to the shell that builds, runs and
+glues together every program you write.
+
 Every server, container and CI job has a shell. You type commands into it, and
 scripts are just those commands saved in a file. This first module outside Go
 starts with finding your way around, then the two things every script does:

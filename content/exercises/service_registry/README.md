@@ -4,7 +4,8 @@ Before one service can call another, it has to find it. A *service registry*
 answers "where is `billing-api` running, and is it healthy?" Consul, etcd and
 Kubernetes Services all do this job. Here you build a small one.
 
-**New here:** nothing; practice of everything from *Types and methods*.
+**New here:** nothing; practice of *Types and methods* and the interfaces
+from *Interfaces and generics*.
 
 ## Learn
 

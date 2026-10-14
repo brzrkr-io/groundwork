@@ -4,15 +4,15 @@ A pod dashboard that says `Failed` for a job that actually succeeded wakes
 people up for nothing. You'll fix a broken `String` method, pick the right
 formatting verb, and write a `String` method that does some arithmetic.
 
-**New here:** lookup slices for enum names, splitting seconds with `/` and
-`%`, `switch` with no value.
+**New here:** lookup slices for enum names, splitting seconds into units with
+`/` and `%`.
 
 ## Learn
 
 ### Recap
 
-As in *Stringers*: a type with a `String() string` method satisfies
-`fmt.Stringer`. `fmt` calls it for `%v`, `%s`, `%q`, `Print`, `Println` and
+As in *Stringers*: when a type has a `String() string` method, `fmt` calls
+it for `%v`, `%s`, `%q`, `Print`, `Println` and
 `Sprint`. The `%d` verb skips `String` and prints the raw number. Inside
 `String`, convert the receiver (`int(p)`) before formatting it.
 

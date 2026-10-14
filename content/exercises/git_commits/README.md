@@ -1,5 +1,9 @@
 # Commits: init, add and commit
 
+*Practice: log triage report* closed *Linux and the shell*: you can drive a
+machine from the terminal. This module adds version control, so every change
+you make is recorded and can be undone.
+
 Every change to a server's config should be recorded: who changed what, when
 and why. Git does that for any folder of files. Here you put a folder of
 deploy files under version control and make your first commits.

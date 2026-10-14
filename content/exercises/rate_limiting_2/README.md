@@ -4,8 +4,8 @@ Your team's public webhook receiver has a per-client rate limiter, but it
 lets far too much through, its `Retry-After` is always `1`, and its map of
 clients grows forever as internet scanners come and go. Fix all three.
 
-**New here:** `float64` seconds to `time.Duration`, `math.Ceil`,
-`strconv.Itoa`, `delete` while ranging over a map.
+**New here:** `math.Ceil`, `delete` while ranging over a map. (Seconds to
+`time.Duration` and `strconv.Itoa` are practice.)
 
 ## Learn
 

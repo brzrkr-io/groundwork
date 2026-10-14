@@ -4,7 +4,7 @@
 and `kubectl logs` say *why*. Here you learn to read them, then write Go
 that reads them for you and names the cause.
 
-**New here:** `kubectl describe pod` (State, Last State, Events), events and their counts, exit codes and signals, `kubectl logs --previous`, `kubectl get events`, a triage order.
+**New here:** `kubectl describe pod` (State, Last State, Events), events and their counts, reading exit codes and signals in a Pod (128 + n, from *Signals: graceful stop for a rolling drain*), `kubectl logs --previous`, `kubectl get events`, a triage order.
 
 ## Learn
 

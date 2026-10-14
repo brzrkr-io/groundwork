@@ -76,7 +76,7 @@ Each process has a *PID* (process ID) and a *parent*: the process that started i
         └── checkout-api        a container's main process
 ```
 
-`ps -ef` lists processes with their PID and parent PID (PPID). `kill <pid>` sends a signal to one, as you'll see in *Signals* below.
+`ps -ef` lists processes with their PID and parent PID (PPID). `kill <pid>` sends a signal to one, as you'll see in *Signals* below. Live details about each process sit under `/proc/<pid>/`: its open files in `fd/`, its working directory as `cwd`. You'll find, stop and inspect processes this way in *Processes and permissions: an incident on the box*.
 
 When a child exits, it hands an exit code to its parent. That's how your shell knows whether the command worked.
 
@@ -96,7 +96,7 @@ Unix has a famous design rule: **everything is a file**. Regular files, director
 - A *relative path* starts from the process's *working directory*: `logs/app.log` means "`logs/app.log` inside wherever I was started".
 - `.` means the working directory itself, `..` its parent, and `~` (expanded by the shell) your home directory.
 
-A classic ops bug: a script works when you run it by hand, then fails under cron or systemd. They start it in a different working directory, so its relative paths point somewhere else. Use absolute paths in jobs. You'll move around with both kinds in *Files and folders: paths, mkdir, cp, mv and rm*.
+A classic ops bug: a script works when you run it by hand, then fails under cron or systemd. They start it in a different working directory, so its relative paths point somewhere else. Use absolute paths in jobs. You'll move around with both kinds in *Files and folders: paths, mkdir, cp, mv and rm*, and fix a cron job with this bug in *Processes and permissions: an incident on the box*.
 
 ### Permissions
 
@@ -128,7 +128,7 @@ So `0644` is owner 6 (4+2, read and write), group 4 (read), others 4 (read).
 
 Go uses the same numbers. `os.WriteFile("token", data, 0600)` creates a file only its owner can read (the mode applies only when the file is created). The leading `0` makes Go read the number as octal; Go also accepts `0o600`, which means the same and is easier to spot. The process's *umask* can remove bits from what you ask for (a common umask of `022` turns `0666` into `0644`), but it never adds any.
 
-The user `root` bypasses most permission checks. That's why tools shouldn't run as root unless they must; the *Security basics for automation* guide goes further.
+The user `root` bypasses most permission checks. That's why tools shouldn't run as root unless they must; the *Security basics for automation* guide goes further. You'll fix a world-readable secret with `chmod` and `umask` in *Processes and permissions: an incident on the box*.
 
 ### Replacing a file safely
 

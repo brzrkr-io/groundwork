@@ -6,7 +6,7 @@ request IDs, access logs, Prometheus metrics, health probes, idempotent
 creates and graceful shutdown. You practised each piece in this module; here
 you wire them into one program you can run with `go run` and `curl`.
 
-**New here:** `r.PathValue`, `context.WithValue`, `logger.Log`, `atomic.Bool`, `slices.SortedFunc` with `cmp.Or`. Everything else is practice.
+**New here:** `slices.SortedFunc` with `cmp.Or`. Everything else is practice, including `r.PathValue` (*Networking and HTTP*), `context.WithValue` (*Observability: trace IDs through logs and calls*), `logger.Log` (*Structured logging: access logs*) and `atomic.Bool` (*Health checks: readiness gates*).
 
 ## Learn
 

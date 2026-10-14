@@ -1,5 +1,9 @@
 # Structured logging with slog
 
+*Project: uptime monitor* closed *Concurrency*. This module adds what a
+long-running service needs in production: logs, metrics, health checks,
+clean shutdown and resilience.
+
 When a service misbehaves at 3am, its logs are the first thing you search.
 *Structured logs* turn every log line into data you can filter, like "all
 errors for service `checkout` in `eu-west-1`".

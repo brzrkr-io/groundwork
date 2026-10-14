@@ -4,7 +4,7 @@ A monitoring agent reads its health checks from a small text file, one check
 per line. A typo in that file should give an error that points straight at the
 bad line, not a silently wrong check.
 
-**New here:** `strings.Fields`, `strings.HasPrefix`, `strings.TrimSpace`, zero-value structs, layered context.
+**New here:** zero-value structs as error results, layered context. (`strings.Fields` is from *The strings package*; `HasPrefix` and `TrimSpace` from *Control flow and functions*.)
 
 ## Learn
 

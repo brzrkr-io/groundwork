@@ -4,7 +4,7 @@ Ops tools keep "the last few" of many things: recent deploys for a rollback
 menu, recent log lines for an alert, recent health checks for a dashboard.
 Here you finish one generic container that does all of them.
 
-**New here:** generic structs, choosing the type with `NewRing[Deploy](5)`, returning a copy with `slices.Clone`.
+**New here:** generic structs, choosing the type with `NewRing[Deploy](5)`. (`slices.Clone` is from *append and copy*.)
 
 ## Learn
 

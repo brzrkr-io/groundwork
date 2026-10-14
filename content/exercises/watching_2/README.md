@@ -4,7 +4,7 @@ A watch that works in a test can still fall over in production, because real
 API servers end watches and report errors through them. Here you fix a Pod
 monitor so it copes with both.
 
-**New here:** closed-channel spinning, `ERROR` events, `apierrors.FromObject`, multi-value `case`, `delete` on a map.
+**New here:** closed-channel spinning, `ERROR` events, `apierrors.FromObject`. (Multi-value `case` and `delete` on a map are practice.)
 
 ## Learn
 

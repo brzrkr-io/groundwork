@@ -4,7 +4,7 @@ During an incident you silence noisy alerts, for example everything with
 `team=sre` in `prod`, for two hours. A `silence` tool needs flags that can
 repeat and flags that only accept certain values.
 
-**New here:** `fs.Func`, `strings.Cut`, reading pointers at the right time.
+**New here:** `fs.Func`, reading pointers at the right time.
 
 ## Learn
 

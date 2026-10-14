@@ -5,8 +5,8 @@ keeps serving traffic. Kubernetes Deployments and most CI/CD tools work this
 way. You will write the part of a deploy tool that splits the host list into
 batches.
 
-**New here:** slices of slices (`[][]string`), rounding up with integer
-division, the built-in `min`.
+**New here:** slices of slices (`[][]string`). (Rounding up with integer
+division is from *Numbers and arithmetic*, `min` from *For loops: plan a rollout*.)
 
 ## Learn
 

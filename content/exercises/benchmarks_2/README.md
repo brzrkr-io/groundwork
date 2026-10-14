@@ -4,7 +4,7 @@ Code that is fast for 10 services can crawl for 1000. Here you benchmark the
 same function at two sizes and fix a slow pattern that shows up all over Go
 code: growing a slice one `append` at a time.
 
-**New here:** sub-benchmarks with `b.Run`, slice capacity, preallocating with `make`.
+**New here:** sub-benchmarks with `b.Run`, measuring what preallocating with `make` (from *append and copy: fix the inventory*) saves.
 
 ## Learn
 

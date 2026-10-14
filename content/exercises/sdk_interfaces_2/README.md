@@ -4,7 +4,7 @@ A job that *stops servers* is one you really want tested before it runs. Here
 you build a fake that records what it was asked to do, then use it to catch
 the bugs in a nightly shutdown job.
 
-**New here:** spies (fakes that record calls), `StopInstances`, spreading a slice into `append`.
+**New here:** the name *spy* for a fake that records calls (you wrote one in *Fakes and dependency injection*), `StopInstances`.
 
 ## Learn
 

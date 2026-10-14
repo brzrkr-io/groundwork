@@ -4,8 +4,8 @@ A *pipeline* is a chain of *stages* connected by channels. Each stage does
 one small job and passes its results on, like `cat app.log | grep ERROR` in
 a shell. All the stages run at the same time, each in its own goroutine.
 
-**New here:** pipeline stages, receive-only channel types (`<-chan T`),
-`strings.Cut`.
+**New here:** pipeline stages. (Receive-only channel types `<-chan T` are
+from *Channels: deadlocks and directions*.)
 
 ## Learn
 

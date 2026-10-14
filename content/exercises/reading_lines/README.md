@@ -1,5 +1,9 @@
 # Reading input line by line: a hosts list
 
+*Practice: release day* closed *Git and version control* and the tooling
+detour. Back in Go, this module adds reading and writing the text and data
+formats ops tools live on.
+
 Ops work is full of line-based text: host lists, log files, inventory exports,
 command output. Here you read a list of hosts one line at a time, skip the
 noise, and report bad lines with their line number.

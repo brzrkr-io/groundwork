@@ -6,7 +6,7 @@ straight away instead of finishing a doomed rollout. Here you build a small
 Real projects use `golang.org/x/sync/errgroup`; after this you'll know what
 it does.
 
-**New here:** a cancel-on-first-error group, `sync.Once` for "only the first".
+**New here:** a cancel-on-first-error group. (`sync.Once` is from *The race detector: hidden races*.)
 
 ## Learn
 

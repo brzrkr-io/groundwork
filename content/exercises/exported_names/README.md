@@ -4,7 +4,7 @@ Every package has a public face and private insides. Go decides which is
 which by the first letter of the name. Getting this right is how you stop
 other code from reading a password it should never see.
 
-**New here:** exported and unexported names, constructors, `package x_test`.
+**New here:** what exporting means across packages (you met the capital-letter rule in *Functions: a human-readable byte formatter*; now another package really uses it), constructors, `package x_test`.
 
 ## Learn
 

@@ -1,5 +1,9 @@
 # ARNs: accounts, regions and resource scope
 
+*Project: Kubernetes controller* closed *Kubernetes with client-go*. This
+module moves to the cloud underneath many clusters: AWS accounts, identity,
+networks and storage.
+
 Every AWS resource has a full name that says who owns it and where it lives:
 its *ARN*. IAM policies, CloudTrail logs and audit tools are full of them, so
 reading one at a glance is a basic cloud skill. Here you take ARNs and zone

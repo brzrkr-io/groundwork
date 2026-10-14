@@ -4,8 +4,7 @@ When a dependency goes down, a *circuit breaker* stops your service from
 calling it for a while. Callers get a fast error instead of a slow timeout,
 and the struggling dependency gets room to recover.
 
-**New here:** the circuit breaker states, a `String()` method for an `int`
-type, an injected clock with `time.Time.Sub`.
+**New here:** the circuit breaker states, an injected clock. (A `String()` method on an `int` type is from *Stringers*; `time.Time.Sub` from *Prometheus-style metrics: histograms*.)
 
 ## Learn
 

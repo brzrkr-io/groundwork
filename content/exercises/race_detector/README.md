@@ -5,7 +5,7 @@ time and at least one of them writes to it. Races give wrong totals, corrupt
 maps and crash programs, often only under production load. Go's *race
 detector* finds them for you. This exercise teaches you to read its reports.
 
-**New here:** data races, `go test -race`, race reports, `sync/atomic`.
+**New here:** data races, `go test -race`, race reports. (`sync/atomic` is from *Mutexes: atomics and slow locks*.)
 
 ## Learn
 

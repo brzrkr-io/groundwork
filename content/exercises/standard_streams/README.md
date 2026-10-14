@@ -4,7 +4,7 @@ Unix tools are small programs glued together with pipes. A good pipeline
 citizen reads stdin, puts results on stdout, puts problems on stderr, and
 reports success or failure with its exit code.
 
-**New here:** stdin as an `io.Reader`, keeping stdout and stderr apart, exit code `1` vs `2`.
+**New here:** stdin as an `io.Reader`. Stream separation and exit code `1` vs `2` are recaps from *Command-line arguments: os.Args and usage errors*, now applied to a tool in a pipeline.
 
 ## Learn
 

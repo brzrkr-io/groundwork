@@ -1,5 +1,9 @@
 # Booleans
 
+You finished *Basics* with *Practice: deploy summary*: functions that compute
+and format values. This module adds decisions, loops and reusable functions,
+so your code can choose what to do and repeat work.
+
 Ops work is full of yes-or-no questions: is the port privileged, may this
 deploy go out, is it work hours? Go answers them with *booleans*.
 

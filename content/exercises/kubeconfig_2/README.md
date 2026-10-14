@@ -4,7 +4,7 @@ Knowing the server URL isn't enough to make a request. Here you turn a
 kubeconfig context into the connection settings client-go actually uses, and
 tune them the way a well-behaved ops tool should.
 
-**New here:** `rest.Config`, `clientcmd.NewNonInteractiveClientConfig`, `time.Duration`, ignoring a return value with `_`.
+**New here:** `rest.Config`, `clientcmd.NewNonInteractiveClientConfig`.
 
 ## Learn
 

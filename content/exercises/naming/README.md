@@ -1,5 +1,9 @@
 # Naming things
 
+*Practice: incident report queries* closed *Databases and SQL*. You can now
+write quite a lot of working code; this module is about making it readable
+and easy to change.
+
 Code is read many more times than it is written: in review, during an
 incident at 3 a.m., by you in six months. A good name answers "what is this?"
 before the reader has to work it out. This exercise takes working code with

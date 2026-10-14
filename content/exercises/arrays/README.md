@@ -1,5 +1,9 @@
 # Arrays
 
+*Practice: HTTP status triage* closed *Control flow and functions*: you can
+make decisions and loop over a range of numbers. This module adds
+collections, so one variable can hold many values.
+
 Some data comes in a fixed number of pieces: seven days in a week, three
 availability zones in a cloud region, 24 hours in a day. An *array* holds
 exactly that many values of one type, side by side.

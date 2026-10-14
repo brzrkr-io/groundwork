@@ -6,8 +6,8 @@ appears in three places as `30`, changing the rule means finding all three
 and hoping you didn't miss one or change an unrelated `30`. A named
 constant fixes both problems.
 
-**New here:** magic numbers, grouped `const ( ... )` blocks, typed duration
-constants.
+**New here:** magic numbers, typed duration constants. (Grouped
+`const ( ... )` blocks are from *Constants*.)
 
 ## Learn
 

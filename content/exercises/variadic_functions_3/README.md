@@ -4,7 +4,7 @@ Deploy scripts are full of generated command lines. Here you build a small
 command builder for your team's runbook tool, using variadic functions at
 every layer.
 
-**New here:** raw strings in backticks, `strings.Contains`.
+**New here:** nothing; practice with variadic functions. (Raw strings in backticks are from *Formatting with fmt*, `strings.Contains` from *Strings*.)
 
 ## Learn
 

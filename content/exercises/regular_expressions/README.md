@@ -4,8 +4,9 @@ Release tags, hostnames, log lines: ops work is full of text that follows a
 pattern. A *regular expression* (regex) describes that pattern once, and Go's
 `regexp` package checks and picks apart any string against it.
 
-**New here:** regex syntax, raw strings in backticks, `regexp.MustCompile`,
-`MatchString`, `FindStringSubmatch`, named groups and `SubexpIndex`.
+**New here:** regex syntax, `regexp.MustCompile`, `MatchString`,
+`FindStringSubmatch`, named groups and `SubexpIndex`. (Raw strings in
+backticks are from *Formatting with fmt*.)
 
 ## Learn
 

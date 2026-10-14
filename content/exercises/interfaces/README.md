@@ -8,6 +8,14 @@ caring which is which.
 
 ## Learn
 
+### From one type to many
+
+In *Practice: incident board*, every method belonged to one type, and code
+that called `Ack` needed an `*Incident`, nothing else. Real tools often have
+several types that do the same job in different ways: a Slack notifier, an
+email notifier, a pager. This module is about writing code that works with
+all of them at once.
+
 ### Describing what a value can do
 
 A struct describes what data a value *holds*. An interface describes what a
@@ -94,8 +102,9 @@ later, you write one new type with the method. The loop never changes.
 
 ### Small interfaces
 
-Most Go interfaces have just one or two methods. You'll meet these two again
-soon:
+Most Go interfaces have just one or two methods. You've already used the
+first one below: in *Stringers*, `fmt` printed your types because they
+satisfied `fmt.Stringer`. You'll meet `io.Writer` soon.
 
 | Interface | Method | Satisfied by |
 |---|---|---|

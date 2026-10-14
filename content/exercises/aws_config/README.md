@@ -1,6 +1,7 @@
 # AWS SDK configuration: regions, profiles and credentials
 
-In *Cloud fundamentals* you learned where AWS resources live and who may
+In *Cloud fundamentals*, ending with *Practice: review an AWS account*, you
+learned where AWS resources live and who may
 touch them. Now you call AWS from Go. Every such program starts the same way:
 work out *which region* to talk to and *which credentials* to sign requests
 with, and never print the secret while doing it.

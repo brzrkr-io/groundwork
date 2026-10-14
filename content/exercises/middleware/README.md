@@ -4,8 +4,9 @@ Every service does the same chores on every request: log it, tag it with an
 ID you can search for later, and survive a bug without crashing. *Middleware*
 does those chores once, around all your handlers.
 
-**New here:** middleware, `http.HandlerFunc`, `next.ServeHTTP`, functions
-that return functions, `recover` in a handler.
+**New here:** middleware, `http.HandlerFunc`, `next.ServeHTTP`. (Functions
+that return functions are from *Functions as values*; `recover` from *panic
+and recover*.)
 
 ## Learn
 

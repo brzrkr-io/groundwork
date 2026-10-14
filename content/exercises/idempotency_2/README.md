@@ -3,7 +3,7 @@
 A shared API has many clients, keys pile up forever, and sometimes a client
 reuses a key by mistake. Here you harden idempotency keys for real traffic.
 
-**New here:** scoped store keys, `time.Time.Sub`, SHA-256 fingerprints with `crypto/sha256` and `encoding/hex`, re-reading a request body.
+**New here:** scoped store keys, SHA-256 fingerprints of a request, re-reading a request body. (`time.Time.Sub` is from *Prometheus-style metrics: histograms*; `crypto/sha256` and `encoding/hex` from *Checksums and archives: verify and extract safely*.)
 
 ## Learn
 

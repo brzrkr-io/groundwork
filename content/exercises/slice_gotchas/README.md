@@ -4,7 +4,7 @@ A slice doesn't hold its elements; it points at an array, and other slices may
 point at the same one. That's behind confusing bugs in Go tools: a host list
 that changes "by itself", or a tiny result that keeps a huge log in memory.
 
-**New here:** slice headers, backing arrays, `slices.Clone`, `copy`, full slice expressions `s[low:high:max]`.
+**New here:** slice headers, backing arrays, full slice expressions `s[low:high:max]`. (`slices.Clone` and `copy` are from *append and copy*.)
 
 ## Learn
 

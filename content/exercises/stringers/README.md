@@ -4,23 +4,24 @@ Alerts, hosts and disks end up in log lines, chat messages and dashboards.
 A *Stringer* is a type that knows how to print itself, so `fmt.Println` shows
 `ERROR` instead of `3`.
 
-**New here:** `fmt.Stringer`, which verbs call `String`, `%%`, value vs
-pointer receivers for `String`.
+**New here:** the `String() string` method `fmt` looks for (`fmt.Stringer`),
+which verbs call `String`, value vs pointer receivers for `String`.
 
 ## Learn
 
-### The fmt.Stringer interface
+### A method fmt looks for
 
-The `fmt` package declares a tiny interface:
+`fmt` has one rule for printing your own types: if a value has a method
+named `String` that takes nothing and returns a `string`, `fmt` prints what
+that method returns. A type with that method is called a *Stringer*; the
+`fmt` docs call it `fmt.Stringer`.
 
 ```go
-type Stringer interface {
-	String() string
-}
+func (r Region) String() string
 ```
 
-As in *Interfaces*, any type with a method `String() string` satisfies it
-automatically.
+You don't register the method anywhere: having it is enough. *Interfaces*,
+in the next module, shows the Go feature behind this.
 
 > **Why is it written like this?** Go requires the exact name `String`, no
 > parameters and one `string` result; `ToString()` or `String() []byte`
@@ -95,9 +96,8 @@ warns about this mistake.
 
 ### Trap 2: a pointer receiver hides String
 
-A method can have a pointer receiver, `func (d *Disk) String()`. You'll
-learn when that's useful in *Pointer receivers*. For `String` there's a
-catch:
+As in *Pointer receivers*, a method can have a pointer receiver,
+`func (d *Disk) String()`. For `String` there's a catch:
 
 | Method declared on | `fmt.Print(d)` | `fmt.Print(&d)` |
 |---|---|---|

@@ -5,8 +5,8 @@ you check 50 hosts at once, you need to know which ones failed, and why.
 Here you collect every error, report them together, and limit how many
 tasks run at once.
 
-**New here:** one error slot per goroutine, `errors.Join` on a slice,
-semaphores (a buffered channel that limits concurrency).
+**New here:** one error slot per goroutine, semaphores (a buffered channel
+that limits concurrency). `errors.Join` is from *Reporting many errors*.
 
 ## Learn
 

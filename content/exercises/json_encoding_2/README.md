@@ -4,7 +4,7 @@ Log collectors such as Fluent Bit, Vector and Loki love *JSON Lines*: one
 JSON object per line. Here you fix a broken audit logger and alert struct,
 then stream alerts as JSON Lines.
 
-**New here:** `io.Writer`, `json.NewEncoder`, debugging struct tags.
+**New here:** `json.NewEncoder` writing to an `io.Writer` (the interface from *Interfaces*), debugging struct tags.
 
 ## Learn
 

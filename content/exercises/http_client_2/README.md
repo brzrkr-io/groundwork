@@ -4,7 +4,7 @@ After every deploy, a small tool checks which version is live and posts an
 event to the team's webhook. The tool has bugs, and the part that sends the
 event isn't finished.
 
-**New here:** `json.Marshal`, `bytes.NewReader`, POST bodies, the 2xx range.
+**New here:** `bytes.NewReader`, POST bodies, the 2xx range. (`json.Marshal` is from *Encoding JSON: a deployment status report*.)
 
 ## Learn
 

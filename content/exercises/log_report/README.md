@@ -5,8 +5,8 @@ log. Here you build a small analyser for nginx-style logs: it parses each
 line, notes broken lines, and reports status codes, busy paths and latency
 percentiles as text (for humans) and JSON (for dashboards).
 
-**New here:** the nearest-rank percentile, rounding up with whole numbers,
-`io.WriteString`, `enc.SetIndent`, `Duration.Milliseconds`. Everything else
+**New here:** the nearest-rank percentile, `io.WriteString`, `enc.SetIndent`,
+`Duration.Milliseconds`. Everything else
 is a project combining reading lines, regular expressions, time, JSON,
 errors, sorting and a golden-file test (see "Tools you already have").
 

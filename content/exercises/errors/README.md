@@ -1,10 +1,15 @@
 # Errors are values
 
+*Practice: service registry* closed *Interfaces and generics*: you can model
+things with your own types. You've been returning `error` values since
+*Multiple return values*; this module shows how to design, wrap and inspect
+them the way production code does.
+
 Things go wrong all the time in ops work: a config has a typo, a port is not a
 number, a hostname is missing. In Go, a function tells its caller "something
 went wrong" by returning an *error* value.
 
-**New here:** the `error` type, `nil`, `errors.New`, `fmt.Errorf`, `strings.Cut`, returning early.
+**New here:** the `Error() string` method behind every error, adding context to an error, error message style. A recap of `error`, `nil`, `errors.New`, `fmt.Errorf`, `strings.Cut`, named results and early returns from *Multiple return values* and *if and else*.
 
 ## Learn
 

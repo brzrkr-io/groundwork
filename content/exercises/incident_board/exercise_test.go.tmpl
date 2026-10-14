@@ -1,0 +1,245 @@
+package incidents
+
+import (
+	"fmt"
+	"testing"
+)
+
+// newTestBoard builds a board that already holds incidents, without
+// calling Open. That way the test for task 5 works even before task 4 is
+// done.
+func newTestBoard(incidents ...Incident) *Board {
+	b := &Board{incidents: incidents}
+	for _, inc := range incidents {
+		b.lastID = max(b.lastID, inc.ID)
+	}
+	return b
+}
+
+func TestSeverityString(t *testing.T) {
+	tests := []struct {
+		sev  Severity
+		want string
+	}{
+		{Minor, "minor"},
+		{Major, "major"},
+		{Critical, "critical"},
+		{Severity(7), "Severity(7)"},
+		{Severity(-1), "Severity(-1)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			if got := tt.sev.String(); got != tt.want {
+				t.Errorf("Severity(%d).String() = %q, want %q", int(tt.sev), got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIncidentString(t *testing.T) {
+	tests := []struct {
+		name string
+		inc  Incident
+		want string
+	}{
+		{
+			name: "open",
+			inc:  Incident{ID: 12, Title: "api 5xx spike", Severity: Critical, State: StateOpen},
+			want: "#12 [critical] api 5xx spike (open)",
+		},
+		{
+			name: "acknowledged",
+			inc:  Incident{ID: 7, Title: "disk full on db-1", Severity: Major, State: StateAcked, Owner: "ana"},
+			want: "#7 [major] disk full on db-1 (acknowledged by ana)",
+		},
+		{
+			name: "resolved with owner",
+			inc:  Incident{ID: 3, Title: "slow dashboard", Severity: Minor, State: StateResolved, Owner: "sam"},
+			want: "#3 [minor] slow dashboard (resolved by sam)",
+		},
+		{
+			name: "resolved without owner",
+			inc:  Incident{ID: 40, Title: "cert expires soon", Severity: Major, State: StateResolved},
+			want: "#40 [major] cert expires soon (resolved)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// fmt.Sprint passes only once fmt finds your String method.
+			if got := fmt.Sprint(tt.inc); got != tt.want {
+				t.Errorf("fmt.Sprint(%s incident) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAckAndResolve(t *testing.T) {
+	t.Run("ack an open incident", func(t *testing.T) {
+		inc := Incident{ID: 1, Title: "api down", State: StateOpen}
+		if got := inc.Ack("ana"); !got {
+			t.Errorf("Ack(%q) on an open incident = false, want true", "ana")
+		}
+		if inc.State != StateAcked || inc.Owner != "ana" {
+			t.Errorf("after Ack(%q), State = %q and Owner = %q, want %q and %q",
+				"ana", inc.State, inc.Owner, StateAcked, "ana")
+		}
+	})
+
+	t.Run("ack twice keeps the first owner", func(t *testing.T) {
+		inc := Incident{ID: 1, Title: "api down", State: StateAcked, Owner: "ana"}
+		if got := inc.Ack("sam"); got {
+			t.Errorf("Ack(%q) on an acknowledged incident = true, want false", "sam")
+		}
+		if inc.Owner != "ana" {
+			t.Errorf("after a second Ack, Owner = %q, want %q (unchanged)", inc.Owner, "ana")
+		}
+	})
+
+	t.Run("ack a resolved incident", func(t *testing.T) {
+		inc := Incident{ID: 1, Title: "api down", State: StateResolved}
+		if got := inc.Ack("sam"); got {
+			t.Errorf("Ack(%q) on a resolved incident = true, want false", "sam")
+		}
+		if inc.State != StateResolved || inc.Owner != "" {
+			t.Errorf("after Ack on a resolved incident, State = %q and Owner = %q, want %q and %q (unchanged)",
+				inc.State, inc.Owner, StateResolved, "")
+		}
+	})
+
+	t.Run("resolve keeps the owner", func(t *testing.T) {
+		inc := Incident{ID: 1, Title: "api down", State: StateAcked, Owner: "ana"}
+		if got := inc.Resolve(); !got {
+			t.Errorf("Resolve() on an acknowledged incident = false, want true")
+		}
+		if inc.State != StateResolved || inc.Owner != "ana" {
+			t.Errorf("after Resolve(), State = %q and Owner = %q, want %q and %q",
+				inc.State, inc.Owner, StateResolved, "ana")
+		}
+	})
+
+	t.Run("resolve an open incident", func(t *testing.T) {
+		inc := Incident{ID: 2, Title: "queue backlog", State: StateOpen}
+		if got := inc.Resolve(); !got {
+			t.Errorf("Resolve() on an open incident = false, want true")
+		}
+		if inc.State != StateResolved {
+			t.Errorf("after Resolve(), State = %q, want %q", inc.State, StateResolved)
+		}
+	})
+
+	t.Run("resolve twice", func(t *testing.T) {
+		inc := Incident{ID: 2, Title: "queue backlog", State: StateResolved}
+		if got := inc.Resolve(); got {
+			t.Errorf("Resolve() on a resolved incident = true, want false")
+		}
+	})
+}
+
+func TestOpenAndFind(t *testing.T) {
+	var b Board
+
+	first := b.Open("api 5xx spike", Critical)
+	second := b.Open("disk full on db-1", Major)
+	if first != 1 || second != 2 {
+		t.Fatalf("Open() returned IDs %d and %d, want 1 and 2", first, second)
+	}
+
+	got := b.Find(2)
+	if got == nil {
+		t.Fatalf("Find(2) = nil, want the incident opened second")
+	}
+	want := Incident{ID: 2, Title: "disk full on db-1", Severity: Major, State: StateOpen}
+	if *got != want {
+		t.Errorf("Find(2) points at %+v, want %+v", *got, want)
+	}
+
+	if got := b.Find(99); got != nil {
+		t.Errorf("Find(99) = %+v, want nil", *got)
+	}
+
+	// A change made through Find's pointer must reach the board itself.
+	got.Owner = "ana"
+	if b.incidents[1].Owner != "ana" {
+		t.Errorf("after Find(2).Owner = %q, incident #2 on the board has Owner %q, want %q (did Find return a copy?)",
+			"ana", b.incidents[1].Owner, "ana")
+	}
+
+	if third := b.Open("cert expires soon", Minor); third != 3 {
+		t.Errorf("third Open() = %d, want 3", third)
+	}
+}
+
+func TestWorst(t *testing.T) {
+	tests := []struct {
+		name   string
+		board  *Board
+		wantID int // 0 means Worst must return nil
+	}{
+		{
+			name: "highest severity wins",
+			board: newTestBoard(
+				Incident{ID: 1, Severity: Minor, State: StateOpen},
+				Incident{ID: 2, Severity: Critical, State: StateAcked},
+				Incident{ID: 3, Severity: Major, State: StateOpen},
+			),
+			wantID: 2,
+		},
+		{
+			name: "resolved incidents are skipped",
+			board: newTestBoard(
+				Incident{ID: 1, Severity: Critical, State: StateResolved},
+				Incident{ID: 2, Severity: Minor, State: StateOpen},
+				Incident{ID: 3, Severity: Major, State: StateAcked},
+			),
+			wantID: 3,
+		},
+		{
+			name: "a tie goes to the one opened first",
+			board: newTestBoard(
+				Incident{ID: 4, Severity: Minor, State: StateOpen},
+				Incident{ID: 5, Severity: Major, State: StateOpen},
+				Incident{ID: 6, Severity: Major, State: StateOpen},
+			),
+			wantID: 5,
+		},
+		{
+			name: "everything resolved",
+			board: newTestBoard(
+				Incident{ID: 1, Severity: Critical, State: StateResolved},
+				Incident{ID: 2, Severity: Major, State: StateResolved},
+			),
+			wantID: 0,
+		},
+		{
+			name:   "empty board",
+			board:  newTestBoard(),
+			wantID: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.board.Worst()
+			switch {
+			case tt.wantID == 0 && got != nil:
+				t.Errorf("Worst() = incident #%d, want nil", got.ID)
+			case tt.wantID != 0 && got == nil:
+				t.Errorf("Worst() = nil, want incident #%d", tt.wantID)
+			case got != nil && got.ID != tt.wantID:
+				t.Errorf("Worst() = incident #%d, want #%d", got.ID, tt.wantID)
+			}
+		})
+	}
+
+	// Worst must point into the board, so on-call can act on it directly.
+	b := newTestBoard(
+		Incident{ID: 1, Severity: Major, State: StateOpen},
+		Incident{ID: 2, Severity: Critical, State: StateOpen},
+	)
+	if w := b.Worst(); w != nil {
+		w.Owner = "sam"
+		if b.incidents[1].Owner != "sam" {
+			t.Errorf("after Worst().Owner = %q, incident #2 on the board has Owner %q, want %q (did Worst return a copy?)",
+				"sam", b.incidents[1].Owner, "sam")
+		}
+	}
+}

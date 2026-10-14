@@ -4,8 +4,9 @@
 review, security audit and incident. You build a small inventory tool that asks
 several AWS regions at once and prints the answer as a table and as JSON.
 
-**New here:** `s3.NewListBucketsPaginator` with `BucketRegion`,
-`text/tabwriter`, `cmp.Or`. The rest is practice.
+**New here:** `s3.NewListBucketsPaginator` with `BucketRegion`. The rest is
+practice, including `text/tabwriter` from *Project: ops inventory CLI* and
+`cmp.Or` from *Project: inventory service*.
 
 ## Learn
 

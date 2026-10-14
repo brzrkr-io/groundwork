@@ -5,7 +5,8 @@ One image runs in dev, staging and production. What changes between them
 variables* set by `docker run -e` or a Kubernetes manifest. Here you read
 them safely, check them at startup, and log them without leaking a password.
 
-**New here:** twelve-factor config, `os.Getenv` vs `os.LookupEnv`, passing a
+**New here:** twelve-factor config, `os.Getenv` next to the `os.LookupEnv`
+you know from *Config precedence: defaults, file, env and flags*, passing a
 lookup function in, `net/url`'s `url.Parse` and `Redacted`.
 
 ## Learn

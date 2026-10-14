@@ -4,7 +4,7 @@ A teammate started a tool that tidies the backup volume on a database host.
 It walks the real disk with `filepath.WalkDir`, and it has two bugs and one
 missing function.
 
-**New here:** `filepath.WalkDir`, `filepath.Rel`, `strings.Cut`, adding up values in a map.
+**New here:** `filepath.WalkDir`, `filepath.Rel`, adding up values in a map.
 
 ## Learn
 

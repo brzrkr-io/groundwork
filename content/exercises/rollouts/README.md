@@ -6,7 +6,7 @@ that happens, and every change is kept as a *revision* you can roll back
 to. Here you do the arithmetic Kubernetes does, and find the revision to
 go back to.
 
-**New here:** rolling updates, `maxSurge` and `maxUnavailable` and their rounding, rounding up with integer division, revisions and `kubernetes.io/change-cause`, `kubectl rollout status`/`history`/`undo`.
+**New here:** rolling updates, `maxSurge` and `maxUnavailable` and their rounding, revisions and `kubernetes.io/change-cause`, `kubectl rollout history`/`undo`. (Rounding up with integer division is from *Numbers and arithmetic*; `kubectl rollout status` from *Deployments: replicas, labels and selectors*.)
 
 ## Learn
 

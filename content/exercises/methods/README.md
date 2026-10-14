@@ -4,7 +4,7 @@ A *method* is a function that belongs to a type. Instead of passing a host to
 a helper function, you ask the host itself: `h.Address()`. Ops tooling is full
 of these: a host knows its address, a deployment knows its image tag.
 
-**New here:** method declarations, receivers, calling methods with a dot, `strings.Cut`.
+**New here:** method declarations, receivers, calling methods with a dot.
 
 ## Learn
 

@@ -280,8 +280,11 @@ file with a `TODO(n)` in it, whatever its type.
   `LC_ALL=C`, `TZ=UTC`, and for Git `GIT_CONFIG_GLOBAL=/dev/null`,
   `GIT_CONFIG_NOSYSTEM=1` and fixed author and committer names, emails and
   dates. Use only bash, coreutils, grep, sed, awk, find, xargs, sort, uniq,
-  cut, tr, wc, head, tail, diff and git: never jq, docker, a network or a
-  database server.
+  cut, tr, wc, head, tail, diff and git (plus ps, pgrep and pkill for
+  process tasks): never jq, docker, a network or a database server.
+- **Process tasks** start their own helper processes (with a unique name,
+  so parallel test runs never meet), wait until they're ready, and stop
+  them in `t.Cleanup`. Tests that read `/proc` skip on anything but Linux.
 - **Failure messages teach**, in the course's got/want style:
   `1_count_errors.sh printed "12", want "3"`; for multi-line output, show
   both in full. If the script exits non-zero, show its stderr: that's where

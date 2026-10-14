@@ -1,0 +1,127 @@
+// Package incidents is the Groundwork exercise "Practice: incident board".
+package incidents
+
+import "fmt"
+
+// Severity ranks how bad an incident is. A bigger value is worse.
+type Severity int
+
+// The severities, from least to most urgent.
+const (
+	Minor Severity = iota
+	Major
+	Critical
+)
+
+// String returns the severity as a lower-case word.
+func (s Severity) String() string {
+	switch s {
+	case Minor:
+		return "minor"
+	case Major:
+		return "major"
+	case Critical:
+		return "critical"
+	default:
+		return fmt.Sprintf("Severity(%d)", int(s))
+	}
+}
+
+// State is where an incident is in its life.
+type State string
+
+// The states an incident moves through, in order.
+const (
+	StateOpen     State = "open"
+	StateAcked    State = "acknowledged"
+	StateResolved State = "resolved"
+)
+
+// Incident is one problem that someone on call has to deal with.
+type Incident struct {
+	ID       int
+	Title    string // what is wrong, for example "api 5xx spike"
+	Severity Severity
+	State    State
+	Owner    string // who acknowledged it; empty until someone does
+}
+
+// String returns the incident as one line for the on-call channel.
+func (i Incident) String() string {
+	status := string(i.State)
+	if i.Owner != "" {
+		status += " by " + i.Owner
+	}
+	return fmt.Sprintf("#%d [%v] %s (%s)", i.ID, i.Severity, i.Title, status)
+}
+
+// Ack records that owner is working on the incident. It reports whether
+// the incident was open; any other incident is left unchanged.
+func (i *Incident) Ack(owner string) bool {
+	if i.State != StateOpen {
+		return false
+	}
+	i.State = StateAcked
+	i.Owner = owner
+	return true
+}
+
+// Resolve marks the incident as resolved. It reports whether anything
+// changed: resolving a resolved incident does nothing.
+func (i *Incident) Resolve() bool {
+	if i.State == StateResolved {
+		return false
+	}
+	i.State = StateResolved
+	return true
+}
+
+// Board holds every incident, in the order they were opened. The zero
+// Board is empty and ready to use.
+type Board struct {
+	incidents []Incident
+	lastID    int // the ID given to the newest incident
+}
+
+// Open adds a new open incident to the board and returns its ID. IDs
+// start at 1 and go up by one for each new incident.
+func (b *Board) Open(title string, sev Severity) int {
+	b.lastID++
+	b.incidents = append(b.incidents, Incident{
+		ID:       b.lastID,
+		Title:    title,
+		Severity: sev,
+		State:    StateOpen,
+	})
+	return b.lastID
+}
+
+// Find returns a pointer to the incident with the given ID on the board,
+// or nil if there is none. Changes made through the pointer stick.
+func (b *Board) Find(id int) *Incident {
+	// Index, don't range by value: &inc would point at a copy.
+	for i := range b.incidents {
+		if b.incidents[i].ID == id {
+			return &b.incidents[i]
+		}
+	}
+	return nil
+}
+
+// Worst returns the unresolved incident with the highest severity. When
+// several share that severity, it returns the one opened first. It returns
+// nil if every incident is resolved or the board is empty.
+func (b *Board) Worst() *Incident {
+	var worst *Incident
+	for i := range b.incidents {
+		inc := &b.incidents[i]
+		if inc.State == StateResolved {
+			continue
+		}
+		// Strictly greater, so on a tie the earlier incident stays.
+		if worst == nil || inc.Severity > worst.Severity {
+			worst = inc
+		}
+	}
+	return worst
+}

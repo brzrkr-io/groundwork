@@ -4,7 +4,7 @@ A deploy repo holds more than Deployments, and some manifests in it are risky.
 Here you decode any supported kind and flag containers that would cause
 trouble in production.
 
-**New here:** `runtime.Object`, image tags, `strings.LastIndex`, string slicing.
+**New here:** `runtime.Object`, image tags, `strings.LastIndex`.
 
 ## Learn
 

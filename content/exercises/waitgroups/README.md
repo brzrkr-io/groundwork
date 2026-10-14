@@ -5,7 +5,7 @@ yet?" You met `wg.Go` in *Goroutines*. Here you see the counter underneath it,
 the older `Add`/`Done` style you'll find in existing code, and how to share
 one WaitGroup with a helper.
 
-**New here:** `wg.Wait`, `wg.Add`/`wg.Done`, passing `*sync.WaitGroup`.
+**New here:** `wg.Add`/`wg.Done`, passing `*sync.WaitGroup`. (`wg.Wait` is from *Goroutines*.)
 
 ## Learn
 

@@ -5,8 +5,8 @@ buffers or uploads batches. On shutdown the parts must stop in the right
 order, or the last batch of data is lost. Here you fix three classic shutdown
 bugs.
 
-**New here:** `errors.Is` with `http.ErrServerClosed`, stopping parts in
-order.
+**New here:** `http.ErrServerClosed` (checked with the `errors.Is` from
+*Wrapping errors*), stopping parts in order.
 
 ## Learn
 

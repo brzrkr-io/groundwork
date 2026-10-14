@@ -4,7 +4,7 @@ Two bug reports came in for the rollout tool: a canary wave that eats the next
 host in line, and a restart command that targets the wrong deployment. Both
 bugs come from two slices sharing one backing array.
 
-**New here:** the full slice expression `s[low:high:max]`.
+**New here:** nothing; practice with the full slice expression `s[low:high:max]` from *Slice gotchas: shared memory*.
 
 ## Learn
 

@@ -4,8 +4,8 @@ A Go program compiles to a single binary. With `//go:embed`, files such as a
 default config or message templates go *inside* that binary. You copy one
 file into a container image, and nothing can go missing at 3am.
 
-**New here:** the `//go:embed` directive, `embed.FS`, blank imports,
-`template.ParseFS`, `strings.Builder`.
+**New here:** the `//go:embed` directive, `embed.FS`, `template.ParseFS`.
+(Blank imports are from *database/sql: query deploys from Go*.)
 
 ## Learn
 

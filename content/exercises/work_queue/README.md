@@ -4,9 +4,9 @@ A *work queue* sits between the part of a system that accepts work and the
 part that does it. You'll build a bounded one that says "not now" when it's
 full, instead of quietly growing until the server runs out of memory.
 
-**New here:** queues and backpressure, a buffered channel as a queue,
-non-blocking send with `select` and `default`, `len` of a channel, `202
-Accepted`, `503 Service Unavailable` with `Retry-After`.
+**New here:** queues and backpressure, a buffered channel as a queue, `202
+Accepted`, `503 Service Unavailable`. (Non-blocking send with `select` and
+`default`, `len` of a channel and `Retry-After` are practice.)
 
 ## Learn
 

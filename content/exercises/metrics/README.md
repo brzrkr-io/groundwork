@@ -4,8 +4,7 @@ Logs tell you what happened to one request. *Metrics* are numbers about the
 whole service: requests per second, error rate, queue depth. Dashboards and
 alerts are built on them. You'll build the core of a metrics library by hand.
 
-**New here:** counters, the Prometheus text format, `sync.Mutex` in practice,
-sorted map keys, `strconv.FormatFloat`, setting a response header.
+**New here:** counters, the Prometheus text format, `sync.Mutex` in practice.
 
 ## Learn
 
