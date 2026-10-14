@@ -207,6 +207,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.checking = false
 		m.result, m.checkErr = msg.result, msg.err
+		if msg.err == nil {
+			if err := m.s.RecordCheck(); err != nil {
+				m.checkErr = err
+			}
+		}
 		if msg.err == nil && msg.result.Status == workspace.Passed && !m.completed {
 			m.completed = true
 			if err := m.s.Complete(m.ex); err != nil {
@@ -789,7 +794,8 @@ func (m *Model) hintsView(width int) string {
 }
 
 func (m *Model) listView(width int) string {
-	var lines []string
+	lines := strings.Split(strings.TrimRight(Stats(m.s, width), "\n"), "\n")
+	lines = append(lines, "", rule.Render(strings.Repeat("─", width)), "")
 	for _, mod := range m.s.Course.Modules {
 		done := 0
 		for _, e := range mod.Exercises {
@@ -800,7 +806,7 @@ func (m *Model) listView(width int) string {
 		head := bold.Render(fmt.Sprintf("%2d  %s", mod.Number, mod.Title))
 		count := dim.Render(fmt.Sprintf("%d/%d", done, len(mod.Exercises)))
 		gap := max(1, width-lipgloss.Width(head)-lipgloss.Width(count)-2)
-		if len(lines) > 0 {
+		if mod.Number > 1 {
 			lines = append(lines, "")
 		}
 		lines = append(lines, head+strings.Repeat(" ", gap)+count)
@@ -889,7 +895,7 @@ func (m *Model) helpView(width int) string {
 		{"i", "instructions (the exercise README)"},
 		{"h", "show a hint (press again for a stronger one)"},
 		{"s", "the solution: once you pass, or after a task's Answer hint"},
-		{"l", "list every exercise; enter to open one"},
+		{"l", "progress: your streak, stats and every exercise; enter opens one"},
 		{"g", "guides: the computer science behind the exercises"},
 		{"  m  o", "in the guides: mark read, open in $EDITOR"},
 		{"n", "next unfinished exercise"},
@@ -989,6 +995,9 @@ func (m *Model) header() string {
 	done, total := m.s.DoneCount(), len(m.s.Course.Exercises)
 	left := brand.Render("groundwork") + dim.Render(fmt.Sprintf("  ·  module %d of %d: %s", m.ex.Module.Number, len(m.s.Course.Modules), m.ex.Module.Title))
 	right := progressBar(done, total, min(20, w/5)) + dim.Render(fmt.Sprintf("  %d/%d done", done, total))
+	if streak := m.s.Stats(1).Streak; streak > 1 && lipgloss.Width(left)+lipgloss.Width(right) < w-16 {
+		right = okStyle.Render(fmt.Sprintf("%d days in a row", streak)) + dim.Render("  ·  ") + right
+	}
 
 	title := bold.Render(fmt.Sprintf("%03d  %s", m.ex.Number, m.ex.Title))
 	if m.ex.Kind != course.Concept {
@@ -1060,7 +1069,7 @@ func (m *Model) tabRow(instructions, hints string) string {
 		{paneInstructions, instructions, "i"},
 		{paneHints, hints, "h"},
 		{paneSolution, "Solution", "s"},
-		{paneList, "Exercises", "l"},
+		{paneList, "Progress", "l"},
 		{paneGuides, "Guides", "g"},
 		{paneHelp, "Keys", "?"},
 	}

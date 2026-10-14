@@ -105,7 +105,7 @@ The tab row shows which view you're looking at. The results always come first.
 | `i` | instructions (the exercise README, rendered) |
 | `h` | hint; press again for a stronger one |
 | `s` | the solution: once you pass, or after a task's Answer hint |
-| `l` | all exercises; `enter` opens one |
+| `l` | progress: streak, stats, and every exercise; `enter` opens one |
 | `g` | guides: the computer science behind the exercises; `enter` reads one, `m` marks it read, `o` opens it in `$EDITOR` |
 | `?` | every key, plus a guide to reading failures and compiler errors |
 | `esc` | back to the results (from a guide: back to the guide list) |
@@ -124,6 +124,7 @@ The tab row shows which view you're looking at. The results always come first.
 groundwork               open the current exercise and watch for saves
 groundwork init [DIR]    start a new course in DIR (default: this directory)
 groundwork list [--all]  show your progress through the course
+groundwork stats         your streak, this week, today and the last 12 weeks
 groundwork check [EX]    run one exercise's tests once (handy outside a terminal UI)
 groundwork reset EX      restore an exercise's starter code
 groundwork guides [G]    list the guides, or read one (groundwork guides concurrency)

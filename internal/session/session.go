@@ -117,7 +117,10 @@ func (s *Session) Read(g *course.Guide) bool {
 // SetRead marks g as read or unread and saves progress.
 func (s *Session) SetRead(g *course.Guide, read bool) error {
 	if read {
-		s.State.Read[g.Name] = time.Now().UTC()
+		if !s.Read(g) {
+			s.record(func(d *progress.Day) { d.Guides++ })
+		}
+		s.State.Read[g.Name] = s.now()
 	} else {
 		delete(s.State.Read, g.Name)
 	}
@@ -394,16 +397,33 @@ func (s *Session) Complete(e *course.Exercise) error {
 	switch r, reviewing := s.State.Reviews[e.Name]; {
 	case !s.Done(e):
 		s.State.Done[e.Name] = now
+		s.record(func(d *progress.Day) { d.Passed++ })
 		if e.Kind == course.Practice || e.Kind == course.Project || s.Revealed(e) {
 			s.State.Reviews[e.Name] = progress.Review{Due: now.Add(ReviewIntervals[0])}
 		}
 	case reviewing && r.Active:
+		s.record(func(d *progress.Day) { d.Reviews++ })
 		s.State.Reviews[e.Name] = nextReview(r, now)
 		if r.Step+1 == len(ReviewIntervals) && !r.Lapsed {
 			delete(s.State.Reviews, e.Name) // remembered for good
 		}
 	}
 	return s.writeSolution(e)
+}
+
+// RecordCheck counts a test run (every save of an exercise) as practice
+// today, and saves progress.
+func (s *Session) RecordCheck() error {
+	s.record(func(d *progress.Day) { d.Checks++ })
+	return progress.Save(s.Root, s.State)
+}
+
+// record applies change to today's activity. The caller saves.
+func (s *Session) record(change func(*progress.Day)) {
+	key := progress.DateKey(s.now())
+	d := s.State.Activity[key]
+	change(&d)
+	s.State.Activity[key] = d
 }
 
 // ReviewIntervals are the waits before each spaced review of an exercise:

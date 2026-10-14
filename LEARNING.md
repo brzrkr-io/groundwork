@@ -59,9 +59,13 @@ in a week will teach you more than one of four hours.
   first thing you see is exactly where you stopped and what to do next.
 - **One thing on screen.** Read only the task you're on. The **Goal** line is
   enough to begin; the details are there when you need them.
-- **Make progress visible.** The progress bar, ✓ marks, finished guides and
-  your Anki streak are all evidence you're getting better, even on days it
-  doesn't feel that way.
+- **Make progress visible.** Press `l` (or run `groundwork stats`) for your
+  streak, this week and a grid of the last 12 weeks. Every save counts as
+  practice, so a short, messy session still fills in the day. The ✓ marks,
+  finished guides and your Anki streak are evidence too, even on days it
+  doesn't feel like it.
+- **A missed day is fine.** The streak waits until a day is over before it
+  resets, and "days this week" matters more than an unbroken run.
 - **Use a timer.** 25 minutes on, 5 off. When the timer goes and you're in
   flow, keep going; when you're stuck, take the break.
 - **Away from the keyboard** (phone): flashcards and guides only. Exercises

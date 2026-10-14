@@ -33,6 +33,7 @@ Usage:
   groundwork               open the current exercise and watch for saves
   groundwork init [DIR]    start a new course in DIR (default: this directory)
   groundwork list [--all]  show your progress through the course
+  groundwork stats         your streak, this week and the last 12 weeks
   groundwork check [EX]    run one exercise's tests once (default: current)
   groundwork reset EX      restore an exercise's starter code
   groundwork guides [G]    list the guides, or read guide G
@@ -100,6 +101,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 			return errSilent
 		}
 		fmt.Fprint(stdout, tui.CourseList(s, *all))
+		return nil
+	case "stats":
+		fmt.Fprint(stdout, tui.Brand("groundwork stats")+"\n\n"+tui.Stats(s, 100))
 		return nil
 	case "check":
 		e := s.Current()
@@ -232,6 +236,9 @@ func check(s *session.Session, e *course.Exercise, stdout io.Writer) error {
 	defer stop()
 	r, err := s.Check(ctx, e)
 	if err != nil {
+		return err
+	}
+	if err := s.RecordCheck(); err != nil {
 		return err
 	}
 	if r.Status == workspace.Passed {

@@ -20,7 +20,7 @@ const (
 	// version is bumped whenever the course folder's layout or this file
 	// changes in a way an older groundwork would get wrong. Older binaries
 	// then refuse the folder instead of rebuilding it their way.
-	version = 6
+	version = 7
 )
 
 // ErrNewer means the course folder was set up by a newer groundwork.
@@ -45,7 +45,22 @@ type State struct {
 	// Reviews schedules exercises to be solved again from scratch, keyed by
 	// exercise name.
 	Reviews map[string]Review `json:"reviews,omitempty"`
+	// Activity counts what the learner did each day, keyed by local date
+	// ("2026-10-13"), for streaks and stats.
+	Activity map[string]Day `json:"activity,omitempty"`
 }
+
+// Day is one day's activity.
+type Day struct {
+	Checks  int `json:"checks,omitempty"`  // test runs: every save counts as practice
+	Passed  int `json:"passed,omitempty"`  // exercises passed for the first time
+	Reviews int `json:"reviews,omitempty"` // reviews passed
+	Guides  int `json:"guides,omitempty"`  // guides marked read
+}
+
+// DateKey is the Activity key for t: its date in the local time zone, so a
+// late-night session counts for the day it felt like.
+func DateKey(t time.Time) string { return t.In(time.Local).Format(time.DateOnly) }
 
 // Review is the spaced-repetition schedule of one exercise.
 type Review struct {
@@ -81,6 +96,9 @@ func (s *State) init() {
 	if s.Reviews == nil {
 		s.Reviews = map[string]Review{}
 	}
+	if s.Activity == nil {
+		s.Activity = map[string]Day{}
+	}
 }
 
 // Path is the progress file of the course at root.
@@ -105,8 +123,23 @@ func Load(root string) (*State, error) {
 	case s.Version < 3:
 		return nil, fmt.Errorf("%s has an old format (%d) that this groundwork can't read; move it aside to start fresh", filepath.Join(Dir, file), s.Version)
 	}
-	s.Version = version // formats 3 to 5 only lack the newer, optional fields
+	backfill := s.Version < 7
+	s.Version = version // formats 3 to 6 only lack the newer, optional fields
 	s.init()
+	if backfill {
+		// Activity is new in format 7: rebuild past days from the dates
+		// already recorded, so the history starts with what was done.
+		for _, at := range s.Done {
+			d := s.Activity[DateKey(at)]
+			d.Passed++
+			s.Activity[DateKey(at)] = d
+		}
+		for _, at := range s.Read {
+			d := s.Activity[DateKey(at)]
+			d.Guides++
+			s.Activity[DateKey(at)] = d
+		}
+	}
 	return s, nil
 }
 

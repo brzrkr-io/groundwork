@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/pjanderson/groundwork/internal/progress"
 )
 
 const starter = "package x\n\n// TODO(1): fix\nfunc F() int { return 0 }\n"
@@ -492,5 +493,44 @@ func TestReviewsAreSpacedAndRestartAfterALapse(t *testing.T) {
 	}
 	if len(reopened.State.Reviews) != 0 || !reopened.Done(b) {
 		t.Error("the review state wasn't saved")
+	}
+}
+
+func TestStatsCountStreaksAndTheWeek(t *testing.T) {
+	s := newSession(t)
+	now := time.Date(2026, 10, 13, 20, 0, 0, 0, time.Local)
+	s.Now = func() time.Time { return now }
+	day := func(back int) string { return progress.DateKey(now.AddDate(0, 0, -back)) }
+	// Active 1, 2 and 3 days ago, then a gap, then a 4-day run long ago.
+	for _, back := range []int{1, 2, 3, 10, 11, 12, 13} {
+		s.State.Activity[day(back)] = progress.Day{Checks: 1}
+	}
+
+	st := s.Stats(14)
+	if st.Streak != 3 || st.Longest != 4 || st.Week != 3 {
+		t.Errorf("before practising today: streak %d, longest %d, week %d; want 3, 4, 3 (today isn't over yet)", st.Streak, st.Longest, st.Week)
+	}
+	if len(st.Days) != 14 || st.Days[13] != st.Today || st.Days[12].Checks != 1 {
+		t.Errorf("Days = %v, want 14 days ending today", st.Days)
+	}
+
+	if err := s.RecordCheck(); err != nil {
+		t.Fatal(err)
+	}
+	a := s.Course.Exercises[0]
+	if err := s.Complete(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Complete(a); err != nil { // passing again isn't a new pass
+		t.Fatal(err)
+	}
+	st = s.Stats(14)
+	if st.Streak != 4 || st.Week != 4 || st.Today.Checks != 1 || st.Today.Passed != 1 || st.Passed != 1 {
+		t.Errorf("after practising today: %+v; want streak 4, week 4, today 1 check and 1 pass", st)
+	}
+
+	now = now.AddDate(0, 0, 2) // a missed day breaks the streak
+	if st := s.Stats(14); st.Streak != 0 || st.Longest != 4 {
+		t.Errorf("after missing a day: streak %d, longest %d; want 0, 4", st.Streak, st.Longest)
 	}
 }
