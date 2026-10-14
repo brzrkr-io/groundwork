@@ -137,7 +137,9 @@ groundwork cards [--all] flashcards from the guides, for Anki on your phone or d
 `EX` is usually just the exercise number (`12`). A folder name such as
 `012_constants` works too. A guide is its number (`17`) or name
 (`concurrency`). Commands work from anywhere inside the course folder;
-`groundwork guides` works anywhere.
+`groundwork guides` works anywhere. Outside a course folder, every command
+uses `~/groundwork` (or `$GROUNDWORK_COURSE` if set), so you can run
+`groundwork` from any directory.
 
 ## Away from the keyboard
 

@@ -134,7 +134,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 }
 
 func openSession(c *course.Course) (*session.Session, error) {
-	root, err := session.FindRoot(".")
+	root, err := findCourse()
 	if errors.Is(err, session.ErrNoCourse) {
 		return nil, errors.New("there's no Groundwork course in this directory or its parents.\n\n" +
 			"  Start one:         " + tui.Key("groundwork init ~/groundwork") + "\n" +
@@ -151,6 +151,27 @@ func openSession(c *course.Course) (*session.Session, error) {
 		return nil, err
 	}
 	return s, s.Sync()
+}
+
+// findCourse finds the course folder: the one this directory is in, else
+// $GROUNDWORK_COURSE, else ~/groundwork, so groundwork works from anywhere.
+func findCourse() (string, error) {
+	root, err := session.FindRoot(".")
+	if !errors.Is(err, session.ErrNoCourse) {
+		return root, err
+	}
+	fallback := os.Getenv("GROUNDWORK_COURSE")
+	if fallback == "" {
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			return "", err
+		}
+		fallback = filepath.Join(home, "groundwork")
+	}
+	if root, ferr := session.FindRoot(fallback); ferr == nil && root == filepath.Clean(fallback) {
+		return root, nil
+	}
+	return "", err
 }
 
 // checkGo makes sure the go command exists and is new enough for the
@@ -264,7 +285,7 @@ func guides(c *course.Course, args []string, stdout io.Writer) error {
 		current *course.Module
 		read    func(*course.Guide) bool
 	)
-	root, err := session.FindRoot(".")
+	root, err := findCourse()
 	switch {
 	case err == nil:
 		s, err := session.Open(root, c)
@@ -308,7 +329,7 @@ func exportCards(c *course.Course, args []string, stdout, stderr io.Writer) erro
 		return errors.New("usage: groundwork cards [--all] [-o FILE]")
 	}
 	reached, dir := len(c.Modules), "."
-	if root, err := session.FindRoot("."); err == nil {
+	if root, err := findCourse(); err == nil {
 		s, err := session.Open(root, c)
 		if err != nil {
 			return err
