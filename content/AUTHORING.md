@@ -27,7 +27,7 @@ Every pack and guide follows these (see ../LEARNING.md for the research):
    Answer (the task's code).
 7. **Realistic bugs** in fix-the-bug rounds, with the README teaching how
    to diagnose them.
-8. **Short pieces** with a bold Goal per task: the learner has ADHD.
+8. **Short pieces** with a bold Goal per task, so every page is easy to scan.
 
 ## Pack layout
 
@@ -62,9 +62,8 @@ packs/variables/
 
 ## README.md
 
-The learner has ADHD and is new to programming. They lose track in long text,
-so a README must be easy to scan, and every task should read like a short
-checklist. They also want to understand **why** Go code looks the way it
+The learner is new to programming. A README must be easy to scan, and every
+task should read like a short checklist. They also want to understand **why** Go code looks the way it
 does: what Go requires, what is convention, and what is their own choice.
 Teach that reasoning. Don't give away the answer.
 
@@ -340,7 +339,7 @@ minutes; probing them concurrently takes about as long as the slowest one.
 ## Go deeper           (2–5 links, each with one line on why it's worth it)
 ```
 
-- **Short pieces.** The learner has ADHD: paragraphs of 1–4 sentences, one
+- **Short pieces.** Paragraphs of 1–4 sentences, one
   idea per section, a bold lead-in where a skim reader needs one. Tables and
   `text` diagrams beat long prose. 1,500–3,000 words.
 - **Concrete first.** Start each idea from an example the learner can picture

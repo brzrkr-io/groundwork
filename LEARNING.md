@@ -53,7 +53,7 @@ in a week will teach you more than one of four hours.
 - **Frustrated:** stop. Walk, drink water, come back tomorrow. Sleep is when
   a lot of learning settles.
 
-## Tips for an ADHD brain
+## Tips for staying with it
 
 - **Lower the cost of starting.** Leave the watcher open; next time, the
   first thing you see is exactly where you stopped and what to do next.
