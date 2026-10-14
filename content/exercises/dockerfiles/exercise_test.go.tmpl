@@ -23,13 +23,13 @@ func TestBuildStatusd(t *testing.T) {
 	if workdir == nil {
 		t.Fatalf("%s has no WORKDIR; want WORKDIR /src", file)
 	}
-	if !slices.Equal(workdir.Args, []string{"/src"}) {
+	if !slices.Contains([]string{"/src", "/src/"}, workdir.Rest) {
 		t.Errorf("%s line %d: %s, want WORKDIR /src", file, workdir.Line, show(*workdir))
 	}
 
 	var copyAll *instruction
 	for _, in := range find(instructions, "COPY") {
-		if len(in.Args) == 2 && in.Args[0] == "." && slices.Contains([]string{".", "./", "/src", "/src/"}, in.Args[1]) {
+		if len(in.Args) == 2 && slices.Contains([]string{".", "./"}, in.Args[0]) && slices.Contains([]string{".", "./", "/src", "/src/"}, in.Args[1]) {
 			copyAll = &in
 		}
 	}
@@ -49,8 +49,8 @@ func TestBuildStatusd(t *testing.T) {
 	if build == nil {
 		t.Fatalf("%s has no RUN go build ...; want RUN go build -o /usr/local/bin/statusd .", file)
 	}
-	if want := "go build -o /usr/local/bin/statusd ."; build.Rest != want {
-		t.Errorf("%s line %d: %s, want RUN %s", file, build.Line, show(*build), want)
+	if !buildsTo(build.Args, "/usr/local/bin/statusd") {
+		t.Errorf("%s line %d: %s doesn't write the program to /usr/local/bin/statusd; want RUN go build -o /usr/local/bin/statusd .", file, build.Line, show(*build))
 	}
 	if build.Line < copyAll.Line {
 		t.Errorf("%s: RUN go build (line %d) comes before COPY (line %d), so there is no source to build yet", file, build.Line, copyAll.Line)
@@ -99,8 +99,8 @@ func checkFrom(t *testing.T, file string, instructions []instruction, want strin
 	if instructions[0].Cmd != "FROM" {
 		t.Errorf("%s line %d: %s comes before FROM; FROM must be the first instruction", file, instructions[0].Line, instructions[0].Cmd)
 	}
-	if got := froms[0].Rest; got != want {
-		t.Errorf("%s line %d: FROM %s, want FROM %s", file, froms[0].Line, got, want)
+	if args := froms[0].Args; len(args) == 0 || args[0] != want {
+		t.Errorf("%s line %d: %s, want FROM %s", file, froms[0].Line, show(froms[0]), want)
 	}
 }
 
@@ -125,6 +125,20 @@ func checkCmd(t *testing.T, file string, instructions []instruction, want ...[]s
 	}
 	t.Errorf("%s line %d: %s, want CMD %s", file, cmd.Line, show(cmd), execForm(want[0]))
 	return &cmd
+}
+
+// buildsTo reports whether the words of a go build command write the program
+// to out, with "-o out" or "-o=out".
+func buildsTo(args []string, out string) bool {
+	for i, arg := range args {
+		if arg == "-o="+out || arg == "--o="+out {
+			return true
+		}
+		if (arg == "-o" || arg == "--o") && i+1 < len(args) && args[i+1] == out {
+			return true
+		}
+	}
+	return false
 }
 
 // first returns the first instruction with the given command, or nil.

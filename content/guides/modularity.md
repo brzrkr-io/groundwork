@@ -249,8 +249,8 @@ package example.com/cyc
 
 ### Why Go forbids import cycles
 
-- **Build order.** Go compiles each package after the packages it imports. In a cycle, there is no package to compile first. Other languages that allow cycles have to process whole groups of files at once, which slows builds down.
-- **Start-up order.** Package-level variables and `init` functions run in dependency order. A cycle makes that order ambiguous.
+- **Build order.** Go compiles each package after the packages it imports, and can reuse the compiled result of any package that hasn't changed. In a cycle, there is no package to compile first: the whole loop would have to be built as one unit.
+- **Start-up order.** Package-level variables and `init` functions (setup code that runs before `main`) are set up in dependency order: a package's imports go first. A cycle makes that order ambiguous.
 - **Design.** Two packages that need each other are really one package in two folders. You can't understand, test, reuse or release either one alone. Go's designers say cycles, where allowed, end up tangling large parts of a codebase together.
 
 ### Breaking a cycle

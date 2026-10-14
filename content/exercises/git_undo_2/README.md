@@ -65,8 +65,8 @@ branch, or a rescued commit back onto `main`.
 
 ### Deleting unmerged branches
 
-`git branch -d` refuses to delete a branch whose commits aren't merged
-anywhere. `git branch -D` deletes it anyway. That's exactly how
+`git branch -d` refuses to delete a branch with commits that the branch
+you're on doesn't have. `git branch -D` deletes it anyway. That's exactly how
 `feature/alerts` got lost.
 
 ## Your task
@@ -86,6 +86,10 @@ $ git log --oneline -1 rescue-tls
 ```
 
 Stay on `main`; `main` must not change.
+
+`HEAD@{n}` numbers shift every time `HEAD` moves, including when you
+explore with `git switch`. The tests use a fresh sandbox, so read the
+numbers right after `bash setup.sh`, or use the hash: it never shifts.
 
 **Think it through:**
 - Which reflog line was that commit made in?
@@ -112,6 +116,8 @@ $ git log --oneline -2
 9f0a1b2 Add TLS cert rotation
 eb1a91e Scale web to 3 replicas
 ```
+
+Your new commit's hash will differ.
 
 The new commit has one parent (it's a copy, not a merge) and adds
 `scripts/rotate-certs.sh`. Afterwards `rescue-tls` is gone.

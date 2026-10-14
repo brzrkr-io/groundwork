@@ -67,6 +67,10 @@ printf '9 retries\n10 retries\n200 retries\n' | sort -rn
 | `sort -n` | numbers, smallest first |
 | `sort -rn` | numbers, biggest first |
 
+`du -sh` prints sizes like `880K`, `12M` and `1.2G`. `-n` gets those wrong
+(`880K` looks bigger than `12M`); `sort -h` (*human*) understands them. The
+files in this exercise use plain kilobytes, so `-n` is right here.
+
 > **Why is it written like this?** **sort requires** nothing extra for text;
 > numbers need `-n`, because text order is the default. **Convention:**
 > single-letter flags can be glued together: `-rn` is the same as `-r -n`.
@@ -139,7 +143,9 @@ echo 'node-3 Ready 41d v1.31.2' | cut -d' ' -f2
 
 Build the reports the on-call engineer asks for every morning. Each script
 takes a file as `$1`. The fixtures are in `testdata/`: open them and check
-the answers by eye.
+the answers by eye. Run each script by hand from the exercise folder, for
+example `bash 1_services.sh testdata/worker.log`; the tests run it the same
+way.
 
 - `testdata/app.log` and `testdata/worker.log`: app logs. Every line is
   `TIME LEVEL SERVICE msg="..." req=ID`, with one space between the columns,
@@ -175,8 +181,8 @@ The tests also run it on `testdata/app.log` (5 services).
 
 ### 2. Find the biggest directories
 
-**Goal:** make `2_biggest_dirs.sh` print the 5 biggest lines of the disk
-usage file `$1`, biggest first, each line unchanged.
+**Goal:** make `2_biggest_dirs.sh` print the 5 lines of the disk usage file
+`$1` with the biggest sizes, biggest first, each line unchanged.
 
 ```bash
 bash 2_biggest_dirs.sh testdata/du_web01.txt
@@ -208,8 +214,9 @@ bash 3_errors_per_service.sh testdata/app.log
 
 Use `uniq -c` for the counts. The tests **ignore the spaces at the start of
 each line**, so `4 payments` and `      4 payments` both pass. Only `ERROR`
-lines count, not `WARN` or `INFO`. The tests also run it on
-`testdata/worker.log` (3 mailer, 2 worker, 1 scheduler).
+lines count, not `WARN` or `INFO`. No two services have the same count, so
+ties don't matter. The tests also run it on `testdata/worker.log` (3 mailer,
+2 worker, 1 scheduler).
 
 **Think it through:**
 - Build it step by step: the ERROR lines, then the service column, then...?

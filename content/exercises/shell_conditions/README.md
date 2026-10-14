@@ -29,6 +29,11 @@ and `fi` (`if` backwards) ends the statement. There are no braces.
 > the end. **Convention:** `; then` on the `if` line, and the body indented
 > by one tab or a few spaces. Bash itself ignores indentation.
 
+> **Watch out:** in *Exit codes, && and ||* you read `$?` on the line after
+> a command. Don't do that with `set -e`: a `grep -q` that finds nothing
+> stops the script right there, and the line that checks `$?` never runs.
+> Put the command **in** the `if`. A condition is allowed to fail.
+
 ### [[ ... ]] asks a question
 
 Most conditions are `[[ ... ]]`, a command that only answers 0 (true) or 1
@@ -53,9 +58,10 @@ fi
 `&&` and `||` work inside: `[[ "$tier" == "web" || "$tier" == "api" ]]`.
 And `!` turns a test around: `[[ ! -f "$path" ]]`.
 
-You'll also meet the older form, `[ ... ]` (the `test` command). It works on
-every shell, but it splits unquoted variables and has no `&&` inside.
-`[[ ]]` is the bash way, and the one used here.
+You'll also meet the older form, `[ ... ]`, a command also named `test`
+(`[ -d DIR ]` is the same as `test -d DIR`). It works on every shell, but it
+splits unquoted variables and has no `&&` inside. `[[ ]]` is the bash way,
+and the one used here; the tests accept either.
 
 ### Comparing numbers
 

@@ -108,6 +108,21 @@ func triggers(wf workflow) map[string]any {
 	return events
 }
 
+// runsOn returns the runner label of a job. GitHub allows one label or a
+// list; a list with one label means the same.
+func runsOn(j job) string {
+	switch r := j.RunsOn.(type) {
+	case string:
+		return r
+	case []any:
+		if len(r) == 1 {
+			label, _ := r[0].(string)
+			return label
+		}
+	}
+	return ""
+}
+
 // needs returns the jobs a job waits for. GitHub allows one name or a list.
 func needs(j job) []string {
 	switch n := j.Needs.(type) {

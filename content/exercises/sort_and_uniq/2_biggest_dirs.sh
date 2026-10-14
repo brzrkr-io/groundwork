@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Task 2: print the 5 biggest lines of the disk usage file $1 (size in
-# kilobytes, a tab, a directory), biggest first, each line unchanged.
+# Task 2: print the 5 lines of the disk usage file $1 (size in kilobytes, a
+# tab, a directory) with the biggest sizes, biggest first, each unchanged.
 # Usage:   bash 2_biggest_dirs.sh FILE
 # Example: bash 2_biggest_dirs.sh testdata/du_web01.txt
 #          30412   /opt/app/releases

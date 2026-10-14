@@ -210,9 +210,9 @@ Lookup(lookupEnv, "TEAM", "platform")     // => "platform"
 | Variable | Field | Rule | Problem message |
 |---|---|---|---|
 | `PORT` | `Port` | as in task 2 | the error from `Port` |
-| `APP_ENV` | `Env` | default `dev`; must be exactly `dev`, `staging` or `production` | `APP_ENV "<value>" must be dev, staging or production` |
+| `APP_ENV` | `Env` | as in task 1, default `dev`; must then be exactly `dev`, `staging` or `production` | `APP_ENV "<value>" must be dev, staging or production` |
 | `DATABASE_URL` | `DatabaseURL` | required, spaces trimmed | unset: `DATABASE_URL is not set`; empty or only spaces: `DATABASE_URL is set but empty` |
-| `LOG_LEVEL` | `LogLevel` | default `info` | none: any value is fine |
+| `LOG_LEVEL` | `LogLevel` | as in task 1, default `info` | none: any value is fine |
 
 - Check all of them, and join the problems with `errors.Join`, in the
   table's order.

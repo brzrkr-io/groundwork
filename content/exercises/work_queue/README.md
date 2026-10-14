@@ -196,20 +196,21 @@ q.Enqueue(ctx, Job{ID: "b2", Service: "api"})
 **Goal:** make `Start(workers, handle)` start the workers, and `Close` wait
 until every queued job has been handled.
 
-- `Start` starts exactly `workers` goroutines, tracked by `q.wg`. Each takes
-  jobs from `q.jobs` and calls `handle(job)` for each, one at a time.
+- `Start` starts exactly `workers` goroutines, tracked by `q.wg`, and returns
+  at once. Each goroutine takes jobs from `q.jobs` and calls `handle(job)`
+  for each, one at a time.
 - `Close` closes `q.jobs`, then waits for the workers (the `q.wg.Wait()` is
   already there). When `Close` returns, every job that was queued has been
   handled.
 
 ```go
 // 6 jobs queued, each takes 1s to handle
-q.Start(2, build)
-q.Close() // returns after 3s: 2 workers x 3 rounds, all 6 jobs built
+q.Start(2, build) // returns at once; 2 workers start building
+q.Close()         // returns after 3s: 2 workers x 3 rounds, all 6 jobs built
 ```
 
 **Think it through:**
-- `Start` doesn't handle jobs itself: it only starts goroutines and returns.
+- Where does the work happen: in `Start`, or in the goroutines it starts?
 - Which loop over a channel stops by itself once the channel is closed and
   empty?
 - `Close` must close before it waits. What would the workers do otherwise?

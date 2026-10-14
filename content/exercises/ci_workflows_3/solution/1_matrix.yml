@@ -1,5 +1,6 @@
-# Task 1: inventory ships for Linux and macOS, and must build with this Go
-# release and the next one. In a real repository: .github/workflows/test.yml.
+# Task 1: inventory ships for Linux and macOS, and must build with both Go
+# releases the Go team supports.
+# In a real repository: .github/workflows/test.yml.
 
 name: test
 

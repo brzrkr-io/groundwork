@@ -22,6 +22,11 @@ var alertLog = []string{
 // Renaming changes how code reads, never what it does.
 func checkPages(t *testing.T) {
 	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf(`Pages(alertLog, ...) crashed: %v. If that says "index out of range": alertLog has the line "garbage", which has only one field, so check the length before you read fields[1] or fields[2]`, r)
+		}
+	}()
 	tests := []struct {
 		limit int
 		want  []string

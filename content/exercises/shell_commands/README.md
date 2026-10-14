@@ -2,22 +2,63 @@
 
 Every server, container and CI job has a shell. You type commands into it, and
 scripts are just those commands saved in a file. This first module outside Go
-starts with the two things every script does: print text, and quote it right.
+starts with finding your way around, then the two things every script does:
+print text, and quote it right.
 
-**New here:** running a script with `bash`, `echo`, `printf`, single and
-double quotes.
+**New here:** the terminal, `pwd`, `ls`, `cd`, `cat`, running a script with
+`bash`, `echo`, `printf`, single and double quotes.
 
 ## Learn
 
+### Terminal, shell, command
+
+| Word | What it is |
+|---|---|
+| *terminal* | the window you type into. Groundwork is running in one. |
+| *shell* | the program inside it that reads your line and runs it. Here: *bash*. |
+| *command* | a program the shell runs, like `ls` or `echo` |
+
+Open a **second** terminal for this module: a new tab or window, or your
+editor's terminal panel (VS Code: **Terminal → New Terminal**). Groundwork
+keeps checking your work in the first one.
+
+The text before your cursor (often ending in `$`) is the *prompt*. Type a
+command, press **Enter**, and its output appears below. **↑** brings back
+your last command.
+
+In the examples here, everything after a `#` is a note for you, not
+something to type. A `#` line under a command shows what it prints.
+
+### Get to the exercise folder
+
+| Command | What it does |
+|---|---|
+| `pwd` | prints the folder you're in |
+| `ls` | lists the files in it |
+| `cd FOLDER` | moves into FOLDER; `cd ..` moves up one |
+| `cat FILE` | prints a file |
+
+Groundwork's `edit` line shows the file to work on, inside this exercise's
+folder. From your course folder (where you ran `groundwork init`; an editor
+terminal starts there), `cd` into that folder, which is the path without the
+file name:
+
+```bash
+cd exercises/06_shell/129_shell_commands   # use the path on your edit line
+ls
+# 1_deploy_line.sh  2_reminder.sh  3_status_table.sh  README.md ...
+```
+
+**Tab** finishes a name for you: type `cd exercises/06` and press Tab. Use
+it all the time; it saves typing and typos.
+
 ### A script is a list of commands
 
-A *shell* is the program that reads what you type and runs it. The one on
-almost every Linux server is *bash*. A *script* is a text file of commands
-that bash runs from top to bottom.
-
-This exercise has one script per task: `1_deploy_line.sh`,
-`2_reminder.sh` and `3_status_table.sh`. Open one, edit it, save, then run it
-yourself from the exercise folder:
+A *script* is a text file of commands that bash runs from top to bottom.
+This exercise has one script per task: `1_deploy_line.sh`, `2_reminder.sh`
+and `3_status_table.sh`. Edit one in your editor and save. Groundwork re-runs
+the tests straight away. To see the output yourself, run it from the
+exercise folder:
 
 ```bash
 bash 1_deploy_line.sh
@@ -52,7 +93,7 @@ bash ignores it.
 ### Commands and arguments
 
 A command line is a command name followed by *arguments*, separated by
-spaces:
+spaces. Type these at your prompt and watch what happens:
 
 ```bash
 echo deploy finished
@@ -85,7 +126,8 @@ echo "build (debug)    done"
 ```
 
 There are two kinds, and the difference is the `$` sign. A `$` asks bash to
-swap in a variable's value (the next exercise is all about that):
+swap in a variable's value (the next exercise is all about that). `$HOME`,
+for example, holds your home folder:
 
 | Quotes | Inside them | Example | Prints |
 |---|---|---|---|

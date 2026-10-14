@@ -15,8 +15,8 @@ region="${1:-eu-west-1}"
 
 ## Task 2: Fix the restart message
 
-The line is in single quotes, and single quotes keep everything as plain
-text, `$` included.
+Run `bash -x 2_restart.sh payments`: the `+ echo` line shows that `echo` got
+`$service` as plain text. Which kind of quotes does that?
 
 ### Closer
 

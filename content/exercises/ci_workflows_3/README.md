@@ -104,7 +104,8 @@ lock file. For a Node.js project it looks like this:
 `path: |` starts a *block*: each indented line below it is one line of the
 value. When the lock file changes, the key misses, `restore-keys` brings back
 the last cache for this OS, and the job only downloads what's new. At the
-end, it saves a cache under the new key.
+end, it saves a cache under the new key. After an exact hit it saves
+nothing: a cache, once saved, is never overwritten.
 
 `hashFiles` hashes files of the checked-out code. Before
 `actions/checkout`, there is no lock file and the hash is empty.
@@ -150,8 +151,9 @@ Three details that trip people up:
 - An uploaded file keeps its name but not its folders: `out/coverage.html`
   downloads as `coverage.html`, into the working folder when you leave out
   `path`.
-- Artifacts are zip files, and zip doesn't keep the "executable" permission.
-  A downloaded program needs `chmod +x` before it runs.
+- By default an artifact is a zip file, and uploading doesn't keep the
+  "executable" permission. A downloaded program needs `chmod +x` before it
+  runs.
 - The downloading job must `needs` the uploading one; otherwise it may start
   before the artifact exists.
 
@@ -225,7 +227,9 @@ a new job `smoke`.
   - it `needs` `build` and runs on `ubuntu-latest`,
   - step 1: `actions/download-artifact` (pinned, such as `@v8`) with
     `name: statusd` and no `path`,
-  - step 2 runs exactly `chmod +x statusd && ./statusd -version`.
+  - then make the file executable with `chmod +x statusd` and run
+    `./statusd -version`: one step with `&&` between the two commands, or
+    two steps.
 
 `statusd -version` prints the version and exits. If the binary can't start,
 the step fails, and the run goes red before anything ships.

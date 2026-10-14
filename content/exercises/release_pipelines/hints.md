@@ -7,8 +7,9 @@ context; look for the row that holds `v1.4.2`.
 ### Closer
 
 `push:` gets `tags: ['v*']` indented under it. The `release` job is shaped
-like `test`, plus `needs: test`, and its last step runs `go build` with
-`-ldflags "-X main.version=${{ github.ref_name }}"`.
+like `test`, plus `needs: test`. Its last step is the command from
+*Stamping the version*, with `main.version`, `-o bin/statusd`, and
+`${{ github.... }}` where the value goes.
 
 ### Answer
 

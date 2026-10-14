@@ -397,3 +397,100 @@ func TestTodoFilesFindsScriptsButNotFixturesOrDocs(t *testing.T) {
 		t.Errorf("TodoFiles = %v, want %s", got, want)
 	}
 }
+
+func TestReviewsAreSpacedAndRestartAfterALapse(t *testing.T) {
+	c := loadCourse(t, `{"modules":[{"title":"M","dir":"m","exercises":[
+		{"name":"a","title":"A"},{"name":"b","title":"B","kind":"practice"}]}]}`, starter)
+	root := t.TempDir()
+	if err := Init(root); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(root, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	a, b := c.Exercises[0], c.Exercises[1]
+	for _, e := range c.Exercises {
+		if err := s.Prepare(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mine := filepath.Join(s.Dir(b), "exercise.go")
+	if err := os.WriteFile(mine, []byte("package x\n\n// my solution\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range c.Exercises {
+		if err := s.Complete(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := s.Review(a); ok {
+		t.Error("a concept exercise passed without help got a review")
+	}
+
+	// The schedule: due after 2 days, then 7, then 30, then done.
+	day := 24 * time.Hour
+	if len(s.DueReviews()) != 0 {
+		t.Fatal("a review is due immediately")
+	}
+	now = now.Add(2 * day)
+	if due := s.DueReviews(); len(due) != 1 || due[0] != b {
+		t.Fatalf("after 2 days, due = %v, want b", due)
+	}
+	backup, err := s.StartReview(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(mine); string(got) != starter {
+		t.Errorf("starting a review left %q, want the starter code", got)
+	}
+	if saved, _ := os.ReadFile(filepath.Join(backup, "exercise.go")); string(saved) != "package x\n\n// my solution\n" {
+		t.Errorf("previous code not saved in %s: %q", backup, saved)
+	}
+	if len(s.DueReviews()) != 0 {
+		t.Error("a review in progress is still listed as due")
+	}
+	if err := s.Complete(b); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := s.Review(b); r.Step != 1 || r.Active || !r.Due.Equal(now.Add(7*day)) {
+		t.Fatalf("after passing review 1: %+v, want step 1 due in 7 days", r)
+	}
+
+	// Needing the solution during a review starts the schedule again.
+	now = now.Add(7 * day)
+	if _, err := s.StartReview(b); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Lapse(b); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Complete(b); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := s.Review(b); r.Step != 0 || !r.Due.Equal(now.Add(2*day)) {
+		t.Fatalf("after a lapsed review: %+v, want step 0 due in 2 days", r)
+	}
+
+	for _, wait := range []time.Duration{2 * day, 7 * day, 30 * day} {
+		now = now.Add(wait)
+		if _, err := s.StartReview(b); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Complete(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if r, ok := s.Review(b); ok {
+		t.Errorf("after three clean reviews b is still scheduled: %+v", r)
+	}
+	reopened, err := Open(root, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened.State.Reviews) != 0 || !reopened.Done(b) {
+		t.Error("the review state wasn't saved")
+	}
+}

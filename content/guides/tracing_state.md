@@ -313,6 +313,8 @@ func main() {
 }
 ```
 
+Two reminders before you start: `!` flips `true` and `false`, and `failed++` is short for `failed = failed + 1`.
+
 | Step | `attempt` | `checkPassed(attempt)` | `failed` after the body |
 |---|---|---|---|
 | before the loop | | | ? |
@@ -339,7 +341,7 @@ It prints:
 failed checks: 2
 ```
 
-The `!` flips `false` to `true`, so `failed++` runs only when a check fails. `failed++` is short for `failed = failed + 1`. An invariant for this loop: "at the top of each pass, `failed` counts the failed checks before `attempt`".
+So `failed++` runs only when a check fails. An invariant for this loop: "at the top of each pass, `failed` counts the failed checks before `attempt`".
 
 ## Common mistakes
 

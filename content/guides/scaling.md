@@ -206,11 +206,11 @@ A queue with no limit only hides overload: it grows until memory runs out, and e
 
 That is *backpressure*: overload becomes a visible signal at the edge instead of invisible delay inside. You'll build one in *Work queues: bounded queues and backpressure*.
 
-A rule of thumb for sizing (*Little's law*): the average number of jobs in the system equals arrival rate × time each spends there. 50 jobs per second, each taking 2 seconds, means about 100 jobs in flight, so you need about 100 workers' worth of capacity or the queue grows without end.
+A rule of thumb for sizing (*Little's law*): the average number of jobs in the system equals arrival rate × time each spends there. 50 jobs per second, each taking 2 seconds of work, means about 100 jobs being worked on at any moment, so you need at least 100 workers (plus headroom) or the queue grows without end.
 
 ### At-least-once and idempotent consumers
 
-Queues like SQS, RabbitMQ and Kafka deliver each message **at least once**. A worker takes a message, does the work, then *acknowledges* it. If the worker crashes before the ack, the queue hands the message to someone else, and it may run twice.
+Queues like SQS, RabbitMQ and Kafka are usually set up to deliver each message **at least once**. A worker takes a message, does the work, then *acknowledges* it. If the worker crashes before the ack, the queue hands the message to someone else, and it may run twice.
 
 So consumers must be *idempotent*: processing a message twice has the same effect as once. The usual way is to record the IDs of processed messages and skip repeats. Two ordering rules matter:
 

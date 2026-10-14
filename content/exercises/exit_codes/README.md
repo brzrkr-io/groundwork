@@ -5,8 +5,8 @@ worked. CI pipelines, deploy gates and Kubernetes all decide what to do next
 from that one number. Here you read it, chain commands on it, and set your
 own.
 
-**New here:** exit status and `$?`, `grep -q`, `&&` and `||`, `exit N`,
-`>&2` (print to stderr), `{ ...; }` groups.
+**New here:** exit status and `$?`, `;`, `grep -q`, `&&` and `||`,
+`exit N`, stdout and stderr (`>&2`), `{ ...; }` groups.
 
 ## Learn
 
@@ -19,18 +19,20 @@ When a command finishes, it hands bash a number from 0 to 255:
 | `0` | success |
 | anything else | failure (the number can say which kind) |
 
-`$?` holds the status of the last command:
+`$?` holds the status of the last command. A `;` lets you put two commands
+on one line; the second runs after the first, whatever happened:
 
 ```bash
-ls /etc/hosts
-echo $?            # 0: the file exists
-ls /etc/nope
-echo $?            # 2: ls failed
+ls /etc/hosts; echo $?
+# /etc/hosts
+# 0                  the file exists
+ls /etc/nope; echo $?
+# ls: cannot access '/etc/nope': No such file or directory
+# 2                  ls failed
 ```
 
 It's like Go's `error`: `nil` means it worked, and anything else means it
-didn't. The *The operating system for programmers* guide lists the usual
-numbers.
+didn't. See *The shell and the command line* guide (press `g`) for more.
 
 ### grep -q: a yes/no question
 
@@ -49,6 +51,8 @@ A `^` at the start of the pattern means "at the start of the line":
 
 A script's own exit status is the status of the **last** command it ran.
 So a script whose last line is a `grep -q` answers "yes" or "no" for you.
+(With `set -e`, a failing command earlier on ends the script too, with that
+command's status.)
 
 ### && and ||
 
@@ -56,14 +60,14 @@ So a script whose last line is a `grep -q` answers "yes" or "no" for you.
 before:
 
 ```bash
-make build && echo "build ok"      # echo runs only if make succeeded
-make build || echo "build failed"  # echo runs only if make failed
+grep -q 'ERROR' app.log && echo "errors found"   # echo runs only if grep found one
+grep -q 'ERROR' app.log || echo "no errors"      # echo runs only if grep found none
 ```
 
 Put together, `A && B || C` reads "if A, then B, else C":
 
 ```bash
-ping -c1 -q db-01 > /dev/null && echo "db-01 up" || echo "db-01 down"
+cd /srv/app && echo "in the app folder" || echo "no app folder"
 ```
 
 > **Why is it written like this?** **Bash requires** nothing special:
@@ -78,9 +82,10 @@ accident.
 
 ### Your own exit status and error messages
 
-`exit N` ends the script with status N. Error messages go to *stderr*, the
-second output stream, so they don't mix with real output. `>&2` sends one
-`echo` there:
+`exit N` ends the script with status N. Normal output goes to *stdout*;
+error messages go to *stderr*, a second output stream. Your terminal shows
+both, but other programs and the tests can tell them apart. `>&2` sends one
+`echo` to stderr:
 
 ```bash
 echo "config missing" >&2
@@ -88,10 +93,11 @@ exit 4
 ```
 
 To run **two** commands after `||`, group them in braces. Each command in
-the group ends with a `;` or a new line:
+the group ends with a `;` or a new line. Here `cd` fails when the folder is
+missing, so the group runs:
 
 ```bash
-test -d /var/backups || {
+cd /var/backups || {
 	echo "no backup directory" >&2
 	exit 4
 }
@@ -99,8 +105,8 @@ test -d /var/backups || {
 
 > **Why is it written like this?** **Bash requires** spaces inside `{ }` and
 > a `;` or newline before the `}`. **Convention:** results to stdout, errors
-> to stderr, and a non-zero exit when the script failed, so a pipeline can't
-> mistake a failure for success. **Your choice:** which non-zero number;
+> to stderr, and a non-zero exit when the script failed, so a CI pipeline
+> can't mistake a failure for success. **Your choice:** which non-zero number;
 > pick different ones for different failures.
 
 ## Your task
@@ -114,8 +120,8 @@ version: 1.4.2
 status: ok
 ```
 
-Open all three files in `testdata/` and note which have `status: ok` and
-which have a `version:` line.
+Look at all three files in `testdata/` (`cat testdata/health_down.txt`, and
+so on) and note which have `status: ok` and which have a `version:` line.
 
 ### 1. Report health with an exit status
 

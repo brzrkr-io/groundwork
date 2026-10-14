@@ -1,9 +1,9 @@
 # Consistent hashing: fix the ring
 
 A teammate wrote the hash ring that routes build-artifact keys to the cache
-servers. Since it shipped, `web-11` sits nearly idle while `web-1` is
-overloaded, some lookups get no server at all, and the ring routes keys to
-the wrong server after a node is added. Find and fix the three bugs.
+servers. Since it shipped, `web-11` gets far fewer keys than `web-1`, some
+lookups get no server at all, and the ring routes keys to the wrong server
+after a node is added. Find and fix the three bugs.
 
 **New here:** what binary search does with an unsorted slice, `slices.IsSorted`.
 
@@ -69,6 +69,34 @@ batch2 := []int{40}     // sorted
 all := append(batch1, batch2...)
 // all = [10 70 40]: not sorted
 ```
+
+### How to hunt ring bugs
+
+A broken ring rarely crashes. It just sends keys to the wrong place. So
+don't start by staring at code: turn each symptom into a fact you can
+check, then read the code that should keep that fact true.
+
+| Symptom | Check | A healthy ring |
+|---|---|---|
+| one node gets far fewer keys | count each node's points in `r.owners` | every node has `replicas` points |
+| some keys get `""` | `Get` a key whose hash is bigger than the last point | it gets the first point's node |
+| answers depend on how the ring was built | `slices.IsSorted(r.points)` after each `Add` | always `true` |
+
+A quick debug print does the first check (the tests' `pointsPerNode`
+helper does the same):
+
+```go
+r := New(40)
+r.Add("db-2", "db-23")
+counts := map[string]int{}
+for _, node := range r.owners {
+	counts[node]++
+}
+fmt.Println(counts) // buggy ring: map[db-2:40 db-23:30], so db-23 lost 10 points
+```
+
+Ten missing points means ten of `db-23`'s labels came out the same as one
+of `db-2`'s. Print a few labels and you'll see which.
 
 ## Your task
 

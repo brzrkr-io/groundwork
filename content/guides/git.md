@@ -99,6 +99,8 @@ When you commit, the new commit's parent is the current one, and the branch `HEA
 
 If `HEAD` points straight at a commit, you're in *detached HEAD* state, as during a bisect. Fine for looking around; create a branch before committing anything you want to keep.
 
+A *tag* is a pointer too, but one that never moves: `v1.4.0` names one release commit for good. Tags are how you say "this exact commit is what we shipped", so rollbacks, bisects and release notes start from them.
+
 ## Merging
 
 `git merge fix/timeout` brings the commits from `fix/timeout` into the branch you're on. There are two cases.
@@ -179,7 +181,7 @@ A *remote* is another copy of the repository, usually on GitHub or GitLab, named
 |---|---|
 | `git clone <url>` | copy a whole repository, history and all |
 | `git fetch` | download new commits from the remote; update `origin/main` and friends, but **not** your branches |
-| `git pull` | `fetch`, then merge (or rebase) `origin/main` into your `main` |
+| `git pull` | `fetch`, then merge (or rebase) the remote's copy of your current branch into it, e.g. `origin/main` into `main` |
 | `git push` | upload your commits and move the remote's branch to match |
 
 `origin/main` is a *remote-tracking branch*: your memory of where the remote's `main` was when you last fetched.
@@ -212,7 +214,7 @@ $ git reflog
 9a8b7c6 HEAD@{1}: commit: Add cert rotation
 ```
 
-Commits dropped by `reset --hard`, a bad rebase or a deleted branch still exist for weeks, and the reflog has their hashes: `git branch rescue 'HEAD@{1}'` gets one back.
+Commits dropped by `reset --hard`, a bad rebase or a deleted branch still exist for weeks, and the reflog has their hashes: `git branch rescue 'HEAD@{1}'` gets one back. To copy just that one commit onto your current branch instead, *cherry-pick* it: `git cherry-pick <hash>` makes a new commit with the same change and message.
 
 It can't save what was never committed, so **commit early**: a messy commit can be tidied later. You rescue lost work in *Undoing: rescue lost work with reflog*.
 
@@ -235,7 +237,7 @@ The check passed at the last release and fails now, 200 commits later. *Bisectin
 
 ```bash
 git bisect start main v1.4.0      # bad first, then good
-git bisect run ./smoke-test.sh    # exit 0 = good, 1 = bad; Git does the rest
+git bisect run ./smoke-test.sh    # exit 0 = good, 1-127 = bad (125 = skip); Git does the rest
 git bisect reset                  # back to where you started
 ```
 
@@ -301,6 +303,8 @@ Small commits, clear messages and revert over reset become how you operate produ
 9. What is the difference between `git fetch` and `git pull`?
 10. A check passed at the last release and fails today, 500 commits later. Roughly how many tests does `git bisect` need to find the first bad commit, and why?
 11. A teammate committed a `.env` file with a database password and pushed it. Is adding `.env` to `.gitignore` and running `git rm --cached .env` enough?
+12. You edited `config/app.yaml` and `deploy.sh`, but only the config change should go into the next commit. Which commands do you run, and how do you check what the commit will contain before making it?
+13. A merge stops with `<<<<<<<`, `=======` and `>>>>>>>` lines in a config file. What do the two parts mean, and which three steps finish the merge?
 
 ## Answers
 
@@ -315,6 +319,8 @@ Small commits, clear messages and revert over reset become how you operate produ
 9. `git fetch` downloads new commits and updates remote-tracking branches like `origin/main`, without touching your branches. `git pull` does a fetch and then merges (or rebases) the remote branch into your current branch.
 10. About 9, because each test halves the remaining suspects, and 2 to the power 9 is 512. That's binary search.
 11. No. It stops tracking the file from the next commit on, but the password is still in the old commits, and everyone who cloned or forked the repo has it. Rotate the password first, then clean up.
+12. `git add config/app.yaml`, then `git diff --staged` to read exactly what's staged, then `git commit -m "..."` without `-a`. `deploy.sh` stays changed but unstaged, so it's left out.
+13. Between `<<<<<<<` and `=======` is your branch's version (`HEAD`); between `=======` and `>>>>>>>` is the other branch's. Edit the file to the right final version with no marker lines, `git add` it to mark it resolved, then `git commit` to make the merge commit.
 
 ## Key terms
 
@@ -329,6 +335,7 @@ Small commits, clear messages and revert over reset become how you operate produ
 | working tree | the files you see and edit |
 | staging area (index) | what the next commit will contain; filled with `git add` |
 | branch | a movable name that points at one commit |
+| tag | a fixed name for one commit, such as the release `v1.4.0`; unlike a branch, it never moves |
 | HEAD | the pointer to where you are: usually a branch, sometimes a commit |
 | detached HEAD | `HEAD` pointing straight at a commit instead of a branch |
 | fast-forward | a merge that only moves a branch pointer forward, making no new commit |
@@ -338,6 +345,7 @@ Small commits, clear messages and revert over reset become how you operate produ
 | remote | another copy of the repository, such as `origin` on GitHub |
 | remote-tracking branch | your local record of a remote's branch, like `origin/main` |
 | revert | a new commit that undoes an earlier one |
+| cherry-pick | copying one commit's change onto the current branch as a new commit |
 | reset | moving the current branch to another commit (soft, mixed or hard) |
 | reflog | the local log of everywhere `HEAD` has been; the way back to "lost" commits |
 | blame | showing, per line, the commit that last changed it |

@@ -41,13 +41,13 @@ valid_port() {
 ## Task 3: Build the image references
 
 The function prints the reference, and `$(image_ref ...)` captures it. Copy
-both arguments into `local` variables first, so the loop's `name` and `tag`
-stay untouched.
+both arguments into `local` variables first, so the function's `name` and
+`tag` are its own.
 
 ### Closer
 
-`local name="$1"` and `local tag="$2"`, then
-`echo "registry.example.com/$name:$tag"`.
+Start with `local name="$1"`, the same for `tag` from `$2`, then one `echo`
+that puts both between the fixed text `registry.example.com/` and `:`.
 
 ### Answer
 

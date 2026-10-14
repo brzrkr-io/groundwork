@@ -36,13 +36,14 @@ After you pass an exercise, press `s` to compare your code with the reference so
 | Focused | 10 hours | 12 weeks |
 | Bootcamp | 20 hours | 6 weeks |
 
-Habits that make it stick:
+Habits that make it stick (the why is in [LEARNING.md](LEARNING.md)):
 
 - **Read the README first** (`i`). Each one teaches everything its tests check.
 - **Use hints in order** (`h`). The first hint is a nudge and the last is close to the answer. Try for 5–10 minutes before each one.
-- **Stuck after the last hint?** Press `s` for the solution, read it, then `groundwork reset` the exercise the next day and solve it without looking. The list marks it ◐ until you do.
+- **Stuck after the Answer hint?** Press `s` for the solution, read it, and type it in yourself. The exercise comes back as a review two days later, so you solve it on your own then. The list marks it ◐.
 - **Space the repetitions.** Do a concept's introduction, then come back to its follow-ups the next day, before you've fully forgotten it.
-- **Redo practice exercises cold.** After finishing a module, `groundwork reset <practice>` and solve it again without hints.
+- **Do your reviews.** Practice exercises come back 2, 7 and 30 days after you pass them (`v` in the watcher). Solve them from memory: the effort is what makes it stick.
+- **Flashcards daily.** `groundwork cards` turns the guides' questions into an Anki deck; five minutes a day on your phone keeps the ideas fresh.
 - **Pair a guide with practice.** Read one section of a guide, then do an exercise. Short reading, then doing, beats a long reading session.
 - **Explain it out loud.** After each module, say in two or three sentences what each concept is for. If you can't, revisit its introduction.
 

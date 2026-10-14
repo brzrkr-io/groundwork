@@ -3,13 +3,15 @@ package release
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 )
 
-// The helpers readWorkflow, triggers, needs, pinned, findStep, findRun,
-// expr, eventNames, stepNames and stringList are in workflow_test.go.
+// The helpers readWorkflow, triggers, runsOn, needs, pinned, findStep,
+// findRun, expr, eventNames, stepNames and stringList are in
+// workflow_test.go.
 
 func TestReleaseOnTags(t *testing.T) {
 	const file = "1_release.yml"
@@ -35,18 +37,30 @@ func TestReleaseOnTags(t *testing.T) {
 		t.Errorf("%s: job release needs %q, want it to need test", file, got)
 	}
 	checkSetupSteps(t, file, "release", release.Steps)
-	const build = `go build -ldflags "-X main.version=${{ github.ref_name }}" -o bin/statusd .`
-	run := findRun(release.Steps, build)
+	run := findRun(release.Steps, "go build")
 	if run < 0 {
-		if other := findRun(release.Steps, "go build"); other >= 0 {
-			t.Errorf("%s: job release runs\n\t%s\nwant\n\t%s", file, strings.TrimSpace(release.Steps[other].Run), build)
-		} else {
-			t.Errorf("%s: job release has no step that runs %s", file, build)
-		}
-	} else if run < findStep(release.Steps, "actions/setup-go") {
+		t.Fatalf("%s: job release has steps %v, want a step that runs go build", file, stepNames(release.Steps))
+	}
+	if run < findStep(release.Steps, "actions/setup-go") {
 		t.Errorf("%s: job release has steps in the order %v, want checkout, setup-go, go build", file, stepNames(release.Steps))
 	}
+	command := expr(strings.TrimSpace(release.Steps[run].Run))
+	if !stamp.MatchString(command) {
+		t.Errorf("%s: job release runs\n\t%s\nwant -ldflags \"-X main.version=${{ github.ref_name }}\" in it, so the binary knows its tag",
+			file, command)
+	}
+	if !output.MatchString(command) {
+		t.Errorf("%s: job release runs\n\t%s\nwant -o bin/statusd in it", file, command)
+	}
 }
+
+// stamp matches a go build flag that sets main.version to the tag's name,
+// such as -ldflags "-X main.version=${{ github.ref_name }}". Other linker
+// flags may come first, as in -ldflags "-s -w -X ...".
+var stamp = regexp.MustCompile(`-ldflags[= ](["'][^"']*)?-X[= ]main\.version=\$\{\{ github\.ref_name \}\}`)
+
+// output matches the go build flag that writes the binary to bin/statusd.
+var output = regexp.MustCompile(`(^|\s)-o[= ](\./)?bin/statusd(\s|$)`)
 
 func TestPushImage(t *testing.T) {
 	const file = "2_image.yml"
@@ -116,7 +130,7 @@ func checkJob(t *testing.T, file string, wf workflow, id string) job {
 		ids := slices.Sorted(maps.Keys(wf.Jobs))
 		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, ids, id)
 	}
-	if j.RunsOn != "ubuntu-latest" {
+	if runsOn(j) != "ubuntu-latest" {
 		t.Errorf("%s: job %s has runs-on %v, want ubuntu-latest", file, id, j.RunsOn)
 	}
 	return j

@@ -52,8 +52,9 @@ h.Sum32() // => 1346204939 (a uint32)
 ```
 
 The *modulo* (`%`) of that number by the shard count gives a shard from `0`
-to `n-1`: `1346204939 % 4` is `3`. Spread 1,000 keys this way over 4 shards
-and you get 249, 251, 251 and 249 keys per shard.
+to `n-1`: `1346204939 % 4` is `3`. Spread 1,000 keys (`"service-0"` to
+`"service-999"`) this way over 4 shards and you get 249, 251, 251 and 249
+keys per shard.
 
 > **Why is it written like this?** `Write` takes a `[]byte`, so Go requires
 > the conversion from `string`. `Write` also returns a count and an error,

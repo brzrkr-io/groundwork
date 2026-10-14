@@ -125,6 +125,21 @@ func needs(j job) []string {
 	return nil
 }
 
+// runsOn returns the runner label of a job. GitHub allows one label or a
+// list; a list with one label means the same.
+func runsOn(j job) string {
+	switch r := j.RunsOn.(type) {
+	case string:
+		return r
+	case []any:
+		if len(r) == 1 {
+			label, _ := r[0].(string)
+			return label
+		}
+	}
+	return ""
+}
+
 // pinned matches an action reference that names a fixed version: a version
 // tag such as "actions/checkout@v7" or "@v7.0.1", or a full 40-character
 // commit hash.
@@ -141,12 +156,17 @@ func findStep(steps []step, action string) int {
 	return -1
 }
 
-// findRun returns the index of the first step whose "run" contains command,
-// or -1.
+// findRun returns the index of the first step with a command line that has
+// every word of command, in any order, or -1. So "go test -race ./..." also
+// finds "go test -v -race ./...".
 func findRun(steps []step, command string) int {
+	want := strings.Fields(command)
 	for i, s := range steps {
-		if strings.Contains(s.Run, command) {
-			return i
+		for line := range strings.Lines(s.Run) {
+			words := strings.Fields(line)
+			if !slices.ContainsFunc(want, func(w string) bool { return !slices.Contains(words, w) }) {
+				return i
+			}
 		}
 	}
 	return -1

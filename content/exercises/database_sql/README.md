@@ -115,7 +115,12 @@ return versions, nil
 res, err := db.Exec(`UPDATE deploys SET status = ? WHERE id = ?`, "failed", 3)
 n, err := res.RowsAffected()  // how many rows changed
 id, err := res.LastInsertId() // after an INSERT: the id the database chose
+// (check each err as usual; left out here to keep the example short)
 ```
+
+`LastInsertId` works with SQLite and MySQL. Postgres drivers don't support
+it: there you add `RETURNING id` to the `INSERT` and read the id with
+`QueryRow(...).Scan(&id)`.
 
 ## Your task
 

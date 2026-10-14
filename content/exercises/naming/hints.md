@@ -1,10 +1,10 @@
 ## Task 1: Rename the helper functions
 
-Each helper appears in three places: its declaration, its call inside `Pages`, and the first word of its comment. Your editor's Rename Symbol handles the first two.
+Each helper appears in three places: its declaration, its call inside `Pages`, and the first word of its comment. Your editor's Rename Symbol handles the code; check the comment yourself.
 
 ### Closer
 
-Put the cursor on `prs`, press `F2` (or your editor's rename), type `criticalService`. Do the same for `fmtP` → `pageLine`. Then edit the comments: `// prs returns ...` becomes `// criticalService returns ...`.
+Put the cursor on `prs`, press `F2` (or your editor's rename), type `criticalService`. Do the same for `fmtP` → `pageLine`. Then check the comments: `// prs returns ...` must become `// criticalService returns ...`. Fix any your editor left alone.
 
 ### Answer
 
@@ -55,11 +55,11 @@ return pages
 
 ## Task 3: Name the parts of an alert line
 
-Rename `l` to `line`, `f` to `fields`, and `pageLine`'s `s` and `n` to `service` and `count`. Then split the long `if` in two: first the length check, then name the level and service, then check the level.
+Two jobs here. Give `l`, `f`, `s` and `n` names that say what they hold, and pull `fields[1]` and `fields[2]` out into their own variables. Mind the order: the line `"garbage"` has only one field, so reading `fields[1]` too early crashes.
 
 ### Closer
 
-After `if len(fields) < 3 { return "", false }`, it's safe to write `level, service := fields[1], fields[2]`. Then compare `level` with `"critical"` and return `service`.
+Rename `l` to `line`, `f` to `fields`, and `pageLine`'s `s` and `n` to `service` and `count`. Then split the long `if` in two: after `if len(fields) < 3 { return "", false }`, it's safe to write `level, service := fields[1], fields[2]`. Then compare `level` with `"critical"` and return `service`.
 
 ### Answer
 

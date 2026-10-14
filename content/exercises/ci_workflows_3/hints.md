@@ -76,7 +76,7 @@ artifact and a shell.
 Upload with `actions/upload-artifact@v7` and `with:` `name` and `path`.
 `smoke:` goes under `jobs:`, beside `build:`, with `needs: build`. Its first
 step is `actions/download-artifact@v8` with the same `name`; the second runs
-the exact command from the README.
+`chmod +x statusd`, then `./statusd -version`, joined with `&&`.
 
 ### Answer
 

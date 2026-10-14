@@ -24,7 +24,7 @@ func Expired(b Backup, now time.Time) bool {
 	return expired(b, now)
 }
 
-// expired points at the real implementation. Groundwork' grader swaps in
+// expired points at the real implementation. Groundwork's grader swaps in
 // broken versions to check that your tests catch them.
 var expired = realExpired
 

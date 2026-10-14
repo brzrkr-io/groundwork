@@ -2,7 +2,7 @@
 
 **In one sentence:** the *shell* is a program that reads a line you type, rewrites it (variables, quotes, wildcards) into a list of words, and starts the program those words name; bash is the shell you'll meet on almost every server and in CI.
 
-**Why it matters:** at 3 a.m. during an incident there is no IDE, just a prompt on a server. Deploy scripts, CI jobs, Dockerfiles and Kubernetes probes are all shell lines. Knowing how the shell rewrites a line before running it is the difference between `rm "$build_dir"/*` and deleting the wrong thing.
+**Why it matters:** at 3 a.m. during an incident there is no IDE, just a prompt on a server. Deploy scripts, CI jobs, Dockerfiles and Kubernetes probes are full of shell commands. Knowing how the shell rewrites a line before running it is the difference between `rm "$build_dir"/*` and deleting the wrong thing.
 
 **You'll learn:**
 - what the shell does to a line before it runs anything, and how quotes change that
@@ -105,11 +105,11 @@ Empty variables can be dangerous too. If `$build_dir` is empty, `rm -rf $build_d
 ```bash
 service=api                  # no spaces around =
 replicas=3
-echo "deploying ${service}-v2 with $replicas replicas"
+echo "deploying ${service}_v2 with $replicas replicas"
 ```
 
 - **No spaces around `=`.** `service = api` runs a command called `service` with the arguments `=` and `api`.
-- **`$name` reads a variable.** Write `${name}` when letters follow it: `"${service}-v2"` works, but `"$service_v2"` looks up a variable called `service_v2`.
+- **`$name` reads a variable.** Write `${name}` when a letter, digit or `_` follows it: `"${service}_v2"` reads `service`, but `"$service_v2"` looks up a variable called `service_v2`.
 - **Every value is a string.** `replicas=3` stores the text `3`.
 
 ### Special variables in scripts
@@ -129,8 +129,8 @@ A default for a missing argument: `env="${2:-staging}"` uses `$2` if it's set an
 `$(command)` runs a command and puts its output into the line. This is *command substitution*.
 
 ```bash
-commit="$(git rev-parse --short HEAD)"
-echo "building image api:${commit}"
+today="$(date +%F)"            # date +%F prints e.g. 2026-10-13
+echo "writing backup-${today}.tar.gz"
 ```
 
 ### export
@@ -152,7 +152,7 @@ echo $?      # 0 if ERROR was found, 1 if not, 2 if app.log is missing
 |---|---|---|
 | `a && b` | `a` succeeded | `go test ./... && go build` |
 | `a \|\| b` | `a` failed | `cd /srv/app \|\| exit 1` |
-| `a; b` | always | rarely in scripts |
+| `a; b` | always | same as writing `a` and `b` on two lines |
 
 ```bash
 go test ./... && docker build -t api . && docker push api
@@ -170,7 +170,7 @@ if grep -q "panic" app.log; then
 fi
 ```
 
-Most conditions use the `[[ ... ]]` command, bash's test syntax:
+Most conditions use `[[ ... ]]`, bash's test syntax:
 
 ```bash
 if [[ -f /etc/myapp/config.yaml ]]; then
@@ -195,7 +195,7 @@ The spaces inside the brackets are required: `[[-f` is an error.
 
 **Strings vs numbers is a trap.** `==`, `<` and `>` compare text, letter by letter. `[[ 10 > 9 ]]` is false, because the character `1` sorts before `9`. Use `-gt` for numbers: `[[ "$errors" -gt 9 ]]`.
 
-**`[ ]` vs `[[ ]]`.** `[` is the older command, also called `test`, and works in every POSIX shell. `[[` is bash-only but safer: it doesn't word-split variables. In bash scripts, use `[[ ]]`, and still quote. Practise in *if and test*.
+**`[ ]` vs `[[ ]]`.** `[` is the older command, also called `test`, and works in every POSIX shell. `[[` is bash-only but safer: it's part of bash's own syntax, so it doesn't word-split variables. In bash scripts, use `[[ ]]`, and still quote. Practise in *if and test*.
 
 ## Loops
 
@@ -246,7 +246,7 @@ version="$(current_version chart.yaml)"
 log "deploying version $version"
 ```
 
-- **Arguments** arrive as `$1`, `$2`, `"$@"`, just like a script's.
+- **Arguments** arrive as `$1`, `$2`, `"$@"`, just like a script's. `$*` (used in `log`) joins all of them into one string with spaces.
 - **`local`** keeps a variable inside the function. Without it, every variable is global and can overwrite one the caller uses.
 - **Return a result by printing it**, and capture it with `$(fn)`. `return` only sets the exit status (0–255): use it for success or failure, not for data.
 
@@ -270,7 +270,7 @@ systemctl is-active --quiet "$service"
 echo "ok"
 ```
 
-The first line is the *shebang*. When you run `./restart.sh`, the kernel reads it and runs the file with bash. `chmod +x restart.sh` makes the file executable. Or skip both and run `bash restart.sh`.
+The first line is the *shebang*. When you run `./restart.sh`, the kernel reads it and runs the file with the program it names; `/usr/bin/env bash` means "find bash on the PATH". `chmod +x restart.sh` makes the file executable. Or skip both and run `bash restart.sh`, as the exercises do.
 
 ### `set -euo pipefail`
 
@@ -280,9 +280,11 @@ By default bash keeps going after a failed command. A deploy script that fails a
 |---|---|---|
 | `-e` | exit when a command fails | the script runs on after errors |
 | `-u` | an unset variable is an error | `$sevice` (typo) quietly becomes empty |
-| `-o pipefail` | a pipeline fails if any stage fails | only the last stage counts, so `curl ... \| jq` "succeeds" when curl fails |
+| `-o pipefail` | a pipeline fails if any stage fails | only the last stage counts, so `grep ERROR missing.log \| wc -l` "succeeds" and prints `0` |
 
 `-e` is not magic: it ignores failures inside an `if` condition or on the left of `&&` and `||`. Still check what matters.
+
+It also stops on "failures" you may not expect. `grep` exits 1 when nothing matches, so on a clean log `count="$(grep -c ERROR app.log)"` ends the script, and so does `grep ERROR app.log | wc -l` under `pipefail`. When "no matches" is fine, say so: `count="$(grep -c ERROR app.log || true)"` still sets `count` to `0`.
 
 ### stdout vs stderr
 
@@ -308,7 +310,7 @@ Logs, config and command output are lines of text. Unix gives you small tools th
 
 Single quotes around patterns are deliberate: `'$9 >= 500'` must reach awk untouched, not be expanded by the shell.
 
-A *pipeline* (`a | b | c`) connects each command's stdout to the next one's stdin. You'll use these tools in *Grep and pipes*, *Columns with cut and awk*, *Editing text with sed* and *Sort and uniq: top-N reports*.
+A *pipeline* (`a | b | c`) connects each command's stdout to the next one's stdin. You'll use these tools in *Grep and pipes*, *Sort and uniq: top-N reports*, *Columns with cut and awk* and *Editing text with sed*.
 
 ## Building a pipeline step by step
 
@@ -359,9 +361,9 @@ find /var/log/myapp -name '*.log' -mtime +14 -print0 | xargs -0 rm --
 ```
 
 1. `'*.log'` is quoted so the shell doesn't glob it; find needs the pattern itself.
-2. `-mtime +14` keeps files last modified more than 14 days ago.
+2. `-mtime +14` keeps files last modified more than 14 days ago. find counts whole days and drops the fraction, so a file 14½ days old doesn't match yet: in practice `+14` means "15 days or older".
 3. `-print0` ends each name with a zero byte instead of a newline, and `xargs -0` splits on that byte. File names can contain spaces and even newlines, but never a zero byte.
-4. `xargs` runs `rm --` with the names as arguments. Run it with `echo` instead of `rm` first.
+4. `xargs` runs `rm --` with the names as arguments. Run it with `echo` instead of `rm` first. (GNU find can also delete on its own with `-delete`.)
 
 Practise in *Find and xargs: clean up old logs*.
 
@@ -386,6 +388,7 @@ A good rule: a short script that runs commands in order stays bash. A script tha
 - **Spaces around `=`.** `name = api` runs a command called `name`. Write `name=api`.
 - **Comparing numbers with `>` or `==`.** `[[ 10 > 9 ]]` compares text and is false. Use `-gt`, `-eq`.
 - **No `set -euo pipefail`.** The script reports success after half of it failed.
+- **Forgetting that `grep` "fails" when nothing matches.** Under `set -e`, a clean log stops the script. Add `|| true` where no matches is fine.
 - **Errors on stdout.** They end up in the output file. Use `>&2`.
 
 ## Check yourself
@@ -398,6 +401,8 @@ A good rule: a short script that runs commands in order stays bash. A script tha
 6. Why must `sort` come before `uniq -c` when counting repeated log messages?
 7. Why does `find ... -print0 | xargs -0 rm` handle file names with spaces, when plain `find ... | xargs rm` does not?
 8. A bash function needs to give back a version string like `1.4.2`. Why can't it use `return`, and what does it do instead?
+9. In bash, what exit status means success, and when does the second command run in `a && b`? In `a || b`?
+10. A bash script with `set -euo pipefail` runs `count="$(grep -c ERROR app.log)"`. Why does it stop when the log has no errors, and how do you allow zero matches?
 
 ## Answers
 
@@ -409,6 +414,8 @@ A good rule: a short script that runs commands in order stays bash. A script tha
 6. `uniq` only merges duplicate lines that are next to each other. `sort` puts equal lines together first, so each message is counted once in total.
 7. `-print0` separates names with a zero byte and `xargs -0` splits only on that byte. Names can contain spaces and newlines but never a zero byte; plain `xargs` splits on spaces and newlines.
 8. `return` only sets the exit status, a number from 0 to 255. The function prints the result with `echo`, and the caller captures it: `version="$(get_version)"`.
+9. 0 means success; 1–255 mean failure. In `a && b`, `b` runs only if `a` succeeded (exited 0). In `a || b`, `b` runs only if `a` failed, as in `cd /srv/app || exit 1`.
+10. `grep` exits 1 when it finds no matching lines, and `set -e` treats any non-zero status as a failure. Write `count="$(grep -c ERROR app.log || true)"`: grep still prints `0`, and `|| true` makes the line succeed.
 
 ## Key terms
 
@@ -426,7 +433,7 @@ A good rule: a short script that runs commands in order stays bash. A script tha
 | command substitution | `$(cmd)`: replaced by the command's output |
 | `"$@"` | all of a script's or function's arguments, each kept as one word |
 | exit status | a command's result number in `$?`; 0 means success |
-| `[[ ]]` | bash's test command for files, strings and numbers |
+| `[[ ]]` | bash's test syntax for files, strings and numbers; answers with exit status 0 (true) or 1 (false) |
 | shebang | the `#!` first line naming the program that runs a script |
 | `set -euo pipefail` | bash options that stop a script on errors, unset variables and failed pipeline stages |
 | pipeline | commands joined by `\|`, each one's output feeding the next |

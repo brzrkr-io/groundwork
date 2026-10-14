@@ -37,11 +37,12 @@ The *SLO target* is the SLI you promise over a window, often 30 days. In
 this exercise a target is always a **fraction** below 1: 99.9% is written
 `0.999`, 99% is `0.99`. Never `99.9`.
 
-The share you may get wrong is `1 - target`, so `0.001` for 99.9%. Floats
-can't hold most decimals exactly:
+The share you may get wrong is `1 - target`, so `0.001` for 99.9%. A
+`float64` can't hold most decimals exactly:
 
 ```go
-1 - 0.999 // => 0.0010000000000000009
+target := 0.999
+1 - target // => 0.0010000000000000009, not quite 0.001
 ```
 
 That tiny error is normal, so the tests accept any answer **within 0.001**
@@ -91,10 +92,10 @@ the budget lasts 30 days ÷ burn rate:
 | 36 | 20 hours |
 
 ```go
-// a 99.5% target allows 0.005 errors; 2% errors burns 4x too fast
+// a 99.5% target allows 0.5% errors; 2% errors burns 4x too fast
+target := 0.995
 errorRate := 0.02
-allowed := 1 - 0.995
-errorRate / allowed // => 4 (about)
+errorRate / (1 - target) // => 3.9999999999999964, about 4
 ```
 
 ### Paging on two windows

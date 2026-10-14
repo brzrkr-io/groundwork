@@ -77,6 +77,10 @@ awk -F, '{print $1 " on port " $2}' services.csv
 
 Two things side by side, like `$1 " on port "`, are joined together.
 
+Watch out for two different `$1`s in a script. In `awk '{print $1}' "$1"`,
+the first is awk's field 1, safe inside single quotes. The second, in double
+quotes, is bash's: your script's first argument, the file name.
+
 > **Why is it written like this?** **awk requires** its program as one
 > argument, hence the single quotes: they also stop bash from swapping in
 > `$1` itself. **Convention:** `print a, b` for space-separated output,
@@ -89,15 +93,16 @@ it's true. Compare text with `==` (text in double quotes) and numbers with
 `<`, `<=`, `>`, `>=`:
 
 ```bash
-awk -F, '$3 == "core" {print $1}' services.csv
-# api
+awk -F, '$1 == "billing" {print $2}' services.csv
+# 9090
 tail -n +2 services.csv | awk -F, '$2 > 9000 {print $1}'
 # billing
 ```
 
-`==` checks the **whole** field: `"core"` doesn't match `core-infra`, unlike
-`grep core`. The number example skips the header first: compared with a
-number, a word like `port` is compared as text, and the answer surprises.
+`==` checks the **whole** field: `"billing"` doesn't match `billing-v2`,
+unlike `grep billing`. The number example skips the header first: compared
+with a number, a word like `port` is compared as text, `port > 9000` comes
+out true, and the header line would sneak into the output.
 
 ### Totals: variables and END
 
@@ -135,7 +140,9 @@ first:
   protocol), the status code, the response size in bytes, the referrer and
   the user agent.
 
-Each script takes the file as `$1`.
+Each script takes the file as `$1`. Run it by hand from the exercise folder,
+for example `bash 1_names_and_ips.sh testdata/hosts_eu.csv`; the tests run it
+the same way.
 
 ### 1. List names and IPs
 

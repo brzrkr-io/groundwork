@@ -390,14 +390,15 @@ Only `main` touches the totals, so they need no lock. Key facts:
 
 | Action | Code | Behaviour |
 |---|---|---|
-| make | `make(chan string)` | unbuffered: a send waits for a receiver |
-| make buffered | `make(chan string, 10)` | sends only wait when 10 are queued |
-| send / receive | `ch <- v` / `v := <-ch` | both wait until the other side is ready |
+| make | `make(chan string)` | *unbuffered*: a send waits until a receiver takes it |
+| make buffered | `make(chan string, 10)` | *buffered*: a send waits only when 10 are already queued |
+| send | `ch <- v` | waits until there's a receiver (unbuffered) or room (buffered) |
+| receive | `v := <-ch` | waits until a value arrives |
 | close | `close(ch)` | "no more values"; `for v := range ch` ends |
 
 That waiting is the point. A channel both moves the data **and**
 synchronises the two goroutines. Only the sender should close a channel, and
-only when nothing else will be sent on it.
+only when nothing else will be sent on it: a send on a closed channel panics.
 
 ## Tool: WaitGroup
 
@@ -412,9 +413,9 @@ the program exits, killing every goroutine mid-check.
 first. The classic use is a timeout: "a result, or give up after 2 seconds."
 
 A *context* (`context.Context`) carries a cancellation signal and an
-optional deadline through your call chain. When the user hits Ctrl-C, or a
-request's 5-second budget runs out, everything working on it can see
-`ctx.Done()` close and stop.
+optional deadline through your call chain. When it's cancelled (say, the
+program is shutting down) or a request's 5-second budget runs out,
+everything working on it sees `ctx.Done()` close and can stop.
 
 ```go
 package main
@@ -499,17 +500,20 @@ exit status 2
 
 The unbuffered send waits for a receiver, but the only receiver is the next
 line of the same goroutine. Go noticed because **every** goroutine was
-stuck. That check is best-effort: in a real server other goroutines are
-still running (the HTTP listener, timers), so a deadlock doesn't crash.
-Requests just hang. The classic two-party version: A holds lock 1 and waits
-for lock 2, while B holds lock 2 and waits for lock 1.
+stuck. The classic two-party version: A holds lock 1 and waits for lock 2,
+while B holds lock 2 and waits for lock 1.
+
+That check is best-effort. In a real server other goroutines are still
+running (the HTTP listener, say), so a deadlock doesn't crash; requests just
+hang. Even this tiny program just hangs under `go run -race .` instead of
+printing the error.
 
 ### Goroutine leaks
 
 A *goroutine leak* is a goroutine blocked forever on a channel nobody will
 ever use again. It never exits, and its memory is never freed. A checker
 that leaks one goroutine per timed-out request looks fine for a day, then
-gets OOM-killed by Kubernetes.
+runs out of memory and is killed (Kubernetes shows `OOMKilled`).
 
 The fix is to give every goroutine a guaranteed way out: the channel it
 reads gets closed, or it also selects on `ctx.Done()`.
@@ -806,7 +810,7 @@ order, not starting order. If order matters, you have two simple options:
 | Ship logs to a backend | pipeline: read, parse, batch, send |
 | Kubernetes controller | a workqueue feeding a few workers |
 | Script over AWS accounts | worker pool sized under the API rate limit |
-| HTTP server | Go runs each request in its own goroutine |
+| HTTP server | `net/http` runs your handlers in goroutines, many at once |
 
 Two notes:
 
@@ -816,12 +820,13 @@ Two notes:
   *Declarative systems and control loops* guide.
 - **Cloud APIs throttle you.** AWS returns throttling errors when you call
   too fast. Twenty workers often finish sooner than five hundred goroutines
-  that spend their time being throttled and retrying. *Rate limiting* in the
-  *Production services* module goes further.
+  that spend their time being throttled and retrying.
+  *Rate limiting: token buckets* in the *Production services* module goes
+  further.
 
-Every `net/http` server already handles requests concurrently. So any map or
-counter shared between your handlers needs a mutex, even if you never typed
-`go` yourself.
+Every `net/http` server already runs handlers concurrently, each request's
+handler in a goroutine. So any map or counter shared between your handlers
+needs a mutex, even if you never typed `go` yourself.
 
 ## A checklist before you write concurrent code
 
@@ -875,8 +880,9 @@ Then run the tests with `-race`.
 1. The URL fetcher. It is I/O-bound, so 100 waits overlap. Resizing is
    CPU-bound: 4 cores do at most 4 images at once, and the rest only add
    switching overhead.
-2. 3 (both updates applied) or 4 (one update lost: both read 5, both write
-   4). That's the read-modify-write interleaving from the lost-update table.
+2. 3 (both updates applied) or 4 (one update lost). `stock--` is really
+   read, subtract 1, write back. If both goroutines read 5 before either
+   writes, both write 4 and one update vanishes.
 3. A data race is unsynchronised access to the same memory with at least one
    write; the race detector can find it. A race condition is any bug where
    the result depends on timing. Example: two deploy jobs both check "is
@@ -909,6 +915,8 @@ Then run the tests with `-race`.
 | mutex | a lock only one goroutine can hold at a time |
 | critical section | the code between `Lock` and `Unlock` |
 | channel | a typed pipe that passes values between goroutines |
+| unbuffered channel | a channel with no queue: each send waits until a receiver takes the value |
+| buffered channel | a channel with a queue of N: sends wait only when N values are already waiting |
 | WaitGroup | a counter you can wait on until all goroutines finish |
 | context | carries cancellation and deadlines through a call chain |
 | deadlock | goroutines waiting on each other forever |

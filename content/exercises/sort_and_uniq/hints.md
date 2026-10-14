@@ -54,8 +54,9 @@ the end to keep N lines. N comes from `$2`, with a default.
 
 ### Closer
 
-`limit=${2:-3}` stores `$2`, or 3. The IP is the first column:
-`cut -d' ' -f1 "$1"`. Then `sort | uniq -c | sort -rn`, then `head -n`.
+`limit=${2:-3}` stores `$2`, or 3. The IP is the first space-separated
+column, so it's `cut` with field 1. After that comes task 3's
+`sort | uniq -c | sort -rn`, and `head -n` with `"$limit"`.
 
 ### Answer
 

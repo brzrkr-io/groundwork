@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// The helpers readWorkflow, triggers, needs, findStep, findRun, expr,
-// eventNames and stepNames are in workflow_test.go.
+// The helpers readWorkflow, triggers, runsOn, needs, findStep, findRun,
+// expr, eventNames and stepNames are in workflow_test.go.
 
 func TestSecretToken(t *testing.T) {
 	const file = "1_secrets.yml"
@@ -88,13 +88,32 @@ func TestNoPullRequestDeploys(t *testing.T) {
 	if got := needs(deploy); !slices.Contains(got, "test") {
 		t.Errorf("%s: job deploy needs %q, want it to need test", file, got)
 	}
-	const want = "github.event_name == 'push' && github.ref == 'refs/heads/main'"
-	switch got := condition(deploy.If); got {
-	case want:
-	case "":
-		t.Errorf("%s: job deploy has no if:, so pull requests deploy too; want if: %s", file, want)
-	default:
-		t.Errorf("%s: job deploy has\n\tif: %s\nwant\n\tif: %s", file, got, want)
+	if strings.TrimSpace(deploy.If) == "" {
+		t.Fatalf("%s: job deploy has no if:, so pull requests deploy too; want an if: that is true only for a push to main", file)
+	}
+
+	// GitHub fills these contexts in for each event; see the README's table.
+	events := []struct {
+		what, eventName, ref, refName string
+		deploy                        bool
+	}{
+		{"a push to main", "push", "refs/heads/main", "main", true},
+		{"a push to release/2.1", "push", "refs/heads/release/2.1", "release/2.1", false},
+		{"pull request #42", "pull_request", "refs/pull/42/merge", "42/merge", false},
+		{"a pull_request_target run for a pull request into main", "pull_request_target", "refs/heads/main", "main", false},
+	}
+	for _, e := range events {
+		ctx := map[string]string{"github.event_name": e.eventName, "github.ref": e.ref, "github.ref_name": e.refName}
+		got, ok := evalIf(deploy.If, ctx)
+		if !ok {
+			t.Fatalf("%s: job deploy has if: %s, which the test can't read; use github.event_name, github.ref or github.ref_name, text in single quotes, ==, !=, && and ||",
+				file, deploy.If)
+		}
+		if got != e.deploy {
+			outcome := map[bool]string{true: "runs", false: "is skipped"}
+			t.Errorf("%s: with if: %s, deploy %s for %s (github.event_name %q, github.ref %q); want: deploy %s",
+				file, deploy.If, outcome[got], e.what, e.eventName, e.ref, outcome[e.deploy])
+		}
 	}
 }
 
@@ -144,7 +163,7 @@ func checkJob(t *testing.T, file string, wf workflow, id string) job {
 		ids := slices.Sorted(maps.Keys(wf.Jobs))
 		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, ids, id)
 	}
-	if j.RunsOn != "ubuntu-latest" {
+	if runsOn(j) != "ubuntu-latest" {
 		t.Errorf("%s: job %s has runs-on %v, want ubuntu-latest", file, id, j.RunsOn)
 	}
 	return j
@@ -200,14 +219,120 @@ func tokenSettings(wf workflow) map[string]string {
 	return found
 }
 
-// condition writes an if: expression the way the README does: without a
-// ${{ }} around it, and with single spaces between the words.
+// condition returns an if: expression without the ${{ }} around it, and
+// with single spaces between the words.
 func condition(s string) string {
 	s = strings.TrimSpace(s)
 	if inner, ok := strings.CutPrefix(s, "${{"); ok {
 		s = strings.TrimSuffix(inner, "}}")
 	}
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// ifToken matches one piece of an if: expression.
+var ifToken = regexp.MustCompile(`^(\|\||&&|==|!=|!|\(|\)|'[^']*'|[A-Za-z_][\w.]*)`)
+
+// evalIf works out an if: condition the way GitHub does, with the context
+// values in ctx (such as "github.ref": "refs/heads/main"). It knows only
+// what this task needs: context names, text in single quotes, ==, !=, &&,
+// ||, ! and parentheses. Like GitHub, == ignores upper and lower case. ok
+// is false if the condition has anything else.
+func evalIf(cond string, ctx map[string]string) (result, ok bool) {
+	var tokens []string
+	for rest := condition(cond); rest != ""; rest = strings.TrimSpace(rest) {
+		token := ifToken.FindString(rest)
+		if token == "" {
+			return false, false
+		}
+		tokens = append(tokens, token)
+		rest = rest[len(token):]
+	}
+	p := &ifParser{tokens: tokens, ctx: ctx, ok: true}
+	result = p.or()
+	return result, p.ok && len(p.tokens) == 0
+}
+
+// ifParser reads the tokens of an if: expression from left to right. Each
+// method reads one kind of piece; && binds tighter than ||, as in Go.
+type ifParser struct {
+	tokens []string
+	ctx    map[string]string
+	ok     bool
+}
+
+func (p *ifParser) peek() string {
+	if len(p.tokens) == 0 {
+		return ""
+	}
+	return p.tokens[0]
+}
+
+func (p *ifParser) next() string {
+	token := p.peek()
+	if token != "" {
+		p.tokens = p.tokens[1:]
+	}
+	return token
+}
+
+// or reads a || b || ...
+func (p *ifParser) or() bool {
+	v := p.and()
+	for p.peek() == "||" {
+		p.next()
+		w := p.and()
+		v = v || w
+	}
+	return v
+}
+
+// and reads a && b && ...
+func (p *ifParser) and() bool {
+	v := p.single()
+	for p.peek() == "&&" {
+		p.next()
+		w := p.single()
+		v = v && w
+	}
+	return v
+}
+
+// single reads !x, (x), or a comparison such as github.ref == 'refs/heads/main'.
+func (p *ifParser) single() bool {
+	switch p.peek() {
+	case "!":
+		p.next()
+		return !p.single()
+	case "(":
+		p.next()
+		v := p.or()
+		if p.next() != ")" {
+			p.ok = false
+		}
+		return v
+	}
+	left, op, right := p.value(), p.next(), p.value()
+	switch op {
+	case "==":
+		return strings.EqualFold(left, right)
+	case "!=":
+		return !strings.EqualFold(left, right)
+	}
+	p.ok = false
+	return false
+}
+
+// value reads 'text' or a context name, and returns its text.
+func (p *ifParser) value() string {
+	token := p.next()
+	if strings.HasPrefix(token, "'") {
+		return strings.Trim(token, "'")
+	}
+	v, ok := p.ctx[token]
+	if !ok {
+		p.ok = false
+	}
+	return v
 }
 
 // stepValues returns the text a step passes on: its command, its inputs and

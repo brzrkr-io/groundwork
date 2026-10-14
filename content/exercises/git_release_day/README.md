@@ -4,7 +4,7 @@ It's release day for the `web` service. `main` has a change that must not
 ship, a reviewed feature branch is waiting, and the release needs a version,
 a tag and release notes. Everything in this module, in one sitting.
 
-**New here:** nothing; practice.
+**New here:** `git log --no-merges`; the rest is practice.
 
 ## Learn
 
@@ -44,6 +44,8 @@ with a merge commit and the default message, then delete
 $ git log --oneline -1
 7c8d9e0 Merge branch 'feature/rate-limit'
 ```
+
+Your hash will differ.
 
 **Think it through:**
 - Both branches have new commits. What kind of merge does that make?

@@ -49,14 +49,16 @@ permissions:
 
 ## Task 3: Don't deploy pull requests
 
-The `deploy` job runs whenever `test` passes, whatever the event. Give it
-a condition that is true only for a push to `main`; the README spells it
-out.
+The `deploy` job runs whenever `test` passes, whatever the event. Which two
+facts are true only for a push to `main`? Look at the first row of the
+task's table.
 
 ### Closer
 
 `if:` goes on the job, beside `needs` and `runs-on`. It joins two
-comparisons with `&&`: one on `github.event_name`, one on `github.ref`.
+comparisons with `&&`: `github.event_name == '...'` and
+`github.ref == '...'`. Check for `push` itself, not "not a pull request":
+`pull_request_target` isn't `pull_request` either.
 
 ### Answer
 

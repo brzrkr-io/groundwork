@@ -1,10 +1,12 @@
 ## Task 1: Rotate through the backends
 
-Lock first and defer the unlock. Then remember the backend at `rr.next`,
-move `rr.next` on (wrapping with `%`), and return the remembered address.
+What must happen before you touch `rr.next`, so no other goroutine changes
+it under you? And why grab the backend at `rr.next` *before* moving the
+turn on?
 
 ### Closer
 
+Start with `rr.mu.Lock()` and `defer rr.mu.Unlock()`, as in `Healthy`.
 `b := rr.backends[rr.next]` grabs the backend before you move the turn on.
 Wrap with `(rr.next + 1) % len(rr.backends)`.
 
@@ -117,3 +119,6 @@ for i, ok := range results {
 }
 return healthy
 ```
+
+The backend list never changes after `New`, so `results[i]` still belongs
+to `rr.backends[i]` when you lock again.

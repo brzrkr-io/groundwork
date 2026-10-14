@@ -9,9 +9,9 @@ set -euo pipefail
 
 total=0
 
-# read splits each line at spaces: the first word into service, the rest
-# into count.
-while read -r service count; do
+# read splits each line at spaces: the service name into _ (not needed),
+# the rest into count.
+while read -r _ count; do
 	total=$((total + count))
 done < "$1"
 

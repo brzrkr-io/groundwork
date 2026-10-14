@@ -11,8 +11,8 @@ someone who trusted a name. Fix the name, and the bug becomes obvious.
 ### Recap
 
 - A name says what a value is, or what a function does, in the team's words.
-- Rename with your editor's **Rename Symbol**, then fix the comment by hand,
-  as in *Naming things*.
+- Rename with your editor's **Rename Symbol**, then check the comments for
+  the old name, as in *Naming things*.
 
 ### Put the unit in the name
 

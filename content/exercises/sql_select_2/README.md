@@ -29,15 +29,18 @@ before you trust a filter.
 SQL evaluates `AND` before `OR`, the way maths does `*` before `+`. So
 
 ```sql
-WHERE service = 'api' AND status = 'failed' OR status = 'rolled_back'
+WHERE duration_s > 300 AND service = 'checkout' OR service = 'billing'
 ```
 
-means `(api AND failed) OR rolled_back`: every rolled-back deploy of **any**
-service sneaks in. Parentheses say what you mean:
+means `(slow AND checkout) OR billing`: every billing deploy sneaks in, fast
+or slow. Parentheses say what you mean:
 
 ```sql
-WHERE service = 'api' AND (status = 'failed' OR status = 'rolled_back')
+WHERE duration_s > 300 AND (service = 'checkout' OR service = 'billing')
 ```
+
+To find a bug like this, write the condition out with brackets the way SQL
+reads it, then check one of the extra rows against it.
 
 > **Why is it written like this?** The precedence is a rule of SQL: you can't
 > change it. Parentheses are your choice, and many teams add them whenever

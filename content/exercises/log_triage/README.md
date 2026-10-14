@@ -12,6 +12,9 @@ pipelines.
 
 ### Recap
 
+- `log="${1:-}"` reads an argument that may be missing without tripping
+  `set -u`, and `wc -l < "$log"` prints just the line count
+  (*Shell variables*).
 - Check inputs first: `[[ -z "$x" ]]`, `[[ ! -f "$path" ]]`, a message to
   stderr with `>&2`, and `exit` with a non-zero status (*if and test*).
 - `for level in A B C; do ... done` walks a fixed list (*Shell loops*).
@@ -22,9 +25,12 @@ pipelines.
 - `sort | uniq -c | sort -rn | head -n 3` builds a top-N list
   (*Sort and uniq: top-N reports*).
 - With `set -o pipefail`, a pipeline fails if **any** command in it fails.
-- A function prints, and `exit` inside a script stops just that script.
-  Running `bash other.sh` from your script starts a separate script; if it
-  fails, `set -e` stops yours too.
+- `name() { ...; }` defines a function; call it like a command, and its
+  arguments are `$1`, `$2` (*Shell functions*). `echo` on its own prints an
+  empty line.
+- `bash other.sh "$1"` runs another script as a separate program. Its
+  `exit 1` stops only that script, but then `set -e` sees the failed
+  command and stops yours too.
 
 ### The log format
 
@@ -92,7 +98,10 @@ bash 2_levels.sh testdata/quiet.log
 # INFO: 5
 ```
 
-A level with no lines prints `0`, and the script still exits 0.
+A level with no lines prints `0`, and the script still exits 0. Count by the
+level column only: in `testdata/rollout.log`, which the tests also use, one
+`WARN` message mentions an `ERRORS_HIGH` alert. That line is a `WARN` line,
+so the counts there are `ERROR: 4`, `WARN: 1`, `INFO: 3`.
 
 **Think it through:**
 - A loop over three fixed words, with one count per word.

@@ -1,7 +1,8 @@
 ## Task 1: Cache only successful reads
 
-The store's answer only belongs in the cache once you know it's real. Check
-the error first, and only cache after that check has passed.
+Read the three lines after `s.store.Get` in order, pretending the store just
+returned an error. What has already happened to the cache by the time the
+code looks at `err`?
 
 ### Closer
 

@@ -50,12 +50,13 @@ FROM deploys;
 
 ### ROUND
 
-`ROUND(x, 1)` rounds to one decimal place: `ROUND(134.1666, 1)` is `134.2`.
-Functions nest: `ROUND(AVG(duration_s), 1)`.
+`ROUND(x, 1)` rounds to one decimal place: `ROUND(87.6666, 1)` is `87.7`.
+Functions nest, the inner one runs first: on a table of host metrics,
+`ROUND(MAX(cpu_percent), 1)` rounds the highest value.
 
 ### GROUP BY: one result row per group
 
-`GROUP BY` sorts the rows into groups that share a value, then runs the
+`GROUP BY` puts the rows into groups that share a value, then runs the
 aggregates once per group:
 
 ```text
@@ -80,6 +81,10 @@ the group's rows.
 
 The parts go in this order: `SELECT`, `FROM`, `WHERE`, `GROUP BY`,
 `ORDER BY`, `LIMIT`. `ORDER BY` may use a name made with `AS`.
+
+`GROUP BY` doesn't promise any order. SQLite often happens to return the
+groups sorted; other databases don't. When a task asks for an order, write
+the `ORDER BY`.
 
 ### Grouping by a computed value
 

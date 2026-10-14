@@ -49,7 +49,7 @@ dashboard ── GET /status/api ──> handleStatus ── Lookup ── cache
 | File | What's in it |
 |---|---|
 | `DESIGN.md` | Your design doc (task 1). |
-| `exercise.go` | `Service`: `Submit`, `Apply`, `Lookup`, the worker `Run` and the HTTP handlers (tasks 2–5). |
+| `exercise.go` | `Service`: `Submit`, `Apply`, `Lookup` and the HTTP handlers (tasks 2–5), plus the worker `Run`, already written. |
 | `cache.go` | A finished LRU `Cache` with `Get`, `Put`, `Remove` and `Len`. Read it; don't change it. |
 
 `Service` has one mutex, `s.mu`, that guards `statuses`, `processed`,
@@ -140,7 +140,7 @@ Apply evt-1 again (redelivered)     statuses[api] = 1.5.0 succeeded   (skipped)
 - Without the check, what would the redelivered `evt-1` do to `api`'s
   status?
 - Why remove the cached entry instead of putting the new status in the
-  cache?
+  cache? Think of a service that deploys often but no dashboard shows.
 
 ### 4. Read through the cache
 

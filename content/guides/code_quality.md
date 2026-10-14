@@ -73,7 +73,7 @@ A sneakier lie is a hidden side effect. `ownerOf(owners, service)` sounds like a
 | Don't repeat the package name | `rollout.Plan`, not `rollout.RolloutPlan` |
 | `err` for errors, `ok` for "did it work?" | `value, ok := m[key]` |
 
-Rename with your editor's **Rename Symbol**, not find-and-replace: it changes the declaration and every use, and nothing else. Then fix the comments by hand, because comments are just text. *Naming things* and *Naming things: fix the misleading names* practise all of this.
+Rename with your editor's **Rename Symbol**, not find-and-replace: it changes the declaration and every use, and nothing else. Recent editors also fix the first word of the function's own comment, but other comments are just text, so search for the old name afterwards. *Naming things* and *Naming things: fix the misleading names* practise all of this.
 
 ## Small functions with one job
 
@@ -216,7 +216,7 @@ Small steps feel slow and are fast. A big rewrite that breaks leaves you searchi
 
 | Refactoring | When | What you do |
 |---|---|---|
-| *Rename* | a name is unclear or lies | Rename Symbol, then fix comments |
+| *Rename* | a name is unclear or lies | Rename Symbol, then check comments for the old name |
 | *Extract function* | a block has a job and a comment naming it | move it into a function named after the job |
 | *Introduce parameter object* | a function takes many arguments, or several bools | group them into a struct with named fields |
 | *Replace conditional with table* | a long `switch` maps keys to values | put the data in a map and look it up |
@@ -273,7 +273,7 @@ Both rules have the same root: every line of code is a liability someone has to 
 1. Why is "how fast can someone else understand this code?" a better goal than "how fast can I write it?"
 2. A variable in a 30-line function is named `t`. Why is that worse than an `i` in a 3-line loop, and what would you rename it to if it holds the current time?
 3. A function is called `getConfig`, and besides reading the config it creates a default config file when none exists. What's wrong with the name, and what are the two honest fixes?
-4. Flatten `if usedPercent < 80 { return "ok" }` into a guard that returns `"warning"` for the other case. What is the inverted condition, and what mistake is easy to make?
+4. A disk check reads `if usedPercent < 80 { return "ok" }`, and you flip it into a guard that returns `"warning"` first. What is the guard's condition, and what mistake is easy to make?
 5. Two functions both check that a port is between 1 and 65535, with the same message format. Another two functions both happen to compare a number with 30: one for days until a certificate expires, one for seconds of request timeout. Which pair should share code, and why?
 6. What makes a change a refactoring, and why should a refactoring and a bug fix go in separate commits?
 7. A function call reads `Deploy("api", "v2", 3, true, false, true)`. Which smell is this, and which refactoring fixes it?

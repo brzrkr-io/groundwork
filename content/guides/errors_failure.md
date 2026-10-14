@@ -21,7 +21,7 @@ Not all failures are the same, and treating them the same is where most error-ha
 |---|---|---|
 | *Bug* | index out of range, a forgotten `switch` case | fix the code |
 | *Expected failure* | config typo, unknown flag, port already in use | tell the user how to fix it |
-| *Environment failure* | network timeout, disk full, API returns 503 | report it; maybe retry or skip |
+| *Environment failure* | network timeout, disk full, an API answers 503 ("service unavailable") | report it; maybe retry or skip |
 
 **Bugs** are the programmer's mistake. No amount of handling at runtime fixes them; the code must change.
 
@@ -137,7 +137,7 @@ Your backup tool reads a config with a typo: `retension: 7d`. If it only notices
 
 *Failing fast* means stopping as soon as you know something is wrong, before you've done any damage. A program that refuses to start is far easier to fix than one that starts and does the wrong thing.
 
-Kubernetes rewards this. A Pod that exits at startup shows up as `CrashLoopBackOff` during the rollout, and the rollout stops making progress while most of the old Pods keep serving. A Pod that starts with a bad config and quietly misbehaves sails through.
+Kubernetes rewards this. (A Pod is one running copy of your service; a rollout replaces old Pods with new ones a few at a time.) A Pod that exits at startup shows up as `CrashLoopBackOff`, the rollout stops making progress, and most of the old Pods keep serving. A Pod that starts with a bad config and quietly misbehaves sails through.
 
 ### Keep going: the other 999 hosts
 
@@ -215,7 +215,7 @@ An *invariant* is something that must *always* be true about your data: "ready r
 
 ### Panics are for bugs
 
-A *panic* stops the normal flow, runs any deferred calls, and crashes the program with a stack trace. Use it for "this cannot happen unless the code is wrong": an enum value your `switch` doesn't know, or a regular expression written in your source that fails to compile at startup.
+A *panic* stops the normal flow, runs any deferred calls, and crashes the program with a stack trace. Use it for "this cannot happen unless the code is wrong": an enum value your `switch` doesn't know, or a search pattern hard-coded in your source that turns out to be invalid when the program starts.
 
 Never panic for network failures, missing files or bad user input. Those are expected; return an error.
 
@@ -299,6 +299,8 @@ result: step "drop table users": refused, needs approval
 
 The early `return` still ran the deferred call. Put the cleanup right next to the setup, and you can't forget it on some rarely used error path. If you defer several calls, they run in reverse order: last deferred, first run. Practise in *defer* and *defer: safe database migrations*.
 
+**One exception:** `os.Exit` (and `log.Fatal`, which calls it) ends the program on the spot, and deferred calls do *not* run. Return the error to `main` instead, and exit only there.
+
 ## Partial failure
 
 The hardest failures leave the world half-changed. Your deploy updated 3 of 5 regions, then the network dropped. You created the DNS record but not the load balancer.
@@ -359,7 +361,7 @@ When a command-line tool fails, it should print the message to standard error an
 
 ## Check yourself
 
-1. Classify each as a bug, an expected failure or an environment failure: (a) the S3 API returns 503, (b) a user passes `--replicas=-3`, (c) your code reads `hosts[len(hosts)]`.
+1. Classify each as a bug, an expected failure or an environment failure: (a) the AWS S3 storage API answers 503 "service unavailable", (b) a user passes `--replicas=-3`, (c) your code reads `hosts[len(hosts)]`.
 2. A function returns `fmt.Errorf("fetch secret %s: %v", name, err)`. Later, the caller's `errors.Is(err, ErrNotFound)` is always false. Why?
 3. Your tool rotates certificates on 200 load balancers. Should it stop at the first failure? What should it print at the end?
 4. Your service reads its config at startup and finds `port: "eighty"`. What should it do, and why not wait until the port is needed?
@@ -390,8 +392,8 @@ When a command-line tool fails, it should print the message to standard error an
 | precondition | what must be true before a function can do its job |
 | invariant | what must always be true about your data; broken means a bug |
 | panic | an immediate stop with a stack trace; for bugs, not expected failures |
-| recover | catches a panic inside a deferred function |
-| defer | schedules a call to run when the function returns, by any path |
+| recover | a built-in that, called inside a deferred function, stops a panic so the program carries on |
+| defer | schedules a call to run when the function returns, by any path, even a panic (but not `os.Exit`) |
 | partial failure | some steps succeeded and some didn't, leaving a half-changed world |
 | idempotent | safe to repeat: doing it twice has the same effect as once |
 

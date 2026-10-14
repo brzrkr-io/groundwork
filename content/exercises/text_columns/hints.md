@@ -38,8 +38,9 @@ comparison.
 
 ### Closer
 
-The path is `$7` and the status `$9`. The pattern is `$9 >= 500`, and
-`print a, b` puts one space between the two.
+Counting the IP as field 1, the path is `$7` and the status `$9`. The shape is
+`awk 'CONDITION {print ...}' "$1"`: "500 or more" is `>= 500`, and
+`print a, b` puts one space between a and b. Mind the order: status first.
 
 ### Answer
 

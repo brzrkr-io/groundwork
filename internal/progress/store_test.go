@@ -34,7 +34,7 @@ func TestLoadUpgradesTheLastFormatKeepingProgress(t *testing.T) {
 	if _, done := s.Done["hello_go"]; !done || s.Current != "maps" || s.Version != version {
 		t.Fatalf("upgraded state = %+v, want hello_go done, current maps, version %d", s, version)
 	}
-	if s.Folders == nil || s.Revealed == nil || s.Starters == nil || s.Read == nil {
+	if s.Folders == nil || s.Revealed == nil || s.Starters == nil || s.Read == nil || s.Reviews == nil {
 		t.Fatal("upgraded state has nil maps; writes to them would panic")
 	}
 }

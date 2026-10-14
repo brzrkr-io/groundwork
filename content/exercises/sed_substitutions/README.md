@@ -151,12 +151,28 @@ sed -i 's/replicas: 2/replicas: 4/' deploy.yaml
 ```
 
 There is no undo. Run the command **without** `-i` first, check the output,
-then add `-i`.
+then add `-i`. Never point `-i` at the files in `testdata/`: the tasks read
+them. (The tests run your scripts on a copy, and tell you if one changed.)
 
 > **Why is it written like this?** This is GNU sed, the one on Linux servers
 > and in the tests. On macOS, `sed -i` needs an empty argument after it:
 > `sed -i '' 's/.../.../' file`. If you run the scripts on a Mac, that's the
 > one difference.
+
+### When sed complains
+
+sed's error names the place: `-e expression #1, char 14` means "your
+first script, at character 14". Count along the script to find the spot.
+
+| sed says | Usually means |
+|---|---|
+| `unknown option to 's'` | the text has the delimiter in it, like the `/` in a path: pick another delimiter |
+| `unterminated 's' command` | a delimiter is missing: `s/a/b` needs a third `/` |
+| `Unmatched ( or \(` | with `-E`, a `(` without its `)` |
+| `can't read FILE` | the file name is wrong, or you're not in the exercise folder |
+
+If sed prints the file unchanged, the pattern never matched. Try a shorter
+piece of it, then grow it back.
 
 ## Your task
 
@@ -290,9 +306,9 @@ grep '^LOG_LEVEL' copy.env
 ```
 
 Work on a copy like `copy.env`, so `testdata/` stays as it is. The tests do
-the same: they copy `testdata/app.env` and `testdata/worker.env` into a
-temporary folder, set the levels `debug` and `warn`, and compare the whole
-file afterwards.
+the same: they copy `testdata/app.env` and `testdata/worker.env` to
+`copy.env` in a temporary folder, set the levels `debug` and `warn`, and
+compare the whole file afterwards.
 
 **Think it through:**
 - Which flag writes the result back into the file?

@@ -20,7 +20,7 @@ const (
 	// version is bumped whenever the course folder's layout or this file
 	// changes in a way an older groundwork would get wrong. Older binaries
 	// then refuse the folder instead of rebuilding it their way.
-	version = 5
+	version = 6
 )
 
 // ErrNewer means the course folder was set up by a newer groundwork.
@@ -42,6 +42,17 @@ type State struct {
 	Starters map[string]string `json:"starters,omitempty"`
 	// Read records the guides the learner marked as read, keyed by guide name.
 	Read map[string]time.Time `json:"read,omitempty"`
+	// Reviews schedules exercises to be solved again from scratch, keyed by
+	// exercise name.
+	Reviews map[string]Review `json:"reviews,omitempty"`
+}
+
+// Review is the spaced-repetition schedule of one exercise.
+type Review struct {
+	Due    time.Time `json:"due"`
+	Step   int       `json:"step"`             // how many reviews have passed
+	Active bool      `json:"active,omitempty"` // reset and being solved again now
+	Lapsed bool      `json:"lapsed,omitempty"` // the solution or an Answer hint was used during it
 }
 
 // New returns empty progress.
@@ -67,6 +78,9 @@ func (s *State) init() {
 	if s.Read == nil {
 		s.Read = map[string]time.Time{}
 	}
+	if s.Reviews == nil {
+		s.Reviews = map[string]Review{}
+	}
 }
 
 // Path is the progress file of the course at root.
@@ -91,7 +105,7 @@ func Load(root string) (*State, error) {
 	case s.Version < 3:
 		return nil, fmt.Errorf("%s has an old format (%d) that this groundwork can't read; move it aside to start fresh", filepath.Join(Dir, file), s.Version)
 	}
-	s.Version = version // formats 3 and 4 only lack the newer, optional fields
+	s.Version = version // formats 3 to 5 only lack the newer, optional fields
 	s.init()
 	return s, nil
 }

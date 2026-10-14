@@ -2,6 +2,7 @@ package findandxargs
 
 import (
 	"bytes"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -133,7 +134,7 @@ func expectNumber(t *testing.T, dir, want, script string, args ...string) {
 	got, stderr, code := run(t, dir, script, args...)
 	command := commandLine(script, args...)
 	if code != 0 {
-		t.Errorf("%s exited with status %d, want 0. bash said:\n%s", command, code, stderr)
+		exitFailure(t, command, code, got, stderr)
 		return
 	}
 	if strings.TrimSpace(got) != want {
@@ -146,10 +147,10 @@ func expectNumber(t *testing.T, dir, want, script string, args ...string) {
 func expectFilesLeft(t *testing.T, name string, files []file, want ...string) {
 	t.Helper()
 	dir := build(t, name, files)
-	_, stderr, code := run(t, dir, "4_delete_old_logs.sh", name)
+	stdout, stderr, code := run(t, dir, "4_delete_old_logs.sh", name)
 	command := commandLine("4_delete_old_logs.sh", name)
 	if code != 0 {
-		t.Errorf("%s exited with status %d, want 0. bash said:\n%s", command, code, stderr)
+		exitFailure(t, command, code, stdout, stderr)
 		return
 	}
 	var left []string
@@ -178,7 +179,7 @@ func expect(t *testing.T, dir, want, script string, args ...string) {
 	got, stderr, code := run(t, dir, script, args...)
 	command := commandLine(script, args...)
 	if code != 0 {
-		t.Errorf("%s exited with status %d, want 0. bash said:\n%s", command, code, stderr)
+		exitFailure(t, command, code, got, stderr)
 		return
 	}
 	switch {
@@ -194,6 +195,23 @@ func expect(t *testing.T, dir, want, script string, args ...string) {
 	if stderr != "" {
 		t.Errorf("%s also printed to stderr:\n%s", command, stderr)
 	}
+}
+
+// exitFailure explains a script that stopped with a non-zero status: what it
+// printed before it stopped, and what bash said on stderr.
+func exitFailure(t *testing.T, command string, code int, stdout, stderr string) {
+	t.Helper()
+	msg := fmt.Sprintf("%s exited with status %d, want 0.", command, code)
+	if stdout != "" {
+		msg += "\nIt printed:\n" + strings.TrimRight(stdout, "\n")
+	}
+	if stderr != "" {
+		msg += "\nbash said:\n" + stderr
+	} else {
+		msg += "\nbash said nothing: a command failed without a message " +
+			"(grep does that when nothing matches), and set -e stopped the script there."
+	}
+	t.Error(msg)
 }
 
 // run runs "bash script args..." from dir and returns what it printed to

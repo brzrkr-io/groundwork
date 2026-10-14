@@ -50,7 +50,7 @@ bisecting; that's normal). You test it and answer `git bisect good` or
 
 `git bisect run <command>` does the answering for you. It runs `<command>`
 on each commit: exit code `0` means good, `1` to `127` (except `125`) means
-bad.
+bad, and `125` means "can't test this one, skip it".
 
 ```bash
 git bisect run bash smoke-test.sh
@@ -119,6 +119,8 @@ Afterwards you're back on `main`, and no bisect is in progress.
 $ git log --oneline -1
 2b3c4d5 Revert "Tidy up config formatting"
 ```
+
+Your new commit's hash will differ.
 
 Afterwards `bash check.sh` exits `0` again.
 

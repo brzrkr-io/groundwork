@@ -109,7 +109,14 @@ on:
 
 jobs:
   test:
-    # the same job as in ci.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test -race ./...
 
   image:
     needs: test

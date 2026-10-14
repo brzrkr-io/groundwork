@@ -3,13 +3,15 @@ package matrix
 import (
 	"fmt"
 	"maps"
+	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 )
 
-// The helpers readWorkflow, needs, pinned, findStep, findRun and stepNames
-// are in workflow_test.go.
+// The helpers readWorkflow, runsOn, needs, pinned, findStep, findRun and
+// stepNames are in workflow_test.go.
 
 func TestMatrix(t *testing.T) {
 	const file = "1_matrix.yml"
@@ -32,7 +34,7 @@ func TestMatrix(t *testing.T) {
 	case *ff:
 		t.Errorf("%s: job test has fail-fast: true, want fail-fast: false", file)
 	}
-	if compact(test.RunsOn) != "${{matrix.os}}" {
+	if compact(runsOn(test)) != "${{matrix.os}}" {
 		t.Errorf("%s: job test has runs-on: %v, want ${{ matrix.os }}", file, test.RunsOn)
 	}
 
@@ -119,7 +121,7 @@ func TestArtifacts(t *testing.T) {
 		if up.With["name"] != "statusd" {
 			t.Errorf("%s: upload-artifact has name: %v, want statusd", file, up.With["name"])
 		}
-		if path, _ := up.With["path"].(string); strings.TrimSpace(path) != "bin/statusd" {
+		if p, _ := up.With["path"].(string); path.Clean(strings.TrimSpace(p)) != "bin/statusd" {
 			t.Errorf("%s: upload-artifact has path: %v, want bin/statusd", file, up.With["path"])
 		}
 	}
@@ -128,22 +130,33 @@ func TestArtifacts(t *testing.T) {
 	if got := needs(smoke); !slices.Contains(got, "build") {
 		t.Errorf("%s: job smoke needs %q, want it to need build", file, got)
 	}
-	if smoke.RunsOn != "ubuntu-latest" {
+	if runsOn(smoke) != "ubuntu-latest" {
 		t.Errorf("%s: job smoke has runs-on: %v, want ubuntu-latest", file, smoke.RunsOn)
 	}
 	download := findStep(smoke.Steps, "actions/download-artifact")
-	const command = "chmod +x statusd && ./statusd -version"
-	if run := findRun(smoke.Steps, command); download < 0 || run < download {
-		t.Fatalf("%s: job smoke has the steps %q, want actions/download-artifact and then %s",
-			file, stepNames(smoke.Steps), command)
+	if download < 0 {
+		t.Fatalf("%s: job smoke has the steps %q, want actions/download-artifact first", file, stepNames(smoke.Steps))
 	}
 	down := smoke.Steps[download]
 	checkPinned(t, file, "smoke", down)
 	if down.With["name"] != "statusd" {
 		t.Errorf("%s: download-artifact has name: %v, want statusd", file, down.With["name"])
 	}
-	if path, ok := down.With["path"]; ok {
-		t.Errorf("%s: download-artifact has path: %v; leave it out, so the file lands in the working folder", file, path)
+	if p, ok := down.With["path"]; ok && path.Clean(fmt.Sprint(p)) != "." {
+		t.Errorf("%s: download-artifact has path: %v; leave it out, so the file lands in the working folder", file, p)
+	}
+
+	// The commands after the download, in order: one step with &&, or two.
+	var commands []string
+	for _, s := range smoke.Steps[download+1:] {
+		commands = append(commands, s.Run)
+	}
+	script := strings.Join(commands, "\n")
+	chmod := regexp.MustCompile(`chmod \+x (\./)?statusd\b`).FindStringIndex(script)
+	start := strings.Index(script, "./statusd -version")
+	if chmod == nil || start < chmod[1] {
+		t.Errorf("%s: job smoke has the steps %q, want actions/download-artifact, then chmod +x statusd, then ./statusd -version",
+			file, stepNames(smoke.Steps))
 	}
 }
 

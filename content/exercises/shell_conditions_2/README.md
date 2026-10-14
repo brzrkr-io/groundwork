@@ -4,7 +4,8 @@ The nightly backup job has three safety checks, and none of them work. One
 never finds the backup, one thinks 10 is less than 5, and one won't even
 start. Each is a small mistake that's easy to make in `if` conditions.
 
-**New here:** reading test errors, text versus number comparison.
+**New here:** a routine for debugging a condition, text versus number
+comparison, syntax errors.
 
 ## Learn
 
@@ -13,7 +14,32 @@ start. Each is a small mistake that's easy to make in `if` conditions.
 - `if COMMAND; then ... else ... fi` runs `then` when the command exits 0.
 - `[[ ... ]]` is a command for tests: `-f` (regular file), `-z` (empty),
   `==` (same text), `-gt` and friends (numbers).
-- Error messages name the script and the line: read them first.
+- `bash -x` prints each command, with values filled in, before it runs
+  (*Shell variables: fix the quoting bugs*).
+
+### Debugging a condition in three steps
+
+1. **Run it by hand** with the same arguments. If bash prints an error,
+   read it: the script name, the line number, then what went wrong.
+2. **No error, wrong answer?** Run it again with `bash -x`. Each line that
+   starts with `+` is a command bash ran, so you see the exact test it
+   checked, with the values swapped in, and which branch it took.
+3. **Compare** that line with what you meant.
+
+Here `cleanup.sh` should print `delete` for logs older than 7 days:
+
+```bash
+bash -x cleanup.sh 30
+# + set -euo pipefail
+# + age=30
+# + [[ 30 > 7 ]]
+# + echo keep
+# keep
+```
+
+The trace shows the test that ran, `[[ 30 > 7 ]]`, and that bash took the
+`else` branch: it decided 30 is not more than 7. *Text or number?* below
+explains why.
 
 ### Brackets are words
 
@@ -44,14 +70,15 @@ letter operators compare **numbers**:
 
 `if` runs any command and checks its exit status. `[[ ]]` is just one such
 command. Putting another command *inside* `[[ ]]` makes bash read its words
-as a test, which fails before the script even starts:
+as a test, and they don't make one:
 
 ```text
-unexpected token `-q', conditional binary operator expected
+check.sh: line 4: unexpected token `-q', conditional binary operator expected
 ```
 
-When bash can't make sense of a script, it runs **nothing**: the error comes
-before your first line runs.
+That's a *syntax error*: bash can't understand the statement, so it doesn't
+run it at all. Neither branch runs, and the script stops with status 2.
+`bash -x` won't help here; the error message already names the line.
 
 ## Your task
 
@@ -71,10 +98,12 @@ bash 1_backup_exists.sh testdata/backups/db_2026-10-13.tar.gz
 # no backup at testdata/backups/db_2026-10-13.tar.gz
 ```
 
-Right now it always takes the `else` branch, after
-`[[-f: command not found`.
+A directory doesn't count: `testdata/backups` gets `no backup at
+testdata/backups`, exit 1. Right now the script always takes the `else`
+branch, after `[[-f: command not found`.
 
 **Think it through:**
+- Which line does the error name?
 - What does bash think the first word of the condition is?
 
 ### 2. Fix the number comparison
@@ -90,11 +119,14 @@ bash 2_failure_alert.sh 5
 # ok: 5 failed backups
 ```
 
-Right now 10 prints `ok`, but 6 prints `ALERT`.
+Right now 10 prints `ok`, but 6 prints `ALERT`. There's no error message,
+so this one is a job for `bash -x`.
 
 **Think it through:**
-- Is `>` comparing these as numbers or as text?
-- Which operator means "more than" for numbers?
+- Run `bash -x 2_failure_alert.sh 10`. Which test did bash run, and which
+  branch did it take?
+- Is `>` comparing these as numbers or as text? Which operator means "more
+  than" for numbers?
 
 ### 3. Fix the log check
 
@@ -109,7 +141,8 @@ bash 3_backup_log.sh testdata/backup_failed.log
 # testdata/backup_failed.log: INCOMPLETE
 ```
 
-Right now bash refuses to run the script at all.
+Right now bash stops with a syntax error, status 2, and prints neither
+line.
 
 **Think it through:**
 - `grep -q` is a command with an exit status. What does `if` need around

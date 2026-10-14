@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -166,7 +167,7 @@ func TestApply(t *testing.T) {
 		s.cache.Put("worker", Status{Service: "worker", Version: "3.1.0", State: "succeeded"})
 		s.Apply(Event{ID: "evt-9", Service: "api", Version: "1.1.0", State: "started"})
 		if st, ok := s.cache.Get("api"); ok {
-			t.Errorf("after Apply for api, the cache still holds %+v for it, want it removed", st)
+			t.Errorf("after Apply for api, the cache still holds %+v for it, want it removed (s.cache.Remove), so the next Lookup reads statuses", st)
 		}
 		if _, ok := s.cache.Get("worker"); !ok {
 			t.Error("after Apply for api, the cache lost worker; only api's entry should go")
@@ -257,7 +258,8 @@ func TestHTTP(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("GET /status/api = %d, want 200", rec.Code)
 			}
-			if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+			ct := rec.Header().Get("Content-Type")
+			if mediaType, _, _ := mime.ParseMediaType(ct); mediaType != "application/json" {
 				t.Errorf("GET /status/api Content-Type = %q, want %q", ct, "application/json")
 			}
 			var got Status

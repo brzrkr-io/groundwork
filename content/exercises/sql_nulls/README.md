@@ -75,12 +75,12 @@ FROM deploys;
 counts every row:
 
 ```text
-duration_s:  95, 140, NULL
+duration_s:  60, 90, NULL
 
 COUNT(*)          3
 COUNT(duration_s) 2
-SUM(duration_s)   235
-AVG(duration_s)   117.5      (235 / 2, not 235 / 3)
+SUM(duration_s)   150
+AVG(duration_s)   75.0       (150 / 2, not 150 / 3)
 ```
 
 That's usually what you want: an unknown duration shouldn't count as 0

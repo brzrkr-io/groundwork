@@ -121,6 +121,12 @@ back), `Evictions` (it returns `c.evictions`), and the locks: every method
 locks `c.mu` and defers the unlock, as in *Mutexes*. The tests check `Keys`
 and `Len`, so they see both the list and the map.
 
+**Watch out:** inside `Get` and `Put`, `c.mu` is already locked. Don't call
+`c.Len()`, `c.Keys()` or `c.Get()` from there: they lock `c.mu` again, and a
+`sync.Mutex` can't be locked twice, not even by the same goroutine. Nothing
+errors; the program just freezes until the tests time out after a minute.
+Read the fields (`c.items`, `c.order`) directly instead.
+
 ## Your task
 
 Your team runs a container registry proxy. It caches which digest each image
@@ -209,7 +215,8 @@ c.Get("redis:7.4")                  // => "", false
 **Think it through:**
 - Which end of the list holds the least recently used entry?
 - The map needs the evicted key. Which field of the entry holds it?
-- Use either `len(c.items)` or `c.order.Len()`: they stay equal.
+- Use either `len(c.items)` or `c.order.Len()`: they stay equal. Not
+  `c.Len()`: see **Watch out** above.
 
 ## Learn more
 

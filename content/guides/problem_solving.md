@@ -160,11 +160,10 @@ got:  "kubectl scale deployment/api"
 want: "kubectl scale deployment/api --replicas=3 -n prod"
 ```
 
-That's a success. The start matches exactly, so the first steps of the plan
-work.
-The `%q` verb puts quotes around each value, so a stray or missing space at
-either end would show.
-
+They don't match yet, and that's fine: you've only written the first piece.
+What matters is that `got` is exactly the start of `want`, so the first
+steps of the plan work. The `%q` verb puts quotes around each value, so a
+stray or missing space at either end would show.
 Now add the next piece. Your first try might be `+ " --replicas=" +
 replicas`, and the compiler stops you with a long message that ends in
 `(mismatched types string and int)`.
@@ -314,7 +313,7 @@ Groundwork gives you two kinds of help:
 | Key | What you get |
 |---|---|
 | `h` | A hint for the task. Press again for a stronger one: a nudge, then a closer look, then the answer. |
-| `s` | The reference solution, once you pass, or early after the last hint (you confirm first). |
+| `s` | The reference solution, once you pass, or early once you've seen a task's Answer hint (you confirm first). |
 
 Hints are there to be used. The only way to misuse them is to get the green
 tick without being able to do it again. A tick you can't repeat teaches
@@ -331,6 +330,13 @@ nothing. Some habits that help:
 - **Redo it tomorrow.** Delete your function body and write it again from
   memory. Pulling something back out of your memory is called *retrieval
   practice*, and it's one of the best-studied ways to make learning stick.
+- **Quiz yourself on the guides.** Every guide has *Check yourself*
+  questions and *Key terms*. `groundwork cards` turns them into flashcards
+  you can import into Anki on your phone. Answer them a few days apart, not
+  all at once.
+- **Welcome the reviews.** Groundwork brings back practice exercises, and
+  any exercise whose solution you opened early, a few days later and again
+  weeks later. Spacing practice out like that is how it sticks.
 
 Reading a solution and thinking "yes, that makes sense" feels like learning,
 but it's recognition. Being able to write it from blank is the skill you

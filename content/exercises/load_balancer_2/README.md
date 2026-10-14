@@ -99,17 +99,17 @@ closeLog() // prints nothing
 
 Run the tests with `go test -race`. When two goroutines touch the same
 memory without a lock between them, the race detector prints a report like
-this (shortened, and your line numbers may differ):
+this one, from the starter code (shortened; your line numbers may differ):
 
 ```text
 WARNING: DATA RACE
-Read at 0x00c0001f1948 by goroutine 28:
-  groundwork.local/….(*LeastConn).Acquire()
-      …/exercise.go:43 +0x3a5
-
-Previous write at 0x00c0001f1948 by goroutine 19:
+Write at 0x00c000144100 by goroutine 70:
   groundwork.local/….(*LeastConn).Acquire.func1()
-      …/exercise.go:52 +0xa8
+      …/exercise.go:53 +0xa8
+
+Previous write at 0x00c000144100 by goroutine 49:
+  groundwork.local/….(*LeastConn).Acquire()
+      …/exercise.go:47 +0x433
 ```
 
 Read it like this:
@@ -118,12 +118,17 @@ Read it like this:
   **previous** access it clashes with. At least one of them is a write.
 - The top line of each stack in **your** code names the function and the
   file and line. `Acquire.func1` is the first anonymous function written
-  inside `Acquire`: here, the `release` closure.
+  inside `Acquire`: here, the `release` closure. A `.1` on the end
+  (`Acquire.func1.1`) means a function written inside *that* one.
 - Then ask: which of the two lines doesn't hold the lock?
 
 Holding a lock while you create a closure doesn't help: the closure runs
 **later**, long after `Acquire` has unlocked. Code inside it has to lock for
 itself.
+
+Sometimes the run stops instead with `fatal error: concurrent map writes`
+(or `concurrent map iteration and map write`). Go's maps check for this
+bug themselves. It's the same bug, with the same fix.
 
 ## Your task
 
@@ -137,7 +142,9 @@ flight, and on a tie, the one that comes **first** in the list given to
 `NewLeastConn`.
 
 Right now it ranges over the `lc.active` map, so when backends tie, the
-pick changes from run to run. `lc.addrs` holds the addresses in list order.
+pick changes from run to run. That breaks the promise in `Acquire`'s doc
+comment, and behaviour that changes every run can't be reproduced in a test
+or replayed after an incident. `lc.addrs` holds the addresses in list order.
 With no backends, `Acquire` already returns `""`, `nil` and `ErrNoBackends`;
 keep that.
 
@@ -160,7 +167,7 @@ lc.Acquire() // => "10.0.2.1:8080" (all have 1: the tie goes to the first)
 many times it is called.
 
 ```go
-addr, release, _ := lc.Acquire() // "10.0.2.1:8080"
+_, release, _ := lc.Acquire() // picks "10.0.2.1:8080"
 release()
 release()
 lc.Active("10.0.2.1:8080") // => 0 (the buggy version says -1)
@@ -182,11 +189,16 @@ The tests acquire and release from many goroutines at once, and release
 some requests from a different goroutine than the one that acquired them.
 Afterwards, every backend must have 0 requests in flight.
 
+Once task 2 is done, the racing line sits inside `once.Do`, so the report
+names it `Acquire.func1.1`, with `sync.Once`'s own code under it:
+
 ```text
 WARNING: DATA RACE
-...
-  groundwork.local/….(*LeastConn).Acquire.func1()
-      …/exercise.go:52
+Write at 0x00c00039c0e8 by goroutine 51:
+  groundwork.local/….(*LeastConn).Acquire.func1.1()
+      …/exercise.go:54 +0xa8
+  sync.(*Once).doSlow()
+      …/sync/once.go:78 +0xa1
 ```
 
 **Think it through:**

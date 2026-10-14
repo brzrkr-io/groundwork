@@ -65,10 +65,10 @@ No new commit is made. `git log --oneline` on `main` now shows `C`.
 
 ### Cleaning up
 
-`git branch -d <branch>` deletes a branch that is fully merged. It refuses
-if the branch has commits nowhere else (`-D` forces it; careful). Deleting a
-branch only deletes the pointer, never commits that other branches still
-reach.
+`git branch -d <branch>` deletes a branch that is fully merged into the
+branch you're on. It refuses if the branch has commits yours lacks (`-D`
+forces it; careful). Deleting a branch only deletes the pointer, never
+commits that other branches still reach.
 
 ## Your task
 
@@ -115,6 +115,8 @@ $ git log --oneline
 dccae83 Add app config
 35309c9 Add deploy script
 ```
+
+Your hash for the new commit will differ.
 
 It must be a fast-forward: no merge commit. Afterwards you're on `main` and
 `git branch` lists only `main`.

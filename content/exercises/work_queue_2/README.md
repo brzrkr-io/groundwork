@@ -1,9 +1,10 @@
 # Work queues: fix the at-least-once consumer
 
 Your deploy service reads deploy requests from a message queue. This week a
-failed deploy of `api` simply vanished, and a slow `billing` deploy ran
-twice. Fix the consumer so every request is deployed exactly once in effect,
-even when the queue delivers it more than once.
+failed deploy of `api` simply vanished. Fixing that makes the queue deliver
+some requests twice, so a slow `billing` deploy would run twice. Fix the
+consumer so every request is deployed exactly once in effect, even when the
+queue delivers it more than once.
 
 **New here:** message brokers, ack and nack, visibility timeouts, at-least-once
 delivery, idempotent consumers.
@@ -28,6 +29,10 @@ went:
 | `Receive()` | "Give me the next message" | Hands it over and marks it *in flight* |
 | `Ack(id)` | "Done, forget it" | Deletes it for good |
 | `Nack(id)` | "Failed, try again later" | Puts it back at the end of the queue |
+
+RabbitMQ has these calls under the same names. SQS calls an ack
+`DeleteMessage`, and has no nack: you set the message's visibility timeout
+(next section) to 0, so it's delivered again straight away.
 
 ### Visibility timeout
 
@@ -97,6 +102,17 @@ and has no real clock. The tests use two extra methods:
 
 `Ack` and `Nack` do nothing for a message that isn't in flight.
 
+### How to find bugs like these
+
+Walk one message through `HandleNext`, line by line. After each line, ask:
+
+- What does the broker hold now: ready, in flight, or gone?
+- What does `c.done` say about this ID?
+- If the deploy failed here, or the process crashed here, would the request
+  still get deployed exactly once?
+
+The first line where the answer is "no" is the bug.
+
 ## Your task
 
 `HandleNext` in `exercise.go` receives one message and deploys it. It already
@@ -131,7 +147,8 @@ error.
 **Goal:** make `HandleNext` ack a message whose ID is already in `c.done`
 and return `true, nil` without deploying it.
 
-The consumer fills `c.done` but never reads it, so a redelivered message
+Now that the ack waits for the deploy, a slow deploy gets redelivered. The
+consumer fills `c.done` but never reads it, so the redelivered message
 deploys again:
 
 ```text

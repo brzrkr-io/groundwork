@@ -92,10 +92,11 @@ holds one program, `ENTRYPOINT` is the usual choice.
 > - **Docker requires:** exec form (`["/inventory"]`) on distroless and
 >   scratch. The shell form `ENTRYPOINT /inventory` means
 >   `/bin/sh -c /inventory`, and there is no `/bin/sh`.
-> - **Docker requires:** no `RUN` in a scratch or distroless stage, for the
->   same reason: `RUN` runs its command with `/bin/sh`.
-> - **Convention:** the build stage is called `build`, and the binary goes
->   to a simple absolute path such as `/out/app`.
+> - **Docker requires:** no `RUN` in a scratch or distroless stage. A
+>   shell-form `RUN` needs `/bin/sh`, and there are no other programs to run.
+> - **Convention:** most Dockerfiles call the build stage `build` (the
+>   example says `compile` only to keep your task fresh), and put the binary
+>   at a simple absolute path such as `/out/app`.
 > - **Author's choice:** `static-debian13` without a tag here. The
 >   `:nonroot` tag runs as an unprivileged user; you'll use it later.
 

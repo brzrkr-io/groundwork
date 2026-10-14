@@ -96,11 +96,12 @@ func TestRelease(t *testing.T) {
 		if err := Release(db, "checkout", "v2.8.1", "2026-03-07 10:00:00"); err != nil {
 			t.Fatalf(`Release(db, "checkout", "v2.8.1", ...) error = %v, want nil`, err)
 		}
+		checkTxEnded(t, db)
 		if n := countRows(t, db, `SELECT COUNT(*) FROM deploys WHERE service = 'checkout' AND version = 'v2.8.1' AND status = 'succeeded'`); n != 1 {
-			t.Errorf("after Release, there are %d succeeded deploys of checkout v2.8.1, want 1", n)
+			t.Errorf("after Release, there are %d succeeded deploys of checkout v2.8.1, want 1 (does Release call tx.Commit() at the end?)", n)
 		}
 		if n := countRows(t, db, `SELECT COUNT(*) FROM services WHERE name = 'checkout' AND current_version = 'v2.8.1'`); n != 1 {
-			t.Errorf("after Release, checkout's current_version is not v2.8.1")
+			t.Errorf("after Release, checkout's current_version is not v2.8.1 (does Release call tx.Commit() at the end?)")
 		}
 	})
 
@@ -113,10 +114,22 @@ func TestRelease(t *testing.T) {
 		if err := Release(db, "checkout", "v2.8.1", "2026-03-07 10:00:00"); err == nil {
 			t.Fatal("Release returned nil although updating services failed, want the error")
 		}
+		checkTxEnded(t, db)
 		if n := countRows(t, db, `SELECT COUNT(*) FROM deploys WHERE version = 'v2.8.1'`); n != 0 {
 			t.Errorf("after a failed Release, deploys still holds %d row(s) for v2.8.1, want 0: the insert must be rolled back", n)
 		}
 	})
+}
+
+// checkTxEnded reports a transaction that Release left open. An open
+// transaction keeps its connection busy, and its locks block other writers,
+// until Commit or Rollback.
+func checkTxEnded(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if n := db.Stats().InUse; n != 0 {
+		t.Errorf("after Release returned, %d database connection(s) are still busy: a transaction was left open.\n"+
+			"End it on every path: defer tx.Rollback() right after db.Begin(), and tx.Commit() at the end", n)
+	}
 }
 
 // rolledBack returns the ids of the deploys with status rolled_back.

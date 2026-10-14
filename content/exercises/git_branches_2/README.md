@@ -101,6 +101,8 @@ $ git log --oneline -1
 4e5f6a7 Merge branch 'add-metrics'
 ```
 
+Your hash will differ.
+
 The newest commit on `main` must have two parents and contain
 `config/metrics.yaml`.
 

@@ -59,8 +59,10 @@ Your editor knows Go: put the cursor on a name and use **Rename Symbol**
 renames the declaration and every use, and nothing else. A plain
 find-and-replace of `s` would also change every `s` inside `"strings"`.
 
-Comments are text, so check them yourself. In Go, a function's comment
-starts with the function's name, and a stale comment is a small lie.
+In Go, a function's comment starts with the function's name. Recent
+versions of *gopls* (the Go helper behind your editor) rename that first
+word too, but other comments are plain text: after a rename, search the
+file for the old name. A stale comment is a small lie.
 
 ### Explaining variables
 
@@ -113,7 +115,7 @@ func pageLine(...
 
 **Think it through:**
 - Put the cursor on `prs` and use your editor's Rename Symbol. How many places changed?
-- Which part did the editor leave for you to change by hand?
+- Did the comment above the function change too? If not, fix it by hand.
 
 ### 2. Rename the variables in Pages
 

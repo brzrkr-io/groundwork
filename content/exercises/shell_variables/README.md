@@ -24,8 +24,9 @@ No `var`, no `:=`, and **no spaces around `=`**. Every value is text, even
 > **Why is it written like this?** **Bash requires** no spaces: `region =
 > eu-west-1` means "run a command named `region` with two arguments, `=` and
 > `eu-west-1`", and bash says `region: command not found`. **Convention:**
-> lowercase names for your own variables; UPPERCASE is for environment
-> variables like `HOME` and `PATH`.
+> lowercase names for your own variables; UPPERCASE is for *environment
+> variables*, which every program gets from the system, like `HOME` and
+> `PATH`.
 
 ### Using a variable: `$`
 
@@ -78,19 +79,25 @@ echo "$env"                 # staging
 ### Command substitution: `$(...)`
 
 `$(command)` runs a command and gives you what it printed, without the final
-newline. Store it in a variable like any other value:
+newline. Store it in a variable like any other value (`date +%F` prints
+today's date as YYYY-MM-DD):
 
 ```bash
 today=$(date +%F)
 echo "Backup for $today"    # Backup for 2026-10-13
 ```
 
-`wc -l` counts lines. Given a file name it prints the name too; feed it the
-file with `<` and it prints only the number:
+An assignment like `today=$(...)` needs no quotes around the right side:
+bash never splits it. Quote it anyway if you like; both work.
+
+`wc -l FILE` counts the lines in FILE, and prints the file name after the
+number. `< FILE` instead feeds the file to the command as its input, so
+`wc` doesn't know the name and prints only the number. With a 3-line
+`regions.txt`:
 
 ```bash
-wc -l testdata/regions.txt      # 3 testdata/regions.txt
-wc -l < testdata/regions.txt    # 3
+wc -l regions.txt      # 3 regions.txt
+wc -l < regions.txt    # 3
 ```
 
 ### What `set -euo pipefail` does
@@ -99,7 +106,7 @@ wc -l < testdata/regions.txt    # 3
 |---|---|
 | `-e` | stop the script as soon as a command fails |
 | `-u` | stop if you use a variable that was never set (catches typos) |
-| `-o pipefail` | a pipeline fails if any command in it fails, not just the last |
+| `-o pipefail` | a *pipeline* (commands chained together, as in *Grep and pipes*) fails if any command in it fails, not just the last |
 
 So if you run `bash 1_announce.sh` with no arguments, it stops with
 `$1: unbound variable` instead of printing half a message. That's `-u`
@@ -162,8 +169,8 @@ bash 3_count_hosts.sh testdata/db_hosts.txt
 # testdata/db_hosts.txt: 2 hosts
 ```
 
-Look at `testdata/web_hosts.txt`: one host per line. Store the count in a
-variable named `count` first.
+Look at `testdata/web_hosts.txt` (`cat testdata/web_hosts.txt`): one host
+per line. Store the count in a variable named `count` first.
 
 **Think it through:**
 - Which command counts lines, and how do you make it print only the number?

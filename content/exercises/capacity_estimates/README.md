@@ -108,8 +108,9 @@ The starter declares constants for the unit sizes (`SecondsPerDay`,
 `BytesPerGB`, `BitsPerByte`, `BitsPerMegabit`). They are *untyped*
 constants, so they work next to a `float64` without a conversion.
 
-Float answers are rarely exact (`0.1 + 0.2` is `0.30000000000000004`), so
-the tests accept any answer **within 0.001** of the expected value.
+Float answers are rarely exact: after `a, b := 0.1, 0.2`, `a + b` is
+`0.30000000000000004`. So the tests accept any answer **within 0.001** of
+the expected value.
 
 > **Why is it written like this?** Go requires the `float64(...)`
 > conversions: it never converts number types for you. Decimal units and the
@@ -194,7 +195,8 @@ ServersNeeded(0, 400, 1)    // => 1
 
 **Think it through:**
 - Which step makes 3.125 become 4, and which makes `4.0` an `int`?
-- Do you add `spare` before or after rounding up? Try both with the first example.
+- `spare` counts whole servers, not QPS. What goes wrong if you add it to
+  `peakQPS` before dividing? Try it with the first example.
 
 ### 5. Fill in the plan
 

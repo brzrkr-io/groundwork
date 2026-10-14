@@ -22,9 +22,9 @@ constants*, *Extract function* and *Guard clauses*.
   a comment.
 - **Guard clauses** handle a case and leave, so there is no `else`.
 
-Every test runs `Plan` on the example below first. If your refactor
-changes the output, the test stops there and tells you to undo the last
-step.
+Every test first runs `Plan` on example files like the ones below (the
+full list is `checkPlan` in `exercise_test.go`). If your refactor changes
+the output, the test stops there and tells you to undo the last step.
 
 ### 1 MiB
 
@@ -87,7 +87,8 @@ units; `rotateSize` is 100 MiB in bytes.
 
 **Goal:** move the decisions into `liveAction(file File) string` and
 `rotatedAction(file File, now time.Time) string`, each returning the action
-word (`"rotate"`, `"keep"`, ...), and get `Plan` to 12 lines or fewer.
+word (`"rotate"`, `"keep"`, ...), and get `Plan` to 12 lines of code or
+fewer (blank lines and comments don't count).
 
 `Plan` keeps the loop: it decides which helper a file needs and builds
 each line from the action and the name.

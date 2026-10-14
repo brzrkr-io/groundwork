@@ -36,7 +36,7 @@ Your program can't touch the disk or the network itself. It asks the kernel, thr
 ```text
   your Go code        data, err := os.ReadFile("app.yaml")
        │
-  Go's os package     openat ─► read ─► close        (system calls)
+  Go's os package     openat ─► fstat ─► read ─► close    (system calls)
        │
   ═════╪═════════════════════ kernel boundary ═════════════════════
        ▼
@@ -80,11 +80,11 @@ Each process has a *PID* (process ID) and a *parent*: the process that started i
 
 When a child exits, it hands an exit code to its parent. That's how your shell knows whether the command worked.
 
-Inside a container, your program is usually PID 1 of its own namespace. That matters because Kubernetes sends its stop signal to that process.
+Inside a container, your program is usually PID 1 of its own namespace. That matters because Kubernetes sends its stop signal to PID 1, and only PID 1.
 
 ### Threads, briefly
 
-A process can run several *threads*: separate lines of execution that share the same memory. The kernel schedules threads onto CPU cores. Go runs your goroutines on a few threads for you, which is how one Go process can use every core. The *Concurrency* guide explains why shared memory makes this tricky.
+A process can run several *threads*: separate lines of execution that share the same memory. The kernel schedules threads onto CPU cores. Go spreads your program's work across a few threads for you, which is how one Go process can use every core. The *Concurrency* guide explains why shared memory makes this tricky.
 
 ## Files and the filesystem
 
@@ -112,7 +112,7 @@ A classic ops bug: a script works when you run it by hand, then fails under cron
 └────────── type: - file, d directory, l link
 ```
 
-Each group of three is `r` (read), `w` (write), `x` (execute). For a directory, `x` means "may enter it".
+Each group of three is `r` (read), `w` (write), `x` (execute). For a directory, `r` means "may list it" and `x` means "may enter it".
 
 Each letter is worth a number, and you add them up per group: `r` = 4, `w` = 2, `x` = 1. Three groups make three digits, written in *octal* (base 8) with a leading 0:
 
@@ -125,9 +125,23 @@ Each letter is worth a number, and you add them up per group: `r` = 4, `w` = 2, 
 
 So `0644` is owner 6 (4+2, read and write), group 4 (read), others 4 (read).
 
-Go uses the same numbers. `os.WriteFile("token", data, 0600)` creates a file only its owner can read (the mode applies when the file is created). The leading `0` makes Go read the number as octal too. The process's *umask* can remove bits from what you ask for (a common umask of `022` turns `0666` into `0644`), but it never adds any.
+Go uses the same numbers. `os.WriteFile("token", data, 0600)` creates a file only its owner can read (the mode applies only when the file is created). The leading `0` makes Go read the number as octal; Go also accepts `0o600`, which means the same and is easier to spot. The process's *umask* can remove bits from what you ask for (a common umask of `022` turns `0666` into `0644`), but it never adds any.
 
 The user `root` bypasses most permission checks. That's why tools shouldn't run as root unless they must; the *Security basics for automation* guide goes further.
+
+### Replacing a file safely
+
+Picture your tool rewriting `nginx.conf` while nginx reloads. `os.WriteFile` first empties the file, then writes. A reader in between sees a half-written config, and a crash leaves it that way.
+
+The fix uses one kernel guarantee: renaming a file over another is *atomic*, meaning all or nothing. Every reader sees the whole old file or the whole new one, never a mix.
+
+```text
+  1. write the new content to  nginx.conf.tmp-8812   (same directory)
+  2. Sync (wait until it's really on disk), then Close
+  3. rename nginx.conf.tmp-8812 → nginx.conf          (one atomic step)
+```
+
+Keep the temp file in the **same directory**: rename is only atomic within one filesystem, and `/tmp` is often a different one. You'll build this in *Atomic writes: temp file and rename*.
 
 ## File descriptors and the standard streams
 
@@ -243,7 +257,7 @@ You'll practise this in *Command-line arguments*, and grow it into flags and sub
 
 ### Environment variables
 
-An *environment variable* is a `NAME=value` string the process receives at start. Each child gets a **copy** of its parent's environment. That's why a script that runs `export REGION=eu-west-1` can't change your shell's `REGION`: it changed its own copy, which vanishes when it exits.
+An *environment variable* is a `NAME=value` string the process receives at start. Each child gets a **copy** of its parent's environment (in a shell, only the variables you `export`). That's why a script that runs `export REGION=eu-west-1` can't change your shell's `REGION`: it changed its own copy, which vanishes when it exits.
 
 In Kubernetes, the `env:` list in a pod spec becomes exactly these variables. Settings that change per deploy (the database host, the log level) usually travel this way, while secrets deserve more care.
 
@@ -308,8 +322,8 @@ func main() {
 }
 ```
 
-1. `signal.Notify` asks Go to deliver SIGINT and SIGTERM on the channel `sigs` instead of ending the program.
-2. `<-sigs` waits until a signal arrives.
+1. `make(chan os.Signal, 1)` creates a channel: a pipe that Go values arrive on. `signal.Notify` asks Go to deliver SIGINT and SIGTERM there instead of ending the program.
+2. `<-sigs` waits until a value (a signal) arrives.
 3. `kill -TERM <pid>` prints `got signal: terminated`, then the last line, and the exit code is 0. Ctrl-C prints `got signal: interrupt`.
 4. `kill -KILL <pid>` prints nothing more. The kernel removes the process, and the shell reports `Killed` with exit code 137.
 
@@ -320,14 +334,16 @@ Without `signal.Notify`, a Go program simply dies on SIGTERM, mid-job.
 ```text
   kubectl delete pod, a rolling update, or a node drain
     │
-    ├─► pod marked Terminating; it stops receiving new Service traffic
+    ├─► pod marked Terminating. The grace period clock starts:
+    │   terminationGracePeriodSeconds (default 30)
+    ├─► at the same time, it's removed from its Services,
+    │   so new traffic stops (this can take a few seconds)
     ├─► preStop hook runs, if the pod defines one
-    ├─► SIGTERM to each container's main process
-    │      ... grace period: terminationGracePeriodSeconds (default 30)
-    └─► still running? SIGKILL. The container shows exit code 137.
+    ├─► SIGTERM to PID 1 in each container
+    └─► grace period over and still running? SIGKILL. Exit code 137.
 ```
 
-If your program ignores SIGTERM, every deploy waits the full 30 seconds per pod, then kills it mid-request. You'll handle this properly in *Signals: graceful stop for a rolling drain* and later in *Graceful shutdown: drain in-flight requests*.
+If your program ignores SIGTERM, every deploy waits the full 30 seconds per pod, then kills it mid-request. The same happens when a shell is PID 1 (a Dockerfile's shell-form `CMD`): it doesn't pass SIGTERM on to your program, as the *Containers and images* guide explains. You'll handle signals properly in *Signals: graceful stop for a rolling drain* and later in *Graceful shutdown: drain in-flight requests*.
 
 ## Common mistakes
 
@@ -343,20 +359,22 @@ If your program ignores SIGTERM, every deploy waits the full 30 seconds per pod,
 ## Check yourself
 
 1. Your tool prints a JSON report and also "fetching 40 hosts...". A teammate runs `mytool > report.json` and the JSON is broken. What's wrong, and what's the fix?
-2. What does `0640` allow, and for whom?
+2. What does the file permission `0640` allow, and for whom?
 3. A pod keeps restarting and `kubectl describe` shows exit code 137. What does that number tell you?
 4. Why does `./deployctl "checkout api"` give `os.Args` a length of 2 and not 3?
 5. Your script runs `export AWS_REGION=eu-west-1`. After it finishes, `echo $AWS_REGION` in your shell prints nothing. Why?
 6. Why does a Go service that never calls `signal.Notify` lose in-flight requests during a rolling update?
+7. Your tool updates `/etc/app/app.conf` with `os.WriteFile`. Why is writing a temp file in `/etc/app/` and renaming it over `app.conf` safer, and why not put the temp file in `/tmp`?
 
 ## Answers
 
 1. The progress message was written to stdout, so it landed inside the file. Write messages to stderr (`fmt.Fprintln(os.Stderr, ...)`) and only the result to stdout.
 2. Owner 6 = read and write; group 4 = read; others 0 = nothing. Handy for a log the ops group may read but nobody else may see.
-3. 137 is 128 + 9: the process was killed by SIGKILL. In a pod that usually means it hit its memory limit and the OOM killer ended it, or it ignored SIGTERM until the grace period ran out.
+3. 137 is 128 + 9: the process was killed by SIGKILL. In a pod that usually means it hit its memory limit and the OOM killer ended it (`kubectl describe` then shows `Reason: OOMKilled`), or it ignored SIGTERM until the grace period ran out.
 4. The shell removes the quotes and passes `checkout api` as one argument. `os.Args[0]` is the program name, `os.Args[1]` is `checkout api`: two items.
-5. The script ran as a child process with its own copy of the environment. Its change disappeared when it exited. A child can never change its parent's environment.
+5. The script ran as a child process with its own copy of the environment. Its change disappeared when it exited. A child can never change its parent's environment. (Running it with `source script.sh` executes it inside your own shell instead, so the change sticks.)
 6. Kubernetes sends SIGTERM to stop the old pods. With no handler, Go's default is to exit immediately, so requests being served at that moment are cut off. Catching SIGTERM lets the service finish them first.
+7. `os.WriteFile` empties the file and then writes it, so a reader or a crash in between sees a broken config. A rename is atomic: readers get the whole old file or the whole new one. Rename is only atomic within one filesystem, and `/tmp` is often a different one, so the temp file goes next to the target.
 
 ## Key terms
 
@@ -368,9 +386,12 @@ If your program ignores SIGTERM, every deploy waits the full 30 seconds per pod,
 | process | a running program with its own memory, files and PID |
 | PID / parent | a process's ID / the process that started it |
 | thread | a line of execution inside a process, sharing its memory |
+| absolute / relative path | a path from the root `/` / a path from the working directory |
 | working directory | the folder relative paths are resolved from |
 | permission bits | read, write, execute for owner, group and others |
 | octal | base 8; how permissions like `0644` are written |
+| umask | a per-process mask that removes permission bits from new files, e.g. `022` |
+| atomic rename | replacing a file by renaming a finished temp file over it, so readers see all old or all new |
 | file descriptor | the number a process uses for an open file or stream |
 | stdin / stdout / stderr | fds 0, 1, 2: input, results, messages |
 | pipe | the vertical bar between commands: stdout of one into stdin of the next |
@@ -378,6 +399,7 @@ If your program ignores SIGTERM, every deploy waits the full 30 seconds per pod,
 | exit code | the 0–255 number a process returns; 0 is success |
 | signal | a numbered notice from the kernel, like SIGTERM |
 | OOM killer | the kernel feature that kills processes when memory runs out |
+| namespaces / cgroups | kernel features that limit what a container can see / how much it can use |
 
 ## Watch
 

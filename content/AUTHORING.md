@@ -8,6 +8,27 @@ The learner is a **beginner** who wants to do DevOps and platform work. Every
 exercise should feel doable after reading its README. A sense of progress
 matters more than covering every corner of a topic.
 
+## Learning principles
+
+Every pack and guide follows these (see ../LEARNING.md for the research):
+
+1. **Worked example first, then fade.** The README's Learn section fully
+   demonstrates each construct with a different example from the task;
+   tasks then need more and more independence.
+2. **One new idea at a time, quick first win.** Task 1 takes minutes. No
+   term or tool the learner hasn't met, judging by the course order.
+3. **No hidden requirements.** Everything a test checks is in the task,
+   with a literal example of the expected result.
+4. **Feedback that teaches.** Failure messages say what's wrong and point
+   toward the fix.
+5. **Any correct answer passes.** Tests check behaviour and results, not one
+   spelling of the solution, and are hermetic and deterministic.
+6. **Hints are a ladder:** Nudge (a pointer, no code), Closer (the syntax),
+   Answer (the task's code).
+7. **Realistic bugs** in fix-the-bug rounds, with the README teaching how
+   to diagnose them.
+8. **Short pieces** with a bold Goal per task: the learner has ADHD.
+
 ## Pack layout
 
 ```text

@@ -42,8 +42,8 @@ For each service, the database finds the `oncall` row whose `service_id`
 matches the service's `id`, and returns one combined row.
 
 `JOIN` on its own means *inner join*: rows with **no** match on the other
-side are dropped. A service with nobody on call doesn't appear above. (The
-next exercise keeps them.)
+side are dropped. A service with nobody on call doesn't appear above.
+(*LEFT JOIN: services with no on-call* shows how to keep them.)
 
 ```text
 services            oncall               JOIN result
@@ -78,12 +78,15 @@ Each extra table is one more `JOIN … ON` line. The order of the steps:
 `FROM`, all the `JOIN`s, then `WHERE`, `GROUP BY`, `ORDER BY` as before.
 
 ```sql
-SELECT d.version, s.name AS service, t.slack_channel
-FROM deploys AS d
-JOIN services AS s ON s.id = d.service_id
+SELECT o.engineer, s.name AS service, t.name AS team
+FROM oncall AS o
+JOIN services AS s ON s.id = o.service_id
 JOIN teams AS t ON t.id = s.team_id
-WHERE d.environment = 'staging';
+WHERE s.tier = 'critical';
 ```
+
+Read it as a path: on-call row → its service → that service's team. Each
+`ON` links one step to the next.
 
 `WHERE`, `GROUP BY` and aggregates work on the joined rows exactly as they did
 on one table.

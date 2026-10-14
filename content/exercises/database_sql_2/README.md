@@ -162,7 +162,9 @@ GetDeploy(db, 15) // => Deploy{ID: 15, ..., Status: "running", FinishedAt: ""}, 
 `UPDATE` in one transaction, so a failing `UPDATE` leaves no new deploy row.
 
 The test makes the `UPDATE` fail on purpose and checks that the inserted row
-is gone. On success, both changes must be saved.
+is gone. On success, both changes must be saved. Either way, the transaction
+must be over when `Release` returns: an open one keeps its connection busy
+and blocks other writers.
 
 **Think it through:**
 - What do you call to start the transaction, and what must each statement

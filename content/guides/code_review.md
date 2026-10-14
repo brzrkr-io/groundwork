@@ -71,7 +71,7 @@ An author with twenty comments can't tell which ones block the merge. Say so:
 - **nit:** tiny polish; fine to ignore.
 - **question:** you want to understand, not necessarily change anything.
 
-Some teams use a fixed format for this, *conventional comments* (linked below).
+Some teams use a fixed format for this, *conventional comments* (linked below). It spells the labels `suggestion:`, `nitpick:`, `question:` and `issue:`, and adds `(blocking)` or `(non-blocking)` when the weight isn't obvious.
 
 ### Say what's good, and approve when it's good enough
 
@@ -206,7 +206,7 @@ The same spirit applies to code review. "Who wrote this bug?" is the wrong quest
 | pull request | a request to merge a branch, where the diff is reviewed, tested by CI and discussed (GitLab calls it a merge request) |
 | nit | a review comment about minor polish that doesn't block the merge |
 | blocking comment | a review comment that must be resolved before the change can be merged, such as a bug or a security hole |
-| conventional comments | a format that labels each review comment with its kind and weight, such as "suggestion:" or "nit:" |
+| conventional comments | a format that starts each review comment with its kind and weight, such as "suggestion:", "nitpick:" or "issue (blocking):" |
 | commit hygiene | keeping commits small, one logical change each, with messages that explain why |
 | design doc | a short document reviewed before building something big: problem, constraints, options and decision |
 | RFC | "request for comments": the name many teams use for a design doc that is open for review |

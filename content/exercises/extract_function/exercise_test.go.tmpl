@@ -6,7 +6,8 @@ import (
 	"testing"
 )
 
-// maxPlanLines is how long Plan may be once every step is its own function.
+// maxPlanLines is how many lines of code Plan may have once every step is its
+// own function. Blank lines and comments don't count.
 const maxPlanLines = 12
 
 func TestValidate(t *testing.T) {
@@ -97,7 +98,7 @@ func TestBatchSteps(t *testing.T) {
 	if loops(plan) > 0 {
 		t.Error("Plan still has a for loop; the batches belong in batchSteps")
 	}
-	if n := src.lines(plan); n > maxPlanLines {
-		t.Errorf("Plan is %d lines long, want %d or fewer: it should read like a list of steps, each one a call", n, maxPlanLines)
+	if n := src.codeLines(plan); n > maxPlanLines {
+		t.Errorf("Plan has %d lines of code (blank lines and comments don't count), want %d or fewer: it should read like a list of steps, each one a call", n, maxPlanLines)
 	}
 }

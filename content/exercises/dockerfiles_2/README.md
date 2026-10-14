@@ -44,6 +44,23 @@ of one that changed.
 `COPY . .` copies the whole build context, so it misses on **every
 commit**. Anything below it reruns every time.
 
+### Finding the step that breaks the cache
+
+When a build is slow, read the step list it prints, top to bottom:
+
+```text
+ => CACHED [2/5] WORKDIR /src
+ => [3/5] COPY . .                    0.4s
+ => [4/5] RUN go mod download        41.2s
+```
+
+1. Find the first step **without** `CACHED`. That's where the cache broke.
+2. Ask: *which input of this step changed?* For `COPY . .`, any file.
+3. Look at the slow steps below it. Could they move above it?
+
+Here `go mod download` (41 s) sits below `COPY . .`, so it reruns on every
+commit. That's task 1.
+
 ### Order: what changes least goes first
 
 Put slow steps whose inputs rarely change *above* the steps whose inputs

@@ -2,6 +2,7 @@ package shellvariables
 
 import (
 	"bytes"
+	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
@@ -29,7 +30,7 @@ func expect(t *testing.T, want, script string, args ...string) {
 	got, stderr, code := run(t, script, args...)
 	command := commandLine(script, args...)
 	if code != 0 {
-		t.Errorf("%s exited with status %d, want 0. bash said:\n%s", command, code, stderr)
+		exitFailure(t, command, code, got, stderr)
 		return
 	}
 	switch {
@@ -45,6 +46,22 @@ func expect(t *testing.T, want, script string, args ...string) {
 	if stderr != "" {
 		t.Errorf("%s also printed to stderr:\n%s", command, stderr)
 	}
+}
+
+// exitFailure explains a script that stopped with a non-zero status: what it
+// printed before it stopped, and what bash said on stderr.
+func exitFailure(t *testing.T, command string, code int, stdout, stderr string) {
+	t.Helper()
+	msg := fmt.Sprintf("%s exited with status %d, want 0.", command, code)
+	if stdout != "" {
+		msg += "\nIt printed:\n" + strings.TrimRight(stdout, "\n")
+	}
+	if stderr != "" {
+		msg += "\nbash said:\n" + stderr
+	} else {
+		msg += "\nbash said nothing: a command failed without a message, and set -e stopped the script there."
+	}
+	t.Error(msg)
 }
 
 // run runs "bash script args..." and returns what it printed to stdout and

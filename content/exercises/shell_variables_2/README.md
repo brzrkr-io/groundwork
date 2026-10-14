@@ -5,8 +5,8 @@ one prints the wrong thing, one chokes on a file name, and one trips over a
 variable name. All four are classic bash mistakes, and all four are one-line
 fixes.
 
-**New here:** how bash reads a line (expand, split, remove quotes), and
-reading bash's error messages.
+**New here:** how bash reads a line (expand, split, remove quotes), reading
+bash's error messages, and watching a script run with `bash -x`.
 
 ## Learn
 
@@ -60,16 +60,42 @@ deploy.sh: line 7: replicas: command not found
 | Message | Usual cause |
 |---|---|
 | `NAME: command not found` | spaces around `=` (bash ran `NAME` as a command), or a typo |
-| `$1: ambiguous redirect` | a `< $var` or `> $var` whose value has spaces: quote it |
+| `$1: ambiguous redirect` | a `< $var` whose value has spaces: quote it |
 | `NAME: unbound variable` | `set -u` met an unset variable: a typo, a missing argument, or a name that ran on into the next letters |
 
 Single quotes give no error at all: they print `$name` as plain text. Watch
 the output, not just the errors.
 
+### Watch bash work: `bash -x`
+
+When the message doesn't make it clear, run the script with `bash -x`. Bash
+prints each command after step 3, just before running it, on a line starting
+with `+`. A word that holds a space is shown in `'...'`. Here `count.sh`
+sets `file="release notes.txt"`, then runs both `wc` lines from above:
+
+```bash
+bash -x count.sh
+# + file='release notes.txt'
+# + wc -l release notes.txt          <- two words: the bug
+# wc: release: No such file or directory
+# ...
+# + wc -l 'release notes.txt'        <- one word: correct
+# 2 release notes.txt
+```
+
+The `+` lines are what the command **really** got, not what you typed.
+Single-quote mistakes show up too: `+ echo 'Hello $name'` means bash never
+swapped `$name` in.
+
+Your routine: run the script, read the error (script, line, message), check
+the table above. If the output is wrong but there's no error, or the error
+doesn't say why, run it again with `bash -x`.
+
 ## Your task
 
-Fix the four helpers. Run each one by hand first and read what bash says.
-Each `TODO` sits right above the broken line.
+Fix the four helpers. Run each one by hand first and read what bash says;
+add `-x` (`bash -x 1_region.sh`) to watch it. Each `TODO` sits right above
+the broken line.
 
 ### 1. Fix the region assignment
 

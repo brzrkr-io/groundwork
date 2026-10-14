@@ -31,16 +31,16 @@ func TestDockerfile(t *testing.T) {
 	modCopy, download, copyAll, versionArg, goBuild := -1, -1, -1, -1, -1
 	for i, in := range build.Instructions {
 		switch {
-		case in.Cmd == "COPY" && len(in.Flags) == 0 && len(in.Args) == 2 && in.Args[0] == ".":
+		case in.Cmd == "COPY" && !slices.ContainsFunc(in.Flags, isFrom) && len(in.Args) == 2 && (in.Args[0] == "." || in.Args[0] == "./"):
 			copyAll = i
-		case in.Cmd == "COPY" && modCopy < 0 && slices.Contains(in.Args, "go.mod"):
+		case in.Cmd == "COPY" && modCopy < 0 && (slices.Contains(in.Args, "go.mod") || slices.Contains(in.Args, "go.*")):
 			modCopy = i
-			if len(in.Args) < 3 || !slices.Contains(in.Args[:len(in.Args)-1], "go.sum") {
+			if srcs := in.Args[:len(in.Args)-1]; !slices.Contains(srcs, "go.sum") && !slices.Contains(srcs, "go.*") {
 				t.Errorf("%s line %d: %s copies go.mod without go.sum; this folder has a go.sum, so copy both", file, in.Line, show(in))
 			}
 		case in.Cmd == "RUN" && strings.Join(in.Args, " ") == "go mod download":
 			download = i
-		case in.Cmd == "ARG" && slices.Equal(in.Args, []string{"VERSION=dev"}):
+		case in.Cmd == "ARG" && len(in.Args) == 1 && strings.ReplaceAll(in.Args[0], `"`, "") == "VERSION=dev":
 			versionArg = i
 		case in.Cmd == "RUN" && strings.Contains(in.Rest, "go build"):
 			goBuild = i
@@ -134,18 +134,36 @@ func checkGoBuild(t *testing.T, file string, build stage, i int) {
 		return
 	}
 	in := build.Instructions[i]
-	got := strings.Join(strings.Fields(in.Rest), " ")
-	cgoOff := envVars(build.Instructions)["CGO_ENABLED"] == "0"
-	if after, ok := strings.CutPrefix(got, "CGO_ENABLED=0 "); ok {
-		got, cgoOff = after, true
-	}
+	words := strings.Fields(in.Rest)
+	cgoOff := slices.Contains(words, "CGO_ENABLED=0") || envVars(build.Instructions)["CGO_ENABLED"] == "0"
 	switch {
-	case got != command:
-		t.Errorf("%s line %d: %s, want RUN CGO_ENABLED=0 %s", file, in.Line, show(in), command)
+	case !stampsVersion.MatchString(strings.Join(words, " ")):
+		t.Errorf("%s line %d: %s doesn't stamp the version; want RUN CGO_ENABLED=0 %s (in double quotes, so the shell fills in ${VERSION})", file, in.Line, show(in), command)
+	case !buildsTo(words, "/out/inventoryd"):
+		t.Errorf("%s line %d: %s doesn't write the binary to /out/inventoryd; want RUN CGO_ENABLED=0 %s", file, in.Line, show(in), command)
 	case !cgoOff:
 		t.Errorf("%s line %d: %s doesn't set CGO_ENABLED=0, so the binary needs C libraries that distroless/static doesn't have", file, in.Line, show(in))
 	}
 }
+
+// stampsVersion matches the -ldflags option that sets main.version to the
+// build argument, in the spellings that mean the same to the shell and to
+// go build: -ldflags "..." or -ldflags="...", and $VERSION or ${VERSION}.
+var stampsVersion = regexp.MustCompile(`-ldflags[ =]"-X[ =]'?main\.version=\$(VERSION|\{VERSION\})'?"`)
+
+// buildsTo reports whether the words of a go build command write the program
+// to out, with "-o out" or "-o=out".
+func buildsTo(words []string, out string) bool {
+	for i, word := range words {
+		if word == "-o="+out || word == "-o" && i+1 < len(words) && words[i+1] == out {
+			return true
+		}
+	}
+	return false
+}
+
+// isFrom reports whether flag is a --from= flag.
+func isFrom(flag string) bool { return strings.HasPrefix(flag, "--from=") }
 
 func TestDockerignore(t *testing.T) {
 	const file = "Dockerfile.dockerignore"
@@ -363,7 +381,7 @@ func checkJob(t *testing.T, file string, wf workflow, id string) job {
 		slices.Sort(ids)
 		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, ids, id)
 	}
-	if j.RunsOn != "ubuntu-latest" {
+	if runsOn(j) != "ubuntu-latest" {
 		t.Errorf("%s: job %s has runs-on %v, want ubuntu-latest", file, id, j.RunsOn)
 	}
 	return j

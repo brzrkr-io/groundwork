@@ -6,7 +6,7 @@ staging into production. It's the part of CI/CD you touch on every release
 and every rollback.
 
 **New here:** tag triggers, `${{ }}` expressions, `github.ref_name`,
-`github.sha`, `if:`, `permissions:`, `secrets.GITHUB_TOKEN`,
+`github.sha`, `permissions:`, `secrets.GITHUB_TOKEN`,
 `docker/login-action`, `docker/build-push-action`, `environment:`,
 `concurrency:`.
 
@@ -58,22 +58,17 @@ the current run:
 
 ### Stamping the version
 
-In *Version info and ldflags* you set a variable at build time with
-`-ldflags "-X main.release=2025.10"`. In a workflow, the fixed text becomes
-an expression, so every tag stamps its own version into the binary. The
-double quotes keep `-X main.version=...` together as one argument.
-
-### Running a job only sometimes: if
+In *Version info and ldflags* you set a variable at build time with fixed
+text. In a workflow, the fixed text can be an expression, so every run
+stamps its own value into the binary. Here a tool records its commit:
 
 ```yaml
-  announce:
-    if: github.ref_name == 'main'
-    runs-on: ubuntu-latest
+# on your laptop:  go build -ldflags "-X main.release=2025.10" -o mytool .
+- run: go build -ldflags "-X main.commit=${{ github.sha }}" -o mytool .
 ```
 
-`if:` holds an expression; there you may leave out the `${{ }}`. Text goes
-in single quotes. `==`, `!=`, `&&` (and) and `||` (or) work as in Go. A job
-whose `if` is false is *skipped*, not failed.
+GitHub swaps in the hash before the shell runs. The double quotes keep
+`-X main.commit=...` together as one argument.
 
 ### The workflow's token and its permissions
 
@@ -162,9 +157,11 @@ Environments), not in the YAML:
 - **Environment secrets:** only jobs that name the environment can read
   them, and only after approval.
 
-The YAML only names the environment. That's on purpose: someone who can
-edit the workflow still can't delete the approval. (On free plans,
-required reviewers work in public repositories only.)
+The YAML only names the environment, so keep the production credentials
+as **environment** secrets. Someone who edits the workflow can delete the
+`environment:` line to skip the approval, but then the job can't read
+those secrets and can't deploy. (On free plans, required reviewers work
+in public repositories only.)
 
 ### Build once, promote the same image
 
@@ -218,19 +215,25 @@ add a `release` job that builds `bin/statusd` stamped with the tag.
 - Add a job with the id `release`:
   - it `needs` the `test` job and runs on `ubuntu-latest`,
   - its steps: `actions/checkout` and `actions/setup-go` (pinned, with
-    `go-version-file: go.mod`, as in *CI workflows*), then a step that runs
-    exactly:
-
-    ```bash
-    go build -ldflags "-X main.version=${{ github.ref_name }}" -o bin/statusd .
-    ```
+    `go-version-file: go.mod`, as in *CI workflows*), then one `go build`
+    step,
+  - that `go build` sets `main.version` to the tag's name with
+    `-ldflags "-X main.version=..."`, writes the binary to `bin/statusd`
+    with `-o bin/statusd`, and builds the current folder, `.`.
 
 Pushing tag `v1.4.2` runs `test`, then `release`, and the binary's
 `main.version` is `v1.4.2`. Pushing a commit to `main` runs nothing.
 
+The binary vanishes with the runner when the job ends. A real release
+keeps it: an `actions/upload-artifact` step, as in *CI workflows: a matrix,
+a cache and artifacts*, or a GitHub Release. You may add one; the test
+doesn't look for it.
+
 **Think it through:**
 - Which setting under `push:` limits it to tags?
 - Which row of the github context table holds `v1.4.2`?
+- Look back at *Stamping the version*: which part of that command becomes
+  an expression here?
 
 ### 2. Build and push the image
 

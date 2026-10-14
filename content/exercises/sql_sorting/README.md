@@ -19,6 +19,10 @@ A table is a *set* of rows, not a list. Without `ORDER BY`, the database may
 return them in any order, and that order can change when the data grows or
 an index is added. If the order matters, say so.
 
+The tests check this. They run your query twice, the second time with
+SQLite told to read tables backwards. A query without `ORDER BY` may look
+right on the first run, but the second run gives it away.
+
 ### ORDER BY
 
 `ORDER BY` comes after `WHERE` and sorts the result:

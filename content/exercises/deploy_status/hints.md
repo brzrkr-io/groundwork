@@ -14,7 +14,33 @@ bullet each.
 
 ### Answer
 
+A short version that passes; the reference `DESIGN.md` you'll see when you
+finish has more detail.
+
 ```markdown
+## Requirements
+
+CI pipelines send deploy events with a service, version and state
+(started, succeeded or failed). Anyone can ask for the latest status of one
+service. Accepting an event must take under 50 ms, a redelivered event must
+never change the answer, and a status may be a second or two old.
+
+## Estimates
+
+- Writes: 300 services × 10 deploys a day × 2 events = 6,000 events a day,
+  about 0.07 per second. Peak: all 300 services at once is 600 events.
+- Reads: 50 dashboards × 300 services every 10 seconds = 1,500 reads per
+  second, far more than writes.
+- Storage: 300 statuses × 200 bytes = 60 KB.
+
+## Design
+
+`POST /events` validates the event and puts it on a bounded queue, then
+answers 202. A full queue answers 503 with `Retry-After: 1`. One worker
+applies events to the database, skips IDs it has seen, and removes the
+service from the cache. `GET /status/{service}` reads the cache first and
+the database on a miss.
+
 ## Trade-offs
 
 - Queue instead of writing during the request: CI gets an answer at once
@@ -24,9 +50,6 @@ bullet each.
   one database read, but the cache can never hold a value the database
   doesn't.
 ```
-
-The reference `DESIGN.md` you'll see when you finish has all four sections
-in full.
 
 ## Task 2: Accept events with backpressure
 
@@ -126,9 +149,10 @@ returns.
 
 ## Task 5: Serve it over HTTP
 
-`handleEvent` decodes with `json.NewDecoder(r.Body).Decode(&ev)`, calls
-`Submit`, and picks a status code from the error. `handleStatus` gets the
-name with `r.PathValue("service")` and calls `Lookup`.
+Each handler only translates. `handleEvent` turns a request body into an
+`Event` and `Submit`'s error into a status code; `handleStatus` turns the
+path into a `Lookup` and its result into JSON or a 404. Which row of the
+README's table does each error belong to?
 
 ### Closer
 

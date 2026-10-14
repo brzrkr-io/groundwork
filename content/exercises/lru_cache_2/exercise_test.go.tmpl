@@ -68,11 +68,12 @@ func wantGet(t *testing.T, s *Service, name, want string, wantErr error) {
 	}
 }
 
-// wantReads checks how many times the store has been read.
-func wantReads(t *testing.T, store *fakeStore, want int) {
+// wantReads checks how many times the store has been read, and explains
+// why that number is expected.
+func wantReads(t *testing.T, store *fakeStore, want int, why string) {
 	t.Helper()
 	if store.reads != want {
-		t.Errorf("store reads = %d, want %d", store.reads, want)
+		t.Errorf("store reads = %d, want %d: %s", store.reads, want, why)
 	}
 }
 
@@ -83,7 +84,7 @@ func TestGetCachesOnlySuccess(t *testing.T) {
 		s := New(store, 10)
 		wantGet(t, s, "dark-mode", "on", nil)
 		wantGet(t, s, "dark-mode", "on", nil)
-		wantReads(t, store, 1)
+		wantReads(t, store, 1, "the second Get should be answered from the cache")
 	})
 
 	t.Run("not found isn't cached", func(t *testing.T) {
@@ -91,7 +92,7 @@ func TestGetCachesOnlySuccess(t *testing.T) {
 		s := New(store, 10)
 		wantGet(t, s, "new-checkout", "", ErrNotFound)
 		wantGet(t, s, "new-checkout", "", ErrNotFound)
-		wantReads(t, store, 2)
+		wantReads(t, store, 2, "a not-found answer must not be cached, so every Get reads the store")
 		store.flags["new-checkout"] = "on" // another replica creates the flag
 		wantGet(t, s, "new-checkout", "on", nil)
 	})
@@ -143,7 +144,7 @@ func TestSetInvalidates(t *testing.T) {
 		}
 		wantGet(t, s, "dark-mode", "on", nil) // read 2: Set removed it from the cache
 		wantGet(t, s, "dark-mode", "on", nil) // cached again
-		wantReads(t, store, 2)
+		wantReads(t, store, 2, "Set removes the cached copy, so the next Get reads the store once and caches the new value")
 	})
 
 	t.Run("a new flag is read from the store", func(t *testing.T) {
@@ -153,7 +154,7 @@ func TestSetInvalidates(t *testing.T) {
 			t.Errorf("Set(%q, %q) = %v, want <nil>", "beta-banner", "on", err)
 		}
 		wantGet(t, s, "beta-banner", "on", nil)
-		wantReads(t, store, 1)
+		wantReads(t, store, 1, "Set must not put the new value in the cache, so this Get reads it from the store")
 	})
 }
 
@@ -180,7 +181,7 @@ func TestDeleteInvalidates(t *testing.T) {
 			t.Errorf("Delete(%q) = %v, want <nil>", "new-checkout", err)
 		}
 		wantGet(t, s, "dark-mode", "off", nil) // still cached: no read
-		wantReads(t, store, 2)
+		wantReads(t, store, 2, "deleting new-checkout must leave dark-mode cached")
 		wantGet(t, s, "new-checkout", "", ErrNotFound)
 	})
 

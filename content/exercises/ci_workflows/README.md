@@ -69,7 +69,8 @@ jobs:
 | `with:` | inputs for that action |
 | `run:` | shell commands |
 
-Every job starts on an **empty machine**. Your code isn't there until the
+Every job starts on a **fresh machine**. Common tools such as Git, Docker
+and a Go release are installed, but your code isn't there until the
 `actions/checkout` step clones it, so checkout is almost always step one.
 
 ### Events with settings
@@ -86,11 +87,17 @@ on:
 
 An event with no settings ends with a bare colon.
 
+Remember the Norway problem from the guide *Data formats and parsing*?
+Under YAML 1.1 rules a bare `on` is the boolean `true`. GitHub reads it as
+the word `on`, so write it bare like everyone does; the tests here cope
+with it too.
+
 ### Actions and versions
 
 An *action* is a reusable step someone published. You always say which
-version you want after `@`: `actions/checkout@v7` means "major version 7".
-Without a fixed version, the step can change under you overnight.
+version you want after `@`: `actions/checkout@v7` means "the newest
+release of major version 7": bug fixes, but no breaking changes. A branch
+such as `@main` can change under you overnight.
 
 `actions/setup-go` installs Go. Tell it which version through `with`:
 

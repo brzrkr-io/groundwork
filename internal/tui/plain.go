@@ -31,6 +31,9 @@ func CourseList(s *session.Session, all bool) string {
 	var b strings.Builder
 	done, total := s.DoneCount(), len(s.Course.Exercises)
 	b.WriteString(brand.Render("groundwork") + "  " + progressBar(done, total, 30) + dim.Render(fmt.Sprintf("  %d/%d exercises done", done, total)) + "\n")
+	if due := s.DueReviews(); len(due) > 0 {
+		b.WriteString(warn.Render(fmt.Sprintf("↻ %d %s due", len(due), plural(len(due), "review", "reviews"))) + dim.Render(": run groundwork and press ") + keyCap.Render("v") + dim.Render(fmt.Sprintf(" (first: %03d %s)", due[0].Number, due[0].Title)) + "\n")
+	}
 	current := s.Current()
 	phase := ""
 	for _, mod := range s.Course.Modules {

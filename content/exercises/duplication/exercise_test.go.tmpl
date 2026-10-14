@@ -55,8 +55,8 @@ func TestCheckPort(t *testing.T) {
 		t.Fatal("exercise.go has no function named checkPort yet")
 	}
 	validate := src.fn(t, "Validate")
-	if n := countCalls(validate, "checkPort"); n < 3 {
-		t.Errorf("Validate calls checkPort %d times, want once for each port", n)
+	if countCalls(validate, "checkPort") == 0 {
+		t.Error("Validate doesn't call checkPort yet; use it for every port instead of the copied checks")
 	}
 	if lines := src.numberLines(validate); len(lines) > 0 {
 		t.Errorf("Validate still has port numbers in it (exercise.go lines %v); the port rule belongs in checkPort, written once", lines)

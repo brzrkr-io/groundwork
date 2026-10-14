@@ -85,8 +85,7 @@ address identifies a house.
   `192.168.1.10`. That allows about 4.3 billion addresses, which the
   internet ran out of.
 - **IPv6**: 128 bits, written in hex groups: `2606:4700:10::6814:179a`. The
-  `::` means "a run of zero groups". There are enough for every device
-  forever.
+  `::` means "a run of zero groups".
 
 ### CIDR: a block of addresses
 
@@ -198,8 +197,9 @@ port, which is why you see `address already in use`.
 
 A *socket* is one end of a conversation: an IP address plus a port, owned by
 a process. A TCP connection is identified by both ends. The client's side
-uses an *ephemeral port* the OS picks at random, which is how one laptop
-holds many connections to the same server.
+uses an *ephemeral port*: a temporary port the OS picks from a high range
+(32768–60999 on Linux), which is how one laptop holds many connections to
+the same server.
 
 ```go
 package main
@@ -288,7 +288,8 @@ A connection attempt ends in one of three ways:
 ### UDP: fire and forget
 
 *UDP* sends single messages (datagrams). There's no connection, no
-re-sending and no ordering. A message arrives once, or not at all.
+re-sending and no ordering. Each message arrives whole or not at all, and
+the sender is never told which.
 
 That's faster and simpler when a lost message doesn't matter, or when the
 application handles loss itself. DNS lookups, StatsD metrics, video calls
@@ -331,16 +332,17 @@ legwork and caches answers.
 Every answer carries a *TTL* (time to live): how many seconds resolvers may
 cache it. That's why "I changed the record, but half the users still hit
 the old server" happens: their resolvers keep the old answer until its TTL
-runs out. Before a migration, lower the TTL (say to 60 seconds) a day
-ahead, so the switch spreads within a minute.
+runs out. Before a migration, lower the TTL (say to 60 seconds) at least
+one old TTL ahead: if it was 86400 (a day), lower it a day early. Then the
+switch spreads within a minute.
 
-### "It's always DNS"
+### Check DNS early
 
-It's a running ops joke that every outage is DNS. It isn't, but DNS sits
-under almost everything, so check it early. In Kubernetes, every Service
-gets a name like `payments.prod.svc.cluster.local`, answered by the
-cluster's DNS server (CoreDNS). When that struggles, every service that
-calls others by name breaks at once.
+"It's always DNS" is an ops joke. It isn't always, but DNS sits under almost
+everything. In Kubernetes, every Service gets a name like
+`payments.prod.svc.cluster.local`, answered by the cluster's DNS server
+(CoreDNS). When that struggles, every service that calls others by name
+breaks at once.
 
 ## HTTP: requests and responses
 
@@ -384,12 +386,14 @@ The first digit tells you whose problem it is:
 | 2xx | it worked | 200 OK, 201 Created, 204 No Content |
 | 3xx | look elsewhere | 301 / 302 redirect, 304 Not Modified |
 | 4xx | **the client** got it wrong | 400, 401 (who are you?), 403 (not allowed), 404, 429 (slow down) |
-| 5xx | **the server** failed | 500, 502 Bad Gateway, 503 Unavailable, 504 Gateway Timeout |
+| 5xx | **the server** failed | 500, 502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout |
 
 Two rules to remember:
 
-- **Retry 5xx and 429 (with backoff); don't retry other 4xx.** A 403 won't
-  turn into a 200 by asking again.
+- **Retry 429 and 5xx with backoff, but only requests that are safe to
+  repeat.** A GET is safe; a POST that creates something may have worked
+  before the error, so retrying it can do it twice. Don't retry other 4xx:
+  a 403 won't turn into a 200 by asking again.
 - **502 and 504 usually come from a proxy** in front of the app: the app
   behind it failed or was too slow.
 
@@ -414,10 +418,13 @@ one of them.
 ```text
 trusted root CA (in your OS trust store)
     | signs
-intermediate CA
+intermediate CA              <-- the server sends this one too
     | signs
 api.example.com certificate  <-- the server sends this during the handshake
 ```
+
+Your client checks three things: the chain leads to a trusted CA, the name
+matches the host you asked for, and today is within the validity dates.
 
 TLS failures you'll meet on call:
 
@@ -453,10 +460,12 @@ beat about 56 ms.
 | across an ocean | 70–200 ms |
 
 **Why this matters to your code:** a new HTTPS connection spends about one
-round trip on TCP and one on TLS before the request even leaves. And 100
-API calls made one after another, at 80 ms each, take 8 seconds however fat
-the link is. The fixes are reusing connections (Go's HTTP client does this
-for you), batching, and overlapping calls; see the *Concurrency* guide.
+round trip on TCP and one on TLS 1.3 (two on older TLS 1.2) before the
+request even leaves. And 100 API calls made one after another, at 80 ms
+each, take 8 seconds however fat the link is. The fixes are reusing
+connections (Go's HTTP client does this for you, as long as you read and
+close every response body), batching, and overlapping calls; see the
+*Concurrency* guide.
 
 ## Timeouts everywhere
 
@@ -471,9 +480,10 @@ timeout, your program waits as long as that takes: possibly forever.
 | reading the response | a server that never answers | **forever** |
 
 A Go trap: `http.Get` uses the default client, which has **no overall
-timeout**. If a dependency accepts connections and never answers, stuck
-requests pile up until your service runs out of memory or connections. Build
-your own client:
+timeout**. Connecting and TLS do give up (after 30 and 10 seconds), but if
+a dependency accepts the connection and never answers, the request waits
+forever. Stuck requests pile up until your service runs out of memory or
+connections. Build your own client:
 
 ```go
 client := &http.Client{Timeout: 10 * time.Second}
@@ -567,14 +577,11 @@ curl: (60) SSL certificate OpenSSL verify result: self-signed certificate (18)
 
 Check the expiry, the name, and whether your client trusts the CA.
 
-**5. HTTP.** You're connected; what does the app say?
+**5. HTTP.** You're connected; what does the app say? This prints only the
+status code, such as `404`:
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' https://example.com/nope
-```
-
-```text
-404
 ```
 
 Now it's an application question: 4xx means check your request (URL, auth,
@@ -594,7 +601,8 @@ broken" isn't.
 - **Listening on `127.0.0.1` in a container,** then wondering why nothing
   outside can connect.
 - **Retrying every error.** Retrying a 400 or 403 repeats the mistake,
-  faster. Retry timeouts, 5xx and 429, with backoff.
+  faster. Retry timeouts, 5xx and 429 with backoff, and only for requests
+  that are safe to repeat.
 - **Opening `0.0.0.0/0`** in a security group "just to test", and leaving it.
 
 ## Check yourself
@@ -608,21 +616,37 @@ broken" isn't.
    accepting connections but never replying. What happens to your service?
 5. A web app in a pod answers `curl localhost:8080` from inside the pod but
    not from another pod. What's the first thing to check?
+6. A Go client calling an internal service fails with `x509: certificate
+   signed by unknown authority`. A teammate suggests
+   `InsecureSkipVerify: true`. Why is that wrong, and what's the right fix?
+7. Your client sends a POST that starts a deploy and gets back a 502. Should
+   it retry automatically?
 
 ## Answers
 
-1. 1,024 addresses: 32 − 22 = 10 free bits, and 2¹⁰ = 1,024. The block runs
-   from `10.20.0.0` to `10.20.3.255`, so yes, `10.20.3.200` is inside.
+1. 1,024 addresses: 32 − 22 = 10 free bits, and 2¹⁰ = 1,024. Ten free bits
+   are the 8 bits of the last number plus 2 bits of the third, so the third
+   number runs 0–3: the block is `10.20.0.0` to `10.20.3.255`, and
+   `10.20.3.200` is inside.
 2. A timeout means nothing answered, so suspect something dropping packets:
    a security group, firewall, network policy, or a wrong IP. "Refused"
    would mean the machine answered but nothing listens on 5432.
 3. DNS caching: resolvers keep the old record until its TTL expires. Lower
-   the TTL well before a migration so the change spreads quickly.
+   the TTL at least one old TTL before a migration so the change spreads
+   within minutes.
 4. With no timeout, each call waits forever. Stuck requests pile up until
    the service runs out of connections or memory, so one slow dependency
    takes you down too. Use an `http.Client` with a `Timeout`.
 5. The address the app listens on. On `127.0.0.1:8080` only the pod itself
    can connect; it should listen on `0.0.0.0:8080` (or `:8080`).
+6. Skipping verification keeps the encryption but drops the identity check,
+   so anyone in the middle can pretend to be the service. The service uses
+   a private CA your client doesn't trust: add that CA to the client's
+   trusted list instead.
+7. Not blindly. A 502 comes from a proxy that didn't get a good answer from
+   the app, but the app may already have started the deploy, so a retry
+   could start a second one. Retry only requests that are safe to repeat,
+   or check the deploy's state first.
 
 ## Key terms
 
@@ -635,7 +659,7 @@ broken" isn't.
 | NAT | swapping private addresses for a public one at a gateway |
 | port | a number (0–65535) that picks the program on a machine |
 | socket | one end of a connection: IP address plus port |
-| ephemeral port | the random client-side port the OS picks |
+| ephemeral port | the temporary client-side port the OS picks for a connection |
 | TCP | reliable, ordered byte stream over a connection |
 | three-way handshake | SYN, SYN-ACK, ACK: how TCP opens a connection |
 | UDP | single messages, no connection, no delivery guarantee |

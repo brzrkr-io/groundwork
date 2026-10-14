@@ -170,9 +170,9 @@ Estimates also cover **time**. These are rough, order-of-magnitude numbers for m
 | Spinning-disk seek | 5–10 ms |
 | Round trip between continents | 100–150 ms |
 
-Read it as a ladder: each step down is about 10 to 1,000 times slower.
+Read it as a ladder: each step down is slower, and the bottom row is about 100 million times slower than the top.
 
-- **Memory is cheap, the network is expensive.** A cache in your process answers in nanoseconds; asking the database answers in milliseconds, a million times slower.
+- **Memory is cheap, the network is expensive.** A cache in your process answers in nanoseconds; asking the database answers in milliseconds, tens of thousands of times slower.
 - **Round trips add up.** A handler that makes 20 sequential database calls at 2 ms each spends 40 ms just waiting. One query that fetches all 20 rows costs 2 ms.
 - **Distance is physics.** Light in fibre needs about 70 ms to cross the Atlantic and back. No code change fixes that; putting a copy of the data nearer the user does.
 
@@ -316,7 +316,7 @@ PUT  /links/{name}   {"url": "https://..."}                         -> 200
 GET  /{name}         -> 302 Found, Location: https://...
 ```
 
-Why `302` (temporary redirect) and not `301` (permanent)? Browsers cache a 301 forever, so an edited link would never take effect for someone who already clicked it. That's a trade-off: 302 sends every click to the service, which the estimates say it can easily take.
+Why `302` (temporary redirect) and not `301` (permanent)? Browsers may cache a 301 with no expiry, so an edited link would never take effect for someone who already clicked it. That's a trade-off: 302 sends every click to the service, which the estimates say it can easily take.
 
 ### 4. Design
 
@@ -327,7 +327,7 @@ browser -> load balancer -> link service (2 replicas) -> Postgres (primary + sta
 ```
 
 - Two stateless replicas behind a load balancer: no single instance is a SPOF.
-- Postgres with a standby in another zone: links are never lost.
+- Postgres with a synchronous standby in another zone, plus nightly backups: a write isn't confirmed until two zones have it, so links are never lost. (An *asynchronous* standby can be a few seconds behind and lose the newest links when it takes over.)
 - An in-process cache with a 60-second TTL: redirects are answered from memory, and the 60 s TTL is exactly the freshness requirement.
 
 ### 5. Failure modes
@@ -376,7 +376,7 @@ Same features, three orders of magnitude more load. Now you'd add a shared cache
 4. The error budget is (1 − 0.999) × 20,000,000 = 20,000 failed requests.
 5. 30 × 2 ms = 60 ms spent waiting on the network, not computing. Fetch everything in one query (or a few in parallel) to cut the round trips.
 6. Their failures aren't independent: a zone outage or a bad config rollout takes both down at once. Spread replicas across zones and roll changes out gradually.
-7. Browsers cache a 301 permanently, so people who clicked before an edit would keep going to the old URL. A 302 sends every click to the service, which can then return the current target.
+7. Browsers may cache a 301 with no expiry, so people who clicked before an edit would keep going to the old URL. A 302 sends every click to the service, which can then return the current target.
 
 ## Key terms
 

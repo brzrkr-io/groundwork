@@ -82,13 +82,24 @@ func checkBuildStage(t *testing.T, file string, s stage, out, pkg string) {
 		t.Errorf("%s: the build stage has no RUN go build; want RUN CGO_ENABLED=0 go build -o %s %s", file, out, pkg)
 		return
 	}
-	o := slices.Index(build.Args, "-o")
-	if o < 0 || o+1 == len(build.Args) || build.Args[o+1] != out || !slices.Contains(build.Args, pkg) {
+	builds := slices.Contains(build.Args, pkg) || slices.Contains(build.Args, pkg+"/")
+	if !buildsTo(build.Args, out) || !builds {
 		t.Errorf("%s line %d: %s, want it to build %s with -o %s", file, build.Line, show(*build), pkg, out)
 	}
 	if !slices.Contains(build.Args, "CGO_ENABLED=0") && envVars(s.Instructions)["CGO_ENABLED"] != "0" {
 		t.Errorf("%s line %d: %s builds with cgo on, so the binary needs C libraries the runtime image doesn't have; want CGO_ENABLED=0", file, build.Line, show(*build))
 	}
+}
+
+// buildsTo reports whether the words of a go build command write the program
+// to out, with "-o out" or "-o=out".
+func buildsTo(args []string, out string) bool {
+	for i, arg := range args {
+		if arg == "-o="+out || arg == "-o" && i+1 < len(args) && args[i+1] == out {
+			return true
+		}
+	}
+	return false
 }
 
 // checkCacheOrder checks s copies go.mod and go.sum, downloads the modules,
@@ -98,7 +109,7 @@ func checkCacheOrder(t *testing.T, file string, s stage) {
 	var modCopy, download, copyAll *instruction
 	for _, in := range s.Instructions {
 		switch {
-		case in.Cmd == "COPY" && modCopy == nil && slices.Contains(in.Args, "go.mod") && slices.Contains(in.Args, "go.sum"):
+		case in.Cmd == "COPY" && modCopy == nil && (slices.Contains(in.Args, "go.*") || slices.Contains(in.Args, "go.mod") && slices.Contains(in.Args, "go.sum")):
 			modCopy = &in
 		case in.Cmd == "RUN" && download == nil && strings.Contains(in.Rest, "go mod download"):
 			download = &in

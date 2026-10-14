@@ -237,7 +237,7 @@ main.main()
 exit status 2
 ```
 
-Your folder and the hex numbers will differ. Read it like the diagram above, top to bottom:
+Your folder and the hex numbers will differ. The values in brackets after a function name are its arguments; a `?` means Go isn't sure of them, so don't trust those. Read the rest like the diagram above, top to bottom:
 
 | Lines | Meaning |
 |---|---|
@@ -408,7 +408,7 @@ That's *abstraction*: hiding the details behind a simple promise, so you can thi
 3. `total` was created inside `sumDisks`, so its scope ends at `sumDisks`'s closing `}`. `main` should use the value `sumDisks` returns: `t := sumDisks()`.
 4. Line 6 crashed (`usedGB * 100 / totalGB` divided by zero). The real mistake is line 16, `report("web-2", 10, 0)`, which passed a total of 0. You find it by following the frames down.
 5. `nextBackoff` is pure: the same input always gives the same output, and it touches nothing else. `logLine` has a side effect: it prints.
-6. One good answer: `findOldLogs(dir string) (int, error)` counts logs older than a cutoff; `compress(path string) error` gzips one; `deleteOld(dir string, keep int) error` removes the oldest beyond `keep`; and `rotate(dir string) error` calls the others in order and stops at the first error. Any split works if each function has one job and a name that says it.
+6. One good answer: `renameCurrent(dir string) error` moves `app.log` aside as `app.log.1`; `reopenLog(service string) error` tells the service to start writing a fresh `app.log`; `compressOld(dir string) error` gzips the renamed files; `deleteOld(dir string, keep int) error` removes all but the newest `keep`. A top function, `rotate(dir string, service string) error`, calls them in that order and stops at the first error. Any split works if each function has one job and a name that says it.
 
 ## Key terms
 

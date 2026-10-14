@@ -59,7 +59,7 @@ In ops, reproducing might mean running the same `curl` that failed, against the 
 
 ## Read the whole error
 
-Most beginners read the last line of an error, panic, and start editing. Read **all** of it first. Go gives you three kinds, and each tells you different things.
+Most beginners glance at one line of an error and start editing. Read **all** of it first. Go gives you three kinds, and each tells you different things.
 
 | Kind | When it appears | Looks like | Look first at |
 |---|---|---|---|
@@ -233,7 +233,7 @@ When the code "can't possibly" be wrong, one of your assumptions is. List them, 
 |---|---|
 | My code is running at all | Print something on the first line |
 | I'm running the version I just edited | Did you save? Rebuild? Print a word you just added |
-| The function gets the values I think | Print the parameters with `%q` at the top of the body |
+| The function gets the values I think | Print the parameters at the top of the body (`%q` for strings) |
 | The config file is the one I edited | Print the path it actually loaded |
 | The server runs the new release | Check the version in its startup log or status endpoint |
 

@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// The helpers readWorkflow, triggers, needs, pinned, findStep, findRun,
-// eventNames, stepNames and stringList are in workflow_test.go.
+// The helpers readWorkflow, triggers, runsOn, needs, pinned, findStep,
+// findRun, eventNames, stepNames and stringList are in workflow_test.go.
 
 func TestHelloWorkflow(t *testing.T) {
 	const file = "1_hello.yml"
@@ -86,7 +86,7 @@ func checkJob(t *testing.T, file string, wf workflow, id string) job {
 		slices.Sort(ids)
 		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, ids, id)
 	}
-	if j.RunsOn != "ubuntu-latest" {
+	if runsOn(j) != "ubuntu-latest" {
 		t.Errorf("%s: job %s has runs-on %v, want ubuntu-latest", file, id, j.RunsOn)
 	}
 	return j

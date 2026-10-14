@@ -7,8 +7,9 @@ on:
   push:
     tags: ['v*']
 
-# TODO(2): The review found that every job's token may push code, edit
-# releases and change settings, though no job does any of that.
+# TODO(2): The review found that every job's token may push code, publish
+# releases and edit issues, though no job does any of that, and that the
+# test job may push images too.
 permissions: write-all
 
 jobs:

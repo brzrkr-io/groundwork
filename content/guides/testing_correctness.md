@@ -60,8 +60,8 @@ Run `go test` in that folder and you get:
 --- FAIL: TestErrorRate (0.00s)
     rate_test.go:9: ErrorRate(3, 200) = 0, want 1.5
 FAIL
+exit status 1
 FAIL	example.com/rate	0.001s
-FAIL
 ```
 
 Read it top to bottom:
@@ -123,7 +123,7 @@ A checklist for edges:
 - **many**: more than one, to exercise the loop
 - **limits**: the smallest and largest allowed values, and one past each
 
-Try the checklist on `ErrorRate`. What about `ErrorRate(0, 0)`, a minute with no traffic at all? Dividing by zero gives NaN ("not a number") for floats. Is that what your alert wants? The test forces you to decide what the code *should* do. That decision is called a *specification*.
+Try the checklist on `ErrorRate`. What about `ErrorRate(0, 0)`, a minute with no traffic at all? With floats, 0 divided by 0 gives NaN ("not a number"), and NaN compared with anything is false, so an alert like `rate > 5` would silently never fire. Is that what you want? The test forces you to decide what the code *should* do. Writing that decision down is a *specification*.
 
 ### Errors are part of the contract
 

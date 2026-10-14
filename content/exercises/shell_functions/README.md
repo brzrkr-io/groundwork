@@ -48,6 +48,11 @@ greet() {
 It's what Go does for you automatically. Use `local` for every variable a
 function creates.
 
+> **Watch out:** `local out=$(some_command)` hides a failure. The line's
+> status is `local`'s, which is always 0, so `set -e` never sees
+> `some_command` fail. Declare first, then assign: `local out` on one line,
+> `out=$(some_command)` on the next.
+
 ### Answering yes or no: the exit status
 
 A function's exit status is the status of the last command it ran. So a
@@ -83,6 +88,18 @@ backup_path() {
 path=$(backup_path "billing")
 echo "writing $path"       # writing /var/backups/billing.tar.gz
 ```
+
+`$(...)` runs the function in a copy of the shell: whatever it sets there,
+even without `local`, vanishes when it's done. Only what it printed comes
+back.
+
+| The caller wants | The function | The caller writes |
+|---|---|---|
+| yes or no | ends with a test, or `return N` | `if check_x ...; then` |
+| a value | prints it with `echo` | `x=$(get_x ...)` |
+
+Don't use `return` for values: it carries only a status from 0 to 255,
+never text.
 
 ### Is a tool installed?
 
@@ -125,8 +142,9 @@ line on stderr.
 
 ### 2. Check the ports
 
-**Goal:** in `2_ports.sh`, define `valid_port`, which exits with status 0
-when its argument is a number from 1 to 65535, and 1 otherwise.
+**Goal:** in `2_ports.sh`, define `valid_port`, which succeeds (status 0)
+when its argument is a number from 1 to 65535, and fails (status 1)
+otherwise.
 
 ```bash
 bash 2_ports.sh 8080 0 65536
@@ -160,8 +178,8 @@ what `image_ref` prints.
 
 **Think it through:**
 - How does a bash function hand a value back to its caller?
-- The loop also uses variables named `name` and `tag`. Why does `local`
-  matter here?
+- Which two `local` variables does the function need, and which of `$1`
+  and `$2` fills each?
 
 ### 4. Require the tools
 

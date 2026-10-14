@@ -35,7 +35,7 @@ ENTRYPOINT ["/reportd"]
 
 | You write | Means |
 |---|---|
-| `USER 10001` | UID 10001; the group defaults to 0, root's group |
+| `USER 10001` | UID 10001; the group is the user's group in `/etc/passwd`, or 0 (root's group) if it has no entry |
 | `USER 10001:10001` | UID 10001, GID 10001 |
 | `USER nonroot` | a name, looked up in the image's `/etc/passwd` |
 | `USER root` or `USER 0` | root again |
@@ -52,11 +52,12 @@ one that counts.
 >   Kubernetes then refuses to start a container whose user it can't prove
 >   is not root. It can't look a name up, so `USER nonroot` fails that check
 >   and `USER 65532:65532` passes.
-> - **Convention:** give the group too. Without it the process runs with
->   group 0, root's group.
-> - **Author's choice:** `USER` just before `ENTRYPOINT`. Docker applies it
->   wherever it sits in the final stage, but there a reader sees who the
->   program runs as right before it starts.
+> - **Convention:** give the group too. A UID with no `/etc/passwd` entry
+>   otherwise runs with group 0, root's group.
+> - **Author's choice:** `USER` just before `ENTRYPOINT`. `USER` changes
+>   who every later `RUN` runs as, and the last one sets who the container
+>   runs as. Placed last, it's where a reader looks, and earlier steps that
+>   need root still work.
 
 ### Where ENV and ARG end up
 

@@ -9,8 +9,8 @@
 - Why "no answer" never tells you whether the other side did the work.
 - How to use timeouts, retries with backoff and jitter, and idempotency together.
 - What at-most-once, at-least-once and "exactly-once" really mean.
-- Consistency versus availability in plain words, and why clocks can't be trusted.
-- How rate limits, circuit breakers and caches protect a system, and what they cost.
+- Consistency versus availability in plain words, why etcd needs a majority, and why clocks can't be trusted.
+- How rate limits, circuit breakers, caches, health checks and graceful shutdown protect a system.
 - How logs, metrics and traces let you see inside a running system.
 
 ## One program becomes many
@@ -36,13 +36,13 @@ In the 1990s engineers at Sun wrote down the false assumptions everyone makes ab
 | Fallacy | What really happens |
 |---|---|
 | The network is reliable | Packets drop; a switch reboots mid-deploy |
-| Latency is zero | Each call costs 1 ms in a datacentre, 100+ ms across regions |
+| Latency is zero | Under 1 ms inside a datacentre, tens to hundreds of ms between regions |
 | Bandwidth is infinite | Pulling a 2 GB image to 300 nodes saturates the link |
 | The network is secure | Anyone on the path may read or alter traffic |
 | Topology doesn't change | Pods get new IPs; DNS answers change |
 | There is one administrator | Your call crosses teams, clouds and vendors |
 | Transport cost is zero | Cross-region traffic is billed per gigabyte |
-| The network is homogeneous | Different MTUs, proxies and TLS versions on the way |
+| The network is homogeneous | Different packet-size limits, proxies and TLS versions on the way |
 
 The *Networking from the ground up* guide explains the layers underneath. This guide is about what to do given that they fail.
 
@@ -66,7 +66,7 @@ From your side, all four look identical: silence. You **cannot** tell a slow ser
 Without a limit, case (4) can hang your tool forever. A *timeout* is the longest you will wait before treating the call as failed.
 
 - **Always set one.** Go's default `http.Client` has no timeout at all. You'll set them in *Context and cancellation* and in the *Production services* module.
-- **Pick it from data.** If the API normally answers in 200 ms and its 99th-percentile time is 900 ms, a 2 s timeout is sane. Thirty seconds is just a slower hang.
+- **Pick it from data.** Say the API normally answers in 200 ms, and 99 calls in 100 answer within 900 ms (its *99th percentile*, or p99). Then a 2 s timeout is sane. Thirty seconds is just a slower hang.
 - **A timeout is not an answer.** After it fires you still don't know whether the work happened. That's why the next two sections go together.
 
 ## Retries, backoff and jitter
@@ -127,9 +127,9 @@ Step by step: `ceiling` starts at 100 ms and doubles once per attempt, stopping 
 
 Rules that keep retries safe:
 
-- **Only retry what might succeed next time.** A `503` or a timeout, yes. A `400 Bad Request` or `403 Forbidden` will fail the same way forever.
+- **Only retry what might succeed next time.** A `503`, a timeout, or a `429 Too Many Requests` (wait as long as its `Retry-After` header says), yes. A `400 Bad Request` or `403 Forbidden` will fail the same way forever.
 - **Cap the attempts** and give up with a clear error.
-- **Retry at one layer only.** If the CLI, the library and the proxy each retry 3 times, one failing call becomes 3 × 3 × 3 = 27 requests.
+- **Retry at one layer only.** If the CLI, the library and the proxy each make up to 3 attempts, one failing call becomes 3 × 3 × 3 = 27 requests.
 - **Only retry operations that are safe to repeat.** Which brings us to idempotency.
 
 You'll build this in *Retries: backoff and jitter* and *Retries: retryable HTTP errors*.
@@ -192,7 +192,9 @@ order-2
 orders really created: 2
 ```
 
-The retry with `key-7f3a` found the key in the map and got `order-1` back without creating anything. Stripe and many AWS APIs work this way (AWS often calls the key a "client token"). A real server also stores keys durably, expires them after a while, and rejects a reused key with a different body; you'll handle that in *Idempotency keys: scope, expire and fingerprint*.
+The retry with `key-7f3a` found the key in the map and got `order-1` back without creating anything. Stripe and many AWS APIs work this way (AWS often calls the key a "client token").
+
+A real server does more. It stores keys durably and expires them after a while. It rejects a reused key sent with a different body. And it guards the map with a lock, because a retry can arrive while the first attempt is still running. You'll build the lock, expiry and body check in *Idempotency keys: replay retried requests* and *Idempotency keys: scope, expire and fingerprint*.
 
 ## Delivery guarantees
 
@@ -202,9 +204,9 @@ Put timeouts, retries and idempotency together and you get three possible promis
 |---|---|---|
 | At-most-once | Send once, never retry | Some work silently lost |
 | At-least-once | Retry until acknowledged | Some work done twice |
-| Exactly-once | At-least-once + dedup | Needs keys or idempotent work |
+| "Exactly-once" (really effectively-once) | At-least-once + the receiver drops duplicates | Needs keys or idempotent work |
 
-True *exactly-once delivery* over an unreliable network is impossible: case (3) above means you'll sometimes resend. What systems really offer is *effectively-once processing*: deliver at least once, and have the receiver ignore duplicates.
+True *exactly-once delivery* over an unreliable network is impossible: when a reply is lost, the sender can't tell and must resend. What systems really offer is *effectively-once processing*: deliver at least once, and have the receiver ignore duplicates.
 
 The ops habit: **assume at-least-once, make handlers idempotent.** A webhook, an SQS message, a Kubernetes event: any of them may arrive twice.
 
@@ -219,7 +221,15 @@ Copy B has two choices:
 
 That's the *CAP theorem* without the maths: when the network is split (a *partition*), a replicated system must give up either always-current answers or always-answering. Partitions happen, so the real question is which you give up during one.
 
-Most systems you use pick availability and accept *eventual consistency*: copies may disagree for a while, but if writes stop, they all converge to the same value.
+Both choices are common, so know which one each system made.
+
+| System | During a partition it picks | So you see |
+|---|---|---|
+| etcd (Kubernetes' database) | consistency | the side without a majority refuses writes |
+| A database with one primary | consistency | writes fail while the primary is unreachable |
+| DNS, caches, read replicas | availability | old answers for a while |
+
+Systems that pick availability accept *eventual consistency*: copies may disagree for a while, but if writes stop, they all converge to the same value.
 
 - **DNS:** you change a record, but resolvers keep the old answer until its TTL runs out.
 - **Read replicas:** a database replica can lag the primary by seconds.
@@ -227,9 +237,22 @@ Most systems you use pick availability and accept *eventual consistency*: copies
 
 Ops consequence: "I wrote it, read it back and got the old value" is often not a bug. Know which systems are eventually consistent before writing a check that reads right after a write.
 
+### Majorities: how etcd stays consistent
+
+How do several copies agree on one answer when any of them may be cut off? They vote. A change counts only once a *quorum* (a majority of members) has stored it. Agreeing like this is called *consensus*; etcd uses an algorithm named Raft.
+
+| etcd members | Majority needed | Members you can lose |
+|---|---|---|
+| 1 | 1 | 0 |
+| 3 | 2 | 1 |
+| 4 | 3 | 1 |
+| 5 | 3 | 2 |
+
+After a split, only the side that still has a majority can accept writes, so the two sides can never disagree. That's why control planes run 3 or 5 members: a 4th member costs money but survives no extra failure.
+
 ## Clocks lie
 
-Each machine has its own clock, and clocks drift apart. That difference is *clock skew*. NTP keeps it small, but small can mean milliseconds on a good day and minutes when NTP is broken. Clocks can even jump backwards when corrected.
+Each machine has its own clock, and clocks drift apart. That difference is *clock skew*. NTP (the Network Time Protocol) keeps it small, but small can mean milliseconds on a good day and minutes when NTP is broken. Clocks can even jump backwards when corrected.
 
 So don't decide which event happened first by comparing wall-clock timestamps from different machines:
 
@@ -238,10 +261,10 @@ So don't decide which event happened first by comparing wall-clock timestamps fr
   node-b log: 10:00:00.080  "attached volume vol-9"
 ```
 
-Did node-b attach before the delete? You can't tell: node-b's clock might be 100 ms behind.
+Did node-b attach before the delete? You can't tell. If node-b's clock runs 100 ms slow, its attach really happened at 10:00:00.180, *after* the delete.
 
-- To **order** changes, use a counter that one authority hands out: a database sequence, a version number, Kubernetes' `resourceVersion`.
-- To **measure** durations within one program, Go already does the right thing: `time.Now` carries a monotonic clock reading, so `time.Since(start)` isn't fooled by clock corrections. See *Time and durations: cert expiry, uptime, maintenance windows*.
+- To **order** changes, use a counter that one authority hands out and bumps on every write: a database sequence, or a version number stored with the record.
+- To **measure** durations within one program, Go already does the right thing: `time.Now` also records a *monotonic* clock reading (a clock that only ever moves forward), so `time.Since(start)` isn't fooled by clock corrections. See *Time and durations: cert expiry, uptime, maintenance windows*.
 - When reading logs from many machines during an incident, treat timestamps as approximate.
 
 ## Protecting systems from overload
@@ -250,7 +273,13 @@ A service has a fixed capacity. When demand exceeds it, everything slows down fo
 
 ### Rate limiting
 
-A *rate limit* caps how many requests a client may make per second. A common design is the *token bucket*: the bucket refills at a steady rate, each request spends a token, and an empty bucket means "wait" or `429 Too Many Requests`. AWS and the Kubernetes API both throttle you this way, so your automation must handle `429` by backing off. You'll write one in *Rate limiting: token buckets*.
+A *rate limit* caps how many requests a client may make per second. A common design is the *token bucket*:
+
+- The bucket holds up to N tokens and refills at a steady rate, say 10 per second.
+- Each request spends one token.
+- An empty bucket means "wait" or `429 Too Many Requests`.
+
+The bucket's size sets how big a burst it allows; the refill rate sets the long-run average. AWS throttles API calls with token buckets, and client-go limits its own calls to the Kubernetes API with one. So your automation must treat a throttling error (`429`, or AWS's `ThrottlingException` and `RequestLimitExceeded`) as "back off and retry". You'll write a bucket in *Rate limiting: token buckets*.
 
 ### Backpressure
 
@@ -284,6 +313,35 @@ Every cache trades freshness for speed. The copy is *stale* the moment the sourc
 - **What happens at expiry?** If 500 requests all miss at once and all hit the backend, that's a *cache stampede*. The fix is to let one request load the value while the others wait for it, as in *TTL caching: collapse concurrent loads*.
 - **What if the source is down?** Serving a slightly stale value is sometimes better than an error. Decide on purpose.
 
+## Health checks and graceful shutdown
+
+Kubernetes can only route around a broken pod, or replace an old one cleanly, if the pod tells it the truth.
+
+### Health checks
+
+A *health check* (Kubernetes calls it a *probe*) is a small HTTP endpoint that Kubernetes calls every few seconds:
+
+| Probe | Question | When it fails, Kubernetes... |
+|---|---|---|
+| *Liveness* | Is this process stuck beyond repair? | restarts the container |
+| *Readiness* | Can this pod serve requests right now? | stops sending it traffic, no restart |
+
+**Keep liveness dumb.** If liveness checked the database, one database outage would fail every pod, and Kubernetes would restart them all. Restarts can't fix the database. Dependency checks belong in readiness. You'll build both in *Health checks: liveness and readiness*.
+
+### Graceful shutdown
+
+A *graceful shutdown* finishes the work in hand before exiting. During a rollout, Kubernetes sends the old pod `SIGTERM`, waits up to its grace period (30 s by default), then sends `SIGKILL`, which can't be caught.
+
+```text
+SIGTERM arrives
+  1. stop new work      fail readiness, close the listener
+  2. finish the rest    in-flight requests, jobs, log flushes
+  3. exit               before the grace period ends
+grace period over and still running? --> SIGKILL
+```
+
+A Go program that doesn't handle `SIGTERM` exits on the spot, cutting off the requests it was serving, so users see errors on every deploy. You'll fix that in *Graceful shutdown: drain in-flight requests*.
+
 ## Observability: seeing inside
 
 You can't attach a debugger to 40 production pods. You learn what happened from what the system recorded. *Observability* is how well you can answer new questions about a running system from its outputs.
@@ -308,6 +366,8 @@ In an incident you usually go metrics (what's wrong, since when), then traces (w
 - **Write-then-read checks against eventually consistent systems.** Expect old values for a while, or read from the authority.
 - **Caching without deciding on staleness.** Every cache needs a TTL and a plan for expiry and outages.
 - **Logs as free text only.** `deploy failed` with no service, version or request ID is useless at 3 a.m.
+- **Liveness probes that check dependencies.** A database blip then restarts every pod at once. Check dependencies in readiness.
+- **Not handling `SIGTERM`.** Every deploy cuts off in-flight requests. Stop taking new work, drain, then exit.
 
 ## Check yourself
 
@@ -316,6 +376,9 @@ In an incident you usually go metrics (what's wrong, since when), then traces (w
 3. A queue promises at-least-once delivery. What must your message handler do?
 4. You update a DNS record, then immediately run `dig` from another office and see the old IP. Is DNS broken?
 5. A dependency you call starts timing out on every request. Which resilience pattern stops it from taking your service down too, and how?
+6. A service's liveness probe pings the database. The database is down for two minutes. What does Kubernetes do, and what should the probe check instead?
+7. Your team wants to grow its etcd cluster from 3 members to 4 "for safety". Does that help?
+8. During a rollout, Kubernetes sends an old pod `SIGTERM`. What should a well-behaved service do before it exits?
 
 ## Answers
 
@@ -324,6 +387,9 @@ In an incident you usually go metrics (what's wrong, since when), then traces (w
 3. Be idempotent: processing a message twice must have the same effect as once, for example by recording processed message IDs and skipping repeats.
 4. Probably not. Resolvers cache answers until the record's TTL expires. DNS is eventually consistent; the other office sees the new IP once its cache expires.
 5. A circuit breaker. After repeated failures it opens and fails calls instantly instead of waiting on timeouts, so goroutines and connections aren't tied up. After a cool-down it lets a trial call through.
+6. Every pod fails liveness, so Kubernetes restarts all of them, which can't fix the database and adds load as they all start up again. Liveness should only prove the process itself can answer; the database check belongs in readiness, which just stops traffic to the pod until the database is back.
+7. No. etcd needs a majority to accept writes: 2 of 3, or 3 of 4. Both survive losing only one member, so the 4th member adds cost and no extra safety. Go to 5 (majority 3) to survive two failures.
+8. Stop accepting new requests (fail readiness and close the listener), let in-flight requests and jobs finish, then exit before the grace period (30 s by default) ends. After that Kubernetes sends `SIGKILL`, which can't be caught, and any unfinished requests fail.
 
 ## Key terms
 
@@ -338,14 +404,24 @@ In an incident you usually go metrics (what's wrong, since when), then traces (w
 | Idempotent | Doing it twice has the same effect as once |
 | Idempotency key | A client-chosen ID that lets the server spot a repeat |
 | At-least-once | Delivery that retries, so duplicates are possible |
-| Effectively-once | At-least-once delivery plus duplicate removal |
+| Effectively-once | At-least-once delivery plus duplicate removal; what "exactly-once" really means |
+| Partition | A network split that stops some machines reaching others |
+| Quorum | A majority of members; a change counts once a quorum has stored it |
+| Consensus | Several machines agreeing on one value, for example by majority vote (etcd uses Raft) |
 | CAP theorem | During a partition, choose consistency or availability |
 | Eventual consistency | Copies may differ for a while but converge |
 | Clock skew | Different machines' clocks disagreeing |
+| Monotonic clock | A clock that only moves forward; safe for measuring durations, useless for comparing machines |
+| p99 (99th percentile) | The time within which 99 in 100 calls finish |
 | Rate limit | A cap on requests per unit of time |
+| Token bucket | A rate limiter: tokens refill steadily, each request spends one, the bucket size caps bursts |
 | Backpressure | A busy component pushing back on new work |
+| Cascading failure | One slow or failed service dragging down the services that call it |
 | Circuit breaker | Fails fast after repeated failures to stop cascades |
 | Cache stampede | Many requests reloading an expired cache entry at once |
+| Liveness probe | A Kubernetes check that restarts the container when it fails |
+| Readiness probe | A Kubernetes check that stops traffic to the pod while it fails, without a restart |
+| Graceful shutdown | Stop taking new work, finish work in progress, then exit |
 | Observability | Seeing inside a system through logs, metrics and traces |
 
 ## Watch

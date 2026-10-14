@@ -252,6 +252,17 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case k == "x" && pending == "reset":
 			return m, m.reset()
+		case k == "v" && pending == "review":
+			return m, m.startReview()
+		case k == "s" && pending == "reviewsolution":
+			m.flash = ""
+			if err := m.s.Lapse(m.ex); err != nil {
+				m.flash = "Couldn't save: " + err.Error()
+			}
+			m.pane = paneSolution
+			m.refresh()
+			m.body.GotoTop()
+			return m, nil
 		case k == "s" && pending == "reveal":
 			m.flash = ""
 			if err := m.s.Reveal(m.ex); err != nil {
@@ -317,6 +328,11 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.hintLevels[m.hintTask] < len(m.tasks[m.hintTask].Hints) {
 			m.hintLevels[m.hintTask]++
 		}
+		if m.sawAnswer() {
+			if err := m.s.Lapse(m.ex); err != nil {
+				m.flash = "Couldn't save: " + err.Error()
+			}
+		}
 		m.refresh()
 		m.body.GotoBottom()
 		return m, nil
@@ -355,6 +371,9 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.edit()
 	case "s":
 		switch {
+		case m.pane != paneSolution && m.inReview() && !m.reviewLapsed():
+			m.confirm = "reviewsolution"
+			m.flash = "This is a review: try it from memory first. Press s again to see the solution anyway (the review then starts over)."
 		case m.s.Done(m.ex) || m.s.Revealed(m.ex):
 			m.toggle(paneSolution)
 			m.body.GotoTop()
@@ -364,6 +383,14 @@ func (m *Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirm = "reveal"
 			m.flash = "Press s again to see the solution. Any other key cancels."
 		}
+	case "v":
+		due := m.s.DueReviews()
+		if len(due) == 0 {
+			m.flash = "No reviews due. Practice exercises come back for a review 2, 7 and 30 days after you pass them."
+			break
+		}
+		m.confirm = "review"
+		m.flash = fmt.Sprintf("Press v again to review %03d %s: it goes back to its starter code (your code is saved first).", due[0].Number, due[0].Title)
 	case "x":
 		m.confirm = "reset"
 		m.flash = "Press x again to reset this exercise to its starter code. Any other key cancels."
@@ -471,6 +498,35 @@ func (m *Model) toggle(p pane) {
 	} else {
 		m.pane = p
 	}
+}
+
+// startReview resets the first due review's exercise and opens it.
+func (m *Model) startReview() tea.Cmd {
+	due := m.s.DueReviews()
+	if len(due) == 0 {
+		return nil
+	}
+	e := due[0]
+	backup, err := m.s.StartReview(e)
+	if err != nil {
+		m.flash = "Couldn't start the review: " + err.Error()
+		return nil
+	}
+	m.flash = "Review: solve it from scratch. Your previous code is in " + relative(backup) + "."
+	text := m.flash
+	return tea.Batch(m.open(e), tea.Tick(8*time.Second, func(time.Time) tea.Msg { return clearFlash{text} }))
+}
+
+// inReview reports whether the open exercise is being solved again as a
+// spaced review.
+func (m *Model) inReview() bool {
+	r, ok := m.s.Review(m.ex)
+	return ok && r.Active
+}
+
+func (m *Model) reviewLapsed() bool {
+	r, _ := m.s.Review(m.ex)
+	return r.Lapsed
 }
 
 func (m *Model) reset() tea.Cmd {
@@ -626,11 +682,19 @@ func (m *Model) resultView(width int) string {
 			file = relative(filepath.Join(m.s.Root, m.todoFiles[0]))
 		}
 		b.WriteString("\n\n" + bold.Render("How this works") + "\n" +
-			"  1. Open " + bold.Render(file) + " in your editor (keep this window open next to it).\n" +
-			"  2. Press " + keyCap.Render("i") + " to read the instructions, then change the code where it says TODO.\n" +
-			"  3. Save the file. The tests above re-run by themselves. Stuck? Press " + keyCap.Render("h") + " for a hint.")
+			wrapIndent("1. Open "+bold.Render(file)+" in your editor (keep this window open next to it).", 2, width) + "\n" +
+			wrapIndent("2. Press "+keyCap.Render("i")+" to read the instructions, then change the code where it says TODO.", 2, width) + "\n" +
+			wrapIndent("3. Save the file. The tests above re-run by themselves. Stuck? Press "+keyCap.Render("h")+" for a hint.", 2, width))
 	} else if m.result != nil {
 		b.WriteString("\n\n" + dim.Render("Not sure what to do? Press ") + keyCap.Render("i") + dim.Render(" for the instructions or ") + keyCap.Render("h") + dim.Render(" for a hint."))
+	}
+	if due := m.s.DueReviews(); len(due) > 0 && m.result != nil && !m.inReview() {
+		e := due[0]
+		more := ""
+		if len(due) > 1 {
+			more = fmt.Sprintf(" (+%d more)", len(due)-1)
+		}
+		b.WriteString("\n\n" + wrapIndent(warn.Render("↻ Review due: ")+bold.Render(fmt.Sprintf("%03d %s", e.Number, e.Title))+dim.Render(more+". Solving it again from scratch, days later, is what makes it stick. Press ")+keyCap.Render("v")+dim.Render(" to start."), 0, width))
 	}
 	if g := m.s.NextGuide(); g != nil && m.result != nil {
 		b.WriteString("\n\n" + wrapIndent(dim.Render("Background reading: ")+bold.Render(g.Title)+dim.Render(fmt.Sprintf(" (guide %d), for module %d. Press ", g.Number, g.Module.Number))+keyCap.Render("g")+dim.Render(" to read it."), 0, width))
@@ -641,6 +705,11 @@ func (m *Model) resultView(width int) string {
 func (m *Model) successView() string {
 	var b strings.Builder
 	b.WriteString(okBold.Render("★ Exercise complete!") + "\n\n")
+	b.WriteString("  " + bold.Render("Explain it back.") + " Before moving on, say in a sentence or two why your code\n  works. If you can't, that's the part to reread.\n\n")
+	if r, ok := m.s.Review(m.ex); ok && !r.Active {
+		days := max(1, int(time.Until(r.Due).Hours()/24+0.5))
+		b.WriteString("  " + dim.Render(fmt.Sprintf("This one comes back for a review in %d days, to solve again from memory.", days)) + "\n\n")
+	}
 	b.WriteString("  Press " + keyCap.Render("s") + " to compare your code with the reference solution\n  (also saved in " + bold.Render(relative(m.s.SolutionDir(m.ex))) + ").\n\n")
 	if next := m.s.NextPending(m.ex); next != nil {
 		b.WriteString("  When you're ready, press " + keyCap.Render("n") + " for " + bold.Render(fmt.Sprintf("%03d %s", next.Number, next.Title)) + ".")
@@ -819,7 +888,7 @@ func (m *Model) helpView(width int) string {
 		{"save a file", "re-run the tests"},
 		{"i", "instructions (the exercise README)"},
 		{"h", "show a hint (press again for a stronger one)"},
-		{"s", "the solution: once you pass, or after every hint"},
+		{"s", "the solution: once you pass, or after a task's Answer hint"},
 		{"l", "list every exercise; enter to open one"},
 		{"g", "guides: the computer science behind the exercises"},
 		{"  m  o", "in the guides: mark read, open in $EDITOR"},
@@ -829,6 +898,7 @@ func (m *Model) helpView(width int) string {
 		{"e", "open the exercise in $EDITOR"},
 		{"r", "re-run the tests now"},
 		{"x", "reset the exercise to its starter code"},
+		{"v", "start a due review: solve a past exercise again from scratch"},
 		{"esc", "back to the test results"},
 		{"q", "quit (progress is saved)"},
 	}
@@ -837,9 +907,22 @@ func (m *Model) helpView(width int) string {
 	for _, r := range rows {
 		b.WriteString(fmt.Sprintf("  %s  %s\n", keyCap.Render(fmt.Sprintf("%-14s", r[0])), r[1]))
 	}
-	b.WriteString("\n" + m.markdown(failureGuide, width))
+	b.WriteString("\n" + m.markdown(sessionGuide+"\n\n"+failureGuide, width))
 	return b.String()
 }
+
+// sessionGuide is the short version of LEARNING.md: what a good session
+// looks like and why.
+const sessionGuide = `## A good session (25–45 minutes)
+
+1. **Flashcards** (5 minutes): ` + "`groundwork cards`" + ` makes an Anki deck from the guides.
+2. **A due review** if the results say *↻ Review due*: press ` + "`v`" + ` and solve it from memory.
+3. **One guide section** (` + "`g`" + `), answering its *Check yourself* questions before the answers.
+4. **New exercises.** Try each task before a hint; after a pass, explain to yourself why it works.
+5. **Stop on a pass**, so the next session starts with a win.
+
+Pulling answers from memory, spaced over days, is what makes things stick;
+rereading mostly feels like learning. LEARNING.md has the details.`
 
 // failureGuide teaches how to read what the Results tab shows.
 const failureGuide = `## Reading a failure
@@ -874,7 +957,7 @@ is a whole function, not a value; call it with ` + "`ServiceLabel(...)`" + `.`
 // solutionView shows the files the reference solution adds or changes.
 func (m *Model) solutionView(width int) string {
 	if !m.s.Done(m.ex) && !m.s.Revealed(m.ex) {
-		return dim.Render("The solution unlocks when your tests pass, or after you've read every hint.")
+		return dim.Render("The solution unlocks when your tests pass, or after you've read a task's Answer hint.")
 	}
 	files, err := m.s.SolutionFiles(m.ex)
 	if err != nil {
@@ -910,6 +993,9 @@ func (m *Model) header() string {
 	title := bold.Render(fmt.Sprintf("%03d  %s", m.ex.Number, m.ex.Title))
 	if m.ex.Kind != course.Concept {
 		title += "  " + dim.Render("["+string(m.ex.Kind)+"]")
+	}
+	if m.inReview() {
+		title += "  " + warn.Render("↻ review")
 	}
 
 	files := m.todoFiles

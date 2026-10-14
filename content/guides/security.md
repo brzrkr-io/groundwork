@@ -41,7 +41,7 @@ HTTP keeps them apart too: `401 Unauthorized` really means "I don't know who you
 | Permissions | IAM policies | Role or ClusterRole |
 | Attached by | Policy on the user or role | RoleBinding or ClusterRoleBinding |
 
-In both, the default answer is **no**. AWS denies anything no policy allows, and an explicit `Deny` beats any `Allow`. Kubernetes RBAC only adds permissions; with no binding, a ServiceAccount can do nothing.
+In both, the default answer is **no**. AWS denies anything no policy allows, and an explicit `Deny` beats any `Allow`. Kubernetes RBAC only adds permissions; with no binding, a ServiceAccount can't read or change any objects.
 
 To check before you act: `kubectl auth can-i delete pods -n prod`, or an EC2 `DryRun` call, which you'll use in *AWS API errors: EC2 dry-run permission checks*.
 
@@ -49,7 +49,7 @@ To check before you act: `kubectl auth can-i delete pods -n prod`, or an EC2 `Dr
 
 *Least privilege* means giving each person or program only the permissions its job needs, and nothing more.
 
-Here's a policy that shows up in real accounts, attached to a nightly backup script "just to get it working":
+Here's a policy statement that shows up in real accounts, attached to a nightly backup script "just to get it working":
 
 ```text
 {
@@ -69,7 +69,7 @@ That says: this script may do anything, to anything. If its key leaks, the attac
 }
 ```
 
-Same script, same job. If this key leaks, the attacker can write files into one backup folder. The damage a leak can do is called the *blast radius*, and least privilege is how you shrink it.
+Same script, same job. If this key leaks, the attacker can only write (or overwrite) files in one backup folder. The damage a leak can do is called the *blast radius*, and least privilege is how you shrink it.
 
 **A CI token with too much reach.** A team's pipeline uses one admin's personal access token: write access to every repo, plus the production deploy role. One day a compromised test dependency reads the job's environment and sends the token home. The attacker can now push code to any repo and deploy it. Least privilege for CI means:
 
@@ -98,9 +98,9 @@ Deleting the file in a new commit doesn't help: the key is still in git history,
 
 - **Never in code or git.** History is forever, and repos get shared.
 - **Environment variables** are acceptable, with care. They keep secrets out of git, but leak quietly: child processes inherit them, crash reports may dump them, and a CI step that runs `env` prints them all.
-- **A secret manager is best.** AWS Secrets Manager, SSM Parameter Store and HashiCorp Vault store secrets encrypted, let IAM decide who may read each one, log every read and support rotation.
+- **A secret manager is best.** AWS Secrets Manager, SSM Parameter Store (use the `SecureString` type) and HashiCorp Vault store secrets encrypted, decide per secret who may read it, and log every read. Secrets Manager and Vault can also rotate secrets for you.
 
-Kubernetes Secrets are only base64-encoded by default, not encrypted. Anyone allowed to `get secrets` in a namespace can read them.
+Kubernetes Secrets are only base64-encoded, not encrypted, unless the cluster turns on encryption at rest. Either way, anyone allowed to `get secrets` in a namespace can read them, and so can anyone allowed to create pods there, because a pod can mount any Secret in its namespace.
 
 ### Better than storing a secret: not having one
 
@@ -151,7 +151,12 @@ length is 7
 
 `fmt` calls `String` for `%v` and `Println`, even inside a struct, so the password never appears. Your code can still use the real value, as `len` does.
 
-It's a safety net, not a guarantee: `%#v` and `encoding/json` don't call `String`, so they would print `hunter2`. CI systems also mask known secrets in logs, but only exact matches; a base64-encoded copy slips through.
+It's a safety net, not a guarantee. These all skip `String` and print `hunter2`:
+
+- `%#v` and `encoding/json` (including `log/slog`'s JSON output).
+- `fmt` printing a struct whose secret field is unexported (`password`, lowercase): `fmt` can't call methods on fields it can't reach.
+
+CI systems also mask known secrets in logs, but only exact matches; a base64-encoded copy slips through.
 
 ## Injection: when data becomes code
 
@@ -205,7 +210,7 @@ This is *injection*: untrusted data ends up interpreted as code. The same bug ap
 The defences:
 
 - **Keep data and code apart.** Separate arguments to `exec.Command`, placeholders in SQL, never `sh -c` with outside input. More in *Running commands: output, exit codes and timeouts*.
-- **Validate against an allowlist.** A service name should match something like `^[a-z0-9-]{1,63}$`. Reject anything else instead of stripping "bad" characters.
+- **Validate against an allowlist.** A service name should match something like `^[a-z0-9][a-z0-9-]{0,62}$`. Reject anything else instead of stripping "bad" characters. Forbidding a leading `-` matters even without a shell: a value like `--all` would be read as an option, not a name.
 - **Treat everything from outside as untrusted**: chat messages, HTTP requests, webhooks, file names.
 
 ## TLS: is this really the server?
@@ -214,7 +219,7 @@ The defences:
 
 That proof comes from the server's *certificate*: a document saying "this key belongs to `vault.internal`", signed by a *certificate authority* (CA) your machine trusts. Go's HTTP client checks the signature chain and that the name matches the host you asked for.
 
-When an internal server uses a certificate from your company's own CA, Go doesn't trust it and the request fails. The tempting "fix" you'll find online:
+When an internal server uses a certificate from your company's own CA, and that CA isn't installed on your machine, Go doesn't trust it and the request fails. The tempting "fix" you'll find online:
 
 ```text
 tls.Config{InsecureSkipVerify: true}   // never in production
@@ -279,8 +284,8 @@ tampered: checksum mismatch, refusing to install
 
 Two limits:
 
-- A checksum only proves integrity if the expected value comes from somewhere the attacker can't also change. If they control the download server, they can change both. Signatures solve that.
-- **Passwords need a slow hash** like bcrypt or argon2. SHA-256 is fast enough for attackers to try billions of guesses per second.
+- A checksum only proves integrity if the expected value comes from somewhere the attacker can't also change. If they control the download server, they can change both. A *digital signature* solves that: the publisher signs the file with a private key only they hold, and anyone can check it with their public key.
+- **Passwords need a slow hash** like Argon2id or bcrypt. SHA-256 is fast enough for attackers to try billions of guesses per second. Slow password hashes also mix in a random *salt*, so two users with the same password get different hashes.
 
 ## The supply chain
 
@@ -292,7 +297,7 @@ Go gives you good defaults:
 - `go.sum` records a hash of each module's contents, and the `go` command refuses a download that doesn't match. New modules are also checked against a public checksum database, so everyone gets identical bytes.
 - `govulncheck` reports known vulnerabilities in the code you actually call.
 
-Elsewhere: **pin container images by digest** (`web@sha256:4f1a...`, since a tag like `latest` can be moved), **pin CI actions** to a commit hash, and **never `curl ... | sh`** in a pipeline without checking a checksum first.
+Elsewhere: **pin container images by digest** (`web@sha256:4f1a...`, since a tag like `latest` can be moved), **pin CI actions** to a commit hash, and **never `curl ... | sh`** in a pipeline: download the script, check its checksum, then run it.
 
 ## Safe defaults and failing closed
 
@@ -311,11 +316,11 @@ Failing closed costs availability: if the auth service is down, so is your API. 
 
 When something goes wrong, the first question is "who did what, when?" An *audit log* answers it.
 
-- **AWS CloudTrail** records API calls: which identity, what action (`DeleteBucket`), on what, when, from which IP, and whether it was allowed.
-- **Kubernetes audit logs** record requests to the API server.
+- **AWS CloudTrail** records API calls: which identity, what action (`DeleteBucket`), on what, when, from which IP, and whether it was allowed. By default it keeps 90 days of calls that create, change or delete things; reads of S3 objects are logged only if you turn on *data events*.
+- **Kubernetes audit logs** record requests to the API server, once the cluster turns them on.
 - **Your own tools** should do the same: "`alice` ran `restart web` in prod at 14:02: ok". You'll write one in *Files: an append-only audit log*.
 
-Good audit logs are append-only, stored where the actor can't edit them, and never contain secrets. In the leaked-key story, CloudTrail is how you learn what the attacker touched.
+Good audit logs are append-only, stored where the actor can't edit them, and never contain secrets. In the leaked-key story, CloudTrail is how you learn what the attacker touched, which is why data events matter for buckets holding anything sensitive.
 
 ## Common mistakes
 
@@ -364,6 +369,8 @@ Good audit logs are append-only, stored where the actor can't edit them, and nev
 | Man-in-the-middle | An attacker relaying and reading traffic between two parties |
 | Hash | A one-way, fixed-size fingerprint of data |
 | Checksum | A hash used to check a file is unchanged |
+| Digital signature | Proof made with a private key, checked with the public key, that a file came from its publisher unchanged |
+| Salt | Random data mixed into each password before hashing, so equal passwords get different hashes |
 | Supply chain attack | Attacking you through code or tools you depend on |
 | Fail closed | Denying or stopping when something is unknown |
 | Fail open | Allowing or carrying on when something is unknown |
@@ -375,7 +382,7 @@ Good audit logs are append-only, stored where the actor can't edit them, and nev
 - [7 Security risks you should never take as a developer](https://www.youtube.com/watch?v=4YOpILi9Oxs) · Fireship · 9 min: a fast tour of vulnerable packages, injection, leaked credentials and least privilege, most of this guide in one sitting.
 - [Hacking Websites with SQL Injection - Computerphile](https://www.youtube.com/watch?v=_jKylhJtPmI) · Computerphile · 9 min: Tom Scott shows on screen how data glued into a command becomes code, the idea behind the Injection section.
 - [Hashing Algorithms and Security - Computerphile](https://www.youtube.com/watch?v=b4b8ktEV4Bg) · Computerphile · 8 min: what a hash is, why it can't be reversed, and why that makes it right for passwords and file checks.
-- [XZ Exploit - Computerphile](https://www.youtube.com/watch?v=LY8_35a_DEA) · Computerphile · 15 min: the near-miss backdoor slipped into a Linux library by a helpful-seeming contributor, a real supply chain attack.
+- [XZ Exploit - Computerphile](https://www.youtube.com/watch?v=LY8_35a_DEA) · Computerphile · 15 min: the near-miss backdoor slipped into xz, a compression library on most Linux systems, by a helpful-seeming contributor: a real supply chain attack.
 
 ## Go deeper
 

@@ -88,12 +88,19 @@ func git(t *testing.T, repo string, args ...string) string {
 	return strings.TrimSuffix(stdout, "\n")
 }
 
-// run runs a command in dir, hermetically: no personal Git config, a fixed
-// author and date, and no editor or pager waiting for input.
+// run runs a command in dir, hermetically: no personal Git config, hooks or
+// GIT_* variables, a fixed author and date, no Git repos outside home, and
+// no editor or pager waiting for input.
 func run(home, dir, name string, args ...string) (stdout, stderr string, err error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	cmd.Env = append(cmd.Env,
+		"GIT_CEILING_DIRECTORIES="+home,
 		"HOME="+home, "XDG_CONFIG_HOME="+home, "LC_ALL=C", "TZ=UTC",
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=Sam Rivera", "GIT_AUTHOR_EMAIL=sam@example.com",

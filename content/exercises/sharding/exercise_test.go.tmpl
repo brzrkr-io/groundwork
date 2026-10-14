@@ -43,7 +43,8 @@ func TestShardFor(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s over %d", tt.key, tt.n), func(t *testing.T) {
 			if got := ShardFor(tt.key, tt.n); got != tt.want {
-				t.Errorf("ShardFor(%q, %d) = %d, want %d", tt.key, tt.n, got, tt.want)
+				t.Errorf("ShardFor(%q, %d) = %d, want %d (fnv.New32a hash of the key, %% %d)",
+					tt.key, tt.n, got, tt.want, tt.n)
 			}
 		})
 	}

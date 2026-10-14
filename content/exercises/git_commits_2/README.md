@@ -90,6 +90,8 @@ a1b2c3d Fix the health check timeout
 35309c9 Add deploy script
 ```
 
+The two older hashes match your sandbox; the new commit's hash will differ.
+
 There must still be three commits: replace the commit, don't add one.
 
 **Think it through:**
@@ -119,6 +121,8 @@ $ git log --oneline
 f0e1d2c Add health check with a 5s timeout
 35309c9 Add deploy script
 ```
+
+Your new commit's hash will differ.
 
 The new commit must contain everything the two did: `healthcheck.sh` with
 `--max-time 5`, and `config/health.yaml`.

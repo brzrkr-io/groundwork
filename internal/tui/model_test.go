@@ -6,10 +6,12 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/pjanderson/groundwork/internal/progress"
 	"github.com/pjanderson/groundwork/internal/session"
 	"github.com/pjanderson/groundwork/internal/workspace"
 )
@@ -209,5 +211,49 @@ func TestGuidesOpenOnTheNextUnreadAndEscGoesBackOneLevel(t *testing.T) {
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if m.pane != paneResult {
 		t.Fatalf("esc in the guide list: pane %v, want the results", m.pane)
+	}
+}
+
+func TestDueReviewStartsFromScratchAndTheSolutionCountsAsALapse(t *testing.T) {
+	m, s := newModel(t)
+	b := s.Course.Exercises[1]
+	press(m, "v")
+	if !strings.Contains(m.flash, "No reviews due") {
+		t.Fatalf("v with nothing due: flash %q", m.flash)
+	}
+
+	if err := s.Prepare(b); err != nil {
+		t.Fatal(err)
+	}
+	mine := filepath.Join(s.Dir(b), "exercise.go")
+	if err := os.WriteFile(mine, []byte("package x\n\n// solved\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.State.Done[b.Name] = time.Now().Add(-72 * time.Hour)
+	s.State.Reviews[b.Name] = progress.Review{Due: time.Now().Add(-time.Hour)}
+	m.Update(checkedMsg{seq: m.checkSeq, result: &workspace.Result{Status: workspace.Failed}})
+	if view := m.View(); !strings.Contains(view, "Review due") {
+		t.Errorf("results don't mention the due review:\n%s", view)
+	}
+
+	press(m, "v")
+	press(m, "v")
+	if m.ex != b || !m.inReview() {
+		t.Fatalf("v v: on %s, in review %v; want b under review", m.ex.Name, m.inReview())
+	}
+	if got, _ := os.ReadFile(mine); strings.Contains(string(got), "solved") {
+		t.Error("the review didn't reset the exercise to its starter code")
+	}
+	if view := m.View(); !strings.Contains(view, "↻ review") {
+		t.Errorf("header doesn't mark the review:\n%s", view)
+	}
+
+	press(m, "s")
+	if m.pane == paneSolution || m.reviewLapsed() {
+		t.Fatal("s during a review showed the solution without confirming")
+	}
+	press(m, "s")
+	if m.pane != paneSolution || !m.reviewLapsed() {
+		t.Fatalf("s s during a review: pane %v, lapsed %v; want the solution shown and the lapse recorded", m.pane, m.reviewLapsed())
 	}
 }

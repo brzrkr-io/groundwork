@@ -63,13 +63,13 @@ service's `current_version`. If the second fails (disk full, connection
 lost) after the first succeeded, the tables disagree about what's running.
 
 A *transaction* groups statements so they happen **all together or not at
-all**:
+all**. Retiring a service, for example, deletes its deploys and then the
+service itself; half of that would leave a mess:
 
 ```sql
 BEGIN;
-UPDATE services SET current_version = 'v0.2.0' WHERE id = 5;
-INSERT INTO deploys (service_id, version, environment, status, started_at)
-VALUES (5, 'v0.2.0', 'production', 'succeeded', '2026-03-08 12:00:00');
+DELETE FROM deploys WHERE service_id = 3;
+DELETE FROM services WHERE id = 3;
 COMMIT;
 ```
 
@@ -79,10 +79,11 @@ COMMIT;
 | `COMMIT` | keep every change since `BEGIN`, all at once |
 | `ROLLBACK` | throw away every change since `BEGIN` |
 
-Until `COMMIT`, other connections don't see the changes. If anything fails
-before it, the program sends `ROLLBACK` and the database is exactly as it
-was. Without `BEGIN`, each statement is its own tiny transaction, committed
-the moment it finishes.
+Until `COMMIT`, other connections don't see the changes. If a statement
+fails, it usually undoes only itself; the transaction stays open, and the
+program sends `ROLLBACK` to put the database back exactly as it was. Without
+`BEGIN`, each statement is its own tiny transaction, committed the moment it
+finishes, so nothing can undo it later.
 
 ## Your task
 

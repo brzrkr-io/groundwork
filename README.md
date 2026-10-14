@@ -28,6 +28,13 @@ module points to its guides. Read them in the watcher (`g`), with `groundwork gu
 your editor ([content/guides/](content/guides/), or `guides/` in your course
 folder).
 
+It's built on the learning techniques with the strongest evidence:
+retrieval practice, spacing, worked examples with fading help, immediate
+feedback and self-explanation. Practice exercises come back for **reviews**
+2, 7 and 30 days after you pass them, and the guides' questions become
+**flashcards**. [LEARNING.md](LEARNING.md) explains how to use all this, with
+a session plan and the research behind it.
+
 See [LESSON_PLAN.md](LESSON_PLAN.md) for the full syllabus and a suggested
 schedule.
 
@@ -54,8 +61,8 @@ Open this folder in your editor in a second window (VS Code, GoLand,
 Neovim…). Groundwork shows which file to edit. Failing tests come first,
 each with its exact failure message. Save the file and the checks run again.
 When every test passes, press **s** to compare your code with the reference
-solution, and **n** to move to the next exercise. Truly stuck? After the last
-hint, **s** shows the solution early (you confirm first).
+solution, and **n** to move to the next exercise. Truly stuck? After a task's
+Answer hint, **s** shows the solution early (you confirm first).
 
 ```text
 groundwork  ·  module 1 of 20: Basics                     ━━━━━━━━━━━━━━━━━━━━  1/362 done
@@ -93,7 +100,7 @@ The tab row shows which view you're looking at. The results always come first.
 | save a file | re-run the tests |
 | `i` | instructions (the exercise README, rendered) |
 | `h` | hint; press again for a stronger one |
-| `s` | the solution: once you pass, or after the last hint |
+| `s` | the solution: once you pass, or after a task's Answer hint |
 | `l` | all exercises; `enter` opens one |
 | `g` | guides: the computer science behind the exercises; `enter` reads one, `m` marks it read, `o` opens it in `$EDITOR` |
 | `?` | every key, plus a guide to reading failures and compiler errors |
@@ -104,6 +111,7 @@ The tab row shows which view you're looking at. The results always come first.
 | `e` | open the exercise in `$EDITOR` |
 | `r` | re-run the tests now |
 | `x` `x` | reset the exercise to its starter code |
+| `v` `v` | start a due review: a past exercise, back to its starter code (yours is saved in `.groundwork/attempts/`) |
 | `q` | quit; progress is saved |
 
 ### Commands

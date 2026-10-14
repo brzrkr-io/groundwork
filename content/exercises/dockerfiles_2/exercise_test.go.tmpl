@@ -16,7 +16,7 @@ func TestModulesBeforeCode(t *testing.T) {
 	if modCopy == nil {
 		t.Fatalf("%s has no COPY of go.mod on its own; want COPY go.mod go.sum ./ before RUN go mod download", file)
 	}
-	if !slices.Contains(sources(*modCopy), "go.sum") {
+	if !copies(*modCopy, "go.sum") {
 		t.Errorf("%s line %d: %s doesn't copy go.sum; want COPY go.mod go.sum ./ (go mod download checks the sums in go.sum)", file, modCopy.Line, show(*modCopy))
 	}
 
@@ -74,17 +74,28 @@ func TestOneStepAptInstall(t *testing.T) {
 	if update < 0 || update > strings.Index(install.Rest, "apt-get install") {
 		t.Errorf("%s line %d: %s, want apt-get update && first, in the same RUN as apt-get install", file, install.Line, show(*install))
 	}
-	if !strings.Contains(install.Rest, "&&") {
+	var words []string // the RUN's words, without a trailing ; after them
+	for _, word := range install.Args {
+		words = append(words, strings.TrimSuffix(word, ";"))
+	}
+	if !strings.Contains(install.Rest, "&&") && !stopsOnError(words) {
 		t.Errorf("%s line %d: %s, want the commands joined with &&, so the step stops at the first failure", file, install.Line, show(*install))
 	}
-	for _, want := range []string{"-y", "--no-install-recommends", "ca-certificates", "curl"} {
-		if !slices.Contains(install.Args, want) {
-			t.Errorf("%s line %d: apt-get install has no %s; want apt-get install -y --no-install-recommends ca-certificates curl", file, install.Line, want)
+	for _, want := range [][]string{{"-y", "--yes"}, {"--no-install-recommends"}, {"ca-certificates"}, {"curl"}} {
+		if !slices.ContainsFunc(want, func(w string) bool { return slices.Contains(words, w) }) {
+			t.Errorf("%s line %d: apt-get install has no %s; want apt-get install -y --no-install-recommends ca-certificates curl", file, install.Line, want[0])
 		}
 	}
 	if !strings.Contains(install.Rest, "rm -rf /var/lib/apt/lists/*") {
-		t.Errorf("%s line %d: the RUN doesn't end with rm -rf /var/lib/apt/lists/*; without it the package lists stay in the layer", file, install.Line)
+		t.Errorf("%s line %d: the RUN has no rm -rf /var/lib/apt/lists/*; without it the package lists stay in the layer", file, install.Line)
 	}
+}
+
+// stopsOnError reports whether a shell command starts with "set -e" (or
+// -eux and friends), the other common way to stop at the first failure:
+// commands are then separated with ";" instead of "&&".
+func stopsOnError(words []string) bool {
+	return len(words) >= 2 && words[0] == "set" && strings.HasPrefix(words[1], "-") && strings.Contains(words[1], "e")
 }
 
 func TestToolsBeforeCode(t *testing.T) {
@@ -114,12 +125,24 @@ func TestToolsBeforeCode(t *testing.T) {
 // firstCopy returns the first COPY that copies src, or nil.
 func firstCopy(instructions []instruction, src string) *instruction {
 	for _, in := range find(instructions, "COPY") {
-		srcs := sources(in)
-		if slices.Contains(srcs, src) || src == "." && slices.Contains(srcs, "./") {
+		if copies(in, src) {
 			return &in
 		}
 	}
 	return nil
+}
+
+// copies reports whether a COPY copies src. It knows the usual other
+// spellings: "./" for ".", and the pattern "go.*" for go.mod and go.sum.
+func copies(in instruction, src string) bool {
+	srcs := sources(in)
+	switch src {
+	case ".":
+		return slices.Contains(srcs, ".") || slices.Contains(srcs, "./")
+	case "go.mod", "go.sum":
+		return slices.Contains(srcs, src) || slices.Contains(srcs, "go.*")
+	}
+	return slices.Contains(srcs, src)
 }
 
 // sources returns what a COPY copies: every argument but the last, the

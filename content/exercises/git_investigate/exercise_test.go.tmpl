@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ var scripts = []string{
 
 func TestFindConnectionLimit(t *testing.T) {
 	_, printed := runTasks(t, 1)
-	want := "Priya Shah: Restore normal connection limit\nAlex Kim: Raise connection limit for the sale\n"
+	want := "Priya Shah: Restore normal connection limit\nAlex Kim: Raise connection limit for the sale"
 	if printed != want {
 		t.Errorf("1_find_connection_limit.sh printed:\n%s\nwant:\n%s", printed, want)
 	}
@@ -26,21 +27,21 @@ func TestFindConnectionLimit(t *testing.T) {
 
 func TestBlameTimeout(t *testing.T) {
 	_, printed := runTasks(t, 2)
-	if want := "Alex Kim: Lower timeout to 5s\n"; printed != want {
+	if want := "Alex Kim: Lower timeout to 5s"; printed != want {
 		t.Errorf("2_blame_timeout.sh printed:\n%s\nwant:\n%s", printed, want)
 	}
 }
 
 func TestFilesChangedInRelease(t *testing.T) {
 	_, printed := runTasks(t, 3)
-	if want := "config/app.yaml\ndeploy.sh\ndocs/runbook.md\n"; printed != want {
+	if want := "config/app.yaml\ndeploy.sh\ndocs/runbook.md"; printed != want {
 		t.Errorf("3_files_changed_in_release.sh printed:\n%s\nwant:\n%s", printed, want)
 	}
 }
 
 // runTasks builds a fresh sandbox with setup.sh, then runs task scripts 1 to
 // n inside it, in order, as you would by hand. It returns the repo's path
-// and what script n printed.
+// and what script n printed, without the final newline.
 func runTasks(t *testing.T, n int) (repo, printed string) {
 	t.Helper()
 	home := t.TempDir()
@@ -57,17 +58,24 @@ func runTasks(t *testing.T, n int) (repo, printed string) {
 		if err != nil {
 			t.Fatalf("%s failed (%v). It printed:\n%s%s", script, err, stdout, stderr)
 		}
-		printed = stdout
+		printed = strings.TrimSuffix(stdout, "\n")
 	}
 	return repo, printed
 }
 
-// run runs a command in dir, hermetically: no personal Git config, a fixed
-// author and date, and no editor or pager waiting for input.
+// run runs a command in dir, hermetically: no personal Git config, hooks or
+// GIT_* variables, a fixed author and date, no Git repos outside home, and
+// no editor or pager waiting for input.
 func run(home, dir, name string, args ...string) (stdout, stderr string, err error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	cmd.Env = append(cmd.Env,
+		"GIT_CEILING_DIRECTORIES="+home,
 		"HOME="+home, "XDG_CONFIG_HOME="+home, "LC_ALL=C", "TZ=UTC",
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=Sam Rivera", "GIT_AUTHOR_EMAIL=sam@example.com",

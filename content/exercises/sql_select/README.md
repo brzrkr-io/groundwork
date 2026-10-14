@@ -102,6 +102,11 @@ WHERE environment IN ('staging', 'production');
 
 `NOT IN (...)` is the opposite of `IN`.
 
+Mixing `AND` with `OR`? Put brackets around the `OR` part:
+`WHERE (environment = 'staging' OR status = 'failed') AND duration_s > 60`.
+Without them, SQL groups the conditions differently from how you read them,
+as you'll see in *SELECT and WHERE: fix the broken filters*.
+
 ### Comments
 
 `--` starts a comment that runs to the end of the line, like `//` in Go.

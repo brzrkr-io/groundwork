@@ -138,7 +138,12 @@ func sectionText(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatalf("can't read design.md: %v", err)
 	}
-	doc := comments.ReplaceAllString(string(raw), "")
+	// Trailing spaces (and Windows line endings) are invisible, so ignore them.
+	lines := strings.Split(string(raw), "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t\r")
+	}
+	doc := comments.ReplaceAllString(strings.Join(lines, "\n"), "")
 	_, text, found := strings.Cut(doc, "\n## "+name+"\n")
 	if !found {
 		t.Fatalf(`design.md has no "## %s" heading; keep the template's headings`, name)

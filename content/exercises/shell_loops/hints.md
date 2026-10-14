@@ -40,17 +40,19 @@ done < "$1"
 ## Task 3: Total the requests
 
 `read` with two names splits each line: the service into the first, the
-count into the second. Then add the count to `total` with arithmetic.
+count into the second. You only need the count. Then add it to `total`
+with arithmetic.
 
 ### Closer
 
-`while read -r service count; do ... done < "$1"`, and inside:
-`total=$((total + count))`.
+`while read -r _ count; do ... done < "$1"`, with no `IFS=`, because here
+you want the split, and `_` for the name you don't use. Inside,
+`$((total + ...))` adds two numbers; store the result back in `total`.
 
 ### Answer
 
 ```bash
-while read -r service count; do
+while read -r _ count; do
 	total=$((total + count))
 done < "$1"
 ```

@@ -2,6 +2,7 @@ package sedsubstitutions
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,25 +66,25 @@ func TestSetLogLevel(t *testing.T) {
 	expectEdit(t, "testdata/worker.env", "warn")
 }
 
-// expectEdit copies fixture into a temporary folder, runs
-// 4_set_log_level.sh on the copy, and checks that only the LOG_LEVEL line
-// changed.
+// expectEdit does what the README shows: cp fixture copy.env, then
+// bash 4_set_log_level.sh copy.env level. It checks that only the LOG_LEVEL
+// line of copy.env changed.
 func expectEdit(t *testing.T, fixture, level string) {
 	t.Helper()
+	dir := workdir(t)
 	original := readFile(t, fixture)
-	file := filepath.Join(t.TempDir(), filepath.Base(fixture))
-	if err := os.WriteFile(file, []byte(original), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "copy.env"), []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, stderr, code := run(t, "4_set_log_level.sh", file, level)
-	command := commandLine("4_set_log_level.sh", file, level)
+	stdout, stderr, code := run(t, dir, "4_set_log_level.sh", "copy.env", level)
+	command := commandLine("4_set_log_level.sh", "copy.env", level)
 	if code != 0 {
-		t.Errorf("%s exited with status %d, want 0. bash said:\n%s", command, code, stderr)
+		exitFailure(t, command, code, stdout, stderr)
 		return
 	}
 	want := strings.Replace(original, "\nLOG_LEVEL=info\n", "\nLOG_LEVEL="+level+"\n", 1)
-	if got := readFile(t, file); got != want {
-		t.Errorf("%s (a copy of %s) left the file holding:\n%s\nwant:\n%s", command, fixture, got, want)
+	if got := readFile(t, filepath.Join(dir, "copy.env")); got != want {
+		t.Errorf("%s (copy.env is a copy of %s) left copy.env holding:\n%s\nwant:\n%s", command, fixture, got, want)
 	}
 }
 
@@ -97,14 +98,20 @@ func readFile(t *testing.T, path string) string {
 	return string(data)
 }
 
-// expect runs the script with bash in the exercise folder, just as you do
-// in your terminal, and checks that it succeeds and prints want.
+// expect runs the script with bash, just as you do in your terminal, and
+// checks that it succeeds, prints want, and leaves testdata/ as it was.
 func expect(t *testing.T, want, script string, args ...string) {
 	t.Helper()
-	got, stderr, code := run(t, script, args...)
+	dir := workdir(t)
+	got, stderr, code := run(t, dir, script, args...)
 	command := commandLine(script, args...)
+	for _, name := range fixtures {
+		if readFile(t, filepath.Join(dir, name)) != readFile(t, name) {
+			t.Errorf("%s changed %s, want it unchanged. This script only prints; leave out -i.", command, name)
+		}
+	}
 	if code != 0 {
-		t.Errorf("%s exited with status %d, want 0. bash said:\n%s", command, code, stderr)
+		exitFailure(t, command, code, got, stderr)
 		return
 	}
 	switch {
@@ -122,11 +129,83 @@ func expect(t *testing.T, want, script string, args ...string) {
 	}
 }
 
-// run runs "bash script args..." and returns what it printed to stdout and
-// stderr, and its exit status.
-func run(t *testing.T, script string, args ...string) (stdout, stderr string, code int) {
+// fixtures are the files in testdata/, each with lines it had when the
+// exercise was set up.
+var fixtures = []string{"testdata/deploy.yaml", "testdata/app.env", "testdata/worker.env"}
+
+var originalLines = map[string][]string{
+	"testdata/deploy.yaml": {
+		"          image: registry.example.com/api:1.4.1",
+		"          image: registry.example.com/log-shipper:1.4.1",
+	},
+	"testdata/app.env": {
+		"# api service settings",
+		"LOG_LEVEL=info",
+		"DB_PASSWORD=s3cr3t-Pa55",
+		"STRIPE_API_TOKEN=tok_live_51HxQ",
+		"SLACK_TOKEN=xoxb-1234-abcd",
+	},
+	"testdata/worker.env": {
+		"# worker service settings",
+		"LOG_LEVEL=info",
+		"QUEUE_PASSWORD=rabbit-Ears-77",
+		"METRICS_TOKEN=bXQtOWY4ZTdk==",
+	},
+}
+
+// workdir returns a temporary folder holding a copy of testdata/ and of the
+// scripts. The tests run your scripts there, so not even a stray sed -i can
+// change your testdata/. It first checks that testdata/ still holds its
+// original lines: if a command run by hand changed them, no script can pass.
+func workdir(t *testing.T) string {
+	t.Helper()
+	for _, name := range fixtures {
+		text := readFile(t, name)
+		for _, line := range originalLines[name] {
+			if !strings.Contains(text, line+"\n") {
+				t.Fatalf("%s no longer has the line %q, so a command (sed -i?) changed it. Put that line back as it was, then save.", name, line)
+			}
+		}
+	}
+	dir := t.TempDir()
+	if err := os.CopyFS(filepath.Join(dir, "testdata"), os.DirFS("testdata")); err != nil {
+		t.Fatal(err)
+	}
+	scripts, err := filepath.Glob("*.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, script := range scripts {
+		if err := os.WriteFile(filepath.Join(dir, script), []byte(readFile(t, script)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// exitFailure explains a script that stopped with a non-zero status: what it
+// printed before it stopped, and what bash said on stderr.
+func exitFailure(t *testing.T, command string, code int, stdout, stderr string) {
+	t.Helper()
+	msg := fmt.Sprintf("%s exited with status %d, want 0.", command, code)
+	if stdout != "" {
+		msg += "\nIt printed:\n" + strings.TrimRight(stdout, "\n")
+	}
+	if stderr != "" {
+		msg += "\nbash said:\n" + stderr
+	} else {
+		msg += "\nbash said nothing: a command failed without a message " +
+			"(grep does that when nothing matches), and set -e stopped the script there."
+	}
+	t.Error(msg)
+}
+
+// run runs "bash script args..." in dir and returns what it printed to
+// stdout and stderr, and its exit status.
+func run(t *testing.T, dir, script string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	cmd := exec.Command("bash", append([]string{script}, args...)...)
+	cmd.Dir = dir
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C", "TZ=UTC")
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut

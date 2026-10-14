@@ -1,9 +1,9 @@
 # LRU caches: fix the stale cache-aside reads
 
-During last week's incident someone switched the `new-checkout` flag off in
-the database, and the flag API kept answering `on` for another hour. The API
-keeps an LRU cache in front of a slow database, and the code around that
-cache has three bugs. Fix them.
+During last week's incident the flag database was down for one minute, and
+the flag API answered `""` for `new-checkout` for the next hour, long after
+the database was back. The API keeps an LRU cache in front of the slow
+database, and the code around that cache has three bugs. Fix them.
 
 **New here:** the cache-aside pattern, cache invalidation, the database as the source of truth.
 
@@ -91,6 +91,30 @@ The tests use `fakeStore`, a `Store` kept in a map called `flags`:
   (`"store unavailable"`), like a database that's down.
 - A test that writes to `store.flags` directly plays another replica of the
   API, changing the database behind this one's back.
+
+### Hunting a stale-cache bug
+
+A stale cache throws no error: the code runs fine, but the cache and the
+store disagree. On-call engineers find these bugs with a timeline:
+
+1. Write down each call, and what the store and the cache hold after it.
+2. Find the first step where the cache holds something the store doesn't.
+3. Read that function. Does it touch the cache before checking the error?
+   Does it change the store without removing the cached copy?
+
+Here is a timeline for a different service, where users can rename
+themselves:
+
+| Step | Store | Cache | Same? |
+|---|---|---|---|
+| `Get("ana")` | `ana: ana@old.io` | `ana: ana@old.io` | yes |
+| `Rename("ana", "anna")` | `anna: ana@old.io` | `ana: ana@old.io` | **no** |
+
+The cache still answers for `ana`, a user who no longer exists, so the bug
+is in `Rename`: it changes the store but never removes `ana` from the cache.
+
+Each subtest is a short timeline like this one. When one fails, its name
+and the `got`/`want` line tell you which step went wrong.
 
 ## Your task
 

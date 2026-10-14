@@ -94,7 +94,9 @@ The test checks these with `git check-ignore`:
 | `debug.log` | yes |
 | `build.sh` | no |
 
-The commit must contain `.gitignore`.
+The commit adds only `.gitignore`. Careful: `config/prod.env` isn't ignored
+until task 3, so `git add .` would commit a production password. Stage files
+by name in all three tasks.
 
 **Think it through:**
 - Which pattern matches a folder, and which matches a file ending?
@@ -107,6 +109,7 @@ The commit must contain `.gitignore`.
 
 Afterwards `.env` is not in the newest commit, still exists in the sandbox,
 and is ignored. Keep task 1's patterns: add to `.gitignore`, don't replace it.
+The commit changes only `.env` (deleted from the repo) and `.gitignore`.
 
 **Think it through:**
 - Which `git rm` option removes a file from the repo but not from disk?
@@ -123,8 +126,8 @@ and is ignored. Keep task 1's patterns: add to `.gitignore`, don't replace it.
 | `config/prod.env` | yes |
 | `config/example.env` | no (and it stays committed) |
 
-Afterwards `git status --short` prints nothing: everything left over is
-ignored.
+The commit changes only `.gitignore`. Afterwards `git status --short` prints
+nothing: everything left over is ignored.
 
 **Think it through:**
 - One pattern for "ends in `.env`", one exception. Which comes first?

@@ -7,7 +7,8 @@ import (
 	"time"
 )
 
-// maxPlanLines is how long Plan may be once the decisions are helpers.
+// maxPlanLines is how many lines of code Plan may have once the decisions are
+// helpers. Blank lines and comments don't count.
 const maxPlanLines = 12
 
 // checkPlan fails if Plan no longer does what it did before you started.
@@ -42,7 +43,7 @@ func checkPlan(t *testing.T) {
 	}
 	got := Plan(files, now)
 	if !slices.Equal(got, want) {
-		t.Fatalf("Plan(the README's example files) =\n%s\nwant\n%s\nthe refactor changed what the code does; undo your last step and try a smaller one",
+		t.Fatalf("Plan(the example files in checkPlan) =\n%s\nwant\n%s\nthe refactor changed what the code does; undo your last step and try a smaller one",
 			strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
@@ -89,8 +90,8 @@ func TestExtractFunctions(t *testing.T) {
 	if plan == nil {
 		t.Fatal("exercise.go has no function named Plan; keep it, the rotator calls it")
 	}
-	if n := src.lines(plan); n > maxPlanLines {
-		t.Errorf("Plan is %d lines long, want %d or fewer: it should loop over the files and hand each decision to a helper", n, maxPlanLines)
+	if n := src.codeLines(plan); n > maxPlanLines {
+		t.Errorf("Plan has %d lines of code (blank lines and comments don't count), want %d or fewer: it should loop over the files and hand each decision to a helper", n, maxPlanLines)
 	}
 }
 

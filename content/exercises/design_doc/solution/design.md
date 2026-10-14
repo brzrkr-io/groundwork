@@ -15,7 +15,7 @@ without logging in to the node that wrote them.
 ## Constraints
 
 - Audit logs must be kept for 90 days and stay searchable.
-- Node costs must not double; the budget allows about 10% more.
+- Node costs may grow by at most 10%.
 - Applications must not change how they write logs.
 - The change must roll out one node pool at a time.
 

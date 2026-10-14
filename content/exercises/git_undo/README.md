@@ -88,6 +88,8 @@ d1e2f3a Revert "Point web at the new database cluster"
 aa0b2d9 Point web at the new database cluster
 ```
 
+Your new commit's hash will differ.
+
 `config/db.yaml` goes back to `host: db-old.internal`, and every older commit
 stays in history.
 

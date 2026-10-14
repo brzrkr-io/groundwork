@@ -65,7 +65,8 @@ changes the cached entry itself.
 
 After the new entry is in, compare the number of entries with `c.capacity`.
 If there are too many, the victim is at the back of the list. Remove it from
-both the list and the map, and count it.
+both the list and the map, and count it. Count with the fields, not with
+`c.Len()`: `Put` already holds the lock that `c.Len()` would wait for.
 
 ### Closer
 

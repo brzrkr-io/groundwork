@@ -574,37 +574,19 @@ func TestRun(t *testing.T) {
 	})
 
 	t.Run("force-closes after the grace period", func(t *testing.T) {
-		s := New(hosts.NewStore(), quiet)
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
+		// A request only counts as in flight once the server has read its
+		// headers, which can happen a moment after Run starts shutting
+		// down. Then Run rightly finds nothing to wait for and returns nil,
+		// so a nil result is retried a few times before it counts as wrong.
+		var (
+			err   error
+			stuck net.Conn
+		)
+		for range 5 {
+			if stuck, err = runWithStuckRequest(t); errors.Is(err, context.DeadlineExceeded) {
+				break
+			}
 		}
-		addr := ln.Addr().String()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		done := runInBackground(ctx, s, ln, 20*time.Millisecond)
-		waitReady(t, addr, done)
-
-		// A stuck client: it sends a POST that promises 100 bytes of body
-		// but only sends a few, so its request never finishes.
-		stuck, err := net.Dial("tcp", addr)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer stuck.Close()
-		fmt.Fprint(stuck, "POST /hosts HTTP/1.1\r\nHost: test\r\nContent-Length: 100\r\n\r\n{\"na")
-
-		// The server accepts connections in order, so once a later
-		// connection gets an answer, the stuck one has been accepted too.
-		client := &http.Client{Timeout: time.Second}
-		resp, err := client.Get("http://" + addr + "/healthz")
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-
-		cancel()
-		err = waitFor(t, done)
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Errorf("Run with a stuck request = %v, want an error wrapping context.DeadlineExceeded", err)
 		}
@@ -618,4 +600,44 @@ func TestRun(t *testing.T) {
 			}
 		}
 	})
+}
+
+// runWithStuckRequest starts Run with a 20ms grace period, opens a request
+// that never finishes, cancels Run and returns the stuck connection and
+// Run's result.
+func runWithStuckRequest(t *testing.T) (net.Conn, error) {
+	t.Helper()
+	s := New(hosts.NewStore(), slog.New(slog.DiscardHandler))
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := runInBackground(ctx, s, ln, 20*time.Millisecond)
+	waitReady(t, addr, done)
+
+	// A stuck client: it sends a POST that promises 100 bytes of body but
+	// only sends a few, so its request never finishes.
+	stuck, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { stuck.Close() })
+	fmt.Fprint(stuck, "POST /hosts HTTP/1.1\r\nHost: test\r\nContent-Length: 100\r\n\r\n{\"na")
+
+	// The server accepts connections in order, so once a later connection
+	// gets an answer, the stuck one has been accepted too. The probe needs
+	// a brand-new connection for that: a pooled one, left open by
+	// waitReady, was accepted long ago.
+	client := &http.Client{Timeout: time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
+	resp, err := client.Get("http://" + addr + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	cancel()
+	return stuck, waitFor(t, done)
 }

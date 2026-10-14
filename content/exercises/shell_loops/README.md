@@ -4,7 +4,7 @@ Ops work is the same step on many things: every host, every line of an
 inventory, every log file. Bash has two loops for that: `for` walks a list,
 and `while read` walks a file line by line.
 
-**New here:** `for ... in ...; do ... done`, `"$@"` and `$#`, arrays,
+**New here:** `for ... in ...; do ... done`, `"$@"` and `$#`,
 `while IFS= read -r line`, `continue`, arithmetic with `$(( ))`, globs like
 `dir/*.log`, `basename`.
 
@@ -37,21 +37,6 @@ echo "$# services restarted"
 > always `"$@"` in double quotes; unquoted, bash would split arguments that
 > contain spaces.
 
-### Arrays
-
-An *array* holds a list in one variable. Write it in parentheses, and read
-it all back with `"${name[@]}"`:
-
-```bash
-zones=(eu-west-1a eu-west-1b eu-west-1c)
-for zone in "${zones[@]}"; do
-	echo "zone $zone"
-done
-echo "${#zones[@]} zones"     # 3 zones
-```
-
-It's like a Go slice of strings. `"$@"` is the script's own built-in array.
-
 ### while read walks a file
 
 ```bash
@@ -62,7 +47,7 @@ done < testdata/regions.txt
 
 `< file` after `done` feeds the file into the loop. Each time round, `read`
 takes one line into `line`; at the end of the file it fails, and the loop
-stops.
+stops. (That failure is the loop's condition, so `set -e` lets it be.)
 
 | Piece | Why it's there |
 |---|---|
@@ -70,7 +55,9 @@ stops.
 | `-r` | keep backslashes as they are |
 
 Give `read` two names and it splits each line at spaces: the first word into
-the first name, the rest into the second.
+the first name, the rest into the second. Leave out `IFS=` for this: an
+empty `IFS` turns the splitting off, and the whole line lands in the first
+name.
 
 ```bash
 # each line: "web-01 10.0.0.5"
@@ -78,6 +65,16 @@ while read -r host ip; do
 	echo "$host is at $ip"
 done < hosts.txt
 ```
+
+When you don't need one of the parts, name it `_`: `while read -r _ ip`
+keeps only the IP. ShellCheck warns about a variable you set but never use,
+and `_` says "on purpose".
+
+> **Watch out:** if a file's last line has no newline at the end, `read`
+> fills the variable but still reports failure, and the loop skips that
+> line. Editors and most tools end files with a newline (every file in
+> `testdata/` does). When you can't trust a file, write
+> `while IFS= read -r line || [[ -n "$line" ]]; do`.
 
 `continue` skips the rest of the body and goes on to the next line. A text
 pattern after `==` in `[[ ]]` can end in `*`, meaning "anything":
@@ -94,6 +91,10 @@ pods=$((pods * 2))
 echo "$pods"      # 6
 ```
 
+To count, write `count=$((count + 1))`. You'll see `((count++))` online:
+avoid it under `set -e`, because when `count` was 0 it reports failure and
+stops the script.
+
 ### Globs: every file that matches
 
 `*` in a path is a *glob*: bash replaces it with every matching file name,
@@ -104,6 +105,11 @@ for conf in "$dir"/*.conf; do
 	echo "checking $conf"
 done
 ```
+
+If nothing matches, bash leaves the pattern as it is: the loop runs once,
+with `conf` set to text like `/etc/app/*.conf`, and the next command
+complains that no such file exists. That error usually means a wrong
+directory.
 
 `basename` strips the directories from a path:
 `basename /etc/nginx/nginx.conf` prints `nginx.conf`.
@@ -199,4 +205,4 @@ isn't a log, so it's left out.
 
 - [Bash manual: Looping Constructs](https://www.gnu.org/software/bash/manual/html_node/Looping-Constructs.html)
 - [Greg's Wiki: BashFAQ 001](https://mywiki.wooledge.org/BashFAQ/001) (how to read a file line by line, and why `IFS=` and `-r`)
-- [Bash manual: Arrays](https://www.gnu.org/software/bash/manual/html_node/Arrays.html)
+- [Bash manual: Filename Expansion](https://www.gnu.org/software/bash/manual/html_node/Filename-Expansion.html) (globs)

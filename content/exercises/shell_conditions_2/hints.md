@@ -15,12 +15,13 @@ if [[ -f "$1" ]]; then
 
 ## Task 2: Fix the number comparison
 
-Inside `[[ ]]`, `>` compares text in dictionary order, where `10` sorts
-before `5`. Numbers need a letter operator.
+Run `bash -x 2_failure_alert.sh 10` and look at the `[[ ... ]]` line. Is
+bash comparing 10 and 5 as numbers, or as text?
 
 ### Closer
 
-`-gt` means "greater than" for numbers: `[[ "$count" -gt 5 ]]`.
+Inside `[[ ]]`, `>` compares text in dictionary order, where `10` sorts
+before `5`. Numbers need a letter operator: `-gt` means "greater than".
 
 ### Answer
 

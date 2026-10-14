@@ -37,6 +37,16 @@ type Session struct {
 	Course *course.Course
 	Root   string
 	State  *progress.State
+
+	// Now is the clock, replaceable in tests; nil means time.Now.
+	Now func() time.Time
+}
+
+func (s *Session) now() time.Time {
+	if s.Now != nil {
+		return s.Now().UTC()
+	}
+	return time.Now().UTC()
 }
 
 // FindRoot walks up from start to the nearest directory holding a course.
@@ -376,12 +386,127 @@ func (s *Session) Check(ctx context.Context, e *course.Exercise) (*workspace.Res
 	return workspace.Check(ctx, s.Dir(e), e.Race)
 }
 
-// Complete records e as done and writes its reference solution.
+// Complete records e as done and writes its reference solution. Passing an
+// exercise that needs reviews schedules the first one; passing a review
+// schedules the next.
 func (s *Session) Complete(e *course.Exercise) error {
-	if !s.Done(e) {
-		s.State.Done[e.Name] = time.Now().UTC()
+	now := s.now()
+	switch r, reviewing := s.State.Reviews[e.Name]; {
+	case !s.Done(e):
+		s.State.Done[e.Name] = now
+		if e.Kind == course.Practice || e.Kind == course.Project || s.Revealed(e) {
+			s.State.Reviews[e.Name] = progress.Review{Due: now.Add(ReviewIntervals[0])}
+		}
+	case reviewing && r.Active:
+		s.State.Reviews[e.Name] = nextReview(r, now)
+		if r.Step+1 == len(ReviewIntervals) && !r.Lapsed {
+			delete(s.State.Reviews, e.Name) // remembered for good
+		}
 	}
 	return s.writeSolution(e)
+}
+
+// ReviewIntervals are the waits before each spaced review of an exercise:
+// solving it again from scratch, just as it starts to fade, is what makes it
+// stick. Practice and project exercises are reviewed, and any exercise whose
+// solution was shown before it passed.
+var ReviewIntervals = []time.Duration{2 * day, 7 * day, 30 * day}
+
+const day = 24 * time.Hour
+
+// nextReview is the schedule after passing review r: the next interval, or
+// back to the first one if the learner needed the solution or an Answer.
+func nextReview(r progress.Review, now time.Time) progress.Review {
+	step := r.Step + 1
+	if r.Lapsed {
+		step = 0
+	}
+	return progress.Review{Step: step, Due: now.Add(ReviewIntervals[min(step, len(ReviewIntervals)-1)])}
+}
+
+// DueReviews lists the exercises whose next review is due, oldest first.
+func (s *Session) DueReviews() []*course.Exercise {
+	now := s.now()
+	var due []*course.Exercise
+	for _, e := range s.Course.Exercises {
+		if r, ok := s.State.Reviews[e.Name]; ok && !r.Active && !r.Due.After(now) {
+			due = append(due, e)
+		}
+	}
+	slices.SortStableFunc(due, func(a, b *course.Exercise) int {
+		return s.State.Reviews[a.Name].Due.Compare(s.State.Reviews[b.Name].Due)
+	})
+	return due
+}
+
+// Review returns e's review schedule, if it has one.
+func (s *Session) Review(e *course.Exercise) (progress.Review, bool) {
+	r, ok := s.State.Reviews[e.Name]
+	return r, ok
+}
+
+// StartReview saves a copy of the learner's current files for e under
+// .groundwork/attempts/, resets e to its starter code, and marks the review
+// as in progress. It returns where the copy went.
+func (s *Session) StartReview(e *course.Exercise) (string, error) {
+	r, ok := s.State.Reviews[e.Name]
+	if !ok {
+		return "", fmt.Errorf("%s has no review scheduled", e.Title)
+	}
+	backup := filepath.Join(s.Root, progress.Dir, "attempts", e.Name, s.now().Format("20060102-150405"))
+	if err := copyWork(s.Dir(e), backup); err != nil {
+		return "", fmt.Errorf("save your previous code: %w", err)
+	}
+	if _, err := s.sync(e, true); err != nil {
+		return "", err
+	}
+	r.Active, r.Lapsed = true, false
+	s.State.Reviews[e.Name] = r
+	s.State.Current = e.Name
+	return backup, progress.Save(s.Root, s.State)
+}
+
+// Lapse records that the learner used the solution or an Answer hint during
+// e's review, so passing it restarts the schedule instead of advancing it.
+func (s *Session) Lapse(e *course.Exercise) error {
+	r, ok := s.State.Reviews[e.Name]
+	if !ok || !r.Active || r.Lapsed {
+		return nil
+	}
+	r.Lapsed = true
+	s.State.Reviews[e.Name] = r
+	return progress.Save(s.Root, s.State)
+}
+
+// copyWork copies the files under dir to backup, skipping scratch repos.
+func copyWork(dir, backup string) error {
+	return filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if name := entry.Name(); name == "sandbox" || name == ".git" {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(backup, rel)
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
 }
 
 // Reveal writes e's reference solution before the learner has passed, and

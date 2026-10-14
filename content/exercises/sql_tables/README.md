@@ -40,7 +40,7 @@ breaks one fails with an error, and nothing is written.
 
 | Constraint | Rule |
 |---|---|
-| `PRIMARY KEY` | identifies each row: unique and never empty. An `INTEGER PRIMARY KEY` is numbered for you (1, 2, 3, …) when an insert leaves it out. |
+| `PRIMARY KEY` | identifies each row: unique and never empty. An `INTEGER PRIMARY KEY` is numbered for you (1, 2, 3, …) when an insert leaves it out. (SQLite quirk: any other primary key, such as a `TEXT` one, also needs `NOT NULL` to be never empty.) |
 | `NOT NULL` | a value is required |
 | `UNIQUE` | no two rows may share a value |
 | `DEFAULT x` | the value used when an insert leaves the column out |

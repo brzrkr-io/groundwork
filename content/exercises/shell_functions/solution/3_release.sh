@@ -7,8 +7,8 @@ set -euo pipefail
 # Example: bash 3_release.sh testdata/hotfix.txt
 #          deploy payments -> registry.example.com/payments:2.0.2
 
-# local keeps name and tag inside the function, so it can't overwrite the
-# loop's variables of the same names.
+# The value comes back as printed output. local keeps name and tag inside
+# the function: even called without $(...), it can't overwrite the loop's.
 image_ref() {
 	local name="$1"
 	local tag="$2"

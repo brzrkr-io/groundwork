@@ -391,8 +391,8 @@ out the type from the value, and the compiler checks every use of `port`
 against it.
 
 Python and bash check types (or don't) while running. That's why a Go typo
-fails on your laptop, and a bash one fails halfway through a deploy (see the
-*How a program runs* guide).
+fails on your laptop, while a bash one shows up halfway through a deploy, or
+never (see the *How a program runs* guide).
 
 ### Converting is your job
 

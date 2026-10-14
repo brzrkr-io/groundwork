@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -187,6 +188,59 @@ func (r *recorder) handled() []string {
 	return slices.Sorted(slices.Values(r.ids))
 }
 
+// The next two helpers turn a stuck Start or Close into a test failure that
+// says what went wrong. Without them, synctest would stop the whole run with
+// "deadlock: all goroutines in bubble are blocked".
+
+// start calls q.Start and reports false if it doesn't return at once.
+func start(t *testing.T, q *Queue, workers int, handle func(Job)) bool {
+	t.Helper()
+	returned := make(chan struct{})
+	go func() {
+		q.Start(workers, handle)
+		close(returned)
+	}()
+	synctest.Wait() // until Start has returned, or is stuck
+	select {
+	case <-returned:
+		return true
+	default:
+		t.Errorf("Start(%d, ...) didn't return at once; it should start goroutines that take the jobs, then return", workers)
+		close(q.jobs) // lets the stuck Start finish, so the test can end
+		<-returned
+		return false
+	}
+}
+
+// closeQueue calls q.Close and reports false if it hasn't returned after an
+// hour (of fake time).
+func closeQueue(t *testing.T, q *Queue) bool {
+	t.Helper()
+	var rescued atomic.Bool // the test closed q.jobs itself
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() {
+			// Once the test has closed q.jobs, a close(q.jobs) after
+			// q.wg.Wait() in Close panics. Only that panic is expected.
+			if r := recover(); r != nil && !rescued.Load() {
+				panic(r)
+			}
+		}()
+		q.Close()
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(time.Hour):
+		t.Errorf("Close() still hadn't returned after an hour: the workers' loops never ended. Does Close call close(q.jobs) before q.wg.Wait()?")
+		rescued.Store(true)
+		close(q.jobs) // lets the stuck workers finish, so the test can end
+		<-done
+		return false
+	}
+}
+
 func TestWorkers(t *testing.T) {
 	tests := []struct {
 		workers int
@@ -212,10 +266,11 @@ func TestWorkers(t *testing.T) {
 				slices.Sort(want)
 
 				var rec recorder
-				start := time.Now()
-				q.Start(tt.workers, rec.handle)
-				q.Close()
-				took := time.Since(start)
+				begin := time.Now()
+				if !start(t, q, tt.workers, rec.handle) || !closeQueue(t, q) {
+					return
+				}
+				took := time.Since(begin)
 
 				if got := rec.handled(); !slices.Equal(got, want) {
 					t.Errorf("handled when Close() returned = %q, want %q", got, want)
@@ -231,17 +286,24 @@ func TestWorkers(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			q := New(2)
 			var rec recorder
-			q.Start(3, rec.handle)
+			if !start(t, q, 3, rec.handle) {
+				return
+			}
 
 			var want []string
 			for i := range 10 {
 				id := fmt.Sprintf("b%02d", i+1)
-				if err := q.Enqueue(context.Background(), job(id)); err != nil {
-					t.Fatalf("Enqueue(%q) = %v, want nil", id, err)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				err := q.Enqueue(ctx, job(id))
+				cancel()
+				if err != nil {
+					t.Fatalf("Enqueue(%q) with 3 workers running = %v, want nil (are the workers taking jobs from q.jobs?)", id, err)
 				}
 				want = append(want, id)
 			}
-			q.Close()
+			if !closeQueue(t, q) {
+				return
+			}
 
 			if got := rec.handled(); !slices.Equal(got, want) {
 				t.Errorf("handled when Close() returned = %q, want %q", got, want)

@@ -56,9 +56,19 @@ func (s source) fn(name string) *ast.FuncDecl {
 	return nil
 }
 
-// lines returns how many lines f takes, from "func" to the closing brace.
-func (s source) lines(f *ast.FuncDecl) int {
-	return s.fset.Position(f.End()).Line - s.line(f) + 1
+// codeLines returns how many lines of f hold code, from "func" to the closing
+// brace. Blank lines and comments don't count: every line where a piece of
+// syntax starts or ends does.
+func (s source) codeLines(f *ast.FuncDecl) int {
+	lines := map[int]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		if n != nil {
+			lines[s.line(n)] = true
+			lines[s.fset.Position(n.End()).Line] = true
+		}
+		return true
+	})
+	return len(lines)
 }
 
 // names returns every parameter and variable that f declares: its

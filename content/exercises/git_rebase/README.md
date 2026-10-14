@@ -104,6 +104,9 @@ $ git log --oneline --graph
 * ...
 ```
 
+Rebased commits are new commits, so their hashes differ from before (and
+from this example).
+
 Afterwards the branch has main's newest commit as an ancestor, its own two
 commits on top, and no merge commits.
 

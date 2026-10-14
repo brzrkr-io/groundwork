@@ -158,11 +158,16 @@ Not every language works like Go.
 |---|---|---|---|
 | What you ship | One binary | `.py` files | `.sh` files |
 | Needs installed to run | Nothing extra | A Python interpreter and libraries | bash and every command it calls |
-| A misspelled name is found | At compile time | When that line runs | When that line runs |
+| A misspelled name is found | At compile time | When that line runs | When that line runs, or never (see below) |
 
 That last row matters in ops. A bash deploy script with a typo on line 80
-runs lines 1 to 79 first, then fails halfway through a deploy. A Go tool with
-the same typo never builds.
+runs lines 1 to 79 first, then hits the typo halfway through a deploy. A Go
+tool with the same typo never builds.
+
+bash is even sneakier with variables. A misspelled variable like `$HOSNAME`
+isn't an error at all: bash quietly swaps in empty text and carries on.
+(The *Shell variables* exercise shows the `set -u` line that turns this
+into an error.)
 
 (Python does check its *syntax* when it loads a file, and turns your code
 into an in-between form called bytecode first. But a misspelled variable
@@ -235,7 +240,7 @@ The `go` command is your toolbox. These three do most of the work:
 | Command | What it does | What's left afterwards |
 |---|---|---|
 | `go build` | Checks and compiles the program into a binary | A binary named after the module (`hello`) |
-| `go run .` | Compiles to a temporary folder, runs it, deletes the binary | Only the output |
+| `go run .` | Compiles the program out of sight (in Go's cache), then runs it | Only the output; no binary in your folder |
 | `go test` | Compiles the package plus its `_test.go` files into a test binary and runs it | A pass/fail report |
 
 ```bash
@@ -307,8 +312,8 @@ This tiny number runs the whole automation world:
 - A CI pipeline step fails when its command exits non-zero.
 - `go build` exits 1 when there are compile errors, so a broken commit never
   becomes an image.
-- Kubernetes records a container's exit code; a container that keeps exiting
-  non-zero and restarting ends up in `CrashLoopBackOff`.
+- Kubernetes records a container's exit code; a container that keeps
+  exiting and being restarted ends up in `CrashLoopBackOff`.
 - In bash, `cmd1 && cmd2` runs `cmd2` only if `cmd1` exited 0.
 
 A Go program whose `main` returns normally exits 0. Choosing a different
@@ -352,8 +357,9 @@ how you build for arm64 Graviton nodes from an amd64 laptop.
 - **Thinking code "runs" while the compiler complains.** If there's a
   compile error, nothing ran. Fix the first error, save, and read the list
   again.
-- **Confusing the binary with the process.** Deleting or replacing the
-  binary doesn't stop a running process. Restarting does.
+- **Confusing the binary with the process.** Replacing the binary on disk
+  doesn't change a process that's already running. Only a restart loads the
+  new one.
 - **Writing errors to stdout.** Scripts that read your output get garbage
   mixed in. Errors belong on stderr.
 - **Ignoring exit codes.** A script that runs `go test` but doesn't stop on a
@@ -385,8 +391,10 @@ how you build for arm64 Graviton nodes from an amd64 laptop.
    process is that binary loaded into memory and running, with its own
    memory and PID. One file can be running as several processes at once.
 3. The Go program finds out at compile time, before anything runs, because
-   the compiler checks every name. The bash script finds out at run time,
-   when it reaches that line, after running everything before it.
+   the compiler checks every name. The bash script doesn't find out at all
+   by default: bash treats the unknown variable as empty text and keeps
+   going. Only with `set -u` does it fail, and then only at run time, when
+   it reaches that line after running everything before it.
 4. The results go to stdout, so they land in `out.txt`. The error goes to
    stderr, which `>` doesn't redirect, so it still appears on your screen.
 5. It marks the step as failed and, usually, stops the pipeline. Any exit

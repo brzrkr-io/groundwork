@@ -326,7 +326,7 @@ Each abstraction is a hop when reading. To find out what `alert` really does, yo
 
 - **Wait for the second or third repetition.** Copy once. When you write the same thing a third time, you know what's really shared.
 - **Name things by what they mean, not how they work.** `inMaintenanceWindow(hour)` beats `hourBetween2And4(hour)`. The first survives a change of window; the second becomes a lie.
-- **Keep interfaces small.** A Go proverb: "The bigger the interface, the weaker the abstraction." The standard library's `io.Writer` has one method, so files, network connections, memory buffers and HTTP responses can all be one. An interface with twelve methods has one implementation and is painful to fake.
+- **Keep interfaces small.** A Go proverb: "The bigger the interface, the weaker the abstraction." The standard library's `io.Writer` has one method, so files, network connections, memory buffers and HTTP responses can all be one. An interface with twelve methods usually ends up with only one type behind it, and it's painful to fake in tests.
 - **Accept interfaces, return structs.** A function should take the smallest interface it needs (so callers can pass anything, including fakes), and return a concrete type (so callers get every field and method).
 - **Hide what is likely to change.** Wrap the cloud API, the message format, the config file layout. Don't bother wrapping `fmt`.
 

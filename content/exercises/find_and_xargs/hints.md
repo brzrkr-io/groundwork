@@ -21,8 +21,8 @@ in front of the number means "more than".
 
 ### Closer
 
-`-mtime +7` passes for files modified more than 7 days ago. Add it after
-the `-name` test.
+`-mtime +7` passes for files modified more than 7 whole days ago (8 days or
+older). Add it after the `-name` test.
 
 ### Answer
 

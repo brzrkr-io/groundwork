@@ -58,7 +58,7 @@ id | service  | version | environment | status    | started_at
  4 | checkout | v2.7.1  | production  | failed    | 2026-03-02 13:02:00
 ```
 
-- A *column* has a name and a *type*: `INTEGER`, `TEXT`, `REAL`, timestamps and so on. Every value in it has that type.
+- A *column* has a name and a *type*: `INTEGER`, `TEXT`, `REAL`, timestamps and so on. Postgres and MySQL refuse a value of the wrong type; SQLite is looser and stores what it's given unless the table is declared `STRICT`.
 - A *row* is one record: one deploy.
 - The *schema* is the list of tables and their columns, types and rules. You write it with `CREATE TABLE`.
 
@@ -70,7 +70,7 @@ A table has no built-in order. It's a *set* of rows, not a list, so if you want 
 
 ### Primary keys
 
-A *primary key* is a column (or a few) that identifies each row: unique, never empty, never reused. Usually it's an `id` number the database hands out. Names are a bad primary key, because names change: when `checkout` is renamed `cart`, every reference to it would have to change too.
+A *primary key* is a column (or a few) that identifies each row: unique, never empty, and stable for the row's whole life. Usually it's an `id` number the database hands out. Names are a bad primary key, because names change: when `checkout` is renamed `cart`, every reference to it would have to change too.
 
 ### Foreign keys
 
@@ -140,7 +140,7 @@ GROUP BY service
 HAVING COUNT(*) >= 2;
 ```
 
-Trace it: `WHERE` keeps the four failed deploys; `GROUP BY` sorts them into one pile per service; `COUNT(*)` counts each pile; `HAVING` keeps only piles of two or more. Result: `checkout | 2`.
+Trace it: `WHERE` keeps the four failed deploys; `GROUP BY` puts them into one pile per service; `COUNT(*)` counts each pile; `HAVING` keeps only piles of two or more. Result: `checkout | 2`.
 
 ## JOINs: putting tables back together
 
@@ -356,7 +356,7 @@ A migration tool (golang-migrate, goose, Flyway, Liquibase) records in a table w
 ## Answers
 
 1. A database coordinates concurrent writers so their records don't interleave, and makes each write atomic, so a crash leaves either the whole record or nothing. It can also enforce rules on values and answer new questions with a query instead of a new script.
-2. Names change (checkout becomes cart), and every row pointing at the old name would have to change too. An `id` never changes and never repeats, so references stay valid; the name is just a column you can update in one place.
+2. Names change (checkout becomes cart), and every row pointing at the old name would have to change too. An `id` never changes and is unique, so references stay valid; the name is just a column you can update in one place.
 3. It refuses a deploy whose `service_id` matches no service, and refuses to delete (or change the `id` of) a service that still has deploys. Rows can't point at nothing. (In SQLite this needs `PRAGMA foreign_keys = ON`.)
 4. `WHERE` runs on single rows before groups exist, so it can't use an aggregate. Move the condition after `GROUP BY service` as `HAVING COUNT(*) > 3`.
 5. Any comparison with `NULL` using `=` is unknown, not true, and `WHERE` only keeps true rows. Write `WHERE finished_at IS NULL`.

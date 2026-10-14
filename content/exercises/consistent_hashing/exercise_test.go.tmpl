@@ -164,7 +164,7 @@ func TestGet(t *testing.T) {
 			}
 			moved++
 			if got != "cache-4" {
-				t.Errorf("after Add(%q), Get(%q) = %q, want %q or %q (where it was before)", "cache-4", k, got, before[k], "cache-4")
+				t.Fatalf("after Add(%q), Get(%q) = %q, want %q or %q (where it was before)", "cache-4", k, got, before[k], "cache-4")
 			}
 		}
 		if moved < 150 || moved > 350 {

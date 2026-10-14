@@ -100,6 +100,8 @@ func (rr *RoundRobin) CheckAll(probe func(addr string) bool) int {
 		results[i] = probe(b.addr)
 	}
 
+	// The backend list never changes after New, so results[i] still
+	// belongs to rr.backends[i].
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 	healthy := 0

@@ -72,7 +72,10 @@ notifications NULL      1         0
 So count a right-side column, like `COUNT(d.id)`.
 
 Group by the left table's `id` (`GROUP BY s.id`): two services could share a
-name, but never an id.
+name, but never an id. You can still select `s.name`, although *Aggregates
+and GROUP BY: failures per service* said every selected column should be
+grouped: `id` is the primary key, so each group holds exactly one service
+and so exactly one name. Postgres allows this for the same reason.
 
 ### ON vs WHERE in a left join
 

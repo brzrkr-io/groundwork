@@ -81,7 +81,7 @@ Here is one line of an nginx access log:
 10.0.0.9 - - [13/Oct/2026:09:15:03 +0000] "POST /deploy HTTP/1.1" 502 157
 ```
 
-(Real lines also end with the referrer and the client name.) The fields are separated by spaces: client IP, two unused fields, time, request, status code, response size.
+(Real lines also end with the referrer and the user agent, the client program's name.) The fields are separated by spaces: client IP, two fields that are almost always `-`, time, request, status code, response size.
 
 And here is a line of `/etc/passwd`, the Linux list of user accounts:
 
@@ -201,7 +201,7 @@ It is easy to read, but its friendliness comes from guessing, and the guesses ca
 - **Indentation is structure.** Moving a line two spaces changes what it belongs to. Tabs are not allowed for indentation at all.
 - **Implicit types.** YAML decides the type from how a value looks. `version: 1.10` is the *number* 1.1, not the string `"1.10"`.
 - **The Norway problem.** Under the older YAML 1.1 rules, which many tools still follow, `NO`, `no`, `yes`, `on` and `off` are booleans. A list of country codes `[GB, FR, NO]` becomes `["GB", "FR", false]`.
-- **Leading zeros.** Under YAML 1.1, `mode: 0644` is an octal number (420 in decimal). Kubernetes relies on this for file modes; elsewhere it surprises people.
+- **Leading zeros.** Under YAML 1.1, `mode: 0644` is an octal (base 8) number, 420 in decimal. Kubernetes file-mode fields like `defaultMode: 0644` rely on this; elsewhere it surprises people.
 
 The fix for all of them: **when you mean a string, quote it.** In a Kubernetes container, an environment variable written as `value: true` is rejected because env values must be strings; `value: "true"` works.
 
@@ -309,6 +309,8 @@ Trace the three calls:
 3. The syntax is fine, so parsing succeeds. But `replcias` is a typo. Go's JSON decoder quietly ignores keys it doesn't know, so `Replicas` keeps its zero value, 0. Only validation catches it, together with the impossible port.
 
 That third case is the whole argument for validating. **Parsing tells you the data is well-formed. Validation tells you it's correct enough to act on.** Do it at the edge, before a bad config reaches a deploy. Joining every problem into one error, as in *Reporting many errors*, lets the user fix them all in one go.
+
+For config files you can also make typos fail loudly: a `json.Decoder` with `DisallowUnknownFields()` turned on rejects `replcias` with an `unknown field` error. You still need validation for values that are spelled right but wrong, like the port.
 
 You practise both directions in *Encoding JSON* and *Decoding JSON*. The *Errors and failure* guide explains why returning an error beats crashing here.
 
@@ -484,5 +486,5 @@ You'll handle cert expiry and maintenance windows in *Time and durations*.
 - [JSON and Go](https://go.dev/blog/json): the Go team's walkthrough of marshalling and unmarshalling, including how unknown fields are handled.
 - [Strings, bytes, runes and characters in Go](https://go.dev/blog/strings): Rob Pike on how Go stores text as UTF-8 bytes.
 - [The Absolute Minimum Every Software Developer Must Know About Unicode](https://www.joelonsoftware.com/2003/10/08/the-absolute-minimum-every-software-developer-absolutely-positively-must-know-about-unicode-and-character-sets-no-excuses/): a funny, classic explanation of why "plain text" doesn't exist.
-- [The Norway Problem](https://hitchdev.com/strictyaml/why/implicit-typing-removed/): the real outage story behind YAML's implicit typing traps.
+- [The Norway Problem](https://hitchdev.com/strictyaml/why/implicit-typing-removed/): why the StrictYAML project removed implicit typing, with the Norway problem and other real examples of YAML guessing wrong.
 - [RFC 3339: Date and Time on the Internet](https://www.rfc-editor.org/rfc/rfc3339): the timestamp standard; sections 4 and 5 explain why UTC and this ordering.

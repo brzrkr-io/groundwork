@@ -56,10 +56,14 @@ the service, then cut each line down to `req=...`, then drop the `req=`.
 
 ### Closer
 
-- Step 1: in double quotes, so `$2` is swapped in: `grep "ERROR $2 " "$1"`.
-  The space after `$2` stops `api` from matching a longer service name.
-- Step 2: `grep -o 'req=[a-z0-9]*'` prints only `req=` and the id.
-- Step 3: `cut -d= -f2` keeps what comes after the `=`.
+- Step 1: the pattern is `ERROR`, a space and the service, in **double**
+  quotes so `$2` is swapped in: `grep "ERROR ..." "$1"`. A space after the
+  service stops `api` from matching a longer name such as `api-gateway`.
+- Step 2: `grep -o` with `req=` followed by a run of lowercase letters and
+  digits (the bracket pattern from the Learn section).
+- Step 3: `cut` with `=` as the delimiter, keeping field 2.
+
+Run it after each step and look at the output before adding the next.
 
 ### Answer
 

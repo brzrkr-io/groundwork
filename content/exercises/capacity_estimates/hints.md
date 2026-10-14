@@ -70,8 +70,8 @@ wrap it in `int(...)` before adding `spare`. Add `import "math"` under the
 return int(math.Ceil(peakQPS/qpsPerServer)) + spare
 ```
 
-Adding `spare` after rounding means a spare is a whole extra server, not a
-fraction that rounding swallows.
+Add `spare` after dividing, because it counts whole servers: added to
+`peakQPS` it would be 1 ÷ 400 of a server, which the rounding swallows.
 
 ## Task 5: Fill in the plan
 

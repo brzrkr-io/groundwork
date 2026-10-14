@@ -68,10 +68,17 @@ func TestDurationReport(t *testing.T) {
 type result struct {
 	columns []string
 	rows    [][]string
+	// unstable is true when a second run of the query returned the same rows
+	// in a different order.
+	unstable bool
 }
 
 // runQuery builds a fresh in-memory database from testdata/schema.sql and
 // testdata/data.sql, then runs the query in file against it.
+//
+// Without ORDER BY, a database may return rows in any order. To catch a query
+// that is in order only by luck, runQuery runs it a second time with SQLite
+// told to read tables backwards (PRAGMA reverse_unordered_selects).
 func runQuery(t *testing.T, file string) result {
 	t.Helper()
 	db, err := sql.Open("sqlite", ":memory:")
@@ -87,7 +94,19 @@ func runQuery(t *testing.T, file string) result {
 		}
 	}
 
-	rows, err := db.Query(readSQL(t, file))
+	query := readSQL(t, file)
+	res := collect(t, db, file, query)
+	if _, err := db.Exec("PRAGMA reverse_unordered_selects = ON"); err != nil {
+		t.Fatal(err)
+	}
+	res.unstable = !slices.EqualFunc(res.rows, collect(t, db, file, query).rows, slices.Equal)
+	return res
+}
+
+// collect runs query and returns its columns and rows.
+func collect(t *testing.T, db *sql.DB, file, query string) result {
+	t.Helper()
+	rows, err := db.Query(query)
 	if err != nil {
 		t.Fatalf("%s failed: %v", file, err)
 	}
@@ -139,13 +158,25 @@ func readSQL(t *testing.T, file string) string {
 	return ""
 }
 
+// unstableHint explains a result whose order changed between two runs.
+const unstableHint = "The test ran your query twice, and the second time the rows came back in a different order.\n" +
+	"Without ORDER BY (or with an ORDER BY that leaves ties), the database picks the order. Sort the rows as the task says."
+
 // checkRows compares the rows of got with want, in order: these queries use
 // ORDER BY, so the order is part of the answer.
 func checkRows(t *testing.T, file string, got result, want [][]string) {
 	t.Helper()
 	if !slices.EqualFunc(got.rows, want, slices.Equal) {
-		t.Errorf("%s returned %d rows (columns: %s):\n%s\nwant %d rows, in this order:\n%s",
-			file, len(got.rows), strings.Join(got.columns, ", "), table(got.rows), len(want), table(want))
+		hint := ""
+		if got.unstable {
+			hint = "\n" + unstableHint
+		}
+		t.Errorf("%s returned %d rows (columns: %s):\n%s\nwant %d rows, in this order:\n%s%s",
+			file, len(got.rows), strings.Join(got.columns, ", "), table(got.rows), len(want), table(want), hint)
+		return
+	}
+	if got.unstable {
+		t.Errorf("%s returned the right rows, but in this order only by luck.\n%s", file, unstableHint)
 	}
 }
 

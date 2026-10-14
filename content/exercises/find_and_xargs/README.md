@@ -36,12 +36,12 @@ them:
 | `-type f` | regular files (not folders) |
 | `-type d` | folders |
 | `-name '*.sql'` | names that match the pattern |
-| `-mtime +30` | files last modified more than 30 days ago |
+| `-mtime +30` | files last modified more than 30 whole days ago (see below) |
 | `-size +100M` | files bigger than 100 megabytes (`k` and `G` work too) |
 
 ```bash
 find backups -type f -name '*.sql' -mtime +30
-# backups/db/monday.sql     (if it is older than 30 days)
+# backups/db/monday.sql     (if it is 31 or more days old)
 ```
 
 In `-name`, `*` means "any characters", so `'*.sql'` matches names that
@@ -54,14 +54,17 @@ In `-name`, `*` means "any characters", so `'*.sql'` matches names that
 
 ### -mtime: counting in whole days
 
-`-mtime` counts a file's age in whole days, rounded down: a file modified 7
-days and 20 hours ago is 7 days old.
+`-mtime` counts a file's age in whole days and drops the fraction: a file
+modified 7 days and 20 hours ago is 7 days old.
 
 | Test | Passes for |
 |---|---|
-| `-mtime +7` | more than 7 days old: 8 or more |
-| `-mtime 7` | exactly 7 days old |
-| `-mtime -7` | less than 7 days old |
+| `-mtime +7` | more than 7 whole days old: 8 days or older |
+| `-mtime 7` | exactly 7 whole days old |
+| `-mtime -7` | less than 7 whole days old: 0 to 6 |
+
+So `+7` skips a file that is 7 days and 20 hours old. For a cleanup job
+that's the safe side: a file is never deleted early.
 
 ### sort: a stable order
 
@@ -116,9 +119,12 @@ find can delete what it finds. Put `-delete` **last**, after the tests:
 find /tmp/build-cache -type f -name '*.tmp' -delete
 ```
 
-`find ... -print0 | xargs -0 rm` does the same. `-delete` is shorter, and
-spaces can't trip it up. There is no undo either way, so run the command
-without `-delete` first and read the list.
+`find ... -print0 | xargs -0 rm --` does the same (`--` tells rm that what
+follows are file names, even one that starts with `-`). `-delete` is
+shorter, and spaces can't trip it up. It also copes with finding nothing:
+plain `xargs` still runs `rm` once with no names, and `rm` fails with
+`missing operand`. There is no undo either way, so run the command without
+`-delete` first and read the list.
 
 > **Why is it written like this?** **find requires** `-delete` after the
 > tests: find works left to right, and a `-delete` before the tests deletes
@@ -152,9 +158,9 @@ sandbox/
     └── worker.log
 ```
 
-*Old* files were last modified more than 7 days ago (setup.sh dates them 1
-January 2024); the others are from today. Run `bash setup.sh` again for a
-fresh copy whenever you like.
+*Old* files were last modified more than 7 whole days ago (setup.sh dates
+them 1 January 2024); the others are from today. Run `bash setup.sh` again
+for a fresh copy whenever you like.
 
 The tests build the same tree in a temporary folder (with the old files 10
 days old and the others 2 days old), plus a second, different tree called
@@ -186,7 +192,7 @@ bash 1_list_logs.sh sandbox
 ### 2. List the old log files
 
 **Goal:** make `2_list_old_logs.sh` print every `.log` file under `$1` that
-was last modified more than 7 days ago, sorted, one path per line.
+was last modified more than 7 whole days ago, sorted, one path per line.
 
 ```bash
 bash 2_list_old_logs.sh sandbox
@@ -199,7 +205,7 @@ bash 2_list_old_logs.sh sandbox
 
 **Think it through:**
 - Which test is about age, and which sign means "more than"?
-- Is "more than 7 days" the number 7, or 8?
+- Look at the `-mtime` table: which number goes after the sign?
 
 ### 3. Count the config lines
 
@@ -225,7 +231,7 @@ around the number don't matter: on macOS, `wc` puts some in front.
 ### 4. Delete the old log files
 
 **Goal:** make `4_delete_old_logs.sh` delete every `.log` file under `$1`
-that was last modified more than 7 days ago.
+that was last modified more than 7 whole days ago.
 
 Leave every other file alone: new logs, rotated logs like `access.log.1`,
 and `.conf` files, however old. Folders stay too, even when they end up

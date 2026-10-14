@@ -62,6 +62,9 @@ grep -v ok deploys.txt
 # billing v0.9.1 failed
 ```
 
+Flags can be glued together: `grep -ci FAILED deploys.txt` is the same as
+`grep -c -i FAILED deploys.txt`, and prints `2`.
+
 ### Patterns: either-or, and "any of these characters"
 
 The pattern is a *regular expression*: a small language for describing text.
@@ -75,12 +78,14 @@ grep -E 'worker|billing' deploys.txt
 # billing v0.9.1 failed
 ```
 
-Square brackets match **one** character from a set, and `*` after something
-means "repeated any number of times (even zero)". So `[0-9]*` is a run of
-digits, and `[a-z0-9]*` a run of lowercase letters and digits:
+Square brackets match **one** character from a set: `[0-9]` is any one
+digit, `[a-z]` any one lowercase letter, `[a-z0-9]` either. A `*` after
+something means "repeated any number of times (even zero)". So `[0-9]*` is
+a run of digits, and `[a-z0-9]*` a run of lowercase letters and digits:
 
 ```bash
 grep 'v[0-9]*\.[0-9]*\.[0-9]*' deploys.txt   # any vX.Y.Z version
+# (all four lines)
 ```
 
 (`\.` is a real dot. A bare `.` means "any one character".)
@@ -100,6 +105,10 @@ line:
 echo 'pod=api-7c9d node=node-3' | grep -o 'node=[a-z0-9-]*'
 # node=node-3
 ```
+
+A `-` at the end of the brackets is a real dash, so `[a-z0-9-]` also
+matches `-`. The `|` before grep is a *pipe*, coming up next: it feeds
+`echo`'s text to grep instead of a file.
 
 ### Pipes: one command's output is the next one's input
 
@@ -209,7 +218,14 @@ bash 2_count_problems.sh testdata/quiet.log
 ```
 
 `testdata/quiet.log` has no problems at all. For it, the script must print
-`0` **and** finish with status 0, like the other two.
+`0` **and** finish with status 0, like the other two. Check the status as
+in *Exit codes, && and ||*:
+
+```bash
+bash 2_count_problems.sh testdata/quiet.log; echo $?
+# 0      (the count, printed by your script)
+# 0      (the exit status, printed by echo $?)
+```
 
 **Think it through:**
 - Which flag counts instead of printing, and which one allows "or"?

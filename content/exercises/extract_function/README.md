@@ -48,7 +48,9 @@ ts, err := parseTimestamp(fields[0])
 5. Replace the block in the old function with a call. Run the tests.
 
 Many editors can do this for you: select the lines, then **Extract
-function** in the code actions menu (the light bulb in VS Code).
+function** in the code actions menu (the light bulb in VS Code). For
+task 1, do it by hand: that block has `return`s in it, and the editor's
+version turns them into extra flag variables that are harder to read.
 
 ### Returning an error from a helper
 
@@ -87,9 +89,9 @@ lines = append(lines, []string{"a", "b"}...)
 
 `structure_test.go` reads `exercise.go` with Go's `go/ast` package. It
 checks that each helper exists, that `Plan` calls it, and finally that
-`Plan` is at most 12 lines long. The behaviour checks run first: if a
-refactor changes the output, the test says so before it looks at the
-shape.
+`Plan` has at most 12 lines of code (blank lines and comments don't
+count). The behaviour checks run first: if a refactor changes the output,
+the test says so before it looks at the shape.
 
 ## Your task
 
@@ -150,7 +152,7 @@ imageRef(Request{Service: "web", Registry: "registry.example.com", Tag: "2026.10
 ### 3. Extract batchSteps
 
 **Goal:** move the batch loop into `batchSteps(r Request) []string`, call it
-from `Plan`, and get `Plan` down to 12 lines or fewer.
+from `Plan`, and get `Plan` down to 12 lines of code or fewer.
 
 `batchSteps` returns only the batch lines; `Plan` adds the first and last
 steps around them. `Plan` must have no `for` loop left.

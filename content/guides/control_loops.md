@@ -10,6 +10,7 @@
 - What desired state and actual state are, and how a control loop closes the gap.
 - Why reconcile code must be idempotent and level-triggered.
 - How Kubernetes is built from many small controllers, fed by watches, caches and work queues.
+- How controllers write back safely: conflicts, owner references and finalizers.
 - What drift and GitOps are, and how they use the same loop.
 
 ## Two ways to ask for something
@@ -135,7 +136,7 @@ func main() {
 
 	for round := 1; round <= 3; round++ {
 		if round == 3 {
-			actual["web"] = 5 // someone ran "kubectl scale" by hand: drift
+			actual["web"] = 5 // someone started 2 extra pods by hand: drift
 		}
 		did := reconcile(desired, actual)
 		if len(did) == 0 {
@@ -158,7 +159,7 @@ Step by step:
 
 1. **Round 1.** `worker` is desired but missing, so it's created. `web` exists with 1 but should have 3, so it's scaled. `old-cron` exists but isn't desired, so it's deleted.
 2. **Round 2.** Same function, same desired state. Everything already matches, so it does nothing. That's the important line.
-3. **Round 3.** Someone scaled `web` to 5 by hand. The loop doesn't know or care who. It sees 5, wants 3, and fixes it.
+3. **Round 3.** Someone started two extra `web` pods by hand. The loop doesn't know or care who. It sees 5, wants 3, and fixes it.
 
 The second loop over `actual` is the same "diff two maps" idea from *Maps: diff a service catalog*. You'll write the real thing in *Reconcile loops: desired vs actual*.
 
@@ -169,7 +170,7 @@ Round 2 above is the property everything rests on. Running reconcile again on an
 - after every change to it,
 - after every error (it retries),
 - after a restart of the controller,
-- and on a timer, just in case (a *resync*).
+- and on a timer, just in case (a *resync*; client-go replays every object from its local cache).
 
 So write reconcile as "ensure", never as "do":
 
@@ -198,7 +199,7 @@ They sound the same until something goes wrong. Suppose the controller was resta
 
 An edge-triggered controller is only as good as its event stream. A level-triggered one treats events as a hint ("something about `web` changed, go look") and then re-reads the whole state. Missed or duplicated events don't matter, because the decision is based on what *is*, not on what *happened*.
 
-Kubernetes controllers are level-triggered. That's why your reconcile function receives just a name, like `default/web`, and not "what changed".
+Kubernetes controllers are level-triggered. That's why your reconcile function receives just a key, like `default/web` (namespace, then name), and not "what changed".
 
 ## Convergence, not instant change
 
@@ -218,7 +219,7 @@ So "done" in a declarative system means "status says it has converged", not "the
 
 What happens next depends on the system:
 
-- **A continuous controller fixes it.** Kubernetes saw the hand-scaled `web` in round 3 and put it back. Good for safety; surprising if you didn't know.
+- **A continuous controller fixes it.** Start two extra `web` pods by hand and the ReplicaSet controller deletes the extras, like round 3 of the toy. But Kubernetes only defends the `spec` it holds: `kubectl scale` or `kubectl edit` changes that spec, so Kubernetes obeys the new value. Undoing that needs a loop that compares with git (GitOps, below).
 - **A run-on-demand tool reports it.** `terraform plan` refreshes what's really there, compares it with your files and shows the difference. Nothing changes until someone applies.
 
 *Drift detection* is that comparison on its own: list the differences and alert, without fixing. You'll build a tiny `terraform plan` for AWS in *Drift detection: a tiny terraform plan*. Part of doing it well is deciding what not to count, like tags AWS adds itself.
@@ -269,11 +270,27 @@ A controller that asked the API server for every pod, every second, would flatte
     error? -> put the key back, with backoff
 ```
 
-- A *watch* is a long-lived request that streams changes ("added", "modified", "deleted"). Watches can close or skip ahead, so code must cope: *Watching resources: closed watches and ERROR events*.
-- An *informer* combines list and watch to keep a *cache* up to date, so reads cost nothing. The cache can be slightly behind the server, which level-triggered code tolerates. See *Informers: list, watch and cache*.
+- A *watch* is a long-lived request that streams changes ("added", "modified", "deleted"). The server closes watches regularly, and one that has fallen too far behind gets an `ERROR` event ("410 Gone"), so code must list again: *Watching resources: closed watches and ERROR events*.
+- An *informer* combines list and watch to keep a *cache* up to date, so reads don't touch the API server. The cache can be slightly behind the server, which level-triggered code tolerates. See *Informers: list, watch and cache*.
 - A *work queue* holds keys, not events. It removes duplicates, never gives the same key to two workers at once, and re-queues failures with backoff. See *Workqueues: keys, dedup and the worker loop*.
 
 Notice how each piece serves the level-triggered idea: events only decide *which* object to look at; reconcile decides *what* to do by reading current state.
+
+## Writing back safely
+
+Reconcile reads from the cache but writes to the API server. Three fields in every object's `metadata` keep those writes safe:
+
+| Field | What it does | What your controller does |
+|---|---|---|
+| `resourceVersion` | Changes on every write to the object | Gets a Conflict error if it writes from a stale copy |
+| `ownerReferences` | Says "this object belongs to that one" | Sets it on objects it creates, so they're deleted with their owner |
+| `finalizers` | Names that must all be removed before a delete completes | Cleans up outside things, then removes its own name |
+
+**Conflicts.** Your controller and a teammate both read `web` while its `resourceVersion` is 41. The teammate saves first, making it 42. Your update still says 41, so the API server rejects it with a *Conflict* error (HTTP 409) rather than silently overwrite their change. That's *optimistic concurrency*: no locks, just "refuse writes based on stale reads". The level-triggered fix is simple: return the error, let the work queue retry, and the next reconcile reads fresh state.
+
+**Owners.** Each Pod has an *owner reference* to its ReplicaSet, and each ReplicaSet one to its Deployment. Delete the Deployment and the *garbage collector* (another controller) deletes everything that pointed at it. Set owner references on what your controller creates and you need no delete code; you'll do it in *Project: Kubernetes controller*.
+
+**Finalizers.** Some cleanup is outside the cluster: a cloud load balancer, a DNS record. A *finalizer* is a name in `metadata.finalizers`. While any remain, a delete only marks the object (it gets a `deletionTimestamp`). The controller sees the mark, cleans up, and removes its finalizer; then the object goes. If that controller is broken or gone, the object sits in `Terminating` forever: a classic incident.
 
 ## GitOps: the same loop, pointed at git
 
@@ -314,15 +331,19 @@ The catch is the same as any controller: a manual fix during an incident will be
 4. A teammate's reconcile does `pod.Labels["restarts"] = old + 1` each time it runs. What goes wrong?
 5. Someone changes an S3 bucket's policy in the AWS console. What will `terraform plan` show, and what would a GitOps-style continuous controller do instead?
 6. What do a work queue's "dedup" and "requeue with backoff" each give a controller?
+7. Your controller's update to a Deployment fails with a Conflict error: "the object has been modified". What happened, and what should reconcile do?
+8. After `kubectl delete`, a custom resource has shown `Terminating` for an hour. What is the usual cause?
 
 ## Answers
 
 1. Idempotency. Rerunning should finish the job, not fail on work already done. A declarative tool compares the desired five hosts with the two it finds and starts only the missing three.
 2. It's level-triggered. On its next reconcile (after a restart, the next related event or a periodic resync) it counts the pods that exist, sees fewer than desired and creates more. It doesn't need the lost event.
-3. The ReplicaSet controller: it saw fewer pods than its `replicas` and created one. Scale the Deployment to 0, or delete the Deployment; change the desired state, not the actual.
+3. The ReplicaSet controller: it saw fewer pods than its `replicas` and created one. Scale the Deployment to 0, or delete the Deployment; its owner references let the garbage collector remove its ReplicaSets and pods too. Change the desired state, not the actual.
 4. It isn't idempotent. Reconcile runs many times for one real change (resyncs, retries, other updates), so the number climbs on its own. Set values computed from current state instead of adding to them.
 5. The plan shows a difference: your files want one policy, the real bucket has another, and applying would change it back. A continuous controller would notice on its own and undo the change, without anyone running a command.
 6. Dedup means a burst of events for one object becomes one reconcile, not fifty, and no two workers handle the same key at once. Requeue with backoff means a failed reconcile is tried again later, without hammering the API server.
+7. Someone else wrote the object after your controller read it, so your copy's `resourceVersion` is stale. The API server refuses rather than overwrite their change (optimistic concurrency). Return the error so the work queue retries; the next reconcile reads the current object and works out the change again.
+8. A finalizer is still on it. Deletion waits until every finalizer is removed, and the controller meant to clean up and remove it is failing or not running. Fix that controller; removing the finalizer by hand skips its cleanup, such as deleting a cloud load balancer.
 
 ## Key terms
 
@@ -337,13 +358,18 @@ The catch is the same as any controller: a manual fix during an incident will be
 | Idempotent | Doing it twice has the same effect as once |
 | Edge-triggered | Acting on each change event |
 | Level-triggered | Acting on the current state, whatever the events |
-| Resync | Reconciling everything again on a timer |
+| Resync | Reconciling every object again on a timer; client-go replays them from its cache |
 | Convergence | Actual state moving step by step towards desired |
 | Drift | Actual state changing without desired state changing |
 | Drift detection | Reporting the differences without fixing them |
 | Watch | A streaming request for changes to objects |
 | Informer | List plus watch that keeps a local cache current |
 | Work queue | A deduplicating queue of object keys to reconcile |
+| resourceVersion | A version stamp on each Kubernetes object that changes on every write |
+| Optimistic concurrency | No locks: a write based on a stale version is rejected with a conflict, and the writer re-reads and retries |
+| Owner reference | Metadata saying an object belongs to another, so it's deleted with its owner |
+| Garbage collector | The Kubernetes controller that deletes objects whose owner is gone |
+| Finalizer | A name on an object that delays its deletion until a controller finishes cleanup and removes it |
 | GitOps | Git as the desired state, with a controller applying it |
 
 ## Watch
