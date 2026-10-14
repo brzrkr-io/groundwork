@@ -584,25 +584,26 @@ func (m *Model) refresh() {
 	var content string
 	switch m.pane {
 	case paneInstructions:
+		inner := pageInner(w)
 		readme, _ := m.s.Course.README(m.ex)
 		where := relative(filepath.Join(m.s.Dir(m.ex), "README.md"))
-		content = wrapIndent(dim.Render("Same text as "+where+", if you'd rather read it in your editor."), 1, w) + "\n"
+		meta := dim.Render("Also in " + where + ".")
 		if guides := m.ex.Module.Guides; len(guides) > 0 {
 			var titles []string
 			for _, g := range guides {
-				titles = append(titles, bold.Render(g.Title))
+				titles = append(titles, g.Title)
 			}
-			content += wrapIndent(dim.Render("Background for this module: ")+strings.Join(titles, dim.Render(", "))+dim.Render(". Press ")+keyCap.Render("g")+dim.Render(" for the guides."), 1, w) + "\n"
+			meta += dim.Render(" Background reading: "+strings.Join(titles, ", ")+" (") + keyCap.Render("g") + dim.Render(").")
 		}
-		content += "\n" + m.markdown(dropTitle(readme), w)
+		content = page(m.ex.Title, meta, m.markdown(dropTitle(readme), inner), w)
 	case paneHints:
-		content = m.hintsView(w)
+		content = page("Hints", "", m.hintsView(pageInner(w)), w)
 	case paneList:
 		content = m.listView(w)
 	case paneHelp:
-		content = m.helpView(w)
+		content = page("Keys", "", m.helpView(pageInner(w)), w)
 	case paneSolution:
-		content = m.solutionView(w)
+		content = page("Reference solution", "", m.solutionView(pageInner(w)), w)
 	case paneGuides:
 		content = m.guidesView(w)
 	case paneGuide:
@@ -635,6 +636,7 @@ const readingWidth = 84
 
 func (m *Model) markdown(src string, width int) string {
 	width = min(width, readingWidth)
+	src = sectionRules(src)
 	if m.md == nil || m.mdWidth != width {
 		r, err := newMarkdown(width)
 		if err != nil {
@@ -652,9 +654,9 @@ func (m *Model) markdown(src string, width int) string {
 // newMarkdown returns a renderer for Markdown prose wrapped at width.
 func newMarkdown(width int) (*glamour.TermRenderer, error) {
 	return glamour.NewTermRenderer(
-		glamour.WithStyles(markdownStyle()),
+		glamour.WithStyles(markdownStyle(width)),
 		glamour.WithChromaFormatter("terminal16"), // code in the terminal's palette
-		glamour.WithWordWrap(width-2),
+		glamour.WithWordWrap(width),
 		glamour.WithEmoji(),
 	)
 }
@@ -880,13 +882,12 @@ func (m *Model) guideView(width int) string {
 	if err != nil {
 		return badBold.Render("✗ ") + err.Error()
 	}
-	where := relative(m.s.GuidePath(g))
-	status := dim.Render("Press ") + keyCap.Render("m") + dim.Render(" when you've read it.")
+	status := dim.Render("press ") + keyCap.Render("m") + dim.Render(" when you've read it")
 	if m.s.Read(g) {
 		status = okStyle.Render("✓ read")
 	}
-	intro := wrapIndent(dim.Render(fmt.Sprintf("Guide %d of %d, for module %d: %s. Also in %s.", g.Number, len(m.s.Course.Guides), g.Module.Number, g.Module.Title, where)), 1, width) + "\n " + status
-	return intro + "\n\n" + m.markdown(text, width)
+	meta := dim.Render(fmt.Sprintf("Guide %d of %d · module %d: %s · also in %s · ", g.Number, len(m.s.Course.Guides), g.Module.Number, g.Module.Title, relative(m.s.GuidePath(g)))) + status
+	return page(g.Title, meta, m.markdown(dropTitle(text), pageInner(width)), width)
 }
 
 func (m *Model) helpView(width int) string {
@@ -909,7 +910,6 @@ func (m *Model) helpView(width int) string {
 		{"q", "quit (progress is saved)"},
 	}
 	var b strings.Builder
-	b.WriteString(bold.Render("Keys") + "\n\n")
 	for _, r := range rows {
 		b.WriteString(fmt.Sprintf("  %s  %s\n", keyCap.Render(fmt.Sprintf("%-14s", r[0])), r[1]))
 	}

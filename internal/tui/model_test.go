@@ -179,7 +179,7 @@ func TestGuidesOpenOnTheNextUnreadAndEscGoesBackOneLevel(t *testing.T) {
 	}
 
 	press(m, "i")
-	if view := m.View(); !strings.Contains(view, "Background for this module") || !strings.Contains(view, "Concurrency") {
+	if view := m.View(); !strings.Contains(view, "Background reading") || !strings.Contains(view, "Concurrency") {
 		t.Errorf("instructions don't point to the module's guide:\n%s", view)
 	}
 

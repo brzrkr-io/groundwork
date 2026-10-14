@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
@@ -52,10 +54,11 @@ const (
 	codeCyan    = "#00ffff"
 )
 
-// markdownStyle renders READMEs and hints with the palette above.
-func markdownStyle() ansi.StyleConfig {
+// markdownStyle renders READMEs, hints and guides with the palette above,
+// for text width columns wide. The page frame provides the margins.
+func markdownStyle(width int) ansi.StyleConfig {
 	s := styles.DarkStyleConfig
-	yes, margin := true, uint(1)
+	yes, margin := true, uint(0)
 	color := func(c string) *string { return &c }
 
 	s.Document.Color = nil // the terminal's own foreground
@@ -65,10 +68,14 @@ func markdownStyle() ansi.StyleConfig {
 	// Section headings (LEARN, YOUR TASK) in accent capitals; task headings
 	// in bold. No literal "## " markers.
 	s.H2.Prefix, s.H2.Upper, s.H2.Bold = "", &yes, &yes
-	s.H3.Prefix, s.H3.Color = "", nil
+	s.H3.Prefix, s.H3.Color = "› ", nil
 	s.H4.Prefix, s.H4.Color = "", nil
 	s.H6.Color = color(ansiGray)
 	s.HorizontalRule.Color = color(ansiGray)
+	s.HorizontalRule.Format = "\n" + strings.Repeat("─", max(1, width)) + "\n"
+	// Notes ("Why is it written like this?") sit behind a bar.
+	indent := uint(1)
+	s.BlockQuote.Indent, s.BlockQuote.IndentToken = &indent, color("┃ ")
 	s.Link.Color = color(ansiBlue)
 	s.LinkText.Color = color(ansiCyan)
 	s.Image.Color = color(ansiMagenta)
