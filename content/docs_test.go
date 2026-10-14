@@ -134,13 +134,13 @@ func TestCrossReferences(t *testing.T) {
 	reference := regexp.MustCompile(`\b(?:in|from|see|See|like|to|after|since|of|In|From|Like|After)\s+\*([A-Z][^*\n]{1,80}?)\*`)
 	heading := regexp.MustCompile(`(?m)^#{2,4} (.+)$`)
 	for _, e := range c.Exercises {
-		readme, _ := content.Files.ReadFile("exercises/" + e.Name + "/README.md")
+		readme, _ := content.Files.ReadFile("packs/" + e.Name + "/README.md")
 		sections := map[string]bool{}
 		for _, h := range heading.FindAllStringSubmatch(string(readme), -1) {
 			sections[strings.TrimSpace(h[1])] = true
 		}
 		for _, file := range []string{"README.md", "hints.md"} {
-			raw, err := content.Files.ReadFile("exercises/" + e.Name + "/" + file)
+			raw, err := content.Files.ReadFile("packs/" + e.Name + "/" + file)
 			if err != nil {
 				continue
 			}

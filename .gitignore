@@ -1,2 +1,4 @@
-# Build output of go build. Your course work lives in its own folder (see README).
+# Build output of go build.
 /groundwork
+# Your work: exercises, solutions, guides, progress. See README.
+/course/

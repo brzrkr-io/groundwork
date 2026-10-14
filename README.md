@@ -54,17 +54,17 @@ After pulling course updates, run `go install .` again.
 
 ## Start
 
-Your work lives in its own **course folder**, separate from this
-repository. The repository holds the tool and the course; the course folder
-holds your exercises, your progress and nothing else.
+Everything lives in this one repository. Your work goes in its `course/`
+folder: your exercises, solutions, guides and progress. It's ignored by
+git, so the tool's history stays clean.
 
 ```bash
-groundwork init ~/groundwork   # first time only: creates your course folder
-cd ~/groundwork
-groundwork                     # opens your current exercise and watches for saves
+groundwork init   # first time only, from the repository: creates course/
+groundwork        # opens your current exercise and watches for saves
 ```
 
-Open the course folder in your editor in a second window (VS Code, GoLand,
+`groundwork` finds `course/` from anywhere, inside the repository or not.
+Open `course/exercises/` in your editor in a second window (VS Code, GoLand,
 Neovim…). Groundwork shows which file to edit. Failing tests come first,
 each with its exact failure message. Save the file and the checks run again.
 When every test passes, press **s** to compare your code with the reference
@@ -137,9 +137,8 @@ groundwork cards [--all] flashcards from the guides, for Anki on your phone or d
 `EX` is usually just the exercise number (`12`). A folder name such as
 `012_constants` works too. A guide is its number (`17`) or name
 (`concurrency`). Commands work from anywhere inside the course folder;
-`groundwork guides` works anywhere. Outside a course folder, every command
-uses `~/groundwork` (or `$GROUNDWORK_COURSE` if set), so you can run
-`groundwork` from any directory.
+`groundwork guides` works anywhere. Every command finds your course from any
+directory (set `$GROUNDWORK_COURSE` to use a different one).
 
 ## Away from the keyboard
 
@@ -158,10 +157,10 @@ Reading and reviewing work on a phone; exercises are for the computer.
 - **Back at the computer**, press `g` in the watcher and `m` on the guides
   you've read; the results screen suggests the next unread one.
 
-## Your course folder
+## Your course folder (`course/`)
 
 ```text
-~/groundwork/
+course/
 ├── .groundwork/progress.json     what you've finished, read and reviewed
 ├── .groundwork/attempts/         your code from before each review
 ├── guides/                       the guides as Markdown, numbered (rewritten on updates;
@@ -188,8 +187,9 @@ Reading and reviewing work on a phone; exercises are for the computer.
 
 ```text
 groundwork/
+├── course/                       YOUR WORK: exercises, solutions, guides, progress (git-ignored)
 ├── main.go, internal/            the tool
-├── content/                      the course: course.json, guides/, and exercises/
+├── content/                      the course source: course.json, guides/, and packs/
 │                                 with one source pack per exercise (templates, tests,
 │                                 hints, reference solution); see content/AUTHORING.md
 ├── LESSON_PLAN.md                the syllabus
@@ -220,7 +220,7 @@ real cluster or cloud account.
 ## Writing exercises
 
 The course is `content/course.json` (its order) plus one pack per exercise in
-`content/exercises/<name>/`. See [content/AUTHORING.md](content/AUTHORING.md)
+`content/packs/<name>/`. See [content/AUTHORING.md](content/AUTHORING.md)
 for the pack format and style rules. To check that a pack starts failing and
 that its solution passes:
 

@@ -20,12 +20,12 @@ func newModel(t *testing.T) (*Model, *session.Session) {
 	t.Helper()
 	files := fstest.MapFS{"course.json": {Data: []byte(`{"modules":[{"title":"m","dir":"one","exercises":[{"name":"a","title":"A"},{"name":"b","title":"B"}]}]}`)}}
 	for _, name := range []string{"a", "b"} {
-		files["exercises/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n\n## Your task\n\n### 1. First\n\n### 2. Second\n")}
-		files["exercises/"+name+"/hints.md"] = &fstest.MapFile{Data: []byte(
+		files["packs/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n\n## Your task\n\n### 1. First\n\n### 2. Second\n")}
+		files["packs/"+name+"/hints.md"] = &fstest.MapFile{Data: []byte(
 			"## Task 1: First\nnudge one\n### Closer\ncloser one\n### Answer\nanswer one\n" +
 				"## Task 2: Second\nnudge two\n### Closer\ncloser two\n### Answer\nanswer two\n")}
-		files["exercises/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n\n// TODO(1): fix\n")}
-		files["exercises/"+name+"/solution/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n")}
+		files["packs/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n\n// TODO(1): fix\n")}
+		files["packs/"+name+"/solution/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n")}
 	}
 	return modelFor(t, files)
 }
@@ -168,9 +168,9 @@ func TestGuidesOpenOnTheNextUnreadAndEscGoesBackOneLevel(t *testing.T) {
 		"guides/concurrency.md": {Data: []byte("# Concurrency\n\n**In one sentence:** many tasks making progress.\n\nGoroutines are cheap.\n")},
 	}
 	for _, name := range []string{"a", "b"} {
-		files["exercises/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n\n## Your task\n")}
-		files["exercises/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n")}
-		files["exercises/"+name+"/solution/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n")}
+		files["packs/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n\n## Your task\n")}
+		files["packs/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n")}
+		files["packs/"+name+"/solution/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n")}
 	}
 	m, s := modelFor(t, files)
 	m.Update(tea.KeyMsg{Type: tea.KeyRight})

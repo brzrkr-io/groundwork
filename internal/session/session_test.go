@@ -34,10 +34,10 @@ func loadCourse(t *testing.T, courseJSON, starter string) *course.Course {
 	t.Helper()
 	files := fstest.MapFS{"course.json": {Data: []byte(courseJSON)}}
 	for _, name := range []string{"a", "a_2", "b", "c", "new"} {
-		files["exercises/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n\n## Your task\n")}
-		files["exercises/"+name+"/hints.md"] = &fstest.MapFile{Data: []byte("## One\na\n## Two\nb\n")}
-		files["exercises/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte(starter)}
-		files["exercises/"+name+"/solution/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n\nfunc F() int { return 1 }\n")}
+		files["packs/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n\n## Your task\n")}
+		files["packs/"+name+"/hints.md"] = &fstest.MapFile{Data: []byte("## One\na\n## Two\nb\n")}
+		files["packs/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte(starter)}
+		files["packs/"+name+"/solution/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte("package x\n\nfunc F() int { return 1 }\n")}
 	}
 	c, err := course.Load(files)
 	if err != nil {
@@ -265,11 +265,11 @@ func TestFindRootWalksUpFromExerciseFolders(t *testing.T) {
 
 func TestSyncWritesGuidesAndDropsStaleOnes(t *testing.T) {
 	files := fstest.MapFS{
-		"course.json":                           {Data: []byte(`{"modules":[{"title":"M","dir":"m","guides":["state"],"exercises":[{"name":"a","title":"A"}]}]}`)},
-		"exercises/a/README.md":                 {Data: []byte("# A\n")},
-		"exercises/a/exercise.go.tmpl":          {Data: []byte(starter)},
-		"exercises/a/solution/exercise.go.tmpl": {Data: []byte(starter)},
-		"guides/state.md":                       {Data: []byte("# State\n\n**In one sentence:** state changes.\n")},
+		"course.json":                       {Data: []byte(`{"modules":[{"title":"M","dir":"m","guides":["state"],"exercises":[{"name":"a","title":"A"}]}]}`)},
+		"packs/a/README.md":                 {Data: []byte("# A\n")},
+		"packs/a/exercise.go.tmpl":          {Data: []byte(starter)},
+		"packs/a/solution/exercise.go.tmpl": {Data: []byte(starter)},
+		"guides/state.md":                   {Data: []byte("# State\n\n**In one sentence:** state changes.\n")},
 	}
 	c, err := course.Load(files)
 	if err != nil {
@@ -323,8 +323,8 @@ func TestNextGuideIsTheFirstUnreadUpToTheCurrentModule(t *testing.T) {
 		"guides/g3.md": {Data: []byte("# G3\n")},
 	}
 	for _, name := range []string{"a", "b"} {
-		files["exercises/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n")}
-		files["exercises/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte(starter)}
+		files["packs/"+name+"/README.md"] = &fstest.MapFile{Data: []byte("# " + name + "\n")}
+		files["packs/"+name+"/exercise.go.tmpl"] = &fstest.MapFile{Data: []byte(starter)}
 	}
 	c, err := course.Load(files)
 	if err != nil {
@@ -532,5 +532,21 @@ func TestStatsCountStreaksAndTheWeek(t *testing.T) {
 	now = now.AddDate(0, 0, 2) // a missed day breaks the streak
 	if st := s.Stats(14); st.Streak != 0 || st.Longest != 4 {
 		t.Errorf("after missing a day: streak %d, longest %d; want 0, 4", st.Streak, st.Longest)
+	}
+}
+
+func TestFindRootFindsTheCourseInsideTheRepository(t *testing.T) {
+	repo := t.TempDir()
+	course := filepath.Join(repo, CourseDir)
+	if err := Init(course); err != nil {
+		t.Fatal(err)
+	}
+	for _, start := range []string{repo, course, filepath.Join(course, "exercises")} {
+		if err := os.MkdirAll(start, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := FindRoot(start); err != nil || got != course {
+			t.Errorf("FindRoot(%s) = %q, %v; want %s", start, got, err, course)
+		}
 	}
 }

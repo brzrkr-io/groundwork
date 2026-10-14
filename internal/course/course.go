@@ -118,7 +118,7 @@ func Load(files fs.FS) (*Course, error) {
 	if err := json.Unmarshal(raw, &c); err != nil {
 		return nil, fmt.Errorf("decode course.json: %w", err)
 	}
-	if c.packs, err = fs.Sub(files, "exercises"); err != nil {
+	if c.packs, err = fs.Sub(files, "packs"); err != nil {
 		return nil, err
 	}
 	if c.guides, err = fs.Sub(files, "guides"); err != nil {

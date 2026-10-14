@@ -31,7 +31,7 @@ const usage = `groundwork: learn Go by fixing small programs until their tests p
 
 Usage:
   groundwork               open the current exercise and watch for saves
-  groundwork init [DIR]    start a new course in DIR (default: this directory)
+  groundwork init [DIR]    start a course (in the repository: its course/ folder)
   groundwork list [--all]  show your progress through the course
   groundwork stats         your streak, this week and the last 12 weeks
   groundwork check [EX]    run one exercise's tests once (default: current)
@@ -137,8 +137,8 @@ func openSession(c *course.Course) (*session.Session, error) {
 	root, err := findCourse()
 	if errors.Is(err, session.ErrNoCourse) {
 		return nil, errors.New("there's no Groundwork course in this directory or its parents.\n\n" +
-			"  Start one:         " + tui.Key("groundwork init ~/groundwork") + "\n" +
-			"  Then:              " + tui.Key("cd ~/groundwork && groundwork") + "\n")
+			"  Start one:         " + tui.Key("groundwork init") + tui.Dim("   (in the Groundwork repository: creates course/)") + "\n" +
+			"  Then:              " + tui.Key("groundwork") + "\n")
 	}
 	if err != nil {
 		return nil, err
@@ -153,8 +153,9 @@ func openSession(c *course.Course) (*session.Session, error) {
 	return s, s.Sync()
 }
 
-// findCourse finds the course folder: the one this directory is in, else
-// $GROUNDWORK_COURSE, else ~/groundwork, so groundwork works from anywhere.
+// findCourse finds the course folder: the one this directory is in (or the
+// repository's course/), else $GROUNDWORK_COURSE, else the folder the last
+// groundwork init created, so groundwork works from anywhere.
 func findCourse() (string, error) {
 	root, err := session.FindRoot(".")
 	if !errors.Is(err, session.ErrNoCourse) {
@@ -162,16 +163,42 @@ func findCourse() (string, error) {
 	}
 	fallback := os.Getenv("GROUNDWORK_COURSE")
 	if fallback == "" {
-		home, herr := os.UserHomeDir()
-		if herr != nil {
-			return "", err
-		}
-		fallback = filepath.Join(home, "groundwork")
+		fallback = rememberedCourse()
 	}
-	if root, ferr := session.FindRoot(fallback); ferr == nil && root == filepath.Clean(fallback) {
-		return root, nil
+	if fallback != "" {
+		if root, ferr := session.FindRoot(fallback); ferr == nil {
+			return root, nil
+		}
 	}
 	return "", err
+}
+
+// rememberedFile records where groundwork init put the course.
+func rememberedFile() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "groundwork", "course")
+}
+
+func rememberedCourse() string {
+	raw, err := os.ReadFile(rememberedFile())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+func rememberCourse(root string) error {
+	path := rememberedFile()
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(root+"\n"), 0o644)
 }
 
 // checkGo makes sure the go command exists and is new enough for the
@@ -212,9 +239,12 @@ func initCourse(c *course.Course, args []string, stdout io.Writer) error {
 	}
 	abs, _ := filepath.Abs(dir)
 	if _, err := os.Stat(filepath.Join(abs, "content", "course.json")); err == nil {
-		return errors.New("this is Groundwork's source; keep your work in its own folder, for example: groundwork init ~/groundwork")
+		abs = filepath.Join(abs, session.CourseDir) // the repository: work goes in course/
 	}
 	if err := session.Init(abs); err != nil {
+		return err
+	}
+	if err := rememberCourse(abs); err != nil {
 		return err
 	}
 	s, err := session.Open(abs, c)
@@ -226,11 +256,8 @@ func initCourse(c *course.Course, args []string, stdout io.Writer) error {
 	}
 	fmt.Fprintln(stdout, tui.Notice("ok", fmt.Sprintf("Created a Groundwork course in %s", abs)))
 	fmt.Fprintf(stdout, "\n  %d exercises in %d modules, from Hello, Go to Kubernetes controllers.\n\n", len(c.Exercises), len(c.Modules))
-	if dir != "." {
-		fmt.Fprintf(stdout, "  %s\n", tui.Key("cd "+dir))
-	}
-	fmt.Fprintf(stdout, "  %s   %s\n\n", tui.Key("groundwork"), tui.Dim("start the first exercise"))
-	fmt.Fprintln(stdout, tui.Dim("  Tip: open the course folder in your editor in a second window. Every exercise is in exercises/, numbered in order."))
+	fmt.Fprintf(stdout, "  %s   %s\n\n", tui.Key("groundwork"), tui.Dim("start the first exercise (works from any folder)"))
+	fmt.Fprintln(stdout, tui.Dim("  Tip: open "+relativePath(filepath.Join(abs, "exercises"))+" in your editor in a second window. Every exercise is there, numbered in order."))
 	return nil
 }
 

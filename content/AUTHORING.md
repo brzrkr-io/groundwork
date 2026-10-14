@@ -1,7 +1,7 @@
 # Authoring Groundwork exercises
 
 The course is `course.json` (module and exercise order) plus one pack per
-exercise in `exercises/<name>/`. Exercise numbers come from their position in
+exercise in `packs/<name>/`. Exercise numbers come from their position in
 `course.json`, so packs are named without numbers and reordering costs nothing.
 
 The learner is a **beginner** who wants to do DevOps and platform work. Every
@@ -32,7 +32,7 @@ Every pack and guide follows these (see ../LEARNING.md for the research):
 ## Pack layout
 
 ```text
-exercises/variables/
+packs/variables/
 ├── README.md                 instructions (copied into the learner's folder)
 ├── hints.md                  progressive hints (shown only in the TUI)
 ├── exercise.go.tmpl          starter code the learner edits

@@ -49,7 +49,12 @@ func (s *Session) now() time.Time {
 	return time.Now().UTC()
 }
 
-// FindRoot walks up from start to the nearest directory holding a course.
+// CourseDir is the course folder's name inside the Groundwork repository:
+// the learner's work lives next to the tool, in one repository.
+const CourseDir = "course"
+
+// FindRoot walks up from start to the nearest directory holding a course,
+// or holding one in its course/ subfolder (the repository root).
 func FindRoot(start string) (string, error) {
 	dir, err := filepath.Abs(start)
 	if err != nil {
@@ -58,8 +63,10 @@ func FindRoot(start string) (string, error) {
 	for {
 		// The progress file, not just the directory, marks a course: a stray
 		// empty .groundwork/ must not turn a home directory into one.
-		if info, err := os.Stat(progress.Path(dir)); err == nil && info.Mode().IsRegular() {
-			return dir, nil
+		for _, root := range []string{dir, filepath.Join(dir, CourseDir)} {
+			if info, err := os.Stat(progress.Path(root)); err == nil && info.Mode().IsRegular() {
+				return root, nil
+			}
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
