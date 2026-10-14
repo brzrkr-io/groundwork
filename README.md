@@ -43,21 +43,25 @@ schedule.
 You need Go 1.26 or newer ([go.dev/dl](https://go.dev/dl/)).
 
 ```bash
-cd groundwork
-go install .          # installs the groundwork binary into $(go env GOBIN) or ~/go/bin
+cd ~/code/golang/groundwork   # this repository: the tool and the course
+go install .                  # installs the groundwork binary into $(go env GOBIN) or ~/go/bin
 ```
+
+After pulling course updates, run `go install .` again.
 
 ## Start
 
-Everything lives in this one folder: the tool, the course and your work.
+Your work lives in its own **course folder**, separate from this
+repository. The repository holds the tool and the course; the course folder
+holds your exercises, your progress and nothing else.
 
 ```bash
-cd groundwork
-groundwork init      # first time only: sets up exercises/ and your progress here
-groundwork           # opens your current exercise and watches for saves
+groundwork init ~/groundwork   # first time only: creates your course folder
+cd ~/groundwork
+groundwork                     # opens your current exercise and watches for saves
 ```
 
-Open this folder in your editor in a second window (VS Code, GoLand,
+Open the course folder in your editor in a second window (VS Code, GoLand,
 Neovim…). Groundwork shows which file to edit. Failing tests come first,
 each with its exact failure message. Save the file and the checks run again.
 When every test passes, press **s** to compare your code with the reference
@@ -148,15 +152,15 @@ Reading and reviewing work on a phone; exercises are for the computer.
 - **Back at the computer**, press `g` in the watcher and `m` on the guides
   you've read; the results screen suggests the next unread one.
 
-## What's in this folder
+## Your course folder
 
 ```text
-groundwork/
-├── main.go, internal/, content/  the tool and the course content (you don't edit these)
-├── LESSON_PLAN.md                the syllabus
-├── .groundwork/progress.json    what you've finished
+~/groundwork/
+├── .groundwork/progress.json     what you've finished, read and reviewed
+├── .groundwork/attempts/         your code from before each review
 ├── guides/                       the guides as Markdown, numbered (rewritten on updates;
 │                                 keep your notes in your own files)
+├── groundwork-cards.txt          flashcards, after groundwork cards
 ├── exercises/
 │   ├── 01_basics/                one folder per module
 │   │   ├── 001_hello_go/
@@ -171,6 +175,18 @@ groundwork/
 │   ├── 02_control_flow/
 │   └── …                         20 modules, 362 exercises, numbered in order
 └── solutions/                    reference solutions, same layout, unlocked when you pass
+```
+
+## This repository
+
+```text
+groundwork/
+├── main.go, internal/            the tool
+├── content/                      the course: course.json, guides/, and exercises/
+│                                 with one source pack per exercise (templates, tests,
+│                                 hints, reference solution); see content/AUTHORING.md
+├── LESSON_PLAN.md                the syllabus
+└── LEARNING.md                   how to learn with it, and the research behind it
 ```
 
 Each exercise is its own folder and its own Go module, with its own tests.

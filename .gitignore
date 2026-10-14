@@ -1,7 +1,2 @@
-# Your course progress and work. Kept out of the tool's history; see README.
-/.groundwork/
-/exercises/
-/solutions/
-/guides/
-/groundwork-cards.txt
+# Build output of go build. Your course work lives in its own folder (see README).
 /groundwork

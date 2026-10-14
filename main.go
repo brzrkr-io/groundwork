@@ -133,8 +133,8 @@ func openSession(c *course.Course) (*session.Session, error) {
 	root, err := session.FindRoot(".")
 	if errors.Is(err, session.ErrNoCourse) {
 		return nil, errors.New("there's no Groundwork course in this directory or its parents.\n\n" +
-			"  Start one here:          " + tui.Key("groundwork init") + "\n" +
-			"  Or in a new folder:      " + tui.Key("groundwork init learn-go") + "\n")
+			"  Start one:         " + tui.Key("groundwork init ~/groundwork") + "\n" +
+			"  Then:              " + tui.Key("cd ~/groundwork && groundwork") + "\n")
 	}
 	if err != nil {
 		return nil, err
@@ -186,6 +186,9 @@ func initCourse(c *course.Course, args []string, stdout io.Writer) error {
 		return err
 	}
 	abs, _ := filepath.Abs(dir)
+	if _, err := os.Stat(filepath.Join(abs, "content", "course.json")); err == nil {
+		return errors.New("this is Groundwork's source; keep your work in its own folder, for example: groundwork init ~/groundwork")
+	}
 	if err := session.Init(abs); err != nil {
 		return err
 	}
@@ -202,7 +205,7 @@ func initCourse(c *course.Course, args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "  %s\n", tui.Key("cd "+dir))
 	}
 	fmt.Fprintf(stdout, "  %s   %s\n\n", tui.Key("groundwork"), tui.Dim("start the first exercise"))
-	fmt.Fprintln(stdout, tui.Dim("  Tip: open this folder in your editor in a second window. Every exercise is in exercises/, numbered in order."))
+	fmt.Fprintln(stdout, tui.Dim("  Tip: open the course folder in your editor in a second window. Every exercise is in exercises/, numbered in order."))
 	return nil
 }
 
