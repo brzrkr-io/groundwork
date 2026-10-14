@@ -1,0 +1,9 @@
+{"time":"2026-10-13T09:12:01.120Z","level":"INFO","msg":"request","service":"deploy-api","method":"GET","path":"/healthz","status":200,"trace_id":"5d8e1a2b3c4d5e6f708192a3b4c5d6e7"}
+{"time":"2026-10-13T09:12:03.480Z","level":"INFO","msg":"request","service":"deploy-api","method":"GET","path":"/deploys","status":200,"trace_id":"0af7651916cd43dd8448eb211c80319c"}
+{"time":"2026-10-13T09:12:08.902Z","level":"ERROR","msg":"registry push failed","service":"deployer","error":"context deadline exceeded","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"}
+{"time":"2026-10-13T09:12:08.910Z","level":"ERROR","msg":"request","service":"deployer","method":"POST","path":"/deploy","status":502,"trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"}
+{"time":"2026-10-13T09:12:08.915Z","level":"ERROR","msg":"request","service":"deploy-api","method":"POST","path":"/deploys","status":503,"trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"}
+{"time":"2026-10-13T09:12:11.004Z","level":"INFO","msg":"request","service":"deploy-api","method":"GET","path":"/deploys/d-7","status":404,"trace_id":"7b6a5c4d3e2f10293847566574839201"}
+{"time":"2026-10-13T09:12:14.377Z","level":"ERROR","msg":"request","service":"deployer","method":"POST","path":"/deploy","status":500,"trace_id":"a3ce929d0e0e47364bf92f3577b34da6"}
+{"time":"2026-10-13T09:12:14.380Z","level":"ERROR","msg":"request","service":"deploy-api","method":"POST","path":"/deploys","status":500,"trace_id":"a3ce929d0e0e47364bf92f3577b34da6"}
+{"time":"2026-10-13T09:12:16.120Z","level":"INFO","msg":"request","service":"deploy-api","method":"GET","path":"/healthz","status":200,"trace_id":"e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5"}

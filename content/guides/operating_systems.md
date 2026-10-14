@@ -94,8 +94,9 @@ Unix has a famous design rule: **everything is a file**. Regular files, director
 
 - An *absolute path* starts at the root: `/var/log/nginx/access.log`.
 - A *relative path* starts from the process's *working directory*: `logs/app.log` means "`logs/app.log` inside wherever I was started".
+- `.` means the working directory itself, `..` its parent, and `~` (expanded by the shell) your home directory.
 
-A classic ops bug: a script works when you run it by hand, then fails under cron or systemd. They start it in a different working directory, so its relative paths point somewhere else. Use absolute paths in jobs.
+A classic ops bug: a script works when you run it by hand, then fails under cron or systemd. They start it in a different working directory, so its relative paths point somewhere else. Use absolute paths in jobs. You'll move around with both kinds in *Files and folders: paths, mkdir, cp, mv and rm*.
 
 ### Permissions
 
@@ -179,6 +180,24 @@ The shell can point those fds somewhere else before the program starts. The prog
 
 `2>&1` means "make fd 2 point wherever fd 1 points **right now**". Order matters: `cmd 2>&1 > all.log` sends stderr to the terminal, because at that moment fd 1 still pointed there.
 
+`ls` shows the two streams apart. Asked for one file that exists and one that doesn't, it writes the name it found to stdout and the complaint to stderr:
+
+```bash
+$ ls app.yaml nope.yaml
+ls: cannot access 'nope.yaml': No such file or directory
+app.yaml
+$ ls app.yaml nope.yaml > found.txt
+ls: cannot access 'nope.yaml': No such file or directory
+$ ls app.yaml nope.yaml 2> /dev/null
+app.yaml
+```
+
+1. Both streams go to the terminal, so you see both lines.
+2. `> found.txt` moves only stdout: `found.txt` holds `app.yaml`, and the error still reaches your screen.
+3. `2> /dev/null` throws stderr away, leaving only the result.
+
+You'll practise every row of the table in *Redirection: >, >>, 2> and here-docs*.
+
 ### Pipes
 
 A *pipe* (`|`) connects one program's stdout to the next program's stdin. To count failed deploy requests:
@@ -193,11 +212,13 @@ cat access.log | grep '"POST /deploy' | grep -c '" 502 '
   every program's stderr still goes straight to the terminal
 ```
 
-All three programs run at the same time, passing lines along as they go. That's streaming, from the *Data formats and parsing* guide: the 40 GB log never sits in memory.
+All three programs run at the same time, passing lines along as they go. That's *streaming*, which the *Data formats and parsing* guide comes back to: the 40 GB log never sits in memory.
 
 ## Arguments, environment and exit codes
 
-Here is a small CLI that uses every door from this section:
+A process gets two kinds of input before its first line runs: a list of **arguments** (the words after its name) and a set of **environment variables**. When it ends, it hands back one number: its **exit code**.
+
+Here is a tiny Go program that uses one of those doors, the environment. `os.Getenv` returns a variable's value, or `""` when it isn't set:
 
 ```go
 package main
@@ -208,19 +229,11 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: deployctl <service>")
-		os.Exit(2)
-	}
-	service := os.Args[1]
-
 	env := os.Getenv("DEPLOY_ENV")
 	if env == "" {
 		env = "staging"
 	}
-
-	fmt.Fprintf(os.Stderr, "deploying %s to %s...\n", service, env)
-	fmt.Printf("%s %s ok\n", service, env)
+	fmt.Println("deploying to", env)
 }
 ```
 
@@ -228,36 +241,28 @@ Build it with `go build -o deployctl .` and try it:
 
 ```bash
 $ ./deployctl
-usage: deployctl <service>
+deploying to staging
+$ DEPLOY_ENV=production ./deployctl
+deploying to production
 $ echo $?
-2
-$ ./deployctl checkout
-deploying checkout to staging...
-checkout staging ok
-$ DEPLOY_ENV=production ./deployctl checkout 2>/dev/null
-checkout production ok
-$ ./deployctl checkout > result.txt
-deploying checkout to staging...
+0
 ```
 
-1. No argument: the usage message goes to stderr, and the program exits with code 2. `$?` is the shell's variable for the last exit code.
-2. One argument, no `DEPLOY_ENV`: it falls back to `staging`. Both lines appear, because stdout and stderr both go to the terminal.
-3. `DEPLOY_ENV=production` sets a variable for this one command. `2>/dev/null` throws stderr away, leaving only the result.
-4. `> result.txt` sends stdout to the file. Only the progress message stays on screen, and `result.txt` holds `checkout staging ok`.
+1. No `DEPLOY_ENV`: `os.Getenv` returns `""`, so the program falls back to `staging`.
+2. `DEPLOY_ENV=production ./deployctl` sets the variable for this one command only. The shell puts it into the new process's environment.
+3. `$?` is the shell's variable for the last exit code. `main` returned normally, so the code is 0.
 
-Under `strace`, the last two lines are `write(2, "deploying checkout to staging..."..., 33)` and `write(1, "checkout staging ok\n", 20)`. `fmt.Fprintf(os.Stderr, ...)` is just a write to fd 2.
+Programs that ship do more: they read their arguments, print usage errors to stderr and exit with a code that says what went wrong. Go has a door for each, and you'll use them all in *CLI tools and the OS*. Until then, see the doors from the shell's side.
 
 ### Command-line arguments
 
-`os.Args` is a slice of strings. `os.Args[0]` is the program's own name; the real arguments start at `os.Args[1]`.
-
 The shell splits what you type on spaces and **removes the quotes**. `./deployctl "checkout api"` passes one argument, `checkout api`, with no quote characters in it. `./deployctl checkout api` passes two. Quotes are instructions to the shell, just like quotes in Go source mark where a string starts and ends.
 
-You'll practise this in *Command-line arguments*, and grow it into flags and subcommands.
+The program receives the words as a list of strings. By convention the first item is the program's own name, and the real arguments come after it. In Go that list is `os.Args`; you'll practise it in *Command-line arguments*, and grow it into flags and subcommands.
 
 ### Environment variables
 
-An *environment variable* is a `NAME=value` string the process receives at start. Each child gets a **copy** of its parent's environment (in a shell, only the variables you `export`). That's why a script that runs `export REGION=eu-west-1` can't change your shell's `REGION`: it changed its own copy, which vanishes when it exits.
+An *environment variable* is a `NAME=value` string the process receives at start. Each child gets a **copy** of its parent's environment (in a shell, only the variables you `export`). That's why a script that runs `export REGION=eu-west-1` can't change your shell's `REGION`: it changed its own copy, which vanishes when it exits. You'll try this in *Shell variables*.
 
 In Kubernetes, the `env:` list in a pod spec becomes exactly these variables. Settings that change per deploy (the database host, the log level) usually travel this way, while secrets deserve more care.
 
@@ -286,7 +291,7 @@ Only 0 and "not 0" are universal; the rest are conventions. Every tool in the ch
 
 So **a tool that fails but exits 0 is lying**, and the pipeline goes green on a broken deploy.
 
-Two Go details: `os.Exit` ends the program immediately and skips any deferred functions, so call it only at the end of `main`. And `go run` prints `exit status 2` and exits with 1 itself, so to see your real exit code, build the binary first.
+Two Go details for later. Go's way to exit with a chosen code, `os.Exit`, ends the program immediately and skips any deferred calls (the ones from *defer*), so it belongs only at the end of `main`. And `go run` prints `exit status 2` and exits with 1 itself, so to see your real exit code, build the binary first.
 
 ## Signals
 
@@ -301,33 +306,20 @@ A *signal* is a small numbered notice the kernel delivers to a process, interrup
 
 A program can *catch* a signal it's allowed to: run its own code instead of dying at once. Catching SIGTERM is how a service shuts down cleanly: stop taking new work, finish what's in flight, flush logs, exit 0.
 
-```go
-package main
+Picture a worker that processes one job at a time, and what `kill -TERM <pid>` does to it:
 
-import (
-	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-)
-
-func main() {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
-
-	fmt.Println("worker running as PID", os.Getpid())
-	sig := <-sigs
-	fmt.Println("got signal:", sig)
-	fmt.Println("finishing the current job, then exiting")
-}
+```text
+  no handler:    SIGTERM ─► the process dies mid-job       exit code 143
+  with handler:  SIGTERM ─► "got signal: terminated"
+                        ─► finishes the current job ─► exits    exit code 0
+  either way:    SIGKILL ─► the kernel removes it at once   exit code 137
 ```
 
-1. `make(chan os.Signal, 1)` creates a channel: a pipe that Go values arrive on. `signal.Notify` asks Go to deliver SIGINT and SIGTERM there instead of ending the program.
-2. `<-sigs` waits until a value (a signal) arrives.
-3. `kill -TERM <pid>` prints `got signal: terminated`, then the last line, and the exit code is 0. Ctrl-C prints `got signal: interrupt`.
-4. `kill -KILL <pid>` prints nothing more. The kernel removes the process, and the shell reports `Killed` with exit code 137.
+1. Without a handler, a Go program simply dies on SIGTERM, mid-job, and the shell sees 128 + 15 = 143.
+2. With a handler, the program asks Go to hand it SIGTERM as a value instead of dying. It reads the value when it's ready, finishes the job and exits 0. Ctrl-C (SIGINT) can be caught the same way.
+3. SIGKILL can't be caught. The shell reports `Killed` and exit code 137.
 
-Without `signal.Notify`, a Go program simply dies on SIGTERM, mid-job.
+In Go the handler takes two pieces you meet in *Concurrency*: a channel that the signal arrives on, and the `os/signal` package that sends it there.
 
 ### How Kubernetes stops a pod
 
@@ -361,17 +353,17 @@ If your program ignores SIGTERM, every deploy waits the full 30 seconds per pod,
 1. Your tool prints a JSON report and also "fetching 40 hosts...". A teammate runs `mytool > report.json` and the JSON is broken. What's wrong, and what's the fix?
 2. What does the file permission `0640` allow, and for whom?
 3. A pod keeps restarting and `kubectl describe` shows exit code 137. What does that number tell you?
-4. Why does `./deployctl "checkout api"` give `os.Args` a length of 2 and not 3?
+4. You run `./deployctl "checkout api"`. How many arguments does deployctl receive after its own name, and what happened to the quotes?
 5. Your script runs `export AWS_REGION=eu-west-1`. After it finishes, `echo $AWS_REGION` in your shell prints nothing. Why?
-6. Why does a Go service that never calls `signal.Notify` lose in-flight requests during a rolling update?
+6. Why does a Go service with no SIGTERM handler lose in-flight requests during a Kubernetes rolling update?
 7. Your tool updates `/etc/app/app.conf` with `os.WriteFile`. Why is writing a temp file in `/etc/app/` and renaming it over `app.conf` safer, and why not put the temp file in `/tmp`?
 
 ## Answers
 
-1. The progress message was written to stdout, so it landed inside the file. Write messages to stderr (`fmt.Fprintln(os.Stderr, ...)`) and only the result to stdout.
+1. The progress message was written to stdout, so it landed inside the file. Write messages to stderr and only the result to stdout; then `>` captures clean JSON and the messages still reach the screen.
 2. Owner 6 = read and write; group 4 = read; others 0 = nothing. Handy for a log the ops group may read but nobody else may see.
 3. 137 is 128 + 9: the process was killed by SIGKILL. In a pod that usually means it hit its memory limit and the OOM killer ended it (`kubectl describe` then shows `Reason: OOMKilled`), or it ignored SIGTERM until the grace period ran out.
-4. The shell removes the quotes and passes `checkout api` as one argument. `os.Args[0]` is the program name, `os.Args[1]` is `checkout api`: two items.
+4. One: `checkout api`. The shell uses the quotes to keep the two words together, then removes them, so the program never sees a quote character. Without quotes it would receive two arguments.
 5. The script ran as a child process with its own copy of the environment. Its change disappeared when it exited. A child can never change its parent's environment. (Running it with `source script.sh` executes it inside your own shell instead, so the change sticks.)
 6. Kubernetes sends SIGTERM to stop the old pods. With no handler, Go's default is to exit immediately, so requests being served at that moment are cut off. Catching SIGTERM lets the service finish them first.
 7. `os.WriteFile` empties the file and then writes it, so a reader or a crash in between sees a broken config. A rename is atomic: readers get the whole old file or the whole new one. Rename is only atomic within one filesystem, and `/tmp` is often a different one, so the temp file goes next to the target.

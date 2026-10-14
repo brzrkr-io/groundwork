@@ -1,0 +1,12 @@
+$ kubectl -n shop port-forward deployment/upload 9898:9898 &
+$ curl -s -X POST -d 'hello' localhost:9898/store
+{
+  "code": 500,
+  "message": "writing file failed"
+}
+
+$ kubectl -n shop logs deployment/upload
+Found 2 pods, using pod/upload-7c5d9f8b6-x4mtk
+{"level":"info","ts":"2026-10-14T02:06:01.214Z","caller":"podinfo/main.go:153","msg":"Starting podinfo","version":"6.9.2","revision":"e86405a8674ecab990d0a389824c7ebbd82973b5","port":"9898"}
+{"level":"info","ts":"2026-10-14T02:06:01.215Z","caller":"http/server.go:224","msg":"Starting HTTP Server.","addr":":9898"}
+{"level":"warn","ts":"2026-10-14T02:06:05.000Z","caller":"http/store.go:36","msg":"writing file failed","error":"open /tmp/aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d: read-only file system","file":"/tmp/aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"}

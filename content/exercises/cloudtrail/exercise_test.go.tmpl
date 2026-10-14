@@ -1,0 +1,273 @@
+package cloudtrail
+
+import (
+	"slices"
+	"testing"
+	"time"
+)
+
+const (
+	leakedKey = "AKIAIOSFODNN7EXAMPLE"
+	secondKey = "AKIAI44QH8DHBEXAMPLE"
+)
+
+// at parses an RFC 3339 time for the tables below.
+func at(t *testing.T, s string) time.Time {
+	t.Helper()
+	tm, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tm
+}
+
+// load reads testdata/events.json with the learner's Load.
+func load(t *testing.T) []Event {
+	t.Helper()
+	events, err := Load("testdata/events.json")
+	if err != nil {
+		t.Fatalf("Load(%q) returned error %v, want nil", "testdata/events.json", err)
+	}
+	if len(events) != 27 {
+		t.Fatalf("Load(%q) returned %d events, want 27", "testdata/events.json", len(events))
+	}
+	return events
+}
+
+// timeline lists events as "TIME NAME", one string per event.
+func timeline(events []Event) []string {
+	var lines []string
+	for _, e := range events {
+		lines = append(lines, e.EventTime.UTC().Format(time.RFC3339)+" "+e.EventName)
+	}
+	return lines
+}
+
+// withKey keeps the events made with keyID, in file order, so TestSummarize
+// doesn't depend on your ByAccessKey.
+func withKey(events []Event, keyID string) []Event {
+	var kept []Event
+	for _, e := range events {
+		if e.UserIdentity.AccessKeyID == keyID {
+			kept = append(kept, e)
+		}
+	}
+	return kept
+}
+
+func TestLoad(t *testing.T) {
+	events := load(t)
+
+	tests := []struct {
+		index     int
+		time      string
+		source    string
+		name      string
+		region    string
+		ip        string
+		keyID     string
+		userType  string
+		userName  string
+		errorCode string
+		readOnly  bool
+	}{
+		{0, "2026-10-02T13:47:30Z", "s3.amazonaws.com", "ListBuckets", "us-east-1", "198.51.100.77", leakedKey, "IAMUser", "ci-deployer", "", true},
+		{2, "2026-10-02T12:01:37Z", "ec2.amazonaws.com", "StopInstances", "eu-west-1", "192.0.2.45", "ASIAQ7LMNXA2REXAMPLE", "AssumedRole", "", "", false},
+		{6, "2026-10-02T13:50:08Z", "iam.amazonaws.com", "CreateUser", "us-east-1", "198.51.100.77", leakedKey, "IAMUser", "ci-deployer", "AccessDenied", false},
+		{26, "2026-10-02T13:47:51Z", "organizations.amazonaws.com", "DescribeOrganization", "us-east-1", "198.51.100.77", leakedKey, "IAMUser", "ci-deployer", "AccessDeniedException", true},
+	}
+	for _, tt := range tests {
+		e := events[tt.index]
+		t.Run(tt.name, func(t *testing.T) {
+			if want := at(t, tt.time); !e.EventTime.Equal(want) {
+				t.Errorf("Load(...)[%d].EventTime = %v, want %v", tt.index, e.EventTime, want)
+			}
+			checks := []struct{ field, got, want string }{
+				{"EventSource", e.EventSource, tt.source},
+				{"EventName", e.EventName, tt.name},
+				{"AWSRegion", e.AWSRegion, tt.region},
+				{"SourceIPAddress", e.SourceIPAddress, tt.ip},
+				{"UserIdentity.AccessKeyID", e.UserIdentity.AccessKeyID, tt.keyID},
+				{"UserIdentity.Type", e.UserIdentity.Type, tt.userType},
+				{"UserIdentity.UserName", e.UserIdentity.UserName, tt.userName},
+				{"ErrorCode", e.ErrorCode, tt.errorCode},
+			}
+			for _, c := range checks {
+				if c.got != c.want {
+					t.Errorf("Load(...)[%d].%s = %q, want %q", tt.index, c.field, c.got, c.want)
+				}
+			}
+			if e.ReadOnly != tt.readOnly {
+				t.Errorf("Load(...)[%d].ReadOnly = %v, want %v", tt.index, e.ReadOnly, tt.readOnly)
+			}
+		})
+	}
+
+	for _, bad := range []string{"testdata/missing.json", "testdata/broken.json"} {
+		t.Run(bad, func(t *testing.T) {
+			if _, err := Load(bad); err == nil {
+				t.Errorf("Load(%q) returned no error, want one", bad)
+			}
+		})
+	}
+}
+
+func TestByAccessKey(t *testing.T) {
+	events := load(t)
+	tests := []struct {
+		keyID string
+		want  []string
+	}{
+		{leakedKey, []string{
+			"2026-10-01T09:12:03Z GetCallerIdentity",
+			"2026-10-01T09:12:05Z GetAuthorizationToken",
+			"2026-10-01T09:13:40Z RegisterTaskDefinition",
+			"2026-10-01T09:13:42Z UpdateService",
+			"2026-10-02T10:30:11Z GetCallerIdentity",
+			"2026-10-02T10:30:13Z GetAuthorizationToken",
+			"2026-10-02T10:31:48Z RegisterTaskDefinition",
+			"2026-10-02T10:31:50Z UpdateService",
+			"2026-10-02T13:47:12Z GetCallerIdentity",
+			"2026-10-02T13:47:30Z ListBuckets",
+			"2026-10-02T13:47:51Z DescribeOrganization",
+			"2026-10-02T13:48:02Z DescribeRegions",
+			"2026-10-02T13:49:15Z RunInstances",
+			"2026-10-02T13:49:41Z RunInstances",
+			"2026-10-02T13:50:08Z CreateUser",
+			"2026-10-02T13:50:31Z CreateAccessKey",
+			"2026-10-02T14:05:47Z DescribeInstances",
+		}},
+		{secondKey, []string{
+			"2026-10-02T14:02:19Z GetCallerIdentity",
+			"2026-10-02T14:03:05Z RunInstances",
+		}},
+		{"AKIAUNKNOWNEXAMPLE00", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.keyID, func(t *testing.T) {
+			before := timeline(events)
+			got := timeline(ByAccessKey(events, tt.keyID))
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ByAccessKey(events.json, %q) =\n%q\nwant\n%q", tt.keyID, got, tt.want)
+			}
+			if !slices.Equal(timeline(events), before) {
+				t.Errorf("ByAccessKey(events.json, %q) reordered the events you passed in; sort a new slice instead", tt.keyID)
+			}
+		})
+	}
+
+	small := []Event{
+		{EventTime: at(t, "2026-10-05T12:00:00Z"), EventName: "PutObject", UserIdentity: UserIdentity{AccessKeyID: "AKIA1"}},
+		{EventTime: at(t, "2026-10-05T08:00:00Z"), EventName: "GetObject", UserIdentity: UserIdentity{AccessKeyID: "AKIA2"}},
+		{EventTime: at(t, "2026-10-04T23:59:59Z"), EventName: "ListBuckets", UserIdentity: UserIdentity{AccessKeyID: "AKIA1"}},
+	}
+	want := []string{"2026-10-04T23:59:59Z ListBuckets", "2026-10-05T12:00:00Z PutObject"}
+	if got := timeline(ByAccessKey(small, "AKIA1")); !slices.Equal(got, want) {
+		t.Errorf("ByAccessKey(3 events, %q) = %q, want %q", "AKIA1", got, want)
+	}
+}
+
+func TestSummarize(t *testing.T) {
+	events := load(t)
+	tests := []struct {
+		name    string
+		events  []Event
+		first   string
+		last    string
+		ips     []string
+		regions []string
+		actions []string
+		denied  int
+	}{
+		{
+			name:    "leaked key",
+			events:  withKey(events, leakedKey),
+			first:   "2026-10-01T09:12:03Z",
+			last:    "2026-10-02T14:05:47Z",
+			ips:     []string{"192.0.2.10", "198.51.100.77", "203.0.113.200"},
+			regions: []string{"ap-southeast-1", "eu-west-1", "sa-east-1", "us-east-1"},
+			actions: []string{
+				"ec2:DescribeInstances", "ec2:DescribeRegions", "ec2:RunInstances",
+				"ecr:GetAuthorizationToken", "ecs:RegisterTaskDefinition", "ecs:UpdateService",
+				"iam:CreateAccessKey", "iam:CreateUser", "organizations:DescribeOrganization",
+				"s3:ListBuckets", "sts:GetCallerIdentity",
+			},
+			denied: 2,
+		},
+		{
+			name:    "second key",
+			events:  withKey(events, secondKey),
+			first:   "2026-10-02T14:02:19Z",
+			last:    "2026-10-02T14:03:05Z",
+			ips:     []string{"203.0.113.200"},
+			regions: []string{"ap-southeast-1", "us-east-1"},
+			actions: []string{"ec2:RunInstances", "sts:GetCallerIdentity"},
+			denied:  0,
+		},
+		{
+			name:    "whole file, unsorted",
+			events:  events,
+			first:   "2026-10-01T09:12:03Z",
+			last:    "2026-10-02T14:33:10Z",
+			ips:     []string{"192.0.2.10", "192.0.2.44", "192.0.2.45", "198.51.100.77", "203.0.113.200"},
+			regions: []string{"ap-southeast-1", "eu-west-1", "sa-east-1", "us-east-1"},
+			actions: []string{
+				"ec2:DescribeInstances", "ec2:DescribeRegions", "ec2:RunInstances",
+				"ec2:StartInstances", "ec2:StopInstances", "ec2:TerminateInstances",
+				"ecr:GetAuthorizationToken", "ecs:RegisterTaskDefinition", "ecs:UpdateService",
+				"iam:CreateAccessKey", "iam:CreateUser", "iam:UpdateAccessKey",
+				"organizations:DescribeOrganization", "s3:CreateBucket", "s3:ListBuckets",
+				"sts:GetCallerIdentity",
+			},
+			denied: 2,
+		},
+		{
+			name: "three events, earliest in the middle",
+			events: []Event{
+				{EventTime: at(t, "2026-10-05T09:00:00Z"), EventSource: "s3.amazonaws.com", EventName: "GetObject",
+					AWSRegion: "eu-west-1", SourceIPAddress: "192.0.2.10"},
+				{EventTime: at(t, "2026-10-05T07:30:00Z"), EventSource: "ec2.amazonaws.com", EventName: "RunInstances",
+					AWSRegion: "eu-west-1", SourceIPAddress: "198.51.100.77", ErrorCode: "Client.UnauthorizedOperation"},
+				{EventTime: at(t, "2026-10-05T08:15:00Z"), EventSource: "s3.amazonaws.com", EventName: "GetObject",
+					AWSRegion: "us-east-1", SourceIPAddress: "192.0.2.10", ErrorCode: "AccessDenied"},
+			},
+			first:   "2026-10-05T07:30:00Z",
+			last:    "2026-10-05T09:00:00Z",
+			ips:     []string{"192.0.2.10", "198.51.100.77"},
+			regions: []string{"eu-west-1", "us-east-1"},
+			actions: []string{"ec2:RunInstances", "s3:GetObject"},
+			denied:  2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Summarize(tt.events)
+			if want := at(t, tt.first); !got.First.Equal(want) {
+				t.Errorf("Summarize(%s).First = %v, want %v", tt.name, got.First, want)
+			}
+			if want := at(t, tt.last); !got.Last.Equal(want) {
+				t.Errorf("Summarize(%s).Last = %v, want %v", tt.name, got.Last, want)
+			}
+			if !slices.Equal(got.SourceIPs, tt.ips) {
+				t.Errorf("Summarize(%s).SourceIPs = %q, want %q", tt.name, got.SourceIPs, tt.ips)
+			}
+			if !slices.Equal(got.Regions, tt.regions) {
+				t.Errorf("Summarize(%s).Regions = %q, want %q", tt.name, got.Regions, tt.regions)
+			}
+			if !slices.Equal(got.Actions, tt.actions) {
+				t.Errorf("Summarize(%s).Actions =\n%q\nwant\n%q", tt.name, got.Actions, tt.actions)
+			}
+			if got.Denied != tt.denied {
+				t.Errorf("Summarize(%s).Denied = %d, want %d", tt.name, got.Denied, tt.denied)
+			}
+		})
+	}
+
+	t.Run("no events", func(t *testing.T) {
+		got := Summarize(nil)
+		if !got.First.IsZero() || !got.Last.IsZero() || len(got.SourceIPs) != 0 || len(got.Regions) != 0 ||
+			len(got.Actions) != 0 || got.Denied != 0 {
+			t.Errorf("Summarize(nil) = %+v, want the zero Summary{}", got)
+		}
+	})
+}

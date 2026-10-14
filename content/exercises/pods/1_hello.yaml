@@ -1,0 +1,12 @@
+# Task 1: your first Pod. Apply it with: kubectl apply -f 1_hello.yaml
+#
+# TODO(1): Replace the four ___ blanks: the kind, the Pod's name (hello),
+# the container's name (hello) and the podinfo image.
+apiVersion: v1
+kind: ___
+metadata:
+  name: ___
+spec:
+  containers:
+    - name: ___
+      image: ___

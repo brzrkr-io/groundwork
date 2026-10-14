@@ -31,9 +31,9 @@ before `'sev2'`, so "worst first" is plain ascending order.
 
 | Need | Tool | From |
 |---|---|---|
-| combine tables | `JOIN … ON` | *JOINs: services, teams and who to page* |
-| keep rows with no match | `LEFT JOIN`, then `IS NULL` | *LEFT JOIN: services with no on-call* |
-| count only real matches | `COUNT(col)`, not `COUNT(*)` | *LEFT JOIN: services with no on-call* |
+| combine tables | `JOIN … ON` | *Joins: services, teams and who to page* |
+| keep rows with no match | `LEFT JOIN`, then `IS NULL` | *Left joins: services with no on-call* |
+| count only real matches | `COUNT(col)`, not `COUNT(*)` | *Left joins: services with no on-call* |
 | missing values | `IS NULL`, `IS NOT NULL`; `AVG` skips `NULL` | *NULL: fix the missing-value bugs* |
 | per-group numbers | `GROUP BY`, `HAVING` | *GROUP BY and HAVING: fix the flaky-service report* |
 | a month of timestamps | `>=` the first day, `<` the next month | *SELECT and WHERE: fix the broken filters* |

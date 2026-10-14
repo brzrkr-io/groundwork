@@ -1,0 +1,29 @@
+// Package rollouts is the Groundwork exercise "Rollouts: surge, unavailable and rollback".
+package rollouts
+
+// Resolve turns a maxSurge or maxUnavailable value into a number of Pods.
+// value is a whole number ("2") or a percentage of replicas ("25%"). A
+// percentage is rounded up when roundUp is true and down otherwise. It
+// returns an error for anything else, including negative numbers.
+func Resolve(value string, replicas int, roundUp bool) (int, error) {
+	// TODO(1): Handle "N%" and "N".
+	return 0, nil
+}
+
+// Bounds returns the most Pods a rolling update may run at once and the
+// fewest that must stay available, for a Deployment with this many
+// replicas. maxSurge rounds up and maxUnavailable rounds down; if both
+// come to 0, maxUnavailable becomes 1. minAvailable is never below 0.
+func Bounds(replicas int, maxSurge, maxUnavailable string) (maxPods, minAvailable int, err error) {
+	// TODO(2): Resolve both values and apply the rules above.
+	return 0, 0, nil
+}
+
+// RevisionFor reads the output of `kubectl rollout history` and returns
+// the newest revision whose CHANGE-CAUSE has image as one of its words,
+// such as "checkout:1.4.2" in "deploy checkout:1.4.2". It returns an error
+// if no revision matches.
+func RevisionFor(history, image string) (int, error) {
+	// TODO(3): Read the revision rows and keep the newest match.
+	return 0, nil
+}

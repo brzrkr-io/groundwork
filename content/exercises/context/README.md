@@ -2,10 +2,13 @@
 
 A `context.Context` carries a "stop now" signal through your program. When a
 user presses Ctrl+C, a request times out, or a deploy is aborted, the context
-is how every goroutine involved finds out it should give up.
+is how every goroutine involved finds out it should give up. You passed one
+to a resolver in *DNS: lookups, timeouts and failure types*; now you'll see
+how it works inside.
 
-**New here:** `context.Context`, `WithCancel`, `WithTimeout`, `ctx.Done()`,
-`ctx.Err()`.
+**New here:** `context.Context`, `WithCancel`, `ctx.Done()`, `ctx.Err()`;
+`WithTimeout` properly, after a first look in *DNS: lookups, timeouts and
+failure types*.
 
 ## Learn
 

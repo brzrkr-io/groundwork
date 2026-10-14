@@ -3,7 +3,7 @@
 An inventory job has to look at every region your team uses. You don't load
 the config ten times: you load it once and make one copy per region.
 
-**New here:** `aws.Config.Copy`, session tokens; practice with options and safe logging.
+**New here:** `aws.Config.Copy`; practice with options, session tokens and safe logging.
 
 ## Learn
 
@@ -48,9 +48,11 @@ if retries > 0 {
 
 ### Session tokens
 
-A *session token* is only present for temporary credentials (for example from
-an SSO login or an assumed role). Long-lived keys have an empty
-`SessionToken`. It is as secret as the secret key.
+A *session token* comes with temporary credentials from an SSO login or an
+assumed role, as in
+*Assume role: trust policies and temporary credentials*.
+Long-lived keys have an empty `SessionToken`. It is as secret as the secret
+key.
 
 ### Turning a condition into a word
 

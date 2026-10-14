@@ -310,7 +310,7 @@ Worse: when a request times out, you don't know whether it worked. The server ma
 Strategies that help:
 
 - **Make steps safe to repeat.** "Create the bucket if it's missing" can be run again after a failure; "create the bucket" fails the second time. A step you can safely repeat is *idempotent*.
-- **Order steps carefully.** Write the new thing before deleting the old one. Writing a temp file and renaming it, as in *Atomic writes: temp file and rename*, means readers see the old file or the new one, never half of each.
+- **Order steps carefully.** Write the new thing before deleting the old one. Writing a temp file and renaming it (you'll do it in *Atomic writes: temp file and rename*) means readers see the old file or the new one, never half of each.
 - **Say exactly what got done.** "Updated eu-west-1, eu-central-1, us-east-1; failed at us-west-2" lets a human finish the job.
 - **Decide: roll back or roll forward.** Undo the finished steps, or fix the problem and continue.
 

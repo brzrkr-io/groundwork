@@ -186,7 +186,9 @@ A *remote* is another copy of the repository, usually on GitHub or GitLab, named
 
 `origin/main` is a *remote-tracking branch*: your memory of where the remote's `main` was when you last fetched.
 
-`git push` refuses if the remote has commits you don't: fetch, combine, push again. `git push --force` skips that check, which is how teammates' work gets destroyed. After rebasing your own branch, `git push --force-with-lease` at least refuses if someone else pushed meanwhile.
+`git push` refuses if the remote has commits you don't: fetch, combine (`git pull --rebase` replays your unpushed commits on top), push again. `git push --force` skips that check, which is how teammates' work gets destroyed. After rebasing your own branch, `git push --force-with-lease` at least refuses if someone else pushed meanwhile.
+
+The remote doesn't have to be a website: a *bare* repository (history only, no working files) in a folder on your disk works the same way. You clone one, push a branch and play a teammate in *Remotes: clone, push and fetch*, then fix both kinds of rejected push in *Remotes: fix a rejected push*.
 
 ## Undoing things
 
@@ -344,6 +346,7 @@ Small commits, clear messages and revert over reset become how you operate produ
 | rebase | replaying commits on top of another commit, making new commits |
 | remote | another copy of the repository, such as `origin` on GitHub |
 | remote-tracking branch | your local record of a remote's branch, like `origin/main` |
+| bare repository | a repository with history but no working files, like the copy on a Git server |
 | revert | a new commit that undoes an earlier one |
 | cherry-pick | copying one commit's change onto the current branch as a new commit |
 | reset | moving the current branch to another commit (soft, mixed or hard) |

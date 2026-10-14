@@ -1,0 +1,59 @@
+// Package vpc is the Groundwork exercise "VPC planning: subnets per availability zone".
+package vpc
+
+import (
+	"fmt"
+	"net/netip"
+)
+
+// Reserved is how many addresses AWS keeps for itself in every subnet.
+const Reserved = 5
+
+// Subnet is one subnet in a VPC plan.
+type Subnet struct {
+	Name   string       // for example "public-eu-west-1a"
+	Zone   string       // the availability zone, for example "eu-west-1a"
+	CIDR   netip.Prefix // the subnet's slice of the VPC
+	Public bool         // true when its route table sends 0.0.0.0/0 to an internet gateway
+	Usable int          // addresses left for your servers
+}
+
+// toUint32 turns an IPv4 address into a number, so you can add to it.
+func toUint32(a netip.Addr) uint32 {
+	b := a.As4()
+	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
+}
+
+// fromUint32 turns a number back into an IPv4 address.
+func fromUint32(n uint32) netip.Addr {
+	return netip.AddrFrom4([4]byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)})
+}
+
+// SubnetCIDR returns block number index (counting from 0) of length /bits
+// inside vpc.
+func SubnetCIDR(vpc netip.Prefix, bits, index int) (netip.Prefix, error) {
+	// As4 panics on an IPv6 address, so this check comes first.
+	if !vpc.Addr().Is4() {
+		return netip.Prefix{}, fmt.Errorf("%s is not an IPv4 prefix", vpc)
+	}
+	// TODO(1): Return an error when bits is outside vpc.Bits()..28, or index
+	// is outside 0..(number of blocks - 1). Then move start forward to the
+	// first address of block number index.
+	start := toUint32(vpc.Masked().Addr())
+	return netip.PrefixFrom(fromUint32(start), bits), nil
+}
+
+// Plan splits vpc into one public and one private subnet of length /bits
+// for each zone: all the public subnets first, then all the private ones.
+func Plan(vpc string, zones []string, bits int) ([]Subnet, error) {
+	// TODO(2): Parse vpc, then build the subnets with SubnetCIDR.
+	return nil, nil
+}
+
+// Check returns one message for each problem in a subnet plan, or nothing
+// when the plan is fine.
+func Check(vpc string, subnets []Subnet) []string {
+	// TODO(3): Report subnets that are too small, outside the VPC, or
+	// overlap another subnet.
+	return nil
+}

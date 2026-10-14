@@ -10,7 +10,8 @@ deploy files under version control and make your first commits.
 
 ### Your sandbox
 
-Git exercises work on a practice repository, the *sandbox*. Build it from
+Git exercises work on a practice repository, the *sandbox*, just like the
+folder in *Files and folders: paths, mkdir, cp, mv and rm*. Build it from
 the exercise folder, then look around:
 
 ```bash

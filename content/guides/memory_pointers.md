@@ -52,7 +52,7 @@ Here is the rule that explains most surprises in this guide:
 
 > **Assigning a value, or passing it to a function, makes a copy.**
 
-You saw it in *Structs: changes that vanish*. Here it is with a deploy tool:
+You'll meet it in *Structs: changes that vanish*. Here it is with a deploy tool:
 
 ```go
 package main
@@ -333,13 +333,16 @@ Two ops consequences:
 
 ## Methods: value or pointer receiver?
 
-Everything above decides how to write methods. A method's *receiver* is
-just a parameter, so the same copy rule applies:
+This section looks ahead to *Methods* and *Pointer receivers*; come back
+to it after those if it moves too fast. A *method* is a function attached to
+a type: `func (d Deployment) Summary() string` is called as `d.Summary()`.
+The `(d Deployment)` before the name is the *receiver*. It's just a
+parameter, so the same copy rule applies:
 
 - A **value receiver** `(d Deployment)` gets a copy. Fine for methods that
   only read.
 - A **pointer receiver** `(d *Deployment)` gets the address. Required for
-  methods that change the value, as in *Pointer receivers*.
+  methods that change the value.
 
 Here's a rolling deploy helper that scales every deployment to zero:
 

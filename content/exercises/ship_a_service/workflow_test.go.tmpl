@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"regexp"
 	"slices"
@@ -140,10 +141,81 @@ func runsOn(j job) string {
 	return ""
 }
 
-// pinned matches an action reference that names a fixed version: a version
-// tag such as "actions/checkout@v7" or "@v7.0.1", or a full 40-character
-// commit hash.
-var pinned = regexp.MustCompile(`^[\w.-]+/[\w./-]+@(v\d+(\.\d+){0,2}|[0-9a-f]{40})$`)
+// releases lists the actions these workflows use, each with one release and
+// the commit its tag points at. To look one up yourself, run
+// git ls-remote --tags https://github.com/OWNER/REPO TAG.
+var releases = map[string]struct{ version, commit string }{
+	"actions/checkout":              {"v7.0.1", "3d3c42e5aac5ba805825da76410c181273ba90b1"},
+	"actions/setup-go":              {"v7.0.0", "b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"},
+	"actions/cache":                 {"v6.1.0", "55cc8345863c7cc4c66a329aec7e433d2d1c52a9"},
+	"actions/upload-artifact":       {"v7.0.2", "cf430e030ddbb5b0abf93d22962f4752f3646cd9"},
+	"actions/download-artifact":     {"v8.0.2", "9000827ccba6bdab643e8b6fd33ac0654aef8333"},
+	"docker/login-action":           {"v4.6.0", "dbcb813823bdd20940b903addbd779551569679f"},
+	"docker/build-push-action":      {"v7.4.0", "c3c9e263c25d99ce0380d002d59b67737d91b0dc"},
+	"docker/setup-buildx-action":    {"v4.4.1", "f87e5991a6d7451dcb8d9637bfbc97413f497069"},
+	"golangci/golangci-lint-action": {"v9.3.0", "ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a"},
+	"acme/slack-notify":             {"v1.4.2", "521900d1e65917abfbbe5ca9f186b195f932c7bd"},
+}
+
+// usesLine matches a "uses:" line and captures the action, the ref after
+// the @ (empty if there is none) and the comment after it.
+var usesLine = regexp.MustCompile(`^\s*(?:-\s+)?uses:\s*["']?([^@\s"'#]+)(?:@([^\s"'#]*))?["']?\s*(?:#\s*(.*))?$`)
+
+var (
+	fullSHA     = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	shortSHA    = regexp.MustCompile(`^[0-9a-f]{7,39}$`)
+	versionTag  = regexp.MustCompile(`^v\d+(\.\d+)*$`)
+	releaseNote = regexp.MustCompile(`^v\d+\.\d+\.\d+\b`)
+)
+
+// checkPins checks every "uses:" line in the workflow file name. Each action
+// must be pinned to a full 40-character commit SHA, with its release in a
+// comment after it:
+//
+//   - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+//
+// A branch or a tag can be moved to other code; a commit can't. YAML throws
+// comments away, so this reads the file's lines itself.
+func checkPins(t *testing.T, name string) {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	for i, line := range strings.Split(string(raw), "\n") {
+		m := usesLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		action, ref, note := m[1], m[2], releaseNote.FindString(m[3])
+		where := fmt.Sprintf("%s line %d (uses %s)", name, i+1, strings.TrimSpace(strings.SplitN(line, "uses:", 2)[1]))
+		known, isKnown := releases[action]
+		switch {
+		case ref == "":
+			t.Errorf("%s has no @; GitHub refuses to run it. Pin it like %s", where, pinExample(action))
+		case shortSHA.MatchString(ref):
+			t.Errorf("%s: @%s is a short SHA, and GitHub only accepts all 40 characters: %s", where, ref, pinExample(action))
+		case versionTag.MatchString(ref):
+			t.Errorf("%s: @%s is a tag, and a tag can be moved to other code. Pin the commit it points at instead: %s", where, ref, pinExample(action))
+		case !fullSHA.MatchString(ref):
+			t.Errorf("%s: @%s is a branch, which runs whatever its owner pushes next. Pin a release's commit instead: %s", where, ref, pinExample(action))
+		case note == "":
+			t.Errorf("%s: add the release as a comment after the SHA (%s), so people and Dependabot can tell which version it is", where, pinExample(action))
+		case isKnown && ref == known.commit && note != known.version:
+			t.Errorf("%s: that commit is release %s, not %s; fix the comment", where, known.version, note)
+		case isKnown && note == known.version && ref != known.commit:
+			t.Errorf("%s: release %s of %s is commit %s; the SHA and the comment must name the same release", where, known.version, action, known.commit)
+		}
+	}
+}
+
+// pinExample shows how action looks when it is pinned.
+func pinExample(action string) string {
+	if r, ok := releases[action]; ok {
+		return action + "@" + r.commit + " # " + r.version
+	}
+	return action + "@<40-character commit SHA> # vX.Y.Z"
+}
 
 // findStep returns the index of the first step that uses action (such as
 // "actions/checkout", with or without a version), or -1.

@@ -5,9 +5,45 @@ they talk to the database from Go. Go's standard `database/sql` package does
 that the same way for SQLite, Postgres and MySQL. Here you write the four
 functions every data-access layer has: count, get one, list, insert.
 
-**New here:** `database/sql`, drivers, `*sql.DB`, `QueryRow`, `Query`, `Exec`, `Scan`, `rows.Next`, `rows.Err`, `sql.ErrNoRows`, `?` placeholders, `LastInsertId`.
+**New here:** `database/sql`, drivers, third-party modules with `go.mod` and `go.sum` (a first look), blank imports, `*sql.DB`, `QueryRow`, `Query`, `Exec`, `Scan`, `rows.Next`, `rows.Err`, `sql.ErrNoRows`, `?` placeholders, `LastInsertId`.
 
 ## Learn
+
+### Code from outside the standard library
+
+So far every package you imported (`fmt`, `strings`, `testing`, ...) came
+from Go's *standard library*, which ships with Go. A SQLite driver doesn't,
+so this exercise uses a *third-party* package, `modernc.org/sqlite`. Its
+import path starts with the address where its code is published.
+
+Each exercise folder is a Go *module*: a folder of code described by a
+`go.mod` file. Most exercises get a two-line `go.mod`. The SQL exercises in
+this module have a longer one, because their tests run SQLite. Open this
+one:
+
+```text
+module groundwork.local/database_sql   ← this module's own name
+
+go 1.26.0                               ← the Go version it needs
+
+require modernc.org/sqlite v1.60.1      ← a dependency, at an exact version
+
+require (
+	github.com/dustin/go-humanize v1.0.1 // indirect
+	...                                 ← what the driver itself needs
+)
+```
+
+- `require` lists *dependencies* with exact versions, so every machine
+  builds the same code. `// indirect` marks packages your code doesn't
+  import itself; the driver does.
+- `go.sum` holds a checksum for each dependency. `go` refuses a download
+  that doesn't match, so nobody can swap the code under you.
+- The first `go test` downloads the dependencies into a shared cache (Go's
+  *module cache*); later runs reuse them.
+
+You don't change these files here. *Packages and imports* covers packages
+and modules properly.
 
 ### database/sql and drivers
 

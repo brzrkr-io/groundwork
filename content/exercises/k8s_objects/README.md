@@ -1,35 +1,18 @@
 # Kubernetes objects: building a Deployment
 
-Kubernetes runs most modern platforms, and everything you ask it to do is
-written down as an *object*. In this exercise you build a Deployment, the
-object that keeps an app running, in plain Go.
+In *Kubernetes fundamentals* you wrote objects as YAML and sent them with
+`kubectl`. Deploy bots, operators and platform CLIs build the same objects
+in Go, and so does every controller. Here you build a Deployment with the
+real Kubernetes Go types.
 
-**New here:** Kubernetes objects, the `k8s.io/api` types, pointer fields with `new(value)`, `resource.Quantity`.
+**New here:** the `k8s.io/api` and `k8s.io/apimachinery` Go types, `metav1.ObjectMeta`, pointer fields with `new(value)`, `resource.Quantity` in Go.
 
 ## Learn
 
-### Kubernetes in one minute
+### Recap: the object you already know
 
-*Kubernetes* runs containers on a group of machines called a *cluster*. You
-don't start containers by hand. You send the cluster a description of what
-you want, and Kubernetes makes it happen and keeps it that way.
-
-Descriptions go to the *API server*, the cluster's front door, which stores
-them as *objects*. Programs called *controllers* watch the objects and fix
-the real world to match. If a Deployment says "3 copies" and one dies, a
-controller starts another.
-
-| Kind | What it is |
-|---|---|
-| Namespace | A folder that groups objects, such as `shop` or `monitoring`. |
-| Pod | One or more containers that run together on one machine. |
-| Deployment | "Keep N identical Pods running from this template." |
-| Service | A stable network address in front of a set of Pods. |
-| ConfigMap | Plain configuration values for Pods. |
-
-### The shape of an object
-
-Every object has the same outline. Here is a Deployment in YAML:
+This is the Deployment shape you wrote in
+*Deployments: replicas, labels and selectors*:
 
 ```yaml
 apiVersion: apps/v1       # which API group and version defines this kind
@@ -54,12 +37,9 @@ spec:                     # what you want
           image: registry.example.com/shop/checkout:1.4.2
 ```
 
-Kubernetes adds a fourth part, `status` (what is really happening). You
-never write it yourself.
-
-*Labels* are key/value tags such as `app: checkout`. A Deployment finds its
-own Pods with its *selector*. The selector's `matchLabels` must match the
-labels in the Pod `template`, or the API server rejects the Deployment.
+Kubernetes fills in `status`; you never write it. The selector's
+`matchLabels` must match the template's labels, or the API server rejects
+the Deployment.
 
 ### The same object in Go
 
@@ -117,11 +97,9 @@ sel := &metav1.LabelSelector{MatchLabels: map[string]string{"tier": "db"}}
 
 ### Ports and resources
 
-A container lists its ports as a slice, `[]corev1.ContainerPort`. It also
-asks for CPU and memory:
-
-- *Requests*: what the scheduler reserves for the container.
-- *Limits*: the most it may use.
+A container lists its ports as a slice, `[]corev1.ContainerPort`. Its
+requests and limits, from *Resources: requests, limits and QoS*, live in
+`Resources.Requests` and `Resources.Limits`.
 
 Amounts are `resource.Quantity` values from package
 `k8s.io/apimachinery/pkg/api/resource`, parsed from YAML-style strings:

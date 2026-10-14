@@ -1,0 +1,28 @@
+$ kubectl -n shop get pods -l app=indexer
+NAME                       READY   STATUS    RESTARTS   AGE
+indexer-85f7c9d6b-t4wcx    0/1     Pending   0          62m
+
+$ kubectl -n shop describe pod indexer-85f7c9d6b-t4wcx
+Name:             indexer-85f7c9d6b-t4wcx
+Namespace:        shop
+Node:             <none>
+Status:           Pending
+...
+Containers:
+  indexer:
+    Image:      ghcr.io/stefanprodan/podinfo:6.9.2
+    Limits:
+      cpu:     2
+      memory:  1Gi
+    Requests:
+      cpu:        1500m
+      memory:     512Mi
+...
+Conditions:
+  Type           Status
+  PodScheduled   False
+QoS Class:                   Burstable
+Events:
+  Type     Reason            Age                 From               Message
+  ----     ------            ----                ----               -------
+  Warning  FailedScheduling  2m (x13 over 62m)   default-scheduler  0/3 nodes are available: 3 Insufficient cpu. no new claims to deallocate, preemption: 0/3 nodes are available: 3 Preemption is not helpful for scheduling.

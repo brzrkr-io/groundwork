@@ -4,7 +4,7 @@ Tests tell you whether code is right. *Benchmarks* tell you how fast it is and
 how much memory it uses. When a function runs for every request or every log
 line, that is worth knowing before you try to speed it up.
 
-**New here:** `testing.B`, `b.Loop`, `b.ReportAllocs`, allocations, `strings.Builder` with `Grow`.
+**New here:** `testing.B`, `b.Loop`, `b.ReportAllocs`, allocations, `Grow` on a `strings.Builder`.
 
 ## Learn
 
@@ -74,7 +74,8 @@ away. In a loop, that adds up.
 
 ### `strings.Builder` and `Grow`
 
-A `strings.Builder` collects text in one growing buffer:
+As in *For loops: backoff and progress bars*, a `strings.Builder` collects
+text in one growing buffer:
 
 ```go
 var b strings.Builder

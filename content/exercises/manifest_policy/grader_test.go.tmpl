@@ -85,8 +85,8 @@ func checkJob(t *testing.T, file string, wf workflow, id string) job {
 	return j
 }
 
-// checkSetupSteps checks that a job has a pinned checkout, then a pinned
-// setup-go that reads go.mod.
+// checkSetupSteps checks that a job has checkout, then a setup-go that reads
+// go.mod. readWorkflow checks how they are pinned.
 func checkSetupSteps(t *testing.T, file, id string, steps []step) {
 	t.Helper()
 	checkout := findStep(steps, "actions/checkout")
@@ -96,11 +96,6 @@ func checkSetupSteps(t *testing.T, file, id string, steps []step) {
 	}
 	if setup < checkout {
 		t.Errorf("%s: job %s runs setup-go before checkout; checkout comes first", file, id)
-	}
-	for _, i := range []int{checkout, setup} {
-		if !pinned.MatchString(steps[i].Uses) {
-			t.Errorf("%s: job %s uses %s; pin it to a version, such as @v7", file, id, steps[i].Uses)
-		}
 	}
 	if got := steps[setup].With["go-version-file"]; got != "go.mod" {
 		t.Errorf("%s: job %s: setup-go has go-version-file %v, want go.mod", file, id, got)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -23,12 +24,26 @@ func TestCountHosts(t *testing.T) {
 	expect(t, "testdata/db_hosts.txt: 2 hosts\n", "3_count_hosts.sh", "testdata/db_hosts.txt")
 }
 
+func TestRunCheck(t *testing.T) {
+	expectWithEnv(t, nil, "DEPLOY_ENV=staging\nLOG_LEVEL=debug\n", "4_run_check.sh", "staging")
+	expectWithEnv(t, []string{"LOG_LEVEL=warn"}, "DEPLOY_ENV=production\nLOG_LEVEL=warn\n", "4_run_check.sh", "production")
+	expectWithEnv(t, []string{"LOG_LEVEL="}, "DEPLOY_ENV=production\nLOG_LEVEL=debug\n", "4_run_check.sh", "production")
+}
+
 // expect runs the script with bash in the exercise folder, just as you do
 // in your terminal, and checks that it succeeds and prints want.
 func expect(t *testing.T, want, script string, args ...string) {
 	t.Helper()
-	got, stderr, code := run(t, script, args...)
-	command := commandLine(script, args...)
+	expectWithEnv(t, nil, want, script, args...)
+}
+
+// expectWithEnv is expect with env (like "LOG_LEVEL=warn") added to the
+// script's environment. DEPLOY_ENV and LOG_LEVEL are never inherited from
+// yours, so the result doesn't depend on your terminal.
+func expectWithEnv(t *testing.T, env []string, want, script string, args ...string) {
+	t.Helper()
+	got, stderr, code := run(t, env, script, args...)
+	command := strings.Join(append(slices.Clone(env), commandLine(script, args...)), " ")
 	if code != 0 {
 		exitFailure(t, command, code, got, stderr)
 		return
@@ -64,12 +79,18 @@ func exitFailure(t *testing.T, command string, code int, stdout, stderr string) 
 	t.Error(msg)
 }
 
-// run runs "bash script args..." and returns what it printed to stdout and
-// stderr, and its exit status.
-func run(t *testing.T, script string, args ...string) (stdout, stderr string, code int) {
+// run runs "bash script args..." with env added to its environment, and
+// returns what it printed to stdout and stderr, and its exit status.
+func run(t *testing.T, env []string, script string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	cmd := exec.Command("bash", append([]string{script}, args...)...)
-	cmd.Env = append(cmd.Environ(), "LC_ALL=C", "TZ=UTC")
+	for _, kv := range cmd.Environ() {
+		if !strings.HasPrefix(kv, "DEPLOY_ENV=") && !strings.HasPrefix(kv, "LOG_LEVEL=") {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	cmd.Env = append(cmd.Env, "LC_ALL=C", "TZ=UTC")
+	cmd.Env = append(cmd.Env, env...)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	if err := cmd.Run(); cmd.ProcessState == nil {

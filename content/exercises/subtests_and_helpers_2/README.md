@@ -4,7 +4,7 @@ Real tools read their hosts from files, so their tests need files too. This
 time you write the helper yourself: one that creates a throwaway file for
 each subtest.
 
-**New here:** `os.WriteFile`, `filepath.Join`, `t.TempDir`, `t.Cleanup`, `t.Fatal`.
+**New here:** `os.ReadFile`, `os.WriteFile`, `filepath.Join`, `t.TempDir`, `t.Cleanup`, `t.Fatal`.
 
 ## Learn
 
@@ -17,10 +17,11 @@ As in *Subtests and helpers*:
 - `slices.Equal(a, b)` compares two slices.
 - `TestGrader` runs your test against mutants; it must fail on each one.
 
-### Writing a file
+### Reading and writing a whole file
 
-File I/O gets its own exercises later. For now you need one function from
-the `os` package:
+Files get their own exercises in *CLI tools and the OS*. For now you need
+two functions from the `os` package. `os.WriteFile` creates (or replaces) a
+file with the content you give it:
 
 ```go
 err := os.WriteFile("notes.txt", []byte("hello\n"), 0o644)
@@ -32,10 +33,25 @@ err := os.WriteFile("notes.txt", []byte("hello\n"), 0o644)
 | `[]byte("hello\n")` | the content; `[]byte(...)` turns a `string` into bytes |
 | `0o644` | the *permission*: you can read and write, others only read |
 
-> **Why is it written like this?** `os.WriteFile` takes bytes, not a
-> string, so Go requires the `[]byte(...)` conversion. `0o644` is the usual
-> value for a normal file (convention); the `0o` prefix means the number is
-> written in octal.
+`os.ReadFile` is the opposite: it reads a whole file and returns its
+content as a `[]byte` (a slice of bytes), plus an error if the file can't
+be read. `string(data)` turns the bytes back into text:
+
+```go
+data, err := os.ReadFile("notes.txt")
+if err != nil {
+	return err // for example: the file doesn't exist
+}
+fmt.Print(string(data)) // hello
+```
+
+`LoadHosts` in `exercise.go` uses `os.ReadFile` this way; your test uses
+`os.WriteFile` to give it a file to read.
+
+> **Why is it written like this?** Files hold bytes, not text, so Go
+> requires the `[]byte(...)` and `string(...)` conversions. `0o644` is the
+> usual value for a normal file (convention); the `0o` prefix means the
+> number is written in octal.
 
 ### Building a path
 

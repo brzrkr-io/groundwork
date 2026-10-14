@@ -3,11 +3,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"sync/atomic"
+	"syscall"
+	"time"
 )
 
 // version is the release this binary was built from. Release builds replace
@@ -26,9 +32,72 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	http.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+
+	// ctx is cancelled when docker stop or Kubernetes sends SIGTERM, or when
+	// you press Ctrl+C (SIGINT).
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// 5 seconds stays well under the 10 that docker stop waits before it
+	// sends SIGKILL.
+	svc := newService(5 * time.Second)
+
+	log.Printf("inventoryd %s listening on %s", version, ln.Addr())
+	if err := svc.run(ctx, ln); err != nil {
+		log.Fatal(err)
+	}
+	log.Print("inventoryd stopped cleanly")
+}
+
+// service is inventoryd's HTTP server and its readiness gate.
+type service struct {
+	srv   *http.Server
+	ready atomic.Bool   // true while the service should get traffic
+	grace time.Duration // how long a shutdown waits for requests in flight
+}
+
+// newService returns inventoryd with its routes and a shutdown grace period.
+func newService(grace time.Duration) *service {
+	s := &service{grace: grace}
+	s.srv = &http.Server{Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second}
+	return s
+}
+
+// routes returns inventoryd's handlers. /healthz is liveness: it answers as
+// long as the process is up. /readyz is readiness: 200 while s.ready is
+// true, 503 otherwise, so nobody sends traffic to an instance that's
+// starting or draining.
+func (s *service) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, "ok %s\n", version)
 	})
-	log.Printf("inventoryd %s listening on :%s", version, port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if !s.ready.Load() {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprintln(w, "ready")
+	})
+	return mux
+}
+
+// run serves s.srv on ln and marks the service ready. When ctx is cancelled
+// it marks the service not ready, logs "draining", and shuts the server
+// down, giving requests in flight up to s.grace to finish. It returns nil
+// after a clean shutdown, a "forced shutdown: ..." error if s.grace ran
+// out, or Serve's error if serving failed first.
+func (s *service) run(ctx context.Context, ln net.Listener) error {
+	// TODO(1): This first draft never marks the service ready, and on SIGTERM
+	// it calls Close, which cuts off every request in flight. Rewrite it to
+	// drain gracefully, as the README describes.
+	go func() {
+		<-ctx.Done()
+		s.srv.Close()
+	}()
+	return s.srv.Serve(ln)
 }

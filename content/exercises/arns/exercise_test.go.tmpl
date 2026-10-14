@@ -1,0 +1,198 @@
+package arns
+
+import (
+	"slices"
+	"testing"
+)
+
+func TestParse(t *testing.T) {
+	tests := []struct {
+		in   string
+		want ARN
+	}{
+		{"arn:aws:ec2:eu-west-1:111122223333:instance/i-0abc1234def567890",
+			ARN{"aws", "ec2", "eu-west-1", "111122223333", "instance/i-0abc1234def567890"}},
+		{"arn:aws:lambda:us-east-1:123456789012:function:resize-images",
+			ARN{"aws", "lambda", "us-east-1", "123456789012", "function:resize-images"}},
+		{"arn:aws:logs:us-east-1:123456789012:log-group:/app/web:*",
+			ARN{"aws", "logs", "us-east-1", "123456789012", "log-group:/app/web:*"}},
+		{"arn:aws:sqs:eu-west-1:111122223333:orders",
+			ARN{"aws", "sqs", "eu-west-1", "111122223333", "orders"}},
+		{"arn:aws:iam::111122223333:role/ci-deployer",
+			ARN{"aws", "iam", "", "111122223333", "role/ci-deployer"}},
+		{"arn:aws:s3:::acme-app-logs",
+			ARN{"aws", "s3", "", "", "acme-app-logs"}},
+		{"arn:aws:s3:::acme-app-logs/prod/web.log",
+			ARN{"aws", "s3", "", "", "acme-app-logs/prod/web.log"}},
+		{"arn:aws-cn:s3:::acme-cn-logs",
+			ARN{"aws-cn", "s3", "", "", "acme-cn-logs"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := Parse(tt.in)
+			if err != nil {
+				t.Fatalf("Parse(%q) returned error %v, want nil", tt.in, err)
+			}
+			if got != tt.want {
+				t.Errorf("Parse(%q) = %+v, want %+v", tt.in, got, tt.want)
+			}
+		})
+	}
+
+	bad := []string{
+		"",
+		"i-0abc1234def567890",
+		"arn:aws:s3",                             // too few parts
+		"arn:aws:iam:111122223333:role/ci",       // only five parts
+		"urn:aws:s3:::acme-app-logs",             // doesn't start with arn
+		"ARN:aws:s3:::acme-app-logs",             // arn is lowercase
+		"arn::s3:::acme-app-logs",                // no partition
+		"arn:aws::eu-west-1:111122223333:orders", // no service
+		"arn:aws:s3:::",                          // no resource
+	}
+	for _, in := range bad {
+		t.Run("bad "+in, func(t *testing.T) {
+			got, err := Parse(in)
+			if err == nil {
+				t.Errorf("Parse(%q) = %+v, nil; want an error", in, got)
+			}
+			if got != (ARN{}) {
+				t.Errorf("Parse(%q) = %+v, want ARN{} together with the error", in, got)
+			}
+		})
+	}
+}
+
+func TestScope(t *testing.T) {
+	tests := []struct {
+		name string
+		in   ARN
+		want string
+	}{
+		{"s3 bucket", ARN{"aws", "s3", "", "", "acme-app-logs"}, "global"},
+		{"s3 object", ARN{"aws", "s3", "", "", "acme-app-logs/prod/web.log"}, "global"},
+		{"iam role", ARN{"aws", "iam", "", "111122223333", "role/ci-deployer"}, "account"},
+		{"iam user", ARN{"aws", "iam", "", "444455556666", "user/alice"}, "account"},
+		{"ec2 instance", ARN{"aws", "ec2", "eu-west-1", "111122223333", "instance/i-0abc1234def567890"}, "regional"},
+		{"lambda function", ARN{"aws", "lambda", "us-east-1", "123456789012", "function:resize-images"}, "regional"},
+		{"public ami", ARN{"aws", "ec2", "us-east-1", "", "image/ami-0abcdef1234567890"}, "regional"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Scope(tt.in); got != tt.want {
+				t.Errorf("Scope(%+v) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegionOfZone(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"us-east-1a", "us-east-1"},
+		{"eu-west-1c", "eu-west-1"},
+		{"ap-southeast-2b", "ap-southeast-2"},
+		{"us-gov-west-1a", "us-gov-west-1"},
+		{"eu-central-2z", "eu-central-2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, err := RegionOfZone(tt.in)
+			if err != nil {
+				t.Fatalf("RegionOfZone(%q) returned error %v, want nil", tt.in, err)
+			}
+			if got != tt.want {
+				t.Errorf("RegionOfZone(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+
+	bad := []string{
+		"",
+		"a",
+		"eu-west-1",  // a region, not a zone
+		"us-east-1A", // capital letter
+		"us-east-1-", // ends in a dash
+		"useast1a",   // no dashes
+		"us-east1a",  // only one dash
+		"eu-west-a",  // region part doesn't end in a digit
+	}
+	for _, in := range bad {
+		t.Run("bad "+in, func(t *testing.T) {
+			got, err := RegionOfZone(in)
+			if err == nil {
+				t.Errorf("RegionOfZone(%q) = %q, nil; want an error", in, got)
+			}
+			if got != "" {
+				t.Errorf("RegionOfZone(%q) = %q, want \"\" together with the error", in, got)
+			}
+		})
+	}
+}
+
+func TestForeignResources(t *testing.T) {
+	tests := []struct {
+		name    string
+		account string
+		arns    []string
+		want    []string
+	}{
+		{
+			name:    "two foreign",
+			account: "111122223333",
+			arns: []string{
+				"arn:aws:ec2:eu-west-1:111122223333:instance/i-0abc1234def567890",
+				"arn:aws:s3:::acme-app-logs",
+				"arn:aws:iam::444455556666:role/auditor",
+				"arn:aws:sqs:eu-west-1:123456789012:orders",
+			},
+			want: []string{
+				"arn:aws:iam::444455556666:role/auditor",
+				"arn:aws:sqs:eu-west-1:123456789012:orders",
+			},
+		},
+		{
+			name:    "other account's view",
+			account: "444455556666",
+			arns: []string{
+				"arn:aws:iam::444455556666:role/auditor",
+				"arn:aws:ec2:eu-west-1:111122223333:instance/i-0abc1234def567890",
+			},
+			want: []string{"arn:aws:ec2:eu-west-1:111122223333:instance/i-0abc1234def567890"},
+		},
+		{
+			name:    "all own or global",
+			account: "111122223333",
+			arns: []string{
+				"arn:aws:iam::111122223333:role/ci-deployer",
+				"arn:aws:s3:::acme-db-backups/nightly/*",
+			},
+			want: nil,
+		},
+		{"empty list", "111122223333", nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ForeignResources(tt.account, tt.arns)
+			if err != nil {
+				t.Fatalf("ForeignResources(%q, %q) returned error %v, want nil", tt.account, tt.arns, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("ForeignResources(%q, %q) = %q, want %q", tt.account, tt.arns, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("bad arn", func(t *testing.T) {
+		arns := []string{"arn:aws:iam::444455556666:role/auditor", "i-0abc1234def567890"}
+		got, err := ForeignResources("111122223333", arns)
+		if err == nil {
+			t.Errorf("ForeignResources(%q, %q) = %q, nil; want an error", "111122223333", arns, got)
+		}
+		if got != nil {
+			t.Errorf("ForeignResources(%q, %q) = %q, want nil together with the error", "111122223333", arns, got)
+		}
+	})
+}

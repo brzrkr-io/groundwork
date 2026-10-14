@@ -1,0 +1,28 @@
+# Task 1: web never starts. testdata/web_describe.txt has what kubectl
+# showed, and testdata/passwd.txt the image's user list.
+#
+# TODO(1): Tell Kubernetes which user to run as, so it can check it isn't
+# root.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: shop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: web
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          ports:
+            - name: http
+              containerPort: 9898

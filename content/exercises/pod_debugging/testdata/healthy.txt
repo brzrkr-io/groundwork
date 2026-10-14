@@ -1,0 +1,53 @@
+Name:             checkout-7b9f6d8c5d-2mvzr
+Namespace:        shop
+Priority:         0
+Service Account:  default
+Node:             worker-1/172.18.0.3
+Start Time:       Tue, 13 Oct 2026 21:03:18 -0500
+Labels:           app=checkout
+                  pod-template-hash=7b9f6d8c5d
+                  Annotations:      <none>
+Status:           Running
+IP:               10.244.0.23
+IPs:
+  IP:           10.244.0.23
+Controlled By:  ReplicaSet/checkout-7b9f6d8c5d
+Containers:
+  checkout:
+    Container ID:   containerd://52599eb2f4c7b1fb3877817de8853d60fb07a0d93bb456d03d492114d29299fc
+    Image:          ghcr.io/stefanprodan/podinfo:6.9.1
+    Image ID:       ghcr.io/stefanprodan/podinfo@sha256:262578cde928d5c9eba3bce079976444f624c13ed0afb741d90d5423877496cb
+    Port:           <none>
+    Host Port:      <none>
+    State:          Running
+      Started:      Tue, 13 Oct 2026 21:03:18 -0500
+    Ready:          True
+    Restart Count:  0
+    Environment:    <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-4hjwx (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       True 
+  ContainersReady             True 
+  PodScheduled                True 
+Volumes:
+  kube-api-access-4hjwx:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type    Reason     Age   From               Message
+  ----    ------     ----  ----               -------
+  Normal  Scheduled  19m   default-scheduler  Successfully assigned shop/checkout-7b9f6d8c5d-2mvzr to worker-1
+  Normal  Pulled     19m   kubelet            spec.containers{checkout}: Container image "ghcr.io/stefanprodan/podinfo:6.9.1" already present on machine and can be accessed by the pod
+  Normal  Created    19m   kubelet            spec.containers{checkout}: Container created
+  Normal  Started    19m   kubelet            spec.containers{checkout}: Container started

@@ -1,0 +1,12 @@
+requests: 16
+skipped: 2
+status classes:
+  2xx: 11
+  3xx: 1
+  4xx: 2
+  5xx: 2
+top paths:
+  /api/orders: 6
+  /healthz: 4
+  /api/orders/42: 2
+latency: p50 16ms, p95 2.5s

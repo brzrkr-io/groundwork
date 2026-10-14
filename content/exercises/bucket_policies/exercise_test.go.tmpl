@@ -1,0 +1,179 @@
+package buckets
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
+
+// policy loads the bucket policy in testdata/<file>.
+func policy(t *testing.T, file string) Policy {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p Policy
+	if err := json.Unmarshal(data, &p); err != nil {
+		t.Fatalf("testdata/%s: %v", file, err)
+	}
+	return p
+}
+
+func TestPublicStatement(t *testing.T) {
+	tests := []struct {
+		file  string
+		index int
+		want  bool
+	}{
+		{"public_website.json", 0, true},
+		{"allow_secure.json", 0, true},
+		{"office_only.json", 0, false},
+		{"org_only.json", 0, false},
+		{"partner_account.json", 0, false},
+		{"partner_account.json", 1, false},
+		{"cloudfront.json", 0, false},
+		{"https_only.json", 0, false},
+		{"https_only.json", 1, false},
+		{"vpc_endpoint.json", 0, false},
+		{"vpc_endpoint.json", 1, false},
+	}
+	for _, tt := range tests {
+		s := policy(t, tt.file).Statement[tt.index]
+		t.Run(tt.file+" "+s.Sid, func(t *testing.T) {
+			if got := PublicStatement(s); got != tt.want {
+				t.Errorf("PublicStatement(%s statement %d %q) = %v, want %v", tt.file, tt.index, s.Sid, got, tt.want)
+			}
+		})
+	}
+
+	inline := []struct {
+		name string
+		s    Statement
+		want bool
+	}{
+		{
+			"anyone listed among roles",
+			Statement{Effect: "Allow", Principal: Principal{AWS: StringList{"arn:aws:iam::111122223333:role/web", "*"}}, Action: StringList{"s3:GetObject"}},
+			true,
+		},
+		{
+			"condition key in lowercase",
+			Statement{Effect: "Allow", Principal: Principal{AWS: StringList{"*"}}, Action: StringList{"s3:GetObject"},
+				Condition: map[string]map[string]StringList{"IpAddress": {"aws:sourceip": {"203.0.113.0/24"}}}},
+			false,
+		},
+		{
+			"condition on a key that doesn't restrict",
+			Statement{Effect: "Allow", Principal: Principal{AWS: StringList{"*"}}, Action: StringList{"s3:GetObject"},
+				Condition: map[string]map[string]StringList{"StringLike": {"s3:prefix": {"public/*"}}}},
+			true,
+		},
+		{
+			"Deny for anyone",
+			Statement{Effect: "Deny", Principal: Principal{AWS: StringList{"*"}}, Action: StringList{"s3:DeleteObject"}},
+			false,
+		},
+		{
+			"one account",
+			Statement{Effect: "Allow", Principal: Principal{AWS: StringList{"444455556666"}}, Action: StringList{"s3:GetObject"}},
+			false,
+		},
+	}
+	for _, tt := range inline {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PublicStatement(tt.s); got != tt.want {
+				t.Errorf("PublicStatement(statement: %s) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExposure(t *testing.T) {
+	website := policy(t, "public_website.json")
+	office := policy(t, "office_only.json")
+	partner := policy(t, "partner_account.json")
+	const owner = "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
+	const logDelivery = "http://acs.amazonaws.com/groups/s3/LogDelivery"
+	all := Settings{BlockPublicAcls: true, IgnorePublicAcls: true, BlockPublicPolicy: true, RestrictPublicBuckets: true}
+
+	tests := []struct {
+		name string
+		b    Bucket
+		want string
+	}{
+		{"public policy, no settings", Bucket{Name: "acme-www", Policy: website}, "public"},
+		{"public policy, RestrictPublicBuckets", Bucket{Name: "acme-www", Policy: website, Settings: Settings{RestrictPublicBuckets: true}}, "blocked"},
+		{"public policy, all four settings", Bucket{Name: "acme-www", Policy: website, Settings: all}, "blocked"},
+		{"public policy, only the Block settings", Bucket{Name: "acme-www", Policy: website,
+			Settings: Settings{BlockPublicAcls: true, BlockPublicPolicy: true}}, "public"},
+		{"public policy, IgnorePublicAcls", Bucket{Name: "acme-www", Policy: website, Settings: Settings{IgnorePublicAcls: true}}, "public"},
+		{"AllUsers ACL", Bucket{Name: "acme-old-site", ACLGrantees: []string{owner, AllUsers}}, "public"},
+		{"AuthenticatedUsers ACL", Bucket{Name: "acme-old-site", ACLGrantees: []string{AuthenticatedUsers}}, "public"},
+		{"AllUsers ACL, IgnorePublicAcls", Bucket{Name: "acme-old-site", ACLGrantees: []string{owner, AllUsers},
+			Settings: Settings{IgnorePublicAcls: true}}, "blocked"},
+		{"AllUsers ACL, only RestrictPublicBuckets", Bucket{Name: "acme-old-site", ACLGrantees: []string{AllUsers},
+			Settings: Settings{RestrictPublicBuckets: true}}, "public"},
+		{"both public, only the ACL ignored", Bucket{Name: "acme-www", Policy: website, ACLGrantees: []string{AllUsers},
+			Settings: Settings{IgnorePublicAcls: true}}, "public"},
+		{"both public, both neutralised", Bucket{Name: "acme-www", Policy: website, ACLGrantees: []string{AllUsers},
+			Settings: Settings{IgnorePublicAcls: true, RestrictPublicBuckets: true}}, "blocked"},
+		{"office-only policy, owner ACL", Bucket{Name: "acme-reports", Policy: office, ACLGrantees: []string{owner}}, "private"},
+		{"partner policy, log delivery ACL", Bucket{Name: "acme-exports", Policy: partner, ACLGrantees: []string{owner, logDelivery}}, "private"},
+		{"private, all four settings", Bucket{Name: "acme-reports", Policy: office, Settings: all}, "private"},
+		{"no policy, no ACL", Bucket{Name: "acme-empty"}, "private"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Exposure(tt.b); got != tt.want {
+				t.Errorf("Exposure(%s: %d statements, ACL %q, %+v) = %q, want %q",
+					tt.b.Name, len(tt.b.Policy.Statement), tt.b.ACLGrantees, tt.b.Settings, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRequiresTLS(t *testing.T) {
+	tests := []struct {
+		file string
+		want bool
+	}{
+		{"https_only.json", true},
+		{"vpc_endpoint.json", true},
+		{"tls_get_only.json", false},
+		{"allow_secure.json", false},
+		{"public_website.json", false},
+		{"office_only.json", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			if got := RequiresTLS(policy(t, tt.file)); got != tt.want {
+				t.Errorf("RequiresTLS(%s) = %v, want %v", tt.file, got, tt.want)
+			}
+		})
+	}
+
+	httpFalse := map[string]map[string]StringList{"Bool": {"aws:SecureTransport": {"false"}}}
+	inline := []struct {
+		name string
+		s    Statement
+		want bool
+	}{
+		{"Deny for one role only", Statement{Effect: "Deny", Principal: Principal{AWS: StringList{"arn:aws:iam::111122223333:role/web"}},
+			Action: StringList{"s3:*"}, Condition: httpFalse}, false},
+		{"Deny without a condition", Statement{Effect: "Deny", Principal: Principal{AWS: StringList{"*"}},
+			Action: StringList{"s3:*"}}, false},
+		{"Deny s3:* for anyone", Statement{Effect: "Deny", Principal: Principal{AWS: StringList{"*"}},
+			Action: StringList{"s3:*"}, Condition: httpFalse}, true},
+		{"value \"true\" instead of \"false\"", Statement{Effect: "Deny", Principal: Principal{AWS: StringList{"*"}},
+			Action: StringList{"s3:*"}, Condition: map[string]map[string]StringList{"Bool": {"aws:SecureTransport": {"true"}}}}, false},
+	}
+	for _, tt := range inline {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Policy{Version: "2012-10-17", Statement: []Statement{tt.s}}
+			if got := RequiresTLS(p); got != tt.want {
+				t.Errorf("RequiresTLS(policy with one statement: %s) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,23 @@
+# Task 3: this Deployment is already running in the cluster. Change the
+# file, then kubectl apply it again.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app: worker
+    team: payments
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: worker # unchanged: a Deployment's selector can't be changed
+  template:
+    metadata:
+      labels:
+        app: worker
+        track: stable
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/stefanprodan/podinfo:6.9.2

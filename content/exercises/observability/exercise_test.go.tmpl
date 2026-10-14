@@ -1,0 +1,291 @@
+package observability
+
+import (
+	"bytes"
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// randomBytes is a fake random source: a reader that hands out exactly the
+// bytes written as hex in text, then runs out.
+func randomBytes(text string) *bytes.Reader {
+	b, err := hex.DecodeString(text)
+	if err != nil {
+		panic(err)
+	}
+	return bytes.NewReader(b)
+}
+
+func TestNewID(t *testing.T) {
+	tests := []struct {
+		name     string
+		random   string // the bytes the reader holds, as hex
+		size     int
+		want     string
+		wantLeft int // bytes NewID must leave in the reader
+	}{
+		{"8 bytes", "00f067aa0ba902b7", 8, "00f067aa0ba902b7", 0},
+		{"16 bytes", "4bf92f3577b34da6a3ce929d0e0e4736", 16, "4bf92f3577b34da6a3ce929d0e0e4736", 0},
+		{"reads only size bytes", "b7ad6b7169203331ff", 8, "b7ad6b7169203331", 1},
+		{"4 of 6 bytes", "0a0b0c0d0e0f", 4, "0a0b0c0d", 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			random := randomBytes(tt.random)
+			got, err := NewID(random, tt.size)
+			if got != tt.want || err != nil {
+				t.Errorf("NewID(reader holding %s, %d) = %q, %v; want %q, nil", tt.random, tt.size, got, err, tt.want)
+			}
+			if left := random.Len(); left != tt.wantLeft {
+				t.Errorf("NewID(reader holding %s, %d) left %d bytes in the reader, want %d: read exactly size bytes", tt.random, tt.size, left, tt.wantLeft)
+			}
+		})
+	}
+
+	t.Run("reader runs out", func(t *testing.T) {
+		got, err := NewID(randomBytes("00f067"), 8)
+		if got != "" || err == nil {
+			t.Errorf("NewID(reader holding only 3 bytes, 8) = %q, %v; want \"\" and an error", got, err)
+		}
+	})
+
+	t.Run("NewTrace uses NewID", func(t *testing.T) {
+		random := randomBytes("4bf92f3577b34da6a3ce929d0e0e4736" + "00f067aa0ba902b7")
+		want := TraceContext{TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", ParentID: "00f067aa0ba902b7", Flags: "01"}
+		if got, err := NewTrace(random); got != want || err != nil {
+			t.Errorf("NewTrace(...) = %+v, %v; want %+v, nil", got, err, want)
+		}
+	})
+}
+
+func TestParseTraceparent(t *testing.T) {
+	valid := []struct {
+		header string
+		want   TraceContext
+	}{
+		{"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", TraceContext{"4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", "01"}},
+		{"00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-00", TraceContext{"0af7651916cd43dd8448eb211c80319c", "b7ad6b7169203331", "00"}},
+	}
+	for _, tt := range valid {
+		t.Run(tt.header, func(t *testing.T) {
+			if got, err := ParseTraceparent(tt.header); got != tt.want || err != nil {
+				t.Errorf("ParseTraceparent(%q) = %+v, %v; want %+v, nil", tt.header, got, err, tt.want)
+			}
+		})
+	}
+
+	invalid := []struct {
+		why    string
+		header string
+	}{
+		{"trace ID too short", "00-4bf92f3577b34da6a3ce929d0e0e473-00f067aa0ba902b7-01"},
+		{"trace ID too long", "00-4bf92f3577b34da6a3ce929d0e0e47360-00f067aa0ba902b7-01"},
+		{"trace ID in uppercase", "00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01"},
+		{"trace ID not hex", "00-4bf92f3577b34da6a3ce929d0e0e47zz-00f067aa0ba902b7-01"},
+		{"trace ID all zeros", "00-00000000000000000000000000000000-00f067aa0ba902b7-01"},
+		{"parent ID too short", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902-01"},
+		{"parent ID not hex", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902bg-01"},
+		{"parent ID all zeros", "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01"},
+		{"empty header", ""},
+		{"unknown version", "01-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"},
+		{"flags missing", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7"},
+	}
+	for _, tt := range invalid {
+		t.Run(tt.why, func(t *testing.T) {
+			got, err := ParseTraceparent(tt.header)
+			if err == nil {
+				t.Errorf("ParseTraceparent(%q) = %+v, nil; want an error: %s", tt.header, got, tt.why)
+			} else if got != (TraceContext{}) {
+				t.Errorf("ParseTraceparent(%q) = %+v with an error; want TraceContext{} with the error", tt.header, got)
+			}
+		})
+	}
+}
+
+func TestTrace(t *testing.T) {
+	tests := []struct {
+		name     string
+		method   string
+		path     string
+		incoming string // traceparent request header; "" for none
+		random   string // the bytes the random source holds, as hex
+		want     TraceContext
+	}{
+		{
+			name:     "continues a valid trace",
+			method:   "GET",
+			path:     "/deploys",
+			incoming: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+			random:   "", // a valid header needs no random bytes
+			want:     TraceContext{"4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", "01"},
+		},
+		{
+			name:     "continues an unsampled trace",
+			method:   "DELETE",
+			path:     "/deploys/d-9",
+			incoming: "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-00",
+			random:   "",
+			want:     TraceContext{"0af7651916cd43dd8448eb211c80319c", "b7ad6b7169203331", "00"},
+		},
+		{
+			name:     "no header starts a trace",
+			method:   "POST",
+			path:     "/deploys",
+			incoming: "",
+			random:   "0af7651916cd43dd8448eb211c80319c" + "53995c3f42cd8ad8",
+			want:     TraceContext{"0af7651916cd43dd8448eb211c80319c", "53995c3f42cd8ad8", "01"},
+		},
+		{
+			name:     "invalid header starts a trace",
+			method:   "GET",
+			path:     "/healthz",
+			incoming: "00-00000000000000000000000000000000-00f067aa0ba902b7-01",
+			random:   "4bf92f3577b34da6a3ce929d0e0e4736" + "b7ad6b7169203331",
+			want:     TraceContext{"4bf92f3577b34da6a3ce929d0e0e4736", "b7ad6b7169203331", "01"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&logs, nil))
+
+			// The inner handler remembers which trace it found in its context.
+			var seen TraceContext
+			var found bool
+			inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				seen, found = TraceFrom(r.Context())
+				w.Write([]byte("ok"))
+			})
+			h := Trace(logger, randomBytes(tt.random))(inner)
+
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			if tt.incoming != "" {
+				req.Header.Set("traceparent", tt.incoming)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			request := tt.method + " " + tt.path
+			if rec.Code != http.StatusOK || rec.Body.String() != "ok" {
+				t.Errorf("%s: client got %d %q, want 200 %q (the next handler must run)", request, rec.Code, rec.Body.String(), "ok")
+			}
+			if !found {
+				t.Errorf("%s: TraceFrom(r.Context()) in the next handler found no trace; store it with context.WithValue and pass r.WithContext(ctx) to next", request)
+			} else if seen != tt.want {
+				t.Errorf("%s: TraceFrom(r.Context()) in the next handler = %+v, want %+v", request, seen, tt.want)
+			}
+			if got := rec.Header().Get("X-Trace-ID"); got != tt.want.TraceID {
+				t.Errorf("%s: response X-Trace-ID = %q, want %q", request, got, tt.want.TraceID)
+			}
+
+			lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
+			if len(lines) != 1 || lines[0] == "" {
+				t.Fatalf("%s: logged %q, want exactly one line", request, logs.String())
+			}
+			var record map[string]any
+			if err := json.Unmarshal([]byte(lines[0]), &record); err != nil {
+				t.Fatalf("%s: log line is not JSON: %q", request, lines[0])
+			}
+			checks := []struct{ key, want string }{
+				{"level", "INFO"},
+				{"msg", "request"},
+				{"method", tt.method},
+				{"path", tt.path},
+				{"trace_id", tt.want.TraceID},
+			}
+			for _, c := range checks {
+				if got := record[c.key]; got != c.want {
+					t.Errorf("%s: logged %s = %#v, want %q", request, c.key, got, c.want)
+				}
+			}
+		})
+	}
+
+	t.Run("random source fails", func(t *testing.T) {
+		called := false
+		inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true })
+		h := Trace(slog.New(slog.DiscardHandler), randomBytes(""))(inner)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/deploys", nil))
+		if rec.Code != http.StatusInternalServerError || rec.Body.String() != "internal server error\n" {
+			t.Errorf("no traceparent and NewTrace fails: client got %d %q, want 500 %q", rec.Code, rec.Body.String(), "internal server error\n")
+		}
+		if called {
+			t.Errorf("no traceparent and NewTrace fails: the next handler ran, want it skipped")
+		}
+	})
+}
+
+// withTrace returns a context carrying tc, the way Trace stores it.
+func withTrace(tc TraceContext) context.Context {
+	return context.WithValue(context.Background(), traceKey{}, tc)
+}
+
+func TestInject(t *testing.T) {
+	// A real local server that hands each traceparent it receives to the test.
+	received := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received <- r.Header.Get("traceparent")
+	}))
+	defer server.Close()
+
+	tests := []struct {
+		name   string
+		trace  TraceContext
+		random string // the bytes the random source holds, as hex
+		want   string // the traceparent the server must receive
+	}{
+		{
+			name:   "sampled",
+			trace:  TraceContext{"4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", "01"},
+			random: "b7ad6b7169203331",
+			want:   "00-4bf92f3577b34da6a3ce929d0e0e4736-b7ad6b7169203331-01",
+		},
+		{
+			name:   "unsampled",
+			trace:  TraceContext{"0af7651916cd43dd8448eb211c80319c", "b7ad6b7169203331", "00"},
+			random: "53995c3f42cd8ad8",
+			want:   "00-0af7651916cd43dd8448eb211c80319c-53995c3f42cd8ad8-00",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(withTrace(tt.trace), http.MethodGet, server.URL+"/v2/images", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := Inject(req, randomBytes(tt.random)); err != nil {
+				t.Fatalf("Inject(request in trace %s, random %s) = %v, want nil", tt.trace, tt.random, err)
+			}
+			resp, err := server.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			if got := <-received; got != tt.want {
+				t.Errorf("request in trace %s, random %s: server received traceparent %q, want %q (same trace ID and flags, new parent ID)", tt.trace, tt.random, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("no trace in context", func(t *testing.T) {
+		req := httptest.NewRequest("GET", server.URL+"/v2/images", nil)
+		if err := Inject(req, randomBytes("b7ad6b7169203331")); err == nil {
+			t.Errorf("Inject(request with no trace in its context) = nil, want an error")
+		}
+	})
+
+	t.Run("random source fails", func(t *testing.T) {
+		req := httptest.NewRequest("GET", server.URL+"/v2/images", nil)
+		req = req.WithContext(withTrace(TraceContext{"4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", "01"}))
+		if err := Inject(req, randomBytes("")); err == nil {
+			t.Errorf("Inject(request in a trace, empty random source) = nil, want the error from NewID")
+		}
+	})
+}

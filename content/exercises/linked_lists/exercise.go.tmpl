@@ -1,0 +1,47 @@
+// Package deployqueue is the Groundwork exercise "Linked lists: a deploy queue with container/list".
+package deployqueue
+
+import "container/list"
+
+// Deploy is one deploy waiting to run.
+type Deploy struct {
+	Service string
+	Version string
+}
+
+// Queue runs deploys one at a time, first come, first served, except that a
+// hotfix can jump to the front.
+type Queue struct {
+	deploys *list.List // front: runs next; every element holds a *Deploy
+}
+
+// New returns an empty Queue.
+func New() *Queue {
+	return &Queue{deploys: list.New()}
+}
+
+// Push adds d at the back of the queue and returns its element, so the
+// caller can expedite it later.
+func (q *Queue) Push(d *Deploy) *list.Element {
+	// TODO(1): Add d at the back of q.deploys and return its element.
+	return nil
+}
+
+// Services returns the service of every queued deploy, from the one that
+// runs next to the last.
+func (q *Queue) Services() []string {
+	// TODO(2): Walk q.deploys from front to back and collect each Service.
+	return nil
+}
+
+// Expedite moves el to the front of the queue, so it runs next.
+func (q *Queue) Expedite(el *list.Element) {
+	// TODO(3): Move el to the front of q.deploys.
+}
+
+// Next removes the deploy at the front of the queue and returns it and true,
+// or nil and false when the queue is empty.
+func (q *Queue) Next() (*Deploy, bool) {
+	// TODO(4): Take the front element off q.deploys and return its *Deploy.
+	return nil, false
+}

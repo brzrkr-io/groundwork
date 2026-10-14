@@ -4,8 +4,8 @@ Before a deploy tool ships a service, it checks the config. A good validator
 reports **every** problem in one go, so nobody fixes one typo, re-runs, and
 hits the next one.
 
-**New here:** sorted map keys with `slices.Sorted(maps.Keys(...))`. Everything
-else is practice from the Errors module.
+**New here:** nothing; practice from the Errors module, plus sorted map keys
+from *Sorting*.
 
 ## Learn
 
@@ -58,7 +58,7 @@ If `ok` is `false`, `err` is a single error, not a list.
 ### Sorted map keys
 
 Go visits map keys in a random order. To report problems in the same order
-every time, sort the keys first:
+every time, sort the keys first, as in *Sorting*:
 
 ```go
 limits := map[string]int{"memory": 512, "cpu": 2}

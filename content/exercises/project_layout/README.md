@@ -2,11 +2,10 @@
 
 `diskcheck` started as one quick `main` function. It works, but nothing in it
 can be tested, because everything talks straight to `os.Args`, `os.Stdout`
-and `os.Exit`. You'll split it into the layout most Go tools use, and make it
-testable on the way.
+and `os.Exit`. You'll split it into the layout most Go tools use, with the
+testable `main` you used throughout *CLI tools and the OS*.
 
-**New here:** the `cmd/` + `internal/` layout, a thin `main` with `run`,
-`io.Writer`, `fmt.Fprintf`.
+**New here:** the `cmd/` + `internal/` layout for a program.
 
 ## Learn
 
@@ -55,11 +54,11 @@ testable on the way.
 >   would build other layouts too, but Go developers expect this one.
 > - **Author's choice:** the names of the packages under `internal/`.
 
-### A thin main
+### A thin main, as in the CLI module
 
-`main` can't be tested: it has no inputs, no return value, and `os.Exit`
-would end the test run. So `main` only connects the real world to a function
-that *can* be tested:
+You've written this shape since *Command-line arguments: os.Args and usage
+errors*: `main` only connects the real world to a function that *can* be
+tested.
 
 ```go
 func main() {
@@ -71,23 +70,17 @@ func serve(args []string, out io.Writer) int {
 }
 ```
 
-| Piece | Meaning |
-|---|---|
-| `os.Args` | the command line as a `[]string`. `os.Args[0]` is the program name, so `os.Args[1:]` holds the arguments |
-| `io.Writer` | anything you can write to: `os.Stdout`, a file, a `strings.Builder` |
-| `fmt.Fprintf(w, …)` | like `Printf`, but writes to `w` |
-| `os.Exit(code)` | ends the program with an *exit code*: `0` means success, anything else means failure |
+What's new is *where* the pieces live. `main` and `run` stay in
+`cmd/<name>/main.go`; the logic they call moves to a package under
+`internal/`. As in *Standard streams: stdin, stdout, stderr and exit codes*,
+the report goes to *stdout*, errors and usage to *stderr*, and the tests pass
+`strings.Builder`s in for both.
 
-Normal output goes to *stdout*. Errors and usage messages go to *stderr*, so
-they don't mix with output another program might read. Tests pass
-`strings.Builder`s in as `stdout` and `stderr`, then check what was written.
-*Standard streams: stdin, stdout, stderr and exit codes* covers this in
-depth.
-
-> **Why is it written like this?** Taking `io.Writer` parameters instead of
-> using `os.Stdout` directly is the author's **choice**, and a common Go
-> pattern: the function writes wherever its caller says, so a test can catch
-> the output.
+> **Why is it written like this?** Here `run` takes `args` without the
+> program name (`os.Args[1:]`), so it starts at the first real argument.
+> That's the author's **choice**; *Command-line arguments: os.Args and usage
+> errors* passed the whole `os.Args`. Either works if `main` and the tests
+> agree.
 
 ### Returning errors instead of exiting
 

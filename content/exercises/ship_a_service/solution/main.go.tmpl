@@ -1,0 +1,121 @@
+// Command inventoryd serves the warehouse's stock levels. The other files in
+// this folder package it as a container image and ship it with GitHub Actions.
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"sync/atomic"
+	"syscall"
+	"time"
+)
+
+// version is the release this binary was built from. Release builds replace
+// it: go build -ldflags "-X main.version=v1.4.0".
+var version = "dev"
+
+func main() {
+	showVersion := flag.Bool("version", false, "print the version and exit")
+	flag.Parse()
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	// ctx is cancelled when docker stop or Kubernetes sends SIGTERM, or when
+	// you press Ctrl+C (SIGINT).
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// 5 seconds stays well under the 10 that docker stop waits before it
+	// sends SIGKILL.
+	svc := newService(5 * time.Second)
+
+	log.Printf("inventoryd %s listening on %s", version, ln.Addr())
+	if err := svc.run(ctx, ln); err != nil {
+		log.Fatal(err)
+	}
+	log.Print("inventoryd stopped cleanly")
+}
+
+// service is inventoryd's HTTP server and its readiness gate.
+type service struct {
+	srv   *http.Server
+	ready atomic.Bool   // true while the service should get traffic
+	grace time.Duration // how long a shutdown waits for requests in flight
+}
+
+// newService returns inventoryd with its routes and a shutdown grace period.
+func newService(grace time.Duration) *service {
+	s := &service{grace: grace}
+	s.srv = &http.Server{Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second}
+	return s
+}
+
+// routes returns inventoryd's handlers. /healthz is liveness: it answers as
+// long as the process is up. /readyz is readiness: 200 while s.ready is
+// true, 503 otherwise, so nobody sends traffic to an instance that's
+// starting or draining.
+func (s *service) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, "ok %s\n", version)
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if !s.ready.Load() {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprintln(w, "ready")
+	})
+	return mux
+}
+
+// run serves s.srv on ln and marks the service ready. When ctx is cancelled
+// it marks the service not ready, logs "draining", and shuts the server
+// down, giving requests in flight up to s.grace to finish. It returns nil
+// after a clean shutdown, a "forced shutdown: ..." error if s.grace ran
+// out, or Serve's error if serving failed first.
+func (s *service) run(ctx context.Context, ln net.Listener) error {
+	// Buffered, so the goroutine can always send and exit, even after run
+	// has returned.
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- s.srv.Serve(ln)
+	}()
+	s.ready.Store(true)
+
+	select {
+	case err := <-serveErr:
+		s.ready.Store(false)
+		return err
+	case <-ctx.Done():
+	}
+
+	// Fail readiness first, so the load balancer stops sending new requests
+	// while the ones already here finish.
+	s.ready.Store(false)
+	log.Print("draining")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.grace)
+	defer cancel()
+	if err := s.srv.Shutdown(shutdownCtx); err != nil {
+		s.srv.Close()
+		return fmt.Errorf("forced shutdown: %w", err)
+	}
+	return nil
+}

@@ -1,0 +1,17 @@
+# Task 3: configure podinfo with a command-line flag and an environment
+# variable.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: greeter
+  labels:
+    app: greeter
+spec:
+  containers:
+    - name: greeter
+      image: ghcr.io/stefanprodan/podinfo:6.9.2
+      ports:
+        - name: http
+          containerPort: 9898
+      # TODO(3): Run ./podinfo with --level=debug, and set PODINFO_UI_MESSAGE
+      # to "hello from Kubernetes".

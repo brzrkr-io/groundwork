@@ -1,0 +1,234 @@
+package vpc
+
+import (
+	"net/netip"
+	"slices"
+	"testing"
+)
+
+func TestSubnetCIDR(t *testing.T) {
+	tests := []struct {
+		vpc   string
+		bits  int
+		index int
+		want  string
+	}{
+		{"10.0.0.0/16", 20, 0, "10.0.0.0/20"},
+		{"10.0.0.0/16", 20, 2, "10.0.32.0/20"},
+		{"10.0.0.0/16", 20, 15, "10.0.240.0/20"},
+		{"10.0.0.0/16", 24, 255, "10.0.255.0/24"},
+		{"10.0.0.0/16", 16, 0, "10.0.0.0/16"},
+		{"10.1.0.0/16", 17, 1, "10.1.128.0/17"},
+		{"172.31.0.0/16", 28, 3, "172.31.0.48/28"},
+		{"192.168.0.0/24", 26, 3, "192.168.0.192/26"},
+		{"10.0.7.9/16", 24, 1, "10.0.1.0/24"},
+	}
+	for _, tt := range tests {
+		vpc := netip.MustParsePrefix(tt.vpc)
+		t.Run(tt.want, func(t *testing.T) {
+			got, err := SubnetCIDR(vpc, tt.bits, tt.index)
+			if err != nil {
+				t.Fatalf("SubnetCIDR(%s, %d, %d) returned error %v, want nil", vpc, tt.bits, tt.index, err)
+			}
+			if got.String() != tt.want {
+				t.Errorf("SubnetCIDR(%s, %d, %d) = %s, want %s", vpc, tt.bits, tt.index, got, tt.want)
+			}
+		})
+	}
+
+	bad := []struct {
+		name  string
+		vpc   string
+		bits  int
+		index int
+	}{
+		{"IPv6 VPC", "2001:db8::/56", 64, 0},
+		{"bits shorter than the VPC", "10.0.0.0/16", 15, 0},
+		{"bits longer than /28", "10.0.0.0/16", 29, 0},
+		{"negative index", "10.0.0.0/16", 20, -1},
+		{"index past the last /20", "10.0.0.0/16", 20, 16},
+		{"index past the last /26", "192.168.0.0/24", 26, 4},
+	}
+	for _, tt := range bad {
+		vpc := netip.MustParsePrefix(tt.vpc)
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := SubnetCIDR(vpc, tt.bits, tt.index)
+			if err == nil {
+				t.Errorf("SubnetCIDR(%s, %d, %d) = %s, nil; want an error", vpc, tt.bits, tt.index, got)
+			}
+		})
+	}
+}
+
+func TestPlan(t *testing.T) {
+	p := netip.MustParsePrefix
+	tests := []struct {
+		name  string
+		vpc   string
+		zones []string
+		bits  int
+		want  []Subnet
+	}{
+		{
+			name:  "three zones, /20",
+			vpc:   "10.0.0.0/16",
+			zones: []string{"eu-west-1a", "eu-west-1b", "eu-west-1c"},
+			bits:  20,
+			want: []Subnet{
+				{"public-eu-west-1a", "eu-west-1a", p("10.0.0.0/20"), true, 4091},
+				{"public-eu-west-1b", "eu-west-1b", p("10.0.16.0/20"), true, 4091},
+				{"public-eu-west-1c", "eu-west-1c", p("10.0.32.0/20"), true, 4091},
+				{"private-eu-west-1a", "eu-west-1a", p("10.0.48.0/20"), false, 4091},
+				{"private-eu-west-1b", "eu-west-1b", p("10.0.64.0/20"), false, 4091},
+				{"private-eu-west-1c", "eu-west-1c", p("10.0.80.0/20"), false, 4091},
+			},
+		},
+		{
+			name:  "two zones, /26",
+			vpc:   "172.31.0.0/24",
+			zones: []string{"us-east-1a", "us-east-1b"},
+			bits:  26,
+			want: []Subnet{
+				{"public-us-east-1a", "us-east-1a", p("172.31.0.0/26"), true, 59},
+				{"public-us-east-1b", "us-east-1b", p("172.31.0.64/26"), true, 59},
+				{"private-us-east-1a", "us-east-1a", p("172.31.0.128/26"), false, 59},
+				{"private-us-east-1b", "us-east-1b", p("172.31.0.192/26"), false, 59},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Plan(tt.vpc, tt.zones, tt.bits)
+			if err != nil {
+				t.Fatalf("Plan(%q, %q, %d) returned error %v, want nil", tt.vpc, tt.zones, tt.bits, err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("Plan(%q, %q, %d) returned %d subnets, want %d: %+v", tt.vpc, tt.zones, tt.bits, len(got), len(tt.want), got)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("Plan(%q, %q, %d)[%d] = %+v, want %+v", tt.vpc, tt.zones, tt.bits, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+
+	t.Run("no zones", func(t *testing.T) {
+		got, err := Plan("10.0.0.0/16", nil, 20)
+		if err != nil || len(got) != 0 {
+			t.Errorf("Plan(%q, nil, 20) = %+v, %v; want no subnets, nil", "10.0.0.0/16", got, err)
+		}
+	})
+
+	bad := []struct {
+		name  string
+		vpc   string
+		zones []string
+		bits  int
+	}{
+		{"VPC without a slash", "10.0.0.0", []string{"eu-west-1a"}, 20},
+		{"VPC not a CIDR", "my-vpc", []string{"eu-west-1a"}, 20},
+		{"three zones don't fit in two /17s", "10.0.0.0/16", []string{"eu-west-1a", "eu-west-1b", "eu-west-1c"}, 17},
+		{"subnets smaller than /28", "10.0.0.0/16", []string{"eu-west-1a"}, 29},
+	}
+	for _, tt := range bad {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Plan(tt.vpc, tt.zones, tt.bits)
+			if err == nil {
+				t.Errorf("Plan(%q, %q, %d) = %+v, nil; want an error", tt.vpc, tt.zones, tt.bits, got)
+			}
+		})
+	}
+}
+
+func TestCheck(t *testing.T) {
+	p := netip.MustParsePrefix
+	tests := []struct {
+		name    string
+		vpc     string
+		subnets []Subnet
+		want    []string
+	}{
+		{
+			name: "a good plan",
+			vpc:  "10.0.0.0/16",
+			subnets: []Subnet{
+				{Name: "public-eu-west-1a", CIDR: p("10.0.0.0/20")},
+				{Name: "public-eu-west-1b", CIDR: p("10.0.16.0/20")},
+				{Name: "private-eu-west-1a", CIDR: p("10.0.32.0/20")},
+				{Name: "private-eu-west-1b", CIDR: p("10.0.48.0/20")},
+			},
+			want: nil,
+		},
+		{
+			name: "one overlap",
+			vpc:  "10.0.0.0/16",
+			subnets: []Subnet{
+				{Name: "web-a", CIDR: p("10.0.0.0/24")},
+				{Name: "web-b", CIDR: p("10.0.1.0/24")},
+				{Name: "db-a", CIDR: p("10.0.0.128/25")},
+			},
+			want: []string{"web-a (10.0.0.0/24) overlaps db-a (10.0.0.128/25)"},
+		},
+		{
+			name: "one big subnet overlaps two",
+			vpc:  "10.0.0.0/16",
+			subnets: []Subnet{
+				{Name: "app", CIDR: p("10.0.0.0/20")},
+				{Name: "cache", CIDR: p("10.0.0.0/24")},
+				{Name: "queue", CIDR: p("10.0.1.0/24")},
+			},
+			want: []string{
+				"app (10.0.0.0/20) overlaps cache (10.0.0.0/24)",
+				"app (10.0.0.0/20) overlaps queue (10.0.1.0/24)",
+			},
+		},
+		{
+			name: "outside and too small",
+			vpc:  "10.0.0.0/16",
+			subnets: []Subnet{
+				{Name: "app-a", CIDR: p("10.1.0.0/24")},
+				{Name: "tiny", CIDR: p("10.0.5.0/29")},
+				{Name: "huge", CIDR: p("10.0.0.0/15")},
+			},
+			want: []string{
+				"app-a: 10.1.0.0/24 is not inside 10.0.0.0/16",
+				"app-a (10.1.0.0/24) overlaps huge (10.0.0.0/15)",
+				"tiny: 10.0.5.0/29 is smaller than /28",
+				"tiny (10.0.5.0/29) overlaps huge (10.0.0.0/15)",
+				"huge: 10.0.0.0/15 is not inside 10.0.0.0/16",
+			},
+		},
+		{
+			name: "every problem in subnet order",
+			vpc:  "172.31.0.0/16",
+			subnets: []Subnet{
+				{Name: "odd", CIDR: p("192.168.1.0/30")},
+				{Name: "a", CIDR: p("172.31.0.0/24")},
+				{Name: "b", CIDR: p("172.31.0.0/24")},
+			},
+			want: []string{
+				"odd: 192.168.1.0/30 is smaller than /28",
+				"odd: 192.168.1.0/30 is not inside 172.31.0.0/16",
+				"a (172.31.0.0/24) overlaps b (172.31.0.0/24)",
+			},
+		},
+		{
+			name:    "bad VPC",
+			vpc:     "vpc-0abc",
+			subnets: []Subnet{{Name: "a", CIDR: p("10.0.0.0/24")}},
+			want:    []string{"invalid VPC CIDR: vpc-0abc"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Check(tt.vpc, tt.subnets)
+			if len(got) == 0 && len(tt.want) == 0 {
+				return
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("Check(%q, %+v) =\n%q\nwant\n%q", tt.vpc, tt.subnets, got, tt.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,102 @@
+package pods
+
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+)
+
+// podinfo is the image every Pod in this exercise runs.
+const podinfo = "ghcr.io/stefanprodan/podinfo:6.9.2"
+
+func TestHelloPod(t *testing.T) {
+	const file = "1_hello.yaml"
+	var pod corev1.Pod
+	readManifest(t, file, &pod)
+	checkPod(t, file, &pod, "hello")
+}
+
+func TestWebPod(t *testing.T) {
+	const file = "2_web.yaml"
+	var pod corev1.Pod
+	readManifest(t, file, &pod)
+	c := checkPod(t, file, &pod, "web")
+
+	for _, l := range []struct{ key, value string }{{"app", "web"}, {"tier", "frontend"}} {
+		got, ok := pod.Labels[l.key]
+		switch {
+		case !ok:
+			t.Errorf("%s: metadata.labels has no %s, want %s: %s", file, l.key, l.key, l.value)
+		case got != l.value:
+			t.Errorf("%s: label %s is %q, want %q", file, l.key, got, l.value)
+		}
+	}
+	if len(c.Ports) != 1 {
+		t.Fatalf("%s: the container has %d ports, want 1 (name http, containerPort 9898)", file, len(c.Ports))
+	}
+	if p := c.Ports[0]; p.Name != "http" || p.ContainerPort != 9898 {
+		t.Errorf("%s: the port is {name: %q, containerPort: %d}, want {name: \"http\", containerPort: 9898}",
+			file, p.Name, p.ContainerPort)
+	}
+}
+
+func TestGreeterPod(t *testing.T) {
+	const file = "3_greeter.yaml"
+	var pod corev1.Pod
+	readManifest(t, file, &pod)
+	c := checkPod(t, file, &pod, "greeter")
+
+	// Kubernetes runs command followed by args, so check them together.
+	run := slices.Concat(c.Command, c.Args)
+	switch {
+	case len(run) == 0:
+		t.Errorf("%s: the container has no command, want it to run ./podinfo --level=debug", file)
+	case run[0] != "./podinfo":
+		t.Errorf("%s: the container runs %q, want ./podinfo first: the image has no ENTRYPOINT, so command (or args) must name the program",
+			file, strings.Join(run, " "))
+	case !slices.Contains(run, "--level=debug") && !slices.Equal(run[1:], []string{"--level", "debug"}):
+		t.Errorf("%s: the container runs %q, want ./podinfo --level=debug", file, strings.Join(run, " "))
+	}
+
+	var found bool
+	for _, e := range c.Env {
+		if e.Name == "PODINFO_UI_MESSAGE" {
+			found = true
+			if e.Value != "hello from Kubernetes" {
+				t.Errorf("%s: PODINFO_UI_MESSAGE is %q, want %q", file, e.Value, "hello from Kubernetes")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("%s: env has no PODINFO_UI_MESSAGE, want it set to %q", file, "hello from Kubernetes")
+	}
+}
+
+// checkPod checks the parts every Pod in this exercise shares: the API
+// version and kind, the name, and one container with that name running
+// podinfo. It returns the container.
+func checkPod(t *testing.T, file string, pod *corev1.Pod, name string) *corev1.Container {
+	t.Helper()
+	if pod.APIVersion != "v1" {
+		t.Errorf("%s: apiVersion is %q, want %q", file, pod.APIVersion, "v1")
+	}
+	if pod.Kind != "Pod" {
+		t.Errorf("%s: kind is %q, want %q", file, pod.Kind, "Pod")
+	}
+	if pod.Name != name {
+		t.Errorf("%s: metadata.name is %q, want %q", file, pod.Name, name)
+	}
+	if len(pod.Spec.Containers) != 1 {
+		t.Fatalf("%s: spec.containers has %d entries, want 1", file, len(pod.Spec.Containers))
+	}
+	c := &pod.Spec.Containers[0]
+	if c.Name != name {
+		t.Errorf("%s: the container's name is %q, want %q", file, c.Name, name)
+	}
+	if c.Image != podinfo {
+		t.Errorf("%s: the container's image is %q, want %q", file, c.Image, podinfo)
+	}
+	return c
+}

@@ -1,0 +1,135 @@
+package dnsttl
+
+import (
+	"testing"
+	"time"
+)
+
+// noon is the start time every test uses.
+var noon = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
+
+func TestExpiresAt(t *testing.T) {
+	tests := []struct {
+		r       Record
+		fetched time.Time
+		want    time.Time
+	}{
+		{Record{"api.example.com", "203.0.113.10", 300}, noon, noon.Add(5 * time.Minute)},
+		{Record{"db.internal", "10.0.3.7", 60}, noon, noon.Add(time.Minute)},
+		{Record{"www.example.com", "203.0.113.20", 86400}, noon.Add(time.Hour), noon.Add(25 * time.Hour)},
+		{Record{"flaky.example.com", "203.0.113.30", 0}, noon, noon},
+	}
+	for _, tt := range tests {
+		t.Run(tt.r.Name, func(t *testing.T) {
+			if got := ExpiresAt(tt.r, tt.fetched); !got.Equal(tt.want) {
+				t.Errorf("ExpiresAt(%+v, %v) = %v, want %v (TTL is in seconds)", tt.r, tt.fetched, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGet(t *testing.T) {
+	api := Record{"api.example.com", "203.0.113.10", 300}
+
+	tests := []struct {
+		name    string
+		elapsed time.Duration // time between Put and Get
+		want    Record
+		wantOK  bool
+	}{
+		{"just stored", 0, Record{"api.example.com", "203.0.113.10", 300}, true},
+		{"after 1.5s, rounded down", 1500 * time.Millisecond, Record{"api.example.com", "203.0.113.10", 298}, true},
+		{"after 100s", 100 * time.Second, Record{"api.example.com", "203.0.113.10", 200}, true},
+		{"half a second left", 299500 * time.Millisecond, Record{"api.example.com", "203.0.113.10", 0}, true},
+		{"exactly at the TTL", 300 * time.Second, Record{}, false},
+		{"long after the TTL", time.Hour, Record{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := noon
+			c := NewCache(func() time.Time { return now })
+			c.Put(api)
+			now = now.Add(tt.elapsed)
+
+			got, ok := c.Get(api.Name)
+			if got != tt.want || ok != tt.wantOK {
+				t.Errorf("%v after Put(%+v), Get(%q) = %+v, %v, want %+v, %v",
+					tt.elapsed, api, api.Name, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+
+	t.Run("each name keeps its own TTL", func(t *testing.T) {
+		now := noon
+		c := NewCache(func() time.Time { return now })
+		c.Put(Record{"api.example.com", "203.0.113.10", 300})
+		c.Put(Record{"db.internal", "10.0.3.7", 60})
+		now = now.Add(2 * time.Minute)
+
+		if got, ok := c.Get("db.internal"); ok {
+			t.Errorf("2m0s after Put, Get(%q) = %+v, true, want {}, false (its TTL was 60)", "db.internal", got)
+		}
+		want := Record{"api.example.com", "203.0.113.10", 180}
+		if got, ok := c.Get("api.example.com"); got != want || !ok {
+			t.Errorf("2m0s after Put, Get(%q) = %+v, %v, want %+v, true", "api.example.com", got, ok, want)
+		}
+	})
+
+	t.Run("not cached", func(t *testing.T) {
+		c := NewCache(func() time.Time { return noon })
+		if got, ok := c.Get("nosuch.example.com"); ok {
+			t.Errorf("Get(%q) on an empty cache = %+v, true, want {}, false", "nosuch.example.com", got)
+		}
+	})
+}
+
+func TestCheckMigration(t *testing.T) {
+	m := Migration{
+		Old:     Record{"api.example.com", "203.0.113.10", 300},
+		NewAddr: "198.51.100.7",
+		Changed: noon,
+	}
+	twoStale := []Answer{{"10.0.0.2", "203.0.113.10"}, {"8.8.8.8", "198.51.100.7"}, {"1.1.1.1", "203.0.113.10"}}
+	oneStale := []Answer{{"8.8.8.8", "198.51.100.7"}, {"10.0.0.2", "203.0.113.10"}}
+	noneStale := []Answer{{"10.0.0.2", "198.51.100.7"}, {"8.8.8.8", "198.51.100.7"}, {"1.1.1.1", "198.51.100.7"}}
+
+	tests := []struct {
+		name    string
+		answers []Answer
+		elapsed time.Duration // time since m.Changed
+		want    string
+	}{
+		{"done", noneStale, time.Minute, "done: all 3 resolvers return 198.51.100.7"},
+		{"done before the TTL ran out", noneStale[:2], 10 * time.Second, "done: all 2 resolvers return 198.51.100.7"},
+		{"waiting, two stale", twoStale, time.Minute,
+			"waiting: 203.0.113.10 still cached on 10.0.0.2, 1.1.1.1 until 2026-10-13T12:05:00Z (4m0s left)"},
+		{"waiting, one stale", oneStale, 4*time.Minute + 30*time.Second,
+			"waiting: 203.0.113.10 still cached on 10.0.0.2 until 2026-10-13T12:05:00Z (30s left)"},
+		{"stuck exactly at the TTL", oneStale, 5 * time.Minute,
+			"stuck: 203.0.113.10 still served by 10.0.0.2 after its TTL ran out at 2026-10-13T12:05:00Z"},
+		{"stuck long after", twoStale, time.Hour,
+			"stuck: 203.0.113.10 still served by 10.0.0.2, 1.1.1.1 after its TTL ran out at 2026-10-13T12:05:00Z"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := m.Changed.Add(tt.elapsed)
+			if got := CheckMigration(m, tt.answers, now); got != tt.want {
+				t.Errorf("CheckMigration(m, %+v, %v after the change)\n got: %q\nwant: %q", tt.answers, tt.elapsed, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("a day-long TTL", func(t *testing.T) {
+		slow := Migration{
+			Old:     Record{"www.example.com", "203.0.113.20", 86400},
+			NewAddr: "198.51.100.8",
+			Changed: noon,
+		}
+		answers := []Answer{{"10.0.0.2", "203.0.113.20"}}
+		now := noon.Add(6 * time.Hour)
+		want := "waiting: 203.0.113.20 still cached on 10.0.0.2 until 2026-10-14T12:00:00Z (18h0m0s left)"
+		if got := CheckMigration(slow, answers, now); got != want {
+			t.Errorf("CheckMigration(%+v, %+v, 6h after the change)\n got: %q\nwant: %q", slow, answers, got, want)
+		}
+	})
+}

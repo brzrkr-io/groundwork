@@ -1,0 +1,39 @@
+# Task 3: uploads fail since the root filesystem became read-only.
+# testdata/upload_logs.txt has what curl and the logs said.
+#
+# TODO(3): Give the container a writable, empty /tmp. Keep the root
+# filesystem read-only.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: upload
+  namespace: shop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: upload
+  template:
+    metadata:
+      labels:
+        app: upload
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: upload
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          # podinfo stores uploads (POST /store) in --data-path.
+          command: ["./podinfo", "--data-path=/tmp"]
+          ports:
+            - name: http
+              containerPort: 9898
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

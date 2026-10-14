@@ -1,0 +1,6 @@
+# Task 1: the base. Print what it builds with: kubectl kustomize base
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml

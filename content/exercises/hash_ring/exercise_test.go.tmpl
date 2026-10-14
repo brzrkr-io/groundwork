@@ -1,0 +1,171 @@
+package hashring
+
+import (
+	"fmt"
+	"slices"
+	"testing"
+)
+
+func TestPoint(t *testing.T) {
+	tests := []struct {
+		s    string
+		want uint32
+	}{
+		{"collector-a", 3395146143},
+		{"collector-b", 1398046757},
+		{"web-02", 1075636655},
+		{"hello", 907060870},
+	}
+	for _, tt := range tests {
+		if got := Point(tt.s); got != tt.want {
+			t.Errorf("Point(%q) = %d, want %d", tt.s, got, tt.want)
+		}
+	}
+}
+
+func TestNext(t *testing.T) {
+	t.Run("toy ring", func(t *testing.T) {
+		toy := []uint32{10, 40, 70}
+		tests := []struct {
+			h    uint32
+			want int
+		}{
+			{25, 1}, // between 10 and 40
+			{40, 1}, // exactly on a point
+			{5, 0},  // before the first point
+			{10, 0}, // exactly on the first point
+			{55, 2}, // between 40 and 70
+			{70, 2}, // exactly on the last point
+			{85, 0}, // past the last point: wraps
+			{71, 0}, // just past the last point: wraps
+		}
+		for _, tt := range tests {
+			if got := Next(toy, tt.h); got != tt.want {
+				t.Errorf("Next(%v, %d) = %d, want %d", toy, tt.h, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("one point", func(t *testing.T) {
+		one := []uint32{1398046757}
+		for _, h := range []uint32{0, 1398046757, 4000000000} {
+			if got := Next(one, h); got != 0 {
+				t.Errorf("Next(%v, %d) = %d, want 0 (the only point)", one, h, got)
+			}
+		}
+	})
+}
+
+func TestAdd(t *testing.T) {
+	t.Run("three nodes", func(t *testing.T) {
+		r := New()
+		r.Add("collector-a", "collector-b", "collector-c")
+		want := []uint32{609464499, 1398046757, 3395146143}
+		if !slices.Equal(r.points, want) {
+			t.Fatalf("after Add of collector-a to collector-c, r.points = %v, want %v (sorted)", r.points, want)
+		}
+		wantOwners := map[uint32]string{
+			609464499: "collector-c", 1398046757: "collector-b", 3395146143: "collector-a",
+		}
+		for p, want := range wantOwners {
+			if got := r.owners[p]; got != want {
+				t.Errorf("r.owners[%d] = %q, want %q", p, got, want)
+			}
+		}
+		if len(r.owners) != 3 {
+			t.Errorf("len(r.owners) = %d, want 3", len(r.owners))
+		}
+	})
+
+	t.Run("points stay sorted over several Adds", func(t *testing.T) {
+		r := New()
+		r.Add("collector-a")
+		r.Add("collector-c", "collector-d")
+		r.Add("collector-b")
+		want := []uint32{609464499, 1398046757, 3124176144, 3395146143}
+		if !slices.Equal(r.points, want) {
+			t.Errorf("after four Adds, r.points = %v, want %v", r.points, want)
+		}
+	})
+
+	t.Run("adding a node twice changes nothing", func(t *testing.T) {
+		r := New()
+		r.Add("collector-a")
+		r.Add("collector-a")
+		r.Add("collector-b", "collector-b")
+		if len(r.points) != 2 || len(r.owners) != 2 {
+			t.Errorf("after adding collector-a and collector-b twice each, len(r.points) = %d and len(r.owners) = %d, want 2 and 2",
+				len(r.points), len(r.owners))
+		}
+	})
+}
+
+func TestGet(t *testing.T) {
+	t.Run("empty ring", func(t *testing.T) {
+		r := New()
+		for _, key := range []string{"web-01", "web-23"} {
+			if got := r.Get(key); got != "" {
+				t.Errorf("New().Get(%q) = %q, want %q", key, got, "")
+			}
+		}
+	})
+
+	t.Run("three collectors", func(t *testing.T) {
+		r := New()
+		r.Add("collector-a", "collector-b", "collector-c")
+		// Points: 609464499 collector-c, 1398046757 collector-b, 3395146143 collector-a.
+		tests := []struct {
+			key  string
+			hash uint32
+			want string
+		}{
+			{"web-23", 86883259, "collector-c"},        // before the first point
+			{"web-02", 1075636655, "collector-b"},      // between collector-c and collector-b
+			{"web-00", 2920450179, "collector-a"},      // between collector-b and collector-a
+			{"collector-b", 1398046757, "collector-b"}, // exactly on a point
+			{"collector-a", 3395146143, "collector-a"}, // exactly on the last point
+			{"web-01", 3642079253, "collector-c"},      // past the last point: wraps
+			{"web-21", 3944995479, "collector-c"},      // past the last point: wraps
+		}
+		for _, tt := range tests {
+			if got := r.Get(tt.key); got != tt.want {
+				t.Errorf("Get(%q) with hash %d = %q, want %q", tt.key, tt.hash, got, tt.want)
+			}
+		}
+	})
+
+	t.Run("one node owns every key", func(t *testing.T) {
+		r := New()
+		r.Add("collector-b")
+		for _, key := range []string{"web-23", "web-00", "web-01"} {
+			if got := r.Get(key); got != "collector-b" {
+				t.Errorf("with only collector-b on the ring, Get(%q) = %q, want %q", key, got, "collector-b")
+			}
+		}
+	})
+
+	t.Run("adding a node moves only keys to it", func(t *testing.T) {
+		r := New()
+		r.Add("collector-a", "collector-b", "collector-c")
+		before := make(map[string]string)
+		for i := range 100 {
+			host := fmt.Sprintf("web-%02d", i)
+			before[host] = r.Get(host)
+		}
+		r.Add("collector-d")
+		moved := 0
+		for host, was := range before {
+			got := r.Get(host)
+			if got == was {
+				continue
+			}
+			moved++
+			if got != "collector-d" {
+				t.Errorf("after Add(%q), Get(%q) = %q, want %q or %q (where it was before)", "collector-d", host, got, was, "collector-d")
+			}
+		}
+		if moved == 0 {
+			t.Errorf("after Add(%q), no host moved, want some hosts to move to it", "collector-d")
+		}
+	})
+}

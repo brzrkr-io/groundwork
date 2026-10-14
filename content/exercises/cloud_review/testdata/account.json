@@ -1,0 +1,251 @@
+{
+  "id": "111122223333",
+  "securityGroups": [
+    {
+      "id": "sg-0a1b2c3d4e5f60001",
+      "name": "web",
+      "inbound": [
+        { "protocol": "tcp", "fromPort": 443, "toPort": 443, "cidr": "0.0.0.0/0" },
+        { "protocol": "tcp", "fromPort": 80, "toPort": 80, "cidr": "0.0.0.0/0" },
+        { "protocol": "tcp", "fromPort": 22, "toPort": 22, "cidr": "203.0.113.0/24" }
+      ]
+    },
+    {
+      "id": "sg-0a1b2c3d4e5f60002",
+      "name": "bastion",
+      "inbound": [
+        { "protocol": "tcp", "fromPort": 22, "toPort": 22, "cidr": "0.0.0.0/0" },
+        { "protocol": "tcp", "fromPort": 22, "toPort": 22, "cidr": "::/0" }
+      ]
+    },
+    {
+      "id": "sg-0a1b2c3d4e5f60003",
+      "name": "windows-build",
+      "inbound": [
+        { "protocol": "tcp", "fromPort": 3380, "toPort": 3390, "cidr": "0.0.0.0/0" },
+        { "protocol": "udp", "fromPort": 3389, "toPort": 3389, "cidr": "0.0.0.0/0" }
+      ]
+    },
+    {
+      "id": "sg-0a1b2c3d4e5f60004",
+      "name": "debug-temp",
+      "inbound": [
+        { "protocol": "-1", "fromPort": -1, "toPort": -1, "cidr": "0.0.0.0/0" }
+      ]
+    },
+    {
+      "id": "sg-0a1b2c3d4e5f60005",
+      "name": "postgres",
+      "inbound": [
+        { "protocol": "tcp", "fromPort": 5432, "toPort": 5432, "cidr": "10.0.0.0/16" }
+      ]
+    }
+  ],
+  "policies": [
+    {
+      "name": "ci-deploy",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "UploadArtifacts",
+            "Effect": "Allow",
+            "Action": "s3:PutObject",
+            "Resource": "arn:aws:s3:::acme-ci-artifacts/*"
+          },
+          {
+            "Sid": "DeployServices",
+            "Effect": "Allow",
+            "Action": "ecs:*",
+            "Resource": "*"
+          }
+        ]
+      }
+    },
+    {
+      "name": "legacy-admin",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          { "Effect": "Allow", "Action": "*", "Resource": "*" }
+        ]
+      }
+    },
+    {
+      "name": "readonly-ops",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": ["ec2:Describe*", "s3:List*", "cloudwatch:Get*"],
+            "Resource": "*"
+          }
+        ]
+      }
+    },
+    {
+      "name": "data-team",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": ["s3:*", "athena:*"],
+            "Resource": ["arn:aws:s3:::acme-data-lake", "*"]
+          },
+          {
+            "Effect": "Allow",
+            "Action": "glue:*",
+            "Resource": "arn:aws:glue:eu-west-1:111122223333:catalog"
+          }
+        ]
+      }
+    },
+    {
+      "name": "protect-trail",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Deny",
+            "Action": ["cloudtrail:*"],
+            "Resource": "*"
+          }
+        ]
+      }
+    }
+  ],
+  "buckets": [
+    {
+      "name": "acme-website",
+      "blockPublicAccess": false,
+      "policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "PublicRead",
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::acme-website/*"
+          }
+        ]
+      }
+    },
+    {
+      "name": "acme-db-backups",
+      "blockPublicAccess": true,
+      "policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "HTTPSOnly",
+            "Effect": "Deny",
+            "Principal": "*",
+            "Action": "s3:*",
+            "Resource": ["arn:aws:s3:::acme-db-backups", "arn:aws:s3:::acme-db-backups/*"],
+            "Condition": { "Bool": { "aws:SecureTransport": "false" } }
+          }
+        ]
+      }
+    },
+    {
+      "name": "acme-partner-drop",
+      "blockPublicAccess": false,
+      "policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "PartnerUploads",
+            "Effect": "Allow",
+            "Principal": { "AWS": "arn:aws:iam::444455556666:root" },
+            "Action": "s3:PutObject",
+            "Resource": "arn:aws:s3:::acme-partner-drop/incoming/*"
+          }
+        ]
+      }
+    },
+    {
+      "name": "acme-office-reports",
+      "blockPublicAccess": false,
+      "policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "OfficeOnly",
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::acme-office-reports/*",
+            "Condition": { "IpAddress": { "aws:SourceIp": "203.0.113.0/24" } }
+          }
+        ]
+      }
+    },
+    {
+      "name": "acme-old-assets",
+      "blockPublicAccess": false,
+      "policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": { "AWS": "*" },
+            "Action": ["s3:GetObject", "s3:ListBucket"],
+            "Resource": ["arn:aws:s3:::acme-old-assets", "arn:aws:s3:::acme-old-assets/*"]
+          }
+        ]
+      }
+    },
+    {
+      "name": "acme-logs",
+      "blockPublicAccess": true,
+      "policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::acme-logs/*"
+          }
+        ]
+      }
+    }
+  ],
+  "accessKeys": [
+    {
+      "user": "alice",
+      "id": "AKIAALICE00EXAMPLE01",
+      "status": "Active",
+      "created": "2026-08-01T08:30:00Z",
+      "lastUsed": "2026-10-12T17:04:00Z"
+    },
+    {
+      "user": "ci-deployer",
+      "id": "AKIACIDEPLOY0EXAMPLE",
+      "status": "Active",
+      "created": "2025-03-02T10:00:00Z",
+      "lastUsed": "2026-10-13T06:12:00Z"
+    },
+    {
+      "user": "bob",
+      "id": "AKIAJBOB0000EXAMPLE1",
+      "status": "Inactive",
+      "created": "2024-01-15T09:00:00Z"
+    },
+    {
+      "user": "reports-bot",
+      "id": "AKIAREPORTSBOTEXAMPL",
+      "status": "Active",
+      "created": "2026-09-20T12:00:00Z"
+    },
+    {
+      "user": "old-jenkins",
+      "id": "AKIAOLDJENKINSEXAMPL",
+      "status": "Active",
+      "created": "2024-11-05T15:45:00Z"
+    }
+  ]
+}

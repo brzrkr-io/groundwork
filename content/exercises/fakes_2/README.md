@@ -5,7 +5,7 @@ registry, waiting for a load balancer to answer. A good retry waits longer
 after each failure. Testing that for real would make your test sit and wait,
 so this time you fake time itself.
 
-**New here:** faking time, counting calls with a closure, comparing `time.Duration` slices.
+**New here:** faking time, `time.Duration` and `time.Sleep` basics, counting calls with a closure.
 
 ## Learn
 
@@ -49,6 +49,21 @@ ping()
 > The counter must be declared *before* the closure so the closure can see
 > it. The names `pings` and `ping` are your choice.
 
+### Durations
+
+The `time` package measures lengths of time with the type `time.Duration`,
+which you saw printed as `30s` in *Type switches: flatten a nested config*.
+It has constants for the units, and you multiply them by a number:
+
+```go
+var d time.Duration = 3 * time.Second // three seconds; prints as 3s
+half := 500 * time.Millisecond        // prints as 500ms
+time.Sleep(half)                       // pauses the program for half a second
+```
+
+Dates, clocks and parsing get a full exercise later, in *Time and durations:
+cert expiry, uptime, maintenance windows*. Here you only need durations.
+
 ### Comparing durations
 
 As in *Subtests and helpers*, compare slices with `slices.Equal`. It works on
@@ -60,8 +75,6 @@ if !slices.Equal(got, want) {
 	t.Errorf("waited %v, want %v", got, want) // prints [500ms 1m0s]
 }
 ```
-
-`time.Second` is one second; `3 * time.Second` is three.
 
 Grading works as in *Your first test*: `TestGrader` runs your two tests
 against *mutants* of `Retry` and names any bug they missed.

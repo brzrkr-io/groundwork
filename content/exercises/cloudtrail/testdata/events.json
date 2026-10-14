@@ -1,0 +1,803 @@
+{
+  "Records": [
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T13:47:30Z",
+      "eventSource": "s3.amazonaws.com",
+      "eventName": "ListBuckets",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "198.51.100.77",
+      "userAgent": "Boto3/1.34.0 md/Botocore#1.34.0 ua/2.0 os/linux#5.15.0 md/arch#x86_64 lang/python#3.11.6 Botocore/1.34.0",
+      "requestParameters": {
+        "Host": "s3.amazonaws.com"
+      },
+      "responseElements": null,
+      "requestID": "bd9c66b3-ad3c-2d6d-1a3d-1fa7bc8960a9",
+      "eventID": "972a8469-1641-9f82-8b9d-2434e465e150",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T10:30:13Z",
+      "eventSource": "ecr.amazonaws.com",
+      "eventName": "GetAuthorizationToken",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.10",
+      "userAgent": "aws-cli/2.17.20 md/awscrt#0.20.11 ua/2.0 os/linux#6.5.0 md/arch#x86_64 lang/python#3.11.9 exec-env/GitHub-Actions",
+      "requestParameters": null,
+      "responseElements": null,
+      "requestID": "405cacec-8774-09a9-77d2-1e02ff01cf99",
+      "eventID": "f143262f-dc5c-0eed-8da0-365bf89897b9",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "AssumedRole",
+        "principalId": "AROAJQABLZS4A3QDU576Q:bob",
+        "arn": "arn:aws:sts::111122223333:assumed-role/ops/bob",
+        "accountId": "111122223333",
+        "accessKeyId": "ASIAQ7LMNXA2REXAMPLE"
+      },
+      "eventTime": "2026-10-02T12:01:37Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "StopInstances",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.45",
+      "userAgent": "aws-cli/2.17.20 md/awscrt#0.20.11 ua/2.0 os/macos#23.5.0 md/arch#arm64 lang/python#3.11.9",
+      "requestParameters": {
+        "instancesSet": {
+          "items": [
+            {
+              "instanceId": "i-0123456789abcdef0"
+            }
+          ]
+        }
+      },
+      "responseElements": null,
+      "requestID": "aefcfad8-efc8-9849-b3aa-7efe4458a885",
+      "eventID": "a28defe3-9bf0-0273-1247-6f57a5e5a5ab",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T13:47:12Z",
+      "eventSource": "sts.amazonaws.com",
+      "eventName": "GetCallerIdentity",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "198.51.100.77",
+      "userAgent": "Boto3/1.34.0 md/Botocore#1.34.0 ua/2.0 os/linux#5.15.0 md/arch#x86_64 lang/python#3.11.6 Botocore/1.34.0",
+      "requestParameters": null,
+      "responseElements": null,
+      "requestID": "bdd640fb-0667-1ad1-1c80-317fa3b1799d",
+      "eventID": "23b8c1e9-3924-56de-3eb1-3b9046685257",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T10:31:50Z",
+      "eventSource": "ecs.amazonaws.com",
+      "eventName": "UpdateService",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.10",
+      "userAgent": "aws-cli/2.17.20 md/awscrt#0.20.11 ua/2.0 os/linux#6.5.0 md/arch#x86_64 lang/python#3.11.9 exec-env/GitHub-Actions",
+      "requestParameters": {
+        "cluster": "prod",
+        "service": "web",
+        "taskDefinition": "web:42"
+      },
+      "responseElements": null,
+      "requestID": "5715bd6f-a416-1293-c4c2-e2e3444ea7c8",
+      "eventID": "287d06ca-6f4c-c69a-4b22-d3081c8eaee9",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDACKCEVSQ6C2EXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/alice",
+        "accountId": "111122223333",
+        "accessKeyId": "ASIAY34FZKBOKEXAMPLE",
+        "userName": "alice"
+      },
+      "eventTime": "2026-10-02T14:31:48Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "TerminateInstances",
+      "awsRegion": "ap-southeast-1",
+      "sourceIPAddress": "192.0.2.44",
+      "userAgent": "AWS Internal",
+      "requestParameters": {
+        "instancesSet": {
+          "items": [
+            {
+              "instanceId": "i-0a1b2c3d4e5f60001"
+            },
+            {
+              "instanceId": "i-0c3d4e5f6a7b80003"
+            }
+          ]
+        }
+      },
+      "responseElements": null,
+      "requestID": "10f1bc81-448a-aa9e-66b2-bc5b50c187fc",
+      "eventID": "9132b63e-f162-87e4-e9c3-49e03602f8ac",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T13:50:08Z",
+      "eventSource": "iam.amazonaws.com",
+      "eventName": "CreateUser",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "198.51.100.77",
+      "userAgent": "Boto3/1.34.0 md/Botocore#1.34.0 ua/2.0 os/linux#5.15.0 md/arch#x86_64 lang/python#3.11.6 Botocore/1.34.0",
+      "errorCode": "AccessDenied",
+      "errorMessage": "User: arn:aws:iam::111122223333:user/ci-deployer is not authorized to perform: iam:CreateUser on resource: arn:aws:iam::111122223333:user/backup-admin because no identity-based policy allows the iam:CreateUser action",
+      "requestParameters": {
+        "userName": "backup-admin"
+      },
+      "responseElements": null,
+      "requestID": "1a2a73ed-562b-0f79-c374-59eef50bea63",
+      "eventID": "5be6128e-18c2-6797-6142-ea7d17be3111",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAI44QH8DHBEXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T14:03:05Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "RunInstances",
+      "awsRegion": "ap-southeast-1",
+      "sourceIPAddress": "203.0.113.200",
+      "userAgent": "Boto3/1.34.0 md/Botocore#1.34.0 ua/2.0 os/linux#5.15.0 md/arch#x86_64 lang/python#3.11.6 Botocore/1.34.0",
+      "requestParameters": {
+        "instanceType": "c5.24xlarge",
+        "minCount": 10,
+        "maxCount": 10
+      },
+      "responseElements": {
+        "instancesSet": {
+          "items": [
+            {
+              "instanceId": "i-0c3d4e5f6a7b80003"
+            }
+          ]
+        }
+      },
+      "requestID": "a9488d99-0bbb-2599-11ce-5dd2b45ed1f0",
+      "eventID": "fc377a4c-4a15-544d-c5e7-ce8a3a578a8e",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDACKCEVSQ6C2EXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/alice",
+        "accountId": "111122223333",
+        "accessKeyId": "ASIAY34FZKBOKEXAMPLE",
+        "userName": "alice"
+      },
+      "eventTime": "2026-10-02T14:33:10Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "TerminateInstances",
+      "awsRegion": "sa-east-1",
+      "sourceIPAddress": "192.0.2.44",
+      "userAgent": "AWS Internal",
+      "requestParameters": {
+        "instancesSet": {
+          "items": [
+            {
+              "instanceId": "i-0f9e8d7c6b5a40002"
+            }
+          ]
+        }
+      },
+      "responseElements": null,
+      "requestID": "366eb16f-508e-bad7-b7c9-3acfe059a0ee",
+      "eventID": "e27a984d-6548-21d0-7fcd-9eb1a7cad415",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "AssumedRole",
+        "principalId": "AROAJQABLZS4A3QDU576Q:bob",
+        "arn": "arn:aws:sts::111122223333:assumed-role/ops/bob",
+        "accountId": "111122223333",
+        "accessKeyId": "ASIAQ7LMNXA2REXAMPLE"
+      },
+      "eventTime": "2026-10-01T15:40:22Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "StartInstances",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.45",
+      "userAgent": "aws-cli/2.17.20 md/awscrt#0.20.11 ua/2.0 os/macos#23.5.0 md/arch#arm64 lang/python#3.11.9",
+      "requestParameters": {
+        "instancesSet": {
+          "items": [
+            {
+              "instanceId": "i-0123456789abcdef0"
+            }
+          ]
+        }
+      },
+      "responseElements": null,
+      "requestID": "ddd1dfb2-3b98-2ef8-daf6-1a26146d3f31",
+      "eventID": "7412b293-4729-4739-614f-f3d719db3ad0",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T13:49:41Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "RunInstances",
+      "awsRegion": "sa-east-1",
+      "sourceIPAddress": "198.51.100.77",
+      "userAgent": "Boto3/1.34.0 md/Botocore#1.34.0 ua/2.0 os/linux#5.15.0 md/arch#x86_64 lang/python#3.11.6 Botocore/1.34.0",
+      "requestParameters": {
+        "instanceType": "c5.24xlarge",
+        "minCount": 10,
+        "maxCount": 10
+      },
+      "responseElements": {
+        "instancesSet": {
+          "items": [
+            {
+              "instanceId": "i-0f9e8d7c6b5a40002"
+            }
+          ]
+        }
+      },
+      "requestID": "6c307511-b2b9-437a-28df-6ec4ce4a2bbd",
+      "eventID": "371ecd7b-27cd-8130-4722-9389571aa876",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDACKCEVSQ6C2EXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/alice",
+        "accountId": "111122223333",
+        "accessKeyId": "ASIAY34FZKBOKEXAMPLE",
+        "userName": "alice"
+      },
+      "eventTime": "2026-10-02T14:22:05Z",
+      "eventSource": "iam.amazonaws.com",
+      "eventName": "UpdateAccessKey",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "192.0.2.44",
+      "userAgent": "AWS Internal",
+      "requestParameters": {
+        "userName": "ci-deployer",
+        "accessKeyId": "AKIAI44QH8DHBEXAMPLE",
+        "status": "Inactive"
+      },
+      "responseElements": null,
+      "requestID": "0e51f30d-c6a7-ee39-c4b0-32ccd7c524a5",
+      "eventID": "ce177b4e-0837-b8a3-d261-a7ab3aa2e4f9",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T13:50:31Z",
+      "eventSource": "iam.amazonaws.com",
+      "eventName": "CreateAccessKey",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "198.51.100.77",
+      "userAgent": "Boto3/1.34.0 md/Botocore#1.34.0 ua/2.0 os/linux#5.15.0 md/arch#x86_64 lang/python#3.11.6 Botocore/1.34.0",
+      "requestParameters": {
+        "userName": "ci-deployer"
+      },
+      "responseElements": {
+        "accessKey": {
+          "accessKeyId": "AKIAI44QH8DHBEXAMPLE",
+          "status": "Active",
+          "userName": "ci-deployer",
+          "createDate": "Oct 2, 2026 1:50:31 PM"
+        }
+      },
+      "requestID": "43b7a3a6-9a8d-ca03-580d-7b71d8f56413",
+      "eventID": "759cde66-bacf-b3d0-0b1f-9163ce9ff57f",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDACKCEVSQ6C2EXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/alice",
+        "accountId": "111122223333",
+        "accessKeyId": "ASIAY34FZKBOKEXAMPLE",
+        "userName": "alice"
+      },
+      "eventTime": "2026-10-02T14:20:31Z",
+      "eventSource": "iam.amazonaws.com",
+      "eventName": "UpdateAccessKey",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "192.0.2.44",
+      "userAgent": "AWS Internal",
+      "requestParameters": {
+        "userName": "ci-deployer",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "status": "Inactive"
+      },
+      "responseElements": null,
+      "requestID": "b02b61c4-a3d7-0628-ece6-6fa2fd5166e6",
+      "eventID": "5304317f-af42-e12f-3838-b3268e944239",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-01T09:12:03Z",
+      "eventSource": "sts.amazonaws.com",
+      "eventName": "GetCallerIdentity",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.10",
+      "userAgent": "aws-cli/2.17.20 md/awscrt#0.20.11 ua/2.0 os/linux#6.5.0 md/arch#x86_64 lang/python#3.11.9 exec-env/GitHub-Actions",
+      "requestParameters": null,
+      "responseElements": null,
+      "requestID": "24933b83-7577-50a9-a491-f0b2ea1fca65",
+      "eventID": "beb79919-3f22-faf8-23be-d01d43cf2fde",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T10:31:48Z",
+      "eventSource": "ecs.amazonaws.com",
+      "eventName": "RegisterTaskDefinition",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.10",
+      "userAgent": "aws-cli/2.17.20 md/awscrt#0.20.11 ua/2.0 os/linux#6.5.0 md/arch#x86_64 lang/python#3.11.9 exec-env/GitHub-Actions",
+      "requestParameters": {
+        "family": "web"
+      },
+      "responseElements": {
+        "taskDefinition": {
+          "taskDefinitionArn": "arn:aws:ecs:eu-west-1:111122223333:task-definition/web:42"
+        }
+      },
+      "requestID": "1d53434b-b881-39b9-ae27-0da702f06b90",
+      "eventID": "c0398710-8976-e334-e281-7efdae849217",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T14:05:47Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "DescribeInstances",
+      "awsRegion": "sa-east-1",
+      "sourceIPAddress": "203.0.113.200",
+      "userAgent": "Boto3/1.34.0 md/Botocore#1.34.0 ua/2.0 os/linux#5.15.0 md/arch#x86_64 lang/python#3.11.6 Botocore/1.34.0",
+      "requestParameters": {
+        "instancesSet": {},
+        "filterSet": {}
+      },
+      "responseElements": null,
+      "requestID": "ec1b8ca1-f91e-1d4c-1ff4-9b7889463e85",
+      "eventID": "4b0dbb41-8d52-88f1-142c-3fe860e7a113",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDACKCEVSQ6C2EXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/alice",
+        "accountId": "111122223333",
+        "accessKeyId": "ASIAY34FZKBOKEXAMPLE",
+        "userName": "alice"
+      },
+      "eventTime": "2026-10-02T13:55:12Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "DescribeInstances",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.44",
+      "userAgent": "AWS Internal",
+      "requestParameters": {
+        "instancesSet": {},
+        "filterSet": {}
+      },
+      "responseElements": null,
+      "requestID": "3eabedcb-baa8-0dd4-88bd-64072bcfbe01",
+      "eventID": "451b4cf3-6123-fdf7-7656-af7229d4beef",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T13:48:02Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "DescribeRegions",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "198.51.100.77",
+      "userAgent": "Boto3/1.34.0 md/Botocore#1.34.0 ua/2.0 os/linux#5.15.0 md/arch#x86_64 lang/python#3.11.6 Botocore/1.34.0",
+      "requestParameters": {
+        "regionSet": {}
+      },
+      "responseElements": null,
+      "requestID": "b74d0fb1-32e7-0629-8fad-c1a606cb0fb3",
+      "eventID": "6b65a6a4-8b81-48f6-b38a-088ca65ed389",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-01T09:13:42Z",
+      "eventSource": "ecs.amazonaws.com",
+      "eventName": "UpdateService",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.10",
+      "userAgent": "aws-cli/2.17.20 md/awscrt#0.20.11 ua/2.0 os/linux#6.5.0 md/arch#x86_64 lang/python#3.11.9 exec-env/GitHub-Actions",
+      "requestParameters": {
+        "cluster": "prod",
+        "service": "web",
+        "taskDefinition": "web:41"
+      },
+      "responseElements": null,
+      "requestID": "dc713d96-0c0f-d195-c17a-f08a1745d6d8",
+      "eventID": "28f49481-a0a0-4dc4-2720-9bdf1c11f735",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAI44QH8DHBEXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T14:02:19Z",
+      "eventSource": "sts.amazonaws.com",
+      "eventName": "GetCallerIdentity",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "203.0.113.200",
+      "userAgent": "Boto3/1.34.0 md/Botocore#1.34.0 ua/2.0 os/linux#5.15.0 md/arch#x86_64 lang/python#3.11.6 Botocore/1.34.0",
+      "requestParameters": null,
+      "responseElements": null,
+      "requestID": "e2acf72f-9e57-4f7a-a0ee-89aed453dd32",
+      "eventID": "3139d32c-93cd-59bf-5c94-1cf0dc98d2c1",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-01T09:13:40Z",
+      "eventSource": "ecs.amazonaws.com",
+      "eventName": "RegisterTaskDefinition",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.10",
+      "userAgent": "aws-cli/2.17.20 md/awscrt#0.20.11 ua/2.0 os/linux#6.5.0 md/arch#x86_64 lang/python#3.11.9 exec-env/GitHub-Actions",
+      "requestParameters": {
+        "family": "web"
+      },
+      "responseElements": {
+        "taskDefinition": {
+          "taskDefinitionArn": "arn:aws:ecs:eu-west-1:111122223333:task-definition/web:41"
+        }
+      },
+      "requestID": "ff50bde4-3825-67b8-5cab-cc97663f1c97",
+      "eventID": "7e570ddf-8270-50a8-2369-b584ff5e9ff0",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-01T09:12:05Z",
+      "eventSource": "ecr.amazonaws.com",
+      "eventName": "GetAuthorizationToken",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.10",
+      "userAgent": "aws-cli/2.17.20 md/awscrt#0.20.11 ua/2.0 os/linux#6.5.0 md/arch#x86_64 lang/python#3.11.9 exec-env/GitHub-Actions",
+      "requestParameters": null,
+      "responseElements": null,
+      "requestID": "bf3c4c06-4343-08bc-89fa-6a688fb5d27b",
+      "eventID": "956269f0-e5d7-b875-6dad-d6c795a76d79",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDACKCEVSQ6C2EXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/alice",
+        "accountId": "111122223333",
+        "accessKeyId": "ASIAY34FZKBOKEXAMPLE",
+        "userName": "alice"
+      },
+      "eventTime": "2026-10-02T11:15:04Z",
+      "eventSource": "s3.amazonaws.com",
+      "eventName": "CreateBucket",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.44",
+      "userAgent": "AWS Internal",
+      "requestParameters": {
+        "bucketName": "acme-q4-reports"
+      },
+      "responseElements": null,
+      "requestID": "29a3b2e9-5d65-a441-d588-42dea2bc372f",
+      "eventID": "ab9099a4-35a2-40ae-5af3-05535ec42e08",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T13:49:15Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "RunInstances",
+      "awsRegion": "ap-southeast-1",
+      "sourceIPAddress": "198.51.100.77",
+      "userAgent": "Boto3/1.34.0 md/Botocore#1.34.0 ua/2.0 os/linux#5.15.0 md/arch#x86_64 lang/python#3.11.6 Botocore/1.34.0",
+      "requestParameters": {
+        "instanceType": "c5.24xlarge",
+        "minCount": 10,
+        "maxCount": 10
+      },
+      "responseElements": {
+        "instancesSet": {
+          "items": [
+            {
+              "instanceId": "i-0a1b2c3d4e5f60001"
+            }
+          ]
+        }
+      },
+      "requestID": "47378190-96da-1dac-72ff-5d2a386ecbe0",
+      "eventID": "c241330b-01a9-e71f-de8a-774bcf36d58b",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T10:30:11Z",
+      "eventSource": "sts.amazonaws.com",
+      "eventName": "GetCallerIdentity",
+      "awsRegion": "eu-west-1",
+      "sourceIPAddress": "192.0.2.10",
+      "userAgent": "aws-cli/2.17.20 md/awscrt#0.20.11 ua/2.0 os/linux#6.5.0 md/arch#x86_64 lang/python#3.11.9 exec-env/GitHub-Actions",
+      "requestParameters": null,
+      "responseElements": null,
+      "requestID": "98ae4334-6c12-ace8-ae34-0454cac5b68c",
+      "eventID": "988c24c9-61b1-cd22-6280-1c4510435a10",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    },
+    {
+      "eventVersion": "1.09",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAJ45Q7YFFAREXAMPLE",
+        "arn": "arn:aws:iam::111122223333:user/ci-deployer",
+        "accountId": "111122223333",
+        "accessKeyId": "AKIAIOSFODNN7EXAMPLE",
+        "userName": "ci-deployer"
+      },
+      "eventTime": "2026-10-02T13:47:51Z",
+      "eventSource": "organizations.amazonaws.com",
+      "eventName": "DescribeOrganization",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "198.51.100.77",
+      "userAgent": "Boto3/1.34.0 md/Botocore#1.34.0 ua/2.0 os/linux#5.15.0 md/arch#x86_64 lang/python#3.11.6 Botocore/1.34.0",
+      "errorCode": "AccessDeniedException",
+      "errorMessage": "You don't have permissions to access this resource.",
+      "requestParameters": null,
+      "responseElements": null,
+      "requestID": "17fc695a-07a0-ca6e-0822-e8f36c031199",
+      "eventID": "9a1de644-815e-f6d1-3b8f-aa1837f8a88b",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "111122223333"
+    }
+  ]
+}

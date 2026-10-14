@@ -73,8 +73,8 @@ cd /srv/app && echo "in the app folder" || echo "no app folder"
 > **Why is it written like this?** **Bash requires** nothing special:
 > `&&` and `||` look only at the status of the command on their left.
 > **Convention:** `A && B || C` is fine when B is a simple `echo`, which
-> never fails. For anything bigger, use `if` (next exercise), because if B
-> fails, C runs too.
+> never fails. For anything bigger, use `if` (coming up in *if and test*),
+> because if B fails, C runs too.
 
 `set -e` stops a script when a command fails, **except** a command on the
 left of `&&` or `||`. Failure there is a question you asked, not an

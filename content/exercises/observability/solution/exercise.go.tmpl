@@ -1,0 +1,138 @@
+// Package observability is the Groundwork exercise "Observability: trace IDs through logs and calls".
+package observability
+
+import (
+	"context"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"strings"
+)
+
+// TraceContext is what a traceparent header carries: which trace a request
+// belongs to, and which span (call) sent it.
+type TraceContext struct {
+	TraceID  string // 32 lowercase hex characters, the same on every hop
+	ParentID string // 16 lowercase hex characters, new on every hop
+	Flags    string // 2 lowercase hex characters; "01" means sampled
+}
+
+// String formats tc as a traceparent header value:
+// 00-<trace id>-<parent id>-<flags>.
+func (tc TraceContext) String() string {
+	return "00-" + tc.TraceID + "-" + tc.ParentID + "-" + tc.Flags
+}
+
+// NewID reads exactly size bytes from random and returns them as lowercase
+// hex, 2*size characters long.
+func NewID(random io.Reader, size int) (string, error) {
+	b := make([]byte, size)
+	if _, err := io.ReadFull(random, b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// NewTrace starts a new trace: a random 16-byte trace ID, a random 8-byte
+// parent ID and the sampled flag. Production code passes crypto/rand.Reader
+// as random; tests pass bytes they chose.
+func NewTrace(random io.Reader) (TraceContext, error) {
+	traceID, err := NewID(random, 16)
+	if err != nil {
+		return TraceContext{}, err
+	}
+	parentID, err := NewID(random, 8)
+	if err != nil {
+		return TraceContext{}, err
+	}
+	return TraceContext{TraceID: traceID, ParentID: parentID, Flags: "01"}, nil
+}
+
+// isLowerHex reports whether s has only the characters 0-9 and a-f.
+func isLowerHex(s string) bool {
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdef", c) {
+			return false
+		}
+	}
+	return true
+}
+
+// ParseTraceparent parses and validates a W3C traceparent header value,
+// such as "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".
+func ParseTraceparent(header string) (TraceContext, error) {
+	parts := strings.Split(header, "-")
+	if len(parts) != 4 || parts[0] != "00" {
+		return TraceContext{}, fmt.Errorf("traceparent %q: want 00-<trace id>-<parent id>-<flags>", header)
+	}
+	tc := TraceContext{TraceID: parts[1], ParentID: parts[2], Flags: parts[3]}
+	if len(tc.Flags) != 2 || !isLowerHex(tc.Flags) {
+		return TraceContext{}, fmt.Errorf("traceparent %q: flags must be 2 lowercase hex characters", header)
+	}
+	if len(tc.TraceID) != 32 || !isLowerHex(tc.TraceID) || strings.Trim(tc.TraceID, "0") == "" {
+		return TraceContext{}, fmt.Errorf("traceparent %q: trace ID must be 32 lowercase hex characters, not all zeros", header)
+	}
+	if len(tc.ParentID) != 16 || !isLowerHex(tc.ParentID) || strings.Trim(tc.ParentID, "0") == "" {
+		return TraceContext{}, fmt.Errorf("traceparent %q: parent ID must be 16 lowercase hex characters, not all zeros", header)
+	}
+	return tc, nil
+}
+
+// traceKey is the context key for a request's TraceContext. The type is
+// unexported, so no other package can read or overwrite the value by
+// accident.
+type traceKey struct{}
+
+// TraceFrom returns the TraceContext stored in ctx, and whether there was
+// one.
+func TraceFrom(ctx context.Context) (TraceContext, bool) {
+	tc, ok := ctx.Value(traceKey{}).(TraceContext)
+	return tc, ok
+}
+
+// Middleware wraps a handler with extra behaviour and returns the wrapped
+// handler.
+type Middleware func(http.Handler) http.Handler
+
+// Trace returns middleware that puts every request in a trace: it continues
+// the trace from a valid traceparent header or starts a new one, stores it
+// in the request's context, returns the trace ID in X-Trace-ID and logs one
+// line per request with the trace ID.
+func Trace(logger *slog.Logger, random io.Reader) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// A missing header is invalid too, so one check covers both.
+			tc, err := ParseTraceparent(r.Header.Get("traceparent"))
+			if err != nil {
+				tc, err = NewTrace(random)
+				if err != nil {
+					http.Error(w, "internal server error", http.StatusInternalServerError)
+					return
+				}
+			}
+			w.Header().Set("X-Trace-ID", tc.TraceID)
+			ctx := context.WithValue(r.Context(), traceKey{}, tc)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			logger.Info("request", "method", r.Method, "path", r.URL.Path, "trace_id", tc.TraceID)
+		})
+	}
+}
+
+// Inject sets the traceparent header on an outgoing request: the trace from
+// req's context, with a new parent ID read from random.
+func Inject(req *http.Request, random io.Reader) error {
+	tc, ok := TraceFrom(req.Context())
+	if !ok {
+		return errors.New("no trace in the request's context")
+	}
+	parentID, err := NewID(random, 8)
+	if err != nil {
+		return err
+	}
+	tc.ParentID = parentID // tc is a copy: the context keeps the old one
+	req.Header.Set("traceparent", tc.String())
+	return nil
+}

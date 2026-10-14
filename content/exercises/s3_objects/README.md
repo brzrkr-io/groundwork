@@ -8,11 +8,12 @@ checksum check, and list every config under a "folder".
 
 ## Learn
 
-### S3 in one minute
+### S3 recap
 
-*S3* (Simple Storage Service) stores files. A *bucket* is a named container,
-such as `ops-configs`. Inside it are *objects*: bytes plus a little metadata,
-found by a *key* like `checkout/prod.json`.
+As in *S3 bucket policies: is this bucket public?*: *S3* (Simple Storage
+Service) stores files. A *bucket* is a named container, such as
+`ops-configs`. Inside it are *objects*: bytes plus a little metadata, found
+by a *key* like `checkout/prod.json`.
 
 S3 has **no real folders**. `checkout/prod.json` is one key that contains a
 `/`. The part of a key you filter on is a *prefix*. The console's "Create

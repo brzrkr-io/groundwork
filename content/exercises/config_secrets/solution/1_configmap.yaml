@@ -1,0 +1,9 @@
+# Task 1: podinfo's settings, kept out of the image.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: shop
+data:
+  PODINFO_LEVEL: debug
+  PODINFO_UI_MESSAGE: hello from a ConfigMap

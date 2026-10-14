@@ -1,0 +1,14 @@
+# Task 3: select the Pods' real label, and send traffic to the port
+# podinfo listens on.
+apiVersion: v1
+kind: Service
+metadata:
+  name: notes
+  namespace: notes
+spec:
+  selector:
+    app: notes
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,16 @@
+# Task 3: the Service has endpoints, but connections still fail.
+# testdata/search_debug.txt has what kubectl and curl said.
+#
+# TODO(3): Fix the port the Service sends traffic to.
+apiVersion: v1
+kind: Service
+metadata:
+  name: search
+  namespace: shop
+spec:
+  selector:
+    app: search
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

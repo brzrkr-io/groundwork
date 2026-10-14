@@ -1,0 +1,25 @@
+# The cart Deployment that 2_cart_service.yaml should send traffic to.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart
+  namespace: shop
+  labels:
+    app: cart
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cart
+  template:
+    metadata:
+      labels:
+        app: cart
+        tier: backend
+    spec:
+      containers:
+        - name: cart
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          ports:
+            - name: http
+              containerPort: 9898

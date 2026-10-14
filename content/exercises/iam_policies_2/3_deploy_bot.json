@@ -1,0 +1,5 @@
+{
+  "Version": "2012-10-17",
+  "Id": "TODO(3): let the deploy bot start, stop and reboot eu-west-1 instances and describe them, only from the office, then delete this Id line",
+  "Statement": []
+}

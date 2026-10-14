@@ -1,0 +1,97 @@
+package deployments
+
+import (
+	"maps"
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+)
+
+func TestWebDeployment(t *testing.T) {
+	const file = "1_web.yaml"
+	d := readDeployment(t, file, "web")
+	checkReplicas(t, file, d, 3)
+	checkSelector(t, file, d, map[string]string{"app": "web"})
+	checkPodLabels(t, file, d, map[string]string{"app": "web"})
+}
+
+func TestAPIDeployment(t *testing.T) {
+	const file = "2_api.yaml"
+	d := readDeployment(t, file, "api")
+	checkSelector(t, file, d, map[string]string{"app": "api"})
+	checkPodLabels(t, file, d, map[string]string{"app": "api"})
+}
+
+func TestWorkerDeployment(t *testing.T) {
+	const file = "3_worker.yaml"
+	d := readDeployment(t, file, "worker")
+	checkReplicas(t, file, d, 4)
+	if got := d.Labels["team"]; got != "payments" {
+		t.Errorf("%s: the Deployment's label team is %q, want %q (in metadata.labels)", file, got, "payments")
+	}
+	if _, ok := d.Spec.Template.Labels["team"]; ok {
+		t.Errorf("%s: the Pod template has the label team; the task puts it on the Deployment only", file)
+	}
+	checkSelector(t, file, d, map[string]string{"app": "worker"})
+	checkPodLabels(t, file, d, map[string]string{"app": "worker", "track": "stable"})
+}
+
+// readDeployment reads file as a Deployment and checks its kind and name.
+func readDeployment(t *testing.T, file, name string) *appsv1.Deployment {
+	t.Helper()
+	var d appsv1.Deployment
+	readManifest(t, file, &d)
+	if d.APIVersion != "apps/v1" || d.Kind != "Deployment" {
+		t.Errorf("%s: apiVersion %q, kind %q, want apps/v1 and Deployment", file, d.APIVersion, d.Kind)
+	}
+	if d.Name != name {
+		t.Errorf("%s: metadata.name is %q, want %q", file, d.Name, name)
+	}
+	if len(d.Spec.Template.Spec.Containers) == 0 {
+		t.Errorf("%s: the Pod template has no containers; keep the one that was there", file)
+	}
+	return &d
+}
+
+func checkReplicas(t *testing.T, file string, d *appsv1.Deployment, want int32) {
+	t.Helper()
+	switch {
+	case d.Spec.Replicas == nil:
+		t.Errorf("%s: spec.replicas is not set (Kubernetes would use 1), want %d", file, want)
+	case *d.Spec.Replicas != want:
+		t.Errorf("%s: spec.replicas is %d, want %d", file, *d.Spec.Replicas, want)
+	}
+}
+
+// checkSelector checks that the selector's matchLabels are exactly want.
+func checkSelector(t *testing.T, file string, d *appsv1.Deployment, want map[string]string) {
+	t.Helper()
+	if d.Spec.Selector == nil {
+		t.Errorf("%s: spec.selector is missing, want matchLabels %v", file, want)
+		return
+	}
+	if !maps.Equal(d.Spec.Selector.MatchLabels, want) {
+		t.Errorf("%s: spec.selector.matchLabels is %v, want %v", file, d.Spec.Selector.MatchLabels, want)
+	}
+}
+
+// checkPodLabels checks that the Pod template carries every label in want,
+// and every label the selector asks for, as the API server does.
+func checkPodLabels(t *testing.T, file string, d *appsv1.Deployment, want map[string]string) {
+	t.Helper()
+	labels := d.Spec.Template.Labels
+	for key, value := range want {
+		if got, ok := labels[key]; !ok || got != value {
+			t.Errorf("%s: spec.template.metadata.labels is %v, want it to include %s: %s", file, labels, key, value)
+		}
+	}
+	if d.Spec.Selector == nil {
+		return
+	}
+	for key, value := range d.Spec.Selector.MatchLabels {
+		if labels[key] != value {
+			t.Errorf("%s: the selector asks for %s=%s, but the Pod template's labels are %v; "+
+				"the API server rejects this: `selector` does not match template `labels`", file, key, value, labels)
+		}
+	}
+}

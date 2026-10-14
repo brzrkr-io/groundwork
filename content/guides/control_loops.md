@@ -2,7 +2,7 @@
 
 **In one sentence:** in a declarative system you write down what you want, and a control loop keeps comparing that with what really exists and nudges reality until they match.
 
-**Why it matters:** Kubernetes, Terraform, Argo CD and Flux all work this way, and the controllers you write with client-go must too; once you think in loops, "why did my pod come back after I deleted it?" stops being a mystery.
+**Why it matters:** Kubernetes, Terraform, Argo CD and Flux all work this way, and the controllers you'll write with client-go in the next module must too; once you think in loops, "why did my pod come back after I deleted it?" stops being a mystery.
 
 **You'll learn:**
 
@@ -60,7 +60,7 @@ Now ask "what happens if...":
 
 The script only knows the world at the moment it runs. The Deployment is a standing order that something keeps enforcing. That "something" is a control loop.
 
-Terraform is declarative too: `.tf` files describe the infrastructure you want, and `terraform plan` works out the steps. The difference is that Terraform only acts when you run it. Kubernetes acts all the time.
+*Terraform*, a tool that creates cloud infrastructure (servers, networks, storage) from files you write, is declarative too: `.tf` files describe the infrastructure you want, and `terraform plan` works out the steps. The difference is that Terraform only acts when you run it. Kubernetes acts all the time.
 
 ## Desired state and actual state
 
@@ -215,18 +215,18 @@ So "done" in a declarative system means "status says it has converged", not "the
 
 ## Drift
 
-*Drift* is when actual state moves away from desired state without the desired state changing. Someone clicks in the AWS console, edits a security group by hand, or runs `kubectl edit` during an incident.
+*Drift* is when actual state moves away from desired state without the desired state changing. Someone clicks around in the cloud provider's web console, opens a firewall rule by hand, or runs `kubectl edit` during an incident.
 
 What happens next depends on the system:
 
 - **A continuous controller fixes it.** Start two extra `web` pods by hand and the ReplicaSet controller deletes the extras, like round 3 of the toy. But Kubernetes only defends the `spec` it holds: `kubectl scale` or `kubectl edit` changes that spec, so Kubernetes obeys the new value. Undoing that needs a loop that compares with git (GitOps, below).
 - **A run-on-demand tool reports it.** `terraform plan` refreshes what's really there, compares it with your files and shows the difference. Nothing changes until someone applies.
 
-*Drift detection* is that comparison on its own: list the differences and alert, without fixing. You'll build a tiny `terraform plan` for AWS in *Drift detection: a tiny terraform plan*. Part of doing it well is deciding what not to count, like tags AWS adds itself.
+*Drift detection* is that comparison on its own: list the differences and alert, without fixing. Once *Cloud fundamentals* has introduced AWS, you'll build a tiny `terraform plan` for it in *Drift detection: a tiny terraform plan*. Part of doing it well is deciding what not to count, like tags AWS adds itself.
 
 ## Kubernetes is a set of controllers
 
-Kubernetes isn't one big program that "runs your app". It's an API server that stores desired and actual state, plus many small controllers, each owning one kind of object.
+Kubernetes isn't one big program that "runs your app". It's an API server that stores desired and actual state, plus many small controllers, each owning one kind of object. The *Kubernetes from the user's side* guide named the parts; here is how they cooperate.
 
 ```text
  kubectl apply: Deployment "web", replicas 3, image web:1.8.2
@@ -251,7 +251,7 @@ This is also why deleting a pod "doesn't work": the ReplicaSet controller sees 2
 
 ## How a controller watches cheaply
 
-A controller that asked the API server for every pod, every second, would flatten a big cluster. Instead client-go gives you three pieces, which you'll use in the *Kubernetes with client-go* module:
+A controller that asked the API server for every pod, every second, would flatten a big cluster. Instead client-go gives you three pieces. This section is a preview: you'll build each one in the *Kubernetes with client-go* module, so skim it now and come back then.
 
 ```text
  API server
@@ -329,7 +329,7 @@ The catch is the same as any controller: a manual fix during an incident will be
 2. A controller misses a "pod deleted" event during a restart. Why doesn't a Kubernetes controller end up one pod short forever?
 3. You delete a pod that belongs to a Deployment and a new one appears within seconds. Which controller made it, and how do you really remove the pods?
 4. A teammate's reconcile does `pod.Labels["restarts"] = old + 1` each time it runs. What goes wrong?
-5. Someone changes an S3 bucket's policy in the AWS console. What will `terraform plan` show, and what would a GitOps-style continuous controller do instead?
+5. Someone changes a cloud storage bucket's access policy by hand in the provider's web console. What will `terraform plan` show, and what would a GitOps-style continuous controller do instead?
 6. What do a work queue's "dedup" and "requeue with backoff" each give a controller?
 7. Your controller's update to a Deployment fails with a Conflict error: "the object has been modified". What happened, and what should reconcile do?
 8. After `kubectl delete`, a custom resource has shown `Terminating` for an hour. What is the usual cause?

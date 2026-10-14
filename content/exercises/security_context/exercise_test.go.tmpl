@@ -1,0 +1,125 @@
+package security
+
+import (
+	"slices"
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+)
+
+func TestRunAsUser(t *testing.T) {
+	const file = "1_web.yaml"
+	pod, c := readDeployment(t, file, "web")
+	if nonRoot := effective(pod, c).RunAsNonRoot; nonRoot == nil || !*nonRoot {
+		t.Errorf("%s: runAsNonRoot is no longer true; keep it", file)
+	}
+	user := effective(pod, c).RunAsUser
+	switch {
+	case user == nil:
+		t.Errorf("%s: runAsUser is not set, so Kubernetes can't check that the image's user \"app\" isn't root; "+
+			"set it to that user's UID from testdata/passwd.txt", file)
+	case *user == 0:
+		t.Errorf("%s: runAsUser is 0, which is root; runAsNonRoot will refuse to start it", file)
+	}
+}
+
+func TestRestricted(t *testing.T) {
+	checkRestricted(t, "2_api.yaml", "api")
+}
+
+func TestWritableTmp(t *testing.T) {
+	const file = "3_upload.yaml"
+	pod, c := checkRestricted(t, file, "upload")
+	if ro := c.SecurityContext.ReadOnlyRootFilesystem; ro == nil || !*ro {
+		t.Errorf("%s: readOnlyRootFilesystem is no longer true; keep the image read-only", file)
+	}
+
+	var volume string
+	for _, v := range pod.Volumes {
+		if v.EmptyDir != nil {
+			volume = v.Name
+		}
+	}
+	if volume == "" {
+		t.Fatalf("%s: the Pod has no emptyDir volume, want one mounted at /tmp", file)
+	}
+	var mounted bool
+	for _, m := range c.VolumeMounts {
+		if m.Name == volume && m.MountPath == "/tmp" {
+			mounted = true
+			if m.ReadOnly {
+				t.Errorf("%s: /tmp is mounted readOnly, but the app must write there", file)
+			}
+		}
+	}
+	if !mounted {
+		t.Errorf("%s: the emptyDir volume %q isn't mounted at /tmp in the container", file, volume)
+	}
+}
+
+// readDeployment reads the Deployment name from file and returns its Pod
+// spec and its one container.
+func readDeployment(t *testing.T, file, name string) (*corev1.PodSpec, *corev1.Container) {
+	t.Helper()
+	var d appsv1.Deployment
+	readManifest(t, file, &d)
+	if d.Kind != "Deployment" || d.Name != name {
+		t.Fatalf("%s: kind %q, name %q, want the Deployment %s", file, d.Kind, d.Name, name)
+	}
+	pod := &d.Spec.Template.Spec
+	if len(pod.Containers) != 1 {
+		t.Fatalf("%s: the Pod template has %d containers, want 1", file, len(pod.Containers))
+	}
+	return pod, &pod.Containers[0]
+}
+
+// checkRestricted checks the rules of the restricted Pod Security Standard
+// that kubectl warned about, and returns the Pod spec and container.
+func checkRestricted(t *testing.T, file, name string) (*corev1.PodSpec, *corev1.Container) {
+	t.Helper()
+	pod, c := readDeployment(t, file, name)
+	eff := effective(pod, c)
+	if eff.RunAsNonRoot == nil || !*eff.RunAsNonRoot {
+		t.Errorf("%s: runAsNonRoot isn't true on the Pod or the container", file)
+	}
+	if eff.RunAsUser == nil || *eff.RunAsUser == 0 {
+		t.Errorf("%s: runAsUser isn't set to a non-root UID; podinfo's user \"app\" is UID 100", file)
+	}
+	if eff.SeccompProfile == nil || eff.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
+		t.Errorf("%s: seccompProfile.type isn't RuntimeDefault on the Pod or the container", file)
+	}
+
+	sc := c.SecurityContext
+	if sc == nil {
+		t.Fatalf("%s: the container has no securityContext; allowPrivilegeEscalation and capabilities are container-only fields", file)
+	}
+	if sc.AllowPrivilegeEscalation == nil || *sc.AllowPrivilegeEscalation {
+		t.Errorf("%s: the container's allowPrivilegeEscalation isn't false", file)
+	}
+	if sc.Capabilities == nil || !slices.Contains(sc.Capabilities.Drop, "ALL") {
+		t.Errorf("%s: the container's capabilities.drop doesn't contain \"ALL\"", file)
+	}
+	return pod, c
+}
+
+// effective merges the Pod-level and container-level settings the way
+// Kubernetes does: a field set on the container wins.
+func effective(pod *corev1.PodSpec, c *corev1.Container) corev1.SecurityContext {
+	var eff corev1.SecurityContext
+	if p := pod.SecurityContext; p != nil {
+		eff.RunAsNonRoot, eff.RunAsUser, eff.SeccompProfile = p.RunAsNonRoot, p.RunAsUser, p.SeccompProfile
+	}
+	if s := c.SecurityContext; s != nil {
+		if s.RunAsNonRoot != nil {
+			eff.RunAsNonRoot = s.RunAsNonRoot
+		}
+		if s.RunAsUser != nil {
+			eff.RunAsUser = s.RunAsUser
+		}
+		if s.SeccompProfile != nil {
+			eff.SeccompProfile = s.SeccompProfile
+		}
+	}
+	return eff
+}

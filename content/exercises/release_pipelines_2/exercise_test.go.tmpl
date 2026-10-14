@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// The helpers readWorkflow, triggers, runsOn, needs, findStep, findRun,
-// expr, eventNames and stepNames are in workflow_test.go.
+// The helpers readWorkflow, triggers, runsOn, needs, checkPins, findStep,
+// findRun, expr, eventNames and stepNames are in workflow_test.go.
 
 func TestSecretToken(t *testing.T) {
 	const file = "1_secrets.yml"
@@ -26,6 +26,7 @@ func TestSecretToken(t *testing.T) {
 	}
 
 	wf := readWorkflow(t, file)
+	checkPins(t, file)
 	const want = "${{ secrets.DEPLOY_TOKEN }}"
 	settings := tokenSettings(wf)
 	if len(settings) == 0 {
@@ -62,6 +63,7 @@ func TestSecretToken(t *testing.T) {
 func TestLeastPermissions(t *testing.T) {
 	const file = "2_permissions.yml"
 	wf := readWorkflow(t, file)
+	checkPins(t, file)
 	checkPermissions(t, file, "the workflow", wf.Permissions, map[string]string{"contents": "read"})
 
 	test := checkJob(t, file, wf, "test")
@@ -75,6 +77,7 @@ func TestLeastPermissions(t *testing.T) {
 func TestNoPullRequestDeploys(t *testing.T) {
 	const file = "3_pull_requests.yml"
 	wf := readWorkflow(t, file)
+	checkPins(t, file)
 	if got := eventNames(wf); !slices.Equal(got, []string{"pull_request", "push"}) {
 		t.Errorf("%s: on has the events %q, want push and pull_request; pull requests still need their tests", file, got)
 	}
@@ -120,6 +123,7 @@ func TestNoPullRequestDeploys(t *testing.T) {
 func TestDeployTestedImage(t *testing.T) {
 	const file = "4_latest.yml"
 	wf := readWorkflow(t, file)
+	checkPins(t, file)
 	var latest []string
 	for _, id := range slices.Sorted(maps.Keys(wf.Jobs)) {
 		for _, s := range wf.Jobs[id].Steps {

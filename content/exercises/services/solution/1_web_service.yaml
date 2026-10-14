@@ -1,0 +1,13 @@
+# Task 1: give the web Pods (deploy/web.yaml) one stable address.
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: shop
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

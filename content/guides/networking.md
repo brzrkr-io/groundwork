@@ -334,7 +334,8 @@ cache it. That's why "I changed the record, but half the users still hit
 the old server" happens: their resolvers keep the old answer until its TTL
 runs out. Before a migration, lower the TTL (say to 60 seconds) at least
 one old TTL ahead: if it was 86400 (a day), lower it a day early. Then the
-switch spreads within a minute.
+switch spreads within a minute. You'll check a migration like this in
+*DNS: TTLs and a migration check*.
 
 ### Check DNS early
 
@@ -343,6 +344,17 @@ everything. In Kubernetes, every Service gets a name like
 `payments.prod.svc.cluster.local`, answered by the cluster's DNS server
 (CoreDNS). When that struggles, every service that calls others by name
 breaks at once.
+
+**Three ways a lookup fails**, and each points somewhere different:
+
+| Answer | Means | Look at |
+|---|---|---|
+| *NXDOMAIN* | the name doesn't exist | the spelling, the record, the search domains |
+| *SERVFAIL* | the resolver couldn't get an answer | the resolver or the domain's servers |
+| timeout | nobody answered in time | the network path to the resolver |
+
+You'll tell these apart from Go, and with `dig`, in *DNS: lookups, timeouts
+and failure types*.
 
 ## HTTP: requests and responses
 
@@ -533,7 +545,8 @@ Walk up the layers. Each step rules out a whole class of problems.
 **1. DNS.** Does the name resolve, to the address you expect?
 
 ```bash
-dig +short api.example.com
+dig +short api.example.com     # just the addresses
+getent hosts api.example.com   # the way most programs ask
 ```
 
 No output means no answer. When resolution fails, `curl` says:
@@ -542,8 +555,42 @@ No output means no answer. When resolution fails, `curl` says:
 curl: (6) Could not resolve host: nosuchhost.invalid
 ```
 
-Check the spelling, the record, and which resolver you use (in a pod, read
-`/etc/resolv.conf`).
+`getent` follows the same path as your programs, `/etc/hosts` included;
+`dig` asks DNS only. If they disagree, look for a stale line in `/etc/hosts`.
+
+Plain `dig`, without `+short`, prints a header. Its `status:` is one of the
+answers from *Check DNS early*:
+
+```text
+;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 41257
+```
+
+A timeout prints no header: dig waits, then says `;; no servers could be
+reached`.
+
+**Which resolver, which name?** `/etc/resolv.conf` says. In a Kubernetes pod
+it looks like this:
+
+```text
+nameserver 10.96.0.10
+search default.svc.cluster.local svc.cluster.local cluster.local
+options ndots:5
+```
+
+- `nameserver` is the resolver to ask (here, the cluster's CoreDNS).
+- `search` lists *search domains*: suffixes tried on short names, so
+  `payments` finds `payments.default.svc.cluster.local`.
+- *ndots* sets when they're tried: a name with fewer dots than this (5 here)
+  tries every search domain first. A wrong search list is a classic NXDOMAIN.
+- A trailing dot, `api.example.com.`, marks a name as complete and skips the
+  search list.
+
+**Cached or current?** `dig @SERVER NAME` asks one server. Ask your resolver
+(`dig @10.96.0.10 api.example.com`) to see what clients get: maybe a cached
+copy, its TTL counting down. `dig +short NS example.com` lists the domain's
+*authoritative servers*, the source of truth. Ask one directly
+(`dig @ns-1234.awsdns-26.org api.example.com`) to see the record as it is now,
+with its full TTL.
 
 **2. Route, from the client.** Try a bare TCP connection with a 3-second
 limit:
@@ -621,6 +668,10 @@ broken" isn't.
    `InsecureSkipVerify: true`. Why is that wrong, and what's the right fix?
 7. Your client sends a POST that starts a deploy and gets back a 502. Should
    it retry automatically?
+8. A pod in the `default` namespace looks up `payments` and gets NXDOMAIN,
+   but `payments.prod.svc.cluster.local` resolves. Its `/etc/resolv.conf`
+   has `search default.svc.cluster.local svc.cluster.local cluster.local`
+   and `options ndots:5`. Why, and what name should the code use?
 
 ## Answers
 
@@ -647,6 +698,11 @@ broken" isn't.
    the app, but the app may already have started the deploy, so a retry
    could start a second one. Retry only requests that are safe to repeat,
    or check the deploy's state first.
+8. `payments` has fewer than 5 dots, so the resolver adds each search domain
+   in turn. The first try is `payments.default.svc.cluster.local`, and none
+   of the suffixes adds the `prod` namespace, so every try is NXDOMAIN. Use
+   `payments.prod` (the search list then finds
+   `payments.prod.svc.cluster.local`) or the full name.
 
 ## Key terms
 
@@ -666,6 +722,11 @@ broken" isn't.
 | DNS | the system that maps names to addresses |
 | resolver | the server that looks names up and caches answers |
 | TTL | how many seconds a DNS answer may be cached |
+| search domain | a suffix from `/etc/resolv.conf` tried on short names |
+| ndots | names with fewer dots than this try the search domains first |
+| authoritative server | a domain's own name server, the source of truth for its records |
+| NXDOMAIN | the DNS answer "this name doesn't exist" |
+| SERVFAIL | the DNS answer "the resolver couldn't get an answer" |
 | HTTP | the request/response protocol of APIs and the web |
 | status code | the 3-digit result of an HTTP request |
 | TLS | encryption plus server identity (the S in HTTPS) |

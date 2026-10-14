@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Task 1: Make the release folder
+#
+# Create the folder releases/v2/config (and every folder above it), then
+# copy app/config.yaml into it.
+#
+# This script runs inside the sandbox: cd sandbox && bash ../1_make_release.sh
+set -euo pipefail
+
+# TODO(1): make releases/v2/config, then copy app/config.yaml into it.

@@ -16,7 +16,7 @@
 
 Run `docker run nginx` on a Linux server, then `ps aux` on the server itself. nginx is right there, with an ordinary PID on the host. There's no hidden machine: a container is just processes.
 
-Two Linux kernel features fence them in (you'll meet them again in *The operating system for programmers*):
+Two Linux kernel features fence them in (you met them in *The operating system for programmers*):
 
 | Feature | Controls | Example |
 |---|---|---|
@@ -69,7 +69,7 @@ CMD ["statusd"]
 
 **ENTRYPOINT is the program, CMD is the default arguments.** With both lines from the table, the container runs `/statusd --port=8080`, and `docker run statusd:1.4.2 --port=9090` replaces only the CMD part.
 
-**How a container is stopped.** `docker stop` and Kubernetes send *signals*, short messages the kernel delivers to a process. SIGTERM means "please stop" and the program can react. SIGKILL, sent when SIGTERM is ignored too long (30 seconds by default in Kubernetes), can't be caught. A process killed by signal n exits with 128 + n, so SIGKILL (9) shows as **137**.
+**How a container is stopped.** `docker stop` and Kubernetes send the *signals* you handled in *Signals: graceful stop for a rolling drain*. SIGTERM means "please stop" and the program can react. SIGKILL, sent when SIGTERM is ignored too long (10 seconds for `docker stop`, 30 by default in Kubernetes), can't be caught. A process killed by signal n exits with 128 + n, so SIGKILL (9) shows as **137**.
 
 Signals go to the container's *PID 1*, its first process. ENTRYPOINT and CMD each come in two forms, and the form decides what PID 1 is:
 
@@ -80,7 +80,7 @@ Signals go to the container's *PID 1*, its first process. ENTRYPOINT and CMD eac
 
 In shell form, the shell doesn't pass SIGTERM on to your service. The grace period runs out, SIGKILL ends it mid-request, and every rollout shows exit code 137. **Use exec form.** Images without a shell, like distroless, can't run shell form at all.
 
-**PID 1 is special:** the kernel won't apply the default "die on SIGTERM" to it. Go's runtime handles SIGTERM itself, so a Go binary exits; finishing in-flight requests first is code you'll write in *Signals: graceful stop for a rolling drain*.
+**PID 1 is special:** the kernel won't apply the default "die on SIGTERM" to it. Go's runtime handles SIGTERM itself, so a Go binary exits even as PID 1. Better still is the drain you wrote in *Graceful shutdown: drain in-flight requests*: `signal.NotifyContext` catches SIGTERM, and `Shutdown` finishes in-flight requests before the process exits. In a container, that code only runs if SIGTERM actually reaches it, which is why exec form matters.
 
 ## Build context and .dockerignore
 
@@ -224,6 +224,7 @@ Kubernetes runs images; it doesn't build them. A *Pod* is one or more containers
 - **`imagePullPolicy`**: `IfNotPresent` is the default for a version tag; `Always` for `latest` or no tag.
 - **`ImagePullBackOff`**: the pull failed: a typo, a tag never pushed, or missing registry credentials. Read the events in `kubectl describe pod`.
 - **Limits are cgroups.** Go over `memory: 128Mi` and the container is OOM-killed with exit code 137.
+- **Probes call your health handlers.** A liveness probe hits an endpoint like the `/livez` you wrote in *Health checks: liveness and readiness*, and a readiness probe hits `/readyz`; Kubernetes restarts a container that fails liveness and stops routing traffic to one that isn't ready.
 
 ## Common mistakes
 

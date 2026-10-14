@@ -1,0 +1,13 @@
+# Task 3: podinfo listens on 9898, the port named http, not 8080.
+apiVersion: v1
+kind: Service
+metadata:
+  name: search
+  namespace: shop
+spec:
+  selector:
+    app: search
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

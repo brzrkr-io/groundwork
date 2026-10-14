@@ -4,7 +4,7 @@ When an incident starts, the first questions are "how many errors?" and
 "which error keeps repeating?". You'll build a small tool that answers both
 from raw log lines.
 
-**New here:** nothing; practice (plus `slices.Contains`, explained below).
+**New here:** nothing; practice.
 
 ## Learn
 
@@ -18,8 +18,8 @@ from raw log lines.
 | count things | `counts[key]++` on a `map[string]int` | *Maps* |
 | a map's keys in order | `slices.Sorted(maps.Keys(m))` | *Sorting* |
 | sort with your own rule | `slices.SortFunc` + `cmp.Compare` | *Sorting* |
-| format a number into text | `fmt.Sprintf("%d", n)` | *Strings* |
-| check if a slice holds a value | `slices.Contains(s, v)` | new: `true` if any element `== v` |
+| format a number into text | `fmt.Sprintf("%d", n)` | *Formatting with fmt* |
+| check if a slice holds a value | `slices.Contains(s, v)` | *Slice gotchas: drain and promote without side effects* |
 
 Add each package (`"fmt"`, `"maps"`, `"slices"`, `"cmp"`) to the imports when
 you first use it.

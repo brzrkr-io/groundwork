@@ -64,8 +64,8 @@ jobs:
       matrix:
         go-version: ['1.26', '1.27']
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go-version }}
           cache-dependency-path: go.sum
@@ -76,13 +76,13 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27'
           cache-dependency-path: go.sum
       - run: go build -ldflags "-X main.version=${{ github.sha }}" -o bin/deployctl ./cmd/deployctl
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deployctl
           path: bin/deployctl
@@ -93,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: deployctl
       - run: chmod +x deployctl   # artifacts don't keep the executable bit
@@ -164,7 +164,9 @@ Version 1 is serving traffic; version 2 is in the registry. How do you swap them
 | *blue/green* | run a full new copy beside the old, then switch all traffic | everyone, until you switch back | seconds |
 | *canary* | send a slice, say 5%, to the new version; widen it if healthy | only the slice | seconds |
 
-Blue/green needs double capacity; canary needs good metrics and traffic splitting. During rolling and canary deploys, **two versions run at once** against the same database.
+Blue/green needs double capacity; canary needs good metrics and traffic splitting: the error and latency numbers you exported in *Prometheus-style metrics: counters and /metrics*, compared between old and new. During rolling and canary deploys, **two versions run at once** against the same database.
+
+A rolling update only loses no requests if every instance does the two things from *Production services*: it answers readiness only once it can serve (*Health checks: liveness and readiness*), and on SIGTERM it fails readiness and drains before exiting (*Graceful shutdown: drain in-flight requests*). You'll wire both into a container in *Practice: containerize and ship a service*.
 
 ### Rollbacks
 
@@ -225,7 +227,7 @@ Anyone can open a pull request on a public repository, and outsiders type its ti
 
 Your pipeline runs other people's code: actions, base images, Go modules.
 
-- **Pin actions to a full commit SHA.** A tag like `@v7` can be moved by the owner, or by whoever steals their account; `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1` can't. Dependabot keeps SHAs updated.
+- **Pin every action to a full commit SHA, with the release in a comment.** A tag like `@v7` can be moved by the owner, or by whoever steals their account: in March 2025 that happened to `tj-actions/changed-files`, and workflows that ran it by tag during the attack printed their secrets into the build logs. `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1` can't move. This course pins GitHub's own actions the same way, so there's one rule. Find a release's SHA with `git ls-remote --tags https://github.com/actions/checkout 'v7.0.1*'` (for an annotated tag, take the line ending in `^{}`), and let Dependabot update SHA and comment together.
 - **Produce an SBOM.** A *software bill of materials* lists every package in an image, so you can search for the next big vulnerability.
 - **Sign images and record provenance.** Tools like cosign sign the image digest, and the cluster can refuse unsigned images. *Provenance*, the core idea of the *SLSA* framework, is a signed record of which commit and workflow built an artifact.
 

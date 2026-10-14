@@ -1,0 +1,12 @@
+# Task 4: production runs the base in the namespace production, on the
+# tested podinfo 6.9.1, with 4 replicas.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+namespace: production
+images:
+  - name: ghcr.io/stefanprodan/podinfo
+    newTag: "6.9.1"
+patches:
+  - path: replicas.yaml

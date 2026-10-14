@@ -1,13 +1,15 @@
 # Shell variables
 
 Deploy scripts take a service name, an environment or a tag, and build
-commands from them. In bash those values live in *variables* and arrive as
-*arguments*. This exercise shows how to store them, use them, and keep them
-safe with quotes.
+commands from them. In bash those values live in *variables*, arrive as
+*arguments*, and travel to the programs you start through the
+*environment*. This exercise shows how to store them, use them, hand them
+on, and keep them safe with quotes.
 
 **New here:** `name=value`, `$name`, `${name}`, script arguments `$1` and
-`$2`, defaults with `${2:-...}`, command substitution `$(...)`, and what
-`set -euo pipefail` does.
+`$2`, defaults with `${2:-...}`, command substitution `$(...)`, what
+`set -euo pipefail` does, `export`, `NAME=value command`, `printenv` and
+`env`, `unset`, and unset versus empty.
 
 ## Learn
 
@@ -106,16 +108,58 @@ wc -l < regions.txt    # 3
 |---|---|
 | `-e` | stop the script as soon as a command fails |
 | `-u` | stop if you use a variable that was never set (catches typos) |
-| `-o pipefail` | a *pipeline* (commands chained together, as in *Grep and pipes*) fails if any command in it fails, not just the last |
+| `-o pipefail` | a *pipeline* (commands chained together with `\|`, which *Grep and pipes* covers) fails if any command in it fails, not just the last |
 
 So if you run `bash 1_announce.sh` with no arguments, it stops with
 `$1: unbound variable` instead of printing half a message. That's `-u`
 protecting you. `${1:-}` (an empty default) is the way to say "this argument
 is optional".
 
+### The environment: `export`
+
+A plain variable lives only in this shell (or this script). The programs
+it starts don't see it. The *environment* is a separate list of
+`NAME=value` pairs, and every program you start gets a **copy** of it.
+`export` puts a variable into the environment. `printenv NAME` is a
+separate program, so it shows only what was exported:
+
+```bash
+TF_WORKSPACE=prod
+printenv TF_WORKSPACE      # prints nothing: not exported
+export TF_WORKSPACE
+printenv TF_WORKSPACE      # prod
+export TF_LOG=info         # set and export in one go
+```
+
+`env` on its own lists the whole environment. For one command only, put
+the setting in front of it: `TF_LOG=debug terraform plan`. The variable
+isn't set in your shell afterwards.
+
+Because a child gets a copy, nothing it changes comes back. A script that
+runs `export TF_LOG=debug` can't change your terminal's `TF_LOG`.
+
+> **Why is it written like this?** **Bash requires** `export` (or the
+> `NAME=value command` form) for a child to see a variable. **Convention:**
+> UPPERCASE names for exported settings, lowercase for your own working
+> variables, so you can tell them apart at a glance.
+
+### Unset versus empty
+
+`unset NAME` removes a variable completely. `NAME=` keeps it, set to the
+empty string. Most tools treat both as "not given", and so does `:-`:
+
+| `TF_LOG` is... | `${TF_LOG:-info}` | `${TF_LOG-info}` | `$TF_LOG` under `set -u` |
+|---|---|---|---|
+| unset | `info` | `info` | stops: unbound variable |
+| empty (`TF_LOG=`) | `info` | (empty) | (empty) |
+| `debug` | `debug` | `debug` | `debug` |
+
+So `${TF_LOG:-info}` is the safe way to read a setting the caller may or
+may not have given, even under `set -u`.
+
 ## Your task
 
-Write three small scripts a deploy pipeline would call. Each one takes its
+Write four small scripts a deploy pipeline would call. Each one takes its
 values as arguments.
 
 ### 1. Announce the deploy
@@ -176,8 +220,41 @@ per line. Store the count in a variable named `count` first.
 - Which command counts lines, and how do you make it print only the number?
 - How do you put a command's output into a variable?
 
+### 4. Hand the settings to the check
+
+**Goal:** make `4_run_check.sh` run `bash testdata/check_env.sh` so that
+it sees `DEPLOY_ENV` set to `$1`, and `LOG_LEVEL` set to the caller's
+`LOG_LEVEL` if that is set and not empty, otherwise `debug`.
+
+`testdata/check_env.sh` prints the two settings from its environment, or
+`<unset>` for a missing one (look at it with `cat`):
+
+```bash
+bash 4_run_check.sh staging
+# DEPLOY_ENV=staging
+# LOG_LEVEL=debug
+
+LOG_LEVEL=warn bash 4_run_check.sh production
+# DEPLOY_ENV=production
+# LOG_LEVEL=warn
+
+LOG_LEVEL= bash 4_run_check.sh production
+# DEPLOY_ENV=production
+# LOG_LEVEL=debug
+```
+
+The tests run all three. They never pass on your own terminal's
+`DEPLOY_ENV` or `LOG_LEVEL`.
+
+**Think it through:**
+- `<unset>` in the output means the child didn't get the variable. What
+  makes a variable reach a child?
+- Which default form treats an empty `LOG_LEVEL` like a missing one, and
+  doesn't trip `set -u` when it's unset?
+
 ## Learn more
 
 - [Bash manual: Shell Parameters](https://www.gnu.org/software/bash/manual/html_node/Shell-Parameters.html)
 - [Bash manual: Shell Parameter Expansion](https://www.gnu.org/software/bash/manual/html_node/Shell-Parameter-Expansion.html) (the `${...:-default}` family)
 - [Bash manual: Command Substitution](https://www.gnu.org/software/bash/manual/html_node/Command-Substitution.html)
+- [Bash manual: Environment](https://www.gnu.org/software/bash/manual/html_node/Environment.html)

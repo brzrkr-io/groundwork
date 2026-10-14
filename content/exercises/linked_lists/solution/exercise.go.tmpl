@@ -1,0 +1,52 @@
+// Package deployqueue is the Groundwork exercise "Linked lists: a deploy queue with container/list".
+package deployqueue
+
+import "container/list"
+
+// Deploy is one deploy waiting to run.
+type Deploy struct {
+	Service string
+	Version string
+}
+
+// Queue runs deploys one at a time, first come, first served, except that a
+// hotfix can jump to the front.
+type Queue struct {
+	deploys *list.List // front: runs next; every element holds a *Deploy
+}
+
+// New returns an empty Queue.
+func New() *Queue {
+	return &Queue{deploys: list.New()}
+}
+
+// Push adds d at the back of the queue and returns its element, so the
+// caller can expedite it later.
+func (q *Queue) Push(d *Deploy) *list.Element {
+	return q.deploys.PushBack(d)
+}
+
+// Services returns the service of every queued deploy, from the one that
+// runs next to the last.
+func (q *Queue) Services() []string {
+	services := make([]string, 0, q.deploys.Len())
+	for el := q.deploys.Front(); el != nil; el = el.Next() {
+		services = append(services, el.Value.(*Deploy).Service)
+	}
+	return services
+}
+
+// Expedite moves el to the front of the queue, so it runs next.
+func (q *Queue) Expedite(el *list.Element) {
+	q.deploys.MoveToFront(el)
+}
+
+// Next removes the deploy at the front of the queue and returns it and true,
+// or nil and false when the queue is empty.
+func (q *Queue) Next() (*Deploy, bool) {
+	front := q.deploys.Front()
+	if front == nil {
+		return nil, false
+	}
+	return q.deploys.Remove(front).(*Deploy), true
+}

@@ -1,0 +1,41 @@
+# Task 3: search needs a minute to start, so liveness must wait for it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search
+  namespace: shop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: search
+  template:
+    metadata:
+      labels:
+        app: search
+    spec:
+      containers:
+        - name: search
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          # Stands in for a slow start: search loads its index for a minute
+          # before it listens.
+          command: ["sh", "-c", "echo loading search index; sleep 60; exec ./podinfo"]
+          ports:
+            - name: http
+              containerPort: 9898
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          # Liveness and readiness wait until this succeeds: up to
+          # 12 x 10s = 120s to start.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 12

@@ -611,9 +611,9 @@ it catches each one. Then let the fuzzer loose: `make fuzz`.
 - `name: ci`. Triggers: `push` limited to the branch `main`, and
   `pull_request`.
 - Job `test`, on `ubuntu-latest`, steps in order: `actions/checkout` and
-  `actions/setup-go` (both pinned, setup-go with `go-version-file: go.mod`),
-  `go vet ./...`, `go test -race ./...`. As in *Practice: containerize and
-  ship a service*.
+  `actions/setup-go` (setup-go with `go-version-file: go.mod`),
+  `go vet ./...`, `go test -race ./...`. As in
+  *Practice: containerize and ship a service*.
 - Job `policy`, on `ubuntu-latest`, with `needs: test`. Steps: the same
   pinned checkout and setup-go, then
   - a step that runs kubepolicy on `deploy/base`, and
@@ -628,6 +628,11 @@ it catches each one. Then let the fuzzer loose: `make fuzz`.
 ```yaml
       - run: kubectl kustomize deploy/overlays/production | bin/kubepolicy -
 ```
+
+Pin every action as in *CI workflows*: the full commit SHA, then
+`# vX.Y.Z`. The test checks every `uses` line. The pins:
+`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1` and
+`actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0`.
 
 **Think it through:**
 - Why check the overlay's *rendered* output, not only the files in
@@ -771,6 +776,21 @@ exit   # leaves the nix shell
    mv Dockerfile.dockerignore .dockerignore
    rm grader_test.go workflow_test.go internal/*/grader_test.go
    printf 'bin/\n' > .gitignore
+   ```
+
+   Your actions are pinned to commit SHAs, so nothing updates them by
+   itself. Let Dependabot open a pull request when a new release comes out;
+   it changes the SHA and the `# vX.Y.Z` comment together:
+
+   ```bash
+   cat > .github/dependabot.yml <<'EOF'
+   version: 2
+   updates:
+     - package-ecosystem: github-actions
+       directory: /
+       schedule:
+         interval: weekly
+   EOF
    ```
 
 3. Change the module path to your repository (replace `YOUR-NAME` with

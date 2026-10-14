@@ -1,0 +1,137 @@
+package shellfiles
+
+import (
+	"bytes"
+	"errors"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// Each test builds a fresh sandbox with setup.sh, runs your scripts in
+// task order up to the one it checks, then looks at the files.
+var scripts = []string{
+	"1_make_release.sh",
+	"2_back_up_app.sh",
+	"3_rotate_log.sh",
+	"4_clean_up.sh",
+}
+
+const config = "service: web\nport: 8080\nreplicas: 3\n"
+
+func TestMakeRelease(t *testing.T) {
+	sandbox, _ := runTasks(t, 1)
+	if !isDir(sandbox, "releases/v2/config") {
+		t.Fatalf("the folder releases/v2/config doesn't exist; create it and every folder above it (mkdir -p)")
+	}
+	wantFile(t, sandbox, "releases/v2/config/config.yaml", config)
+	wantFile(t, sandbox, "app/config.yaml", config)
+}
+
+func TestBackUpApp(t *testing.T) {
+	sandbox, _ := runTasks(t, 2)
+	if exists(sandbox, "backup/config.yaml") {
+		t.Errorf("backup/config.yaml exists: the app's files landed directly in backup/. Copy the app folder itself into backup/, so the copy is backup/app")
+	}
+	if !isDir(sandbox, "backup/app") {
+		t.Fatalf("the folder backup/app doesn't exist, want a copy of app there")
+	}
+	wantFile(t, sandbox, "backup/app/config.yaml", config)
+	wantFile(t, sandbox, "backup/app/logs/app.log", "09:14 GET /health 200\n09:15 GET /orders 500\n")
+	if !exists(sandbox, "backup/app/.env") {
+		t.Errorf("backup/app/.env is missing. The * wildcard skips hidden files; copy the whole folder with cp -r instead")
+	} else {
+		wantFile(t, sandbox, "backup/app/.env", "DB_PASSWORD=change-me\n")
+	}
+	wantFile(t, sandbox, "app/.env", "DB_PASSWORD=change-me\n")
+}
+
+func TestRotateLog(t *testing.T) {
+	sandbox, _ := runTasks(t, 3)
+	wantFile(t, sandbox, "app/logs/app.log.1", "09:14 GET /health 200\n09:15 GET /orders 500\n")
+	wantFile(t, sandbox, "app/logs/app.log", "")
+}
+
+func TestCleanUp(t *testing.T) {
+	sandbox, printed := runTasks(t, 4)
+	if exists(sandbox, "old-release") {
+		t.Errorf("old-release still exists, want it deleted with everything in it")
+	}
+	if !isDir(sandbox, "backup/app") {
+		t.Fatalf("backup/app doesn't exist (task 2 makes it), want only old-release deleted")
+	}
+	want, err := filepath.EvalSymlinks(filepath.Join(sandbox, "backup", "app"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, oneLine := strings.CutSuffix(printed, "\n")
+	got, err := filepath.EvalSymlinks(path)
+	if !oneLine || strings.Contains(path, "\n") || !filepath.IsAbs(path) || err != nil || got != want {
+		t.Errorf("4_clean_up.sh printed %q, want the absolute path of backup/app on one line, like %q", printed, want+"\n")
+	}
+}
+
+// runTasks builds a fresh sandbox with setup.sh, then runs task scripts 1 to
+// n inside it, in order, as you would by hand. It returns the sandbox's path
+// and what script n printed.
+func runTasks(t *testing.T, n int) (sandbox, printed string) {
+	t.Helper()
+	sandbox = filepath.Join(t.TempDir(), "sandbox")
+	if stdout, stderr, err := run(".", "bash", "setup.sh", sandbox); err != nil {
+		t.Fatalf("setup.sh failed (%v):\n%s%s", err, stdout, stderr)
+	}
+	for _, script := range scripts[:n] {
+		path, err := filepath.Abs(script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, err := run(sandbox, "bash", path)
+		if err != nil {
+			t.Fatalf("%s failed (%v). It printed:\n%s%s", script, err, stdout, stderr)
+		}
+		printed = stdout
+	}
+	return sandbox, printed
+}
+
+// wantFile checks that the file at name, inside the sandbox, holds want.
+func wantFile(t *testing.T, sandbox, name, want string) {
+	t.Helper()
+	got, err := os.ReadFile(filepath.Join(sandbox, name))
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("%s doesn't exist, want a file holding %q", name, want)
+		return
+	}
+	if err != nil {
+		t.Errorf("reading %s: %v", name, err)
+		return
+	}
+	if string(got) != want {
+		t.Errorf("%s holds %q, want %q", name, got, want)
+	}
+}
+
+func exists(sandbox, name string) bool {
+	_, err := os.Lstat(filepath.Join(sandbox, name))
+	return err == nil
+}
+
+func isDir(sandbox, name string) bool {
+	info, err := os.Stat(filepath.Join(sandbox, name))
+	return err == nil && info.IsDir()
+}
+
+// run runs a command in dir and returns what it printed to stdout and
+// stderr.
+func run(dir, name string, args ...string) (stdout, stderr string, err error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	err = cmd.Run()
+	return out.String(), errOut.String(), err
+}

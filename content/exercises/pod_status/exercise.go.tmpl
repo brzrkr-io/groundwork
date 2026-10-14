@@ -1,0 +1,37 @@
+// Package podstatus is the Groundwork exercise "Pod status: reading kubectl get".
+package podstatus
+
+// Pod is one row of `kubectl get pods`.
+type Pod struct {
+	Name     string
+	Ready    int // containers that are ready
+	Total    int // containers in the Pod
+	Status   string
+	Restarts int
+}
+
+// ParseReady splits a READY value such as "1/2" into the number of ready
+// containers and the total. It returns an error that quotes s if s is not
+// two whole numbers separated by "/".
+func ParseReady(s string) (ready, total int, err error) {
+	// TODO(1): Split s at "/" and convert both halves to numbers.
+	return 0, 0, nil
+}
+
+// ParseLine turns one row of `kubectl get pods` into a Pod. It returns an
+// error if the row has fewer than five columns or a number doesn't parse.
+func ParseLine(line string) (Pod, error) {
+	// TODO(2): Split the row into columns and fill in a Pod.
+	return Pod{}, nil
+}
+
+// NeedsAttention reads the whole output of `kubectl get pods`, header line
+// first, and returns the names of the Pods that need a look, in the order
+// they are listed. A Pod is fine if it is Completed, or if it is Running
+// with every container ready and fewer than 3 restarts. Blank lines are
+// skipped. It returns an error if a row doesn't parse.
+func NeedsAttention(output string) ([]string, error) {
+	// TODO(3): Parse every row after the header and collect the names of
+	// the Pods that are not fine.
+	return nil, nil
+}

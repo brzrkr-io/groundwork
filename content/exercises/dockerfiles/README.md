@@ -72,7 +72,8 @@ container starts.
 > - **Docker requires:** `CMD ["date", "-u"]` with square brackets and
 >   double quotes is JSON, called the *exec form*. Docker starts the program
 >   directly. Without brackets (`CMD date -u`, the *shell form*), Docker wraps
->   it in `/bin/sh -c`, so the shell, not your program, receives stop signals.
+>   it in `/bin/sh -c`, so the shell, not your program, receives stop signals
+>   such as the SIGTERM you handled in *Signals: graceful stop for a rolling drain*.
 > - **Convention:** instructions in capitals. Docker accepts `from`, but
 >   every Dockerfile you'll read uses `FROM`.
 > - **Convention:** `WORKDIR` instead of `RUN cd /app`. Each `RUN` starts a
@@ -109,9 +110,10 @@ saying "the program inside listens on 9090".
 ## Your task
 
 `statusd` (in `main.go`) is the small health service behind the team's
-deploy dashboard. It listens on the port in `$PORT` (default `8080`) and
-answers `/healthz` with `ok (<APP_ENV>)`. You don't need to change it. Your
-job is three Dockerfiles. Each starts with a comment saying what it's for.
+deploy dashboard: one handler, as in *HTTP servers: handlers and routes*.
+It listens on the port in `$PORT` (default `8080`) and answers `/healthz`
+with `ok (<APP_ENV>)`. You don't need to change it. Your job is three
+Dockerfiles. Each starts with a comment saying what it's for.
 
 ### 1. Check the Go version
 

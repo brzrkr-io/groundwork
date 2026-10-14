@@ -1,8 +1,10 @@
 # Practice: containerize and ship a service
 
-`inventoryd` is a small Go service with no image and no pipeline. You'll
-give it everything it needs before its first deploy: a Dockerfile, an
-ignore file, a CI workflow and a release workflow.
+`inventoryd` is the service from *Project: inventory service*, cut down to
+its two health endpoints. It has no image and no pipeline yet. You'll make
+it stop cleanly when its container is stopped, then give it everything it
+needs before its first deploy: a Dockerfile, an ignore file, a CI workflow
+and a release workflow.
 
 **New here:** nothing; practice.
 
@@ -10,6 +12,26 @@ ignore file, a CI workflow and a release workflow.
 
 Each recap is a reminder, not the full lesson. If a piece feels new, go back
 to the exercise it names.
+
+### Recap: draining on SIGTERM
+
+From *Graceful shutdown: drain in-flight requests* and
+*Health checks: readiness gates*. `docker stop` and Kubernetes stop a
+container the same way: SIGTERM to its first process, a wait (10 seconds
+for `docker stop`, 30 in Kubernetes), then SIGKILL, which shows up as exit
+code 137. A service that drains in that window loses no requests:
+
+| Step | Why |
+|---|---|
+| `signal.NotifyContext(ctx, syscall.SIGTERM, os.Interrupt)` | turns SIGTERM into a cancelled `ctx`; `main.go` already does this |
+| `Serve` in a goroutine, its error on a buffered channel | so the code can wait for `ctx` at the same time |
+| `select` on that channel and `ctx.Done()` | whichever happens first wins |
+| store `false` in the readiness gate | `/readyz` answers 503, so no new traffic is sent here |
+| `Shutdown` with `context.WithTimeout(context.Background(), grace)` | stops accepting, waits for requests in flight, but not forever |
+| `Close` if `Shutdown` fails | cuts off whatever is still stuck after `grace` |
+
+The signal only reaches your code if the binary *is* the first process: an
+exec-form `ENTRYPOINT ["/prog"]`, as in the *Containers and images* guide.
 
 ### Recap: a multi-stage Dockerfile
 
@@ -30,7 +52,7 @@ From *Dockerfiles* and *Multi-stage builds*:
 
 ### Recap: image security
 
-From *Image security*:
+From *Image security: non-root and no secrets*:
 
 - Run from a *distroless* final stage: no shell and no package manager, so
   there is less to attack. It also means `RUN` and shell-form commands
@@ -75,11 +97,24 @@ on:
   pull_request:            # and every pull request
 ```
 
-- Pin every action: `@v7`, `@v7.0.1` or a full commit hash, never `@main`.
+- Pin every action to a full commit SHA, with its release in a comment
+  (`owner/repo@<40 hex characters> # vX.Y.Z`). The tests check every `uses`
+  line. To find a SHA yourself:
+  `git ls-remote --tags https://github.com/OWNER/REPO 'vX.Y.Z*'`.
 - `actions/setup-go` with `go-version-file: go.mod` uses the same Go
   version as your `go.mod`.
-- `go test -race` also looks for *data races*, a bug in concurrent code
-  you'll meet later in the course. CI is where it's cheap to run.
+- `go test -race` runs the tests with the race detector from
+  *The race detector*. CI is where it's cheap to run every time.
+
+The pins for this exercise:
+
+| Action | Release | Commit |
+|---|---|---|
+| `actions/checkout` | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `actions/setup-go` | v7.0.0 | `b7ad1dad31e06c5925ef5d2fc7ad053ef454303e` |
+| `docker/login-action` | v4.6.0 | `dbcb813823bdd20940b903addbd779551569679f` |
+| `docker/build-push-action` | v7.4.0 | `c3c9e263c25d99ce0380d002d59b67737d91b0dc` |
+| `docker/setup-buildx-action` (optional) | v4.4.1 | `f87e5991a6d7451dcb8d9637bfbc97413f497069` |
 
 ### Recap: release pipelines
 
@@ -132,25 +167,64 @@ publishes a versioned image whenever someone tags a commit.
 
 ```text
 .
-├── main.go                    inventoryd itself (given; don't change it)
+├── main.go                    inventoryd itself: task 1 is its run method
 ├── go.mod, go.sum             the module (go.sum is there because the tests use sigs.k8s.io/yaml)
-├── Dockerfile                 task 1: the image
-├── Dockerfile.dockerignore    task 2: what the build leaves out
-├── ci.yml                     task 3: in a real repository, .github/workflows/ci.yml
-├── release.yml                task 4: in a real repository, .github/workflows/release.yml
+├── Dockerfile                 task 2: the image
+├── Dockerfile.dockerignore    task 3: what the build leaves out
+├── ci.yml                     task 4: in a real repository, .github/workflows/ci.yml
+├── release.yml                task 5: in a real repository, .github/workflows/release.yml
 ├── exercise_test.go           one test per task
 ├── dockerfile_test.go         helpers that read Dockerfiles
 └── workflow_test.go           helpers that read workflows
 ```
 
-`main.go` listens on the port in `$PORT` (default `8080`) and answers
-`/healthz` with `ok <version>`. `inventoryd -version` prints the version and
-exits. `version` is `"dev"` unless the build sets it with `-ldflags`.
+`main.go` listens on the port in `$PORT` (default `8080`). `/healthz`
+answers `ok <version>`; `/readyz` answers `ready` (200) while the service
+is ready, and `not ready` (503) otherwise. `inventoryd -version` prints the
+version and exits. `version` is `"dev"` unless the build sets it with
+`-ldflags`.
 
-You don't need Docker: the tests read your files. If you have Docker, the
-commands in each task work for real.
+You don't need Docker: the tests run `run` and read your other files. If
+you have Docker, the last section, "Run it for real", builds the image and
+stops the real container.
 
-### 1. Write the Dockerfile
+### 1. Drain on SIGTERM
+
+**Goal:** in `main.go`, rewrite the `run` method so `inventoryd` reports
+ready while it serves and, once `ctx` is cancelled, drains instead of
+cutting requests off.
+
+`run` belongs to `service`, which holds `s.srv` (the `*http.Server`),
+`s.ready` (the `atomic.Bool` that `/readyz` reads) and `s.grace` (how long
+to drain). Today's draft never marks the service ready, and on SIGTERM it
+calls `Close`, which drops every request in flight. Make it:
+
+- start `s.srv.Serve(ln)` in a goroutine that sends its error on a
+  channel with room for one value, then store `true` in `s.ready`;
+- wait for whichever comes first: Serve's error (return it as it is), or
+  `ctx.Done()`;
+- when `ctx` is done: store `false` in `s.ready`, log a line containing
+  `draining` (`log.Print("draining")`), then call `s.srv.Shutdown` with a
+  context that times out after `s.grace`;
+- return `nil` if `Shutdown` succeeds. If it fails, call `s.srv.Close()`
+  and return its error wrapped as `forced shutdown: <error>` with `%w`.
+
+What the tests check:
+
+```text
+GET /readyz while run serves         => 200
+ctx cancelled, nothing in flight     => run returns nil, s.ready is false, "draining" logged
+ctx cancelled, one request in flight => s.ready turns false at once; the request
+                                        still gets 200; then run returns nil
+a request stuck longer than s.grace  => run returns "forced shutdown: context deadline exceeded"
+Serve fails (closed listener)        => run returns Serve's error
+```
+
+**Think it through:**
+- Why turn readiness off *before* calling `Shutdown`, not after?
+- `Shutdown` needs a context. Why not `ctx` itself? What state is it in?
+
+### 2. Write the Dockerfile
 
 **Goal:** in `Dockerfile`, build `inventoryd` in a `build` stage and run it
 from a distroless final stage as a non-root user.
@@ -177,7 +251,7 @@ The final stage:
 8. `USER 65532:65532`.
 9. `EXPOSE 8080`.
 10. An `ENTRYPOINT` in exec form that runs the binary at the path you
-    copied it to.
+    copied it to, so SIGTERM reaches the `run` you wrote in task 1.
 
 Exactly two `FROM` lines: one per stage.
 
@@ -193,7 +267,7 @@ docker run --rm inventoryd:dev -version
 - The final stage has no shell. Which forms of `ENTRYPOINT` can still
   work?
 
-### 2. Keep the build context small
+### 3. Keep the build context small
 
 **Goal:** in `Dockerfile.dockerignore`, leave out everything the image must
 not contain or doesn't need, and keep the source.
@@ -216,7 +290,7 @@ Comments are welcome; they start with `#` in the first column.
 - Which pattern covers both `.env` and `.env.local`, but not `main.go`?
 - `*.md` only looks at the top of the context. What reaches into `docs/`?
 
-### 3. Test every change
+### 4. Test every change
 
 **Goal:** in `ci.yml`, write the workflow `ci` that vets and tests
 `inventoryd` on pushes to `main` and on every pull request.
@@ -234,7 +308,7 @@ Comments are welcome; they start with `#` in the first column.
 - What's on the runner before checkout?
 - `branches` takes a list, even for one branch.
 
-### 4. Release on tags
+### 5. Release on tags
 
 **Goal:** in `release.yml`, write the workflow `release` that, when a
 version tag is pushed, tests the code and then pushes the image
@@ -242,10 +316,10 @@ version tag is pushed, tests the code and then pushes the image
 
 - `name: release`.
 - Triggers: only `push`, of tags matching `'v*'`, with no `branches`.
-- A job `test`, exactly like the one in task 3.
+- A job `test`, exactly like the one in task 4.
 - A job `image` on `ubuntu-latest` that `needs` the `test` job, with
   exactly these `permissions`: `contents: read` and `packages: write`.
-  Its steps, in this order (all pinned):
+  Its steps, in this order (all pinned, from the table in Learn):
   1. `actions/checkout`,
   2. `docker/login-action` with `registry: ghcr.io`,
      `username: ${{ github.actor }}` and
@@ -266,6 +340,42 @@ git tag v1.4.0 && git push origin v1.4.0
   build?
 - Which `ARG` in your Dockerfile does `build-args` fill in, and what does
   that change in the binary?
+
+## Run it for real (optional)
+
+The tests read your files; this runs them. You need Docker. From this
+folder:
+
+```bash
+docker build -t inventoryd:dev --build-arg VERSION=v1.4.0 .
+docker run -d --name inventoryd -p 8080:8080 inventoryd:dev
+curl localhost:8080/healthz      # ok v1.4.0
+curl localhost:8080/readyz       # ready
+docker stop inventoryd           # SIGTERM now, SIGKILL after 10 seconds
+docker logs inventoryd
+docker inspect --format '{{.State.ExitCode}}' inventoryd
+docker rm inventoryd
+```
+
+`docker logs` shows the container's whole life, and the exit code is `0`:
+
+```text
+2026/10/13 09:12:01 inventoryd v1.4.0 listening on [::]:8080
+2026/10/13 09:12:09 draining
+2026/10/13 09:12:09 inventoryd stopped cleanly
+```
+
+`docker stop` returned at once, because `run` drained and returned. If it
+takes 10 seconds instead, with no `draining` line and exit code 137, SIGTERM
+never reached your code: check that `ENTRYPOINT` is in exec form, with
+square brackets.
+
+On NixOS, Docker sends container logs to journald by default. If
+`docker logs inventoryd` prints nothing, the same lines are in
+`journalctl CONTAINER_NAME=inventoryd`. To get `docker logs` back, set
+`virtualisation.docker.logDriver = "json-file";` in your NixOS
+configuration. *kind* (Kubernetes in Docker) needs that setting too; for
+plain Docker it's optional.
 
 ## Learn more
 

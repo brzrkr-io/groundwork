@@ -1,0 +1,26 @@
+# Task 3: indexer asked for more CPU than any node had free.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indexer
+  namespace: shop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: indexer
+  template:
+    metadata:
+      labels:
+        app: indexer
+    spec:
+      containers:
+        - name: indexer
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          resources:
+            requests:
+              cpu: 800m # worker-3 has 1930m - 1130m = 800m left
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi

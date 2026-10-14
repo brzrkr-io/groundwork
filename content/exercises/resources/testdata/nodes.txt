@@ -1,0 +1,51 @@
+$ kubectl describe nodes
+Name:               worker-1
+Roles:              <none>
+...
+Allocatable:
+  cpu:                1930m
+  ephemeral-storage:  95491281146
+  memory:             7097332Ki
+  pods:               110
+...
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests      Limits
+  --------           --------      ------
+  cpu                1380m (71%)   4500m (233%)
+  memory             2Gi (29%)     4Gi (59%)
+  ephemeral-storage  0 (0%)        0 (0%)
+
+Name:               worker-2
+Roles:              <none>
+...
+Allocatable:
+  cpu:                1930m
+  ephemeral-storage:  95491281146
+  memory:             7097332Ki
+  pods:               110
+...
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests      Limits
+  --------           --------      ------
+  cpu                1630m (84%)   3 (155%)
+  memory             2560Mi (36%)  4Gi (59%)
+  ephemeral-storage  0 (0%)        0 (0%)
+
+Name:               worker-3
+Roles:              <none>
+...
+Allocatable:
+  cpu:                1930m
+  ephemeral-storage:  95491281146
+  memory:             7097332Ki
+  pods:               110
+...
+Allocated resources:
+  (Total limits may be over 100 percent, i.e., overcommitted.)
+  Resource           Requests      Limits
+  --------           --------      ------
+  cpu                1130m (58%)   2500m (129%)
+  memory             1536Mi (22%)  4Gi (59%)
+  ephemeral-storage  0 (0%)        0 (0%)

@@ -58,4 +58,4 @@ kubectl port-forward service/golinks 8080:80
 - Add owners and an edit endpoint, so only the creator can change a link.
 - Move to Postgres and run two replicas behind the Service.
 - Add a request-duration histogram and a Grafana dashboard.
-- Sign images with cosign and pin actions to commit SHAs.
+- Sign images with cosign and check the signature before deploying.

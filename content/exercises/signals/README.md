@@ -2,15 +2,18 @@
 
 When you press Ctrl-C, or Kubernetes stops a pod, your program receives a
 *signal*. By default a Go program dies on the spot. Here you make a rolling
-maintenance job stop *gracefully*: finish the current host, then stop.
+maintenance job stop *gracefully*: finish the current host, then stop. It's
+the goroutines, channels and contexts of this module, pointed at the
+operating system.
 
-**New here:** signals, `signal.Notify`, channels and contexts (just enough).
+**New here:** `os/signal`, `signal.Notify`, `128 + n` exit codes.
 
 ## Learn
 
 ### What signals are
 
-A signal is a tiny message the operating system sends a running program:
+The *The operating system for programmers* guide introduced signals: tiny
+messages the operating system sends a running program.
 
 | Signal | Who sends it | Can you catch it? |
 |---|---|---|
@@ -31,12 +34,13 @@ By Unix convention, a process stopped by signal number *n* exits with
 `128 + n`. `SIGINT` is 2, so `130`. Scripts use this to tell "interrupted"
 apart from "failed" (`1`).
 
-### Channels, just enough
+### Signals arrive on a channel
 
-`os/signal` delivers signals on a *channel*: a pipe that values arrive on.
+`os/signal` turns signals into values on a channel, like the ones in
+*Channels*. `signal.Notify` says which signals to deliver to it:
 
 ```go
-sigs := make(chan os.Signal, 1)                    // room for 1 waiting value
+sigs := make(chan os.Signal, 1)                    // buffered: room for 1 waiting value
 signal.Notify(sigs, os.Interrupt, syscall.SIGTERM) // deliver these to sigs
 
 for sig := range sigs { // waits for each value; ends when the channel closes
@@ -47,27 +51,37 @@ for sig := range sigs { // waits for each value; ends when the channel closes
 `os.Interrupt` is `SIGINT`. With `%v`, `os.Interrupt` prints as `interrupt`
 and `syscall.SIGTERM` as `terminated`.
 
-> **Why is it written like this?** `<-chan os.Signal` in a function line means
-> "a channel you can only receive from". Go enforces it. `sig` in the `for`
-> line is a name you choose.
+> **Why is it written like this?** The buffer of 1 is required by the docs:
+> `signal.Notify` never blocks, so a signal that arrives while nobody is
+> receiving is dropped unless there's room for it. The parameter type
+> `<-chan os.Signal` is a receive-only channel, as in *Channels: deadlocks
+> and directions*. `sig` is a name you choose.
 
-### Contexts, just enough
+### From a signal to a cancelled context
 
-A `context.Context` carries a "please stop" message into your code (the
-*Concurrency* module covers it properly). One rule for now:
-**`ctx.Err() != nil` means you've been asked to stop.**
+The rest of the program shouldn't know about signals at all. As in *Context
+and cancellation*, it takes a `ctx` and stops when `ctx.Err() != nil`. A
+small watcher goroutine connects the two: it receives a signal and calls
+`cancel()`.
 
 ```go
 ctx, cancel := context.WithCancel(context.Background())
-fmt.Println(ctx.Err()) // <nil>
-cancel()
-fmt.Println(ctx.Err()) // context canceled  (this is context.Canceled)
+defer cancel()
+go func() {
+	<-sigs   // wait for the first signal
+	cancel() // everything watching ctx is told to stop
+}()
 ```
+
+This keeps the work testable: tests cancel the context directly, no real
+signal needed. The standard library has a one-call version,
+`signal.NotifyContext`, but it can't do what this job needs: a **second**
+Ctrl-C that forces the exit when the user won't wait.
 
 ### The full program
 
-This is the `main` you're building towards. `go WatchSignals(...)` runs it in
-the background while `Drain` works; that's all you need to know about `go`.
+This is the `main` you're building towards. `go WatchSignals(...)` runs the
+watcher in its own goroutine while `Drain` works, as in *Goroutines*.
 
 ```go
 func main() {

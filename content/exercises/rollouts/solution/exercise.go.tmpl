@@ -1,0 +1,75 @@
+// Package rollouts is the Groundwork exercise "Rollouts: surge, unavailable and rollback".
+package rollouts
+
+import (
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+)
+
+// Resolve turns a maxSurge or maxUnavailable value into a number of Pods.
+// value is a whole number ("2") or a percentage of replicas ("25%"). A
+// percentage is rounded up when roundUp is true and down otherwise. It
+// returns an error for anything else, including negative numbers.
+func Resolve(value string, replicas int, roundUp bool) (int, error) {
+	number, isPercent := strings.CutSuffix(value, "%")
+	n, err := strconv.Atoi(number)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a number or a percentage: %w", value, err)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("%q is negative", value)
+	}
+	if !isPercent {
+		return n, nil
+	}
+	if roundUp {
+		return (replicas*n + 99) / 100, nil
+	}
+	return replicas * n / 100, nil
+}
+
+// Bounds returns the most Pods a rolling update may run at once and the
+// fewest that must stay available, for a Deployment with this many
+// replicas. maxSurge rounds up and maxUnavailable rounds down; if both
+// come to 0, maxUnavailable becomes 1. minAvailable is never below 0.
+func Bounds(replicas int, maxSurge, maxUnavailable string) (maxPods, minAvailable int, err error) {
+	surge, err := Resolve(maxSurge, replicas, true)
+	if err != nil {
+		return 0, 0, fmt.Errorf("maxSurge: %w", err)
+	}
+	unavailable, err := Resolve(maxUnavailable, replicas, false)
+	if err != nil {
+		return 0, 0, fmt.Errorf("maxUnavailable: %w", err)
+	}
+	if surge == 0 && unavailable == 0 {
+		unavailable = 1 // otherwise the rollout could never make progress
+	}
+	return replicas + surge, max(replicas-unavailable, 0), nil
+}
+
+// RevisionFor reads the output of `kubectl rollout history` and returns
+// the newest revision whose CHANGE-CAUSE has image as one of its words,
+// such as "checkout:1.4.2" in "deploy checkout:1.4.2". It returns an error
+// if no revision matches.
+func RevisionFor(history, image string) (int, error) {
+	found := 0
+	for line := range strings.SplitSeq(history, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		revision, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue // a header line, not a revision
+		}
+		if slices.Contains(fields[1:], image) && revision > found {
+			found = revision
+		}
+	}
+	if found == 0 {
+		return 0, fmt.Errorf("no revision deployed %s", image)
+	}
+	return found, nil
+}

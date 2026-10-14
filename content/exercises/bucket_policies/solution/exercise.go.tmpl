@@ -1,0 +1,151 @@
+// Package buckets is the Groundwork exercise "S3 bucket policies: is this bucket public?".
+package buckets
+
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+)
+
+// StringList is a JSON value that is either one string or a list of strings,
+// as IAM allows for Action, Resource and condition values.
+type StringList []string
+
+// UnmarshalJSON accepts "s3:GetObject" as well as ["s3:GetObject", "s3:PutObject"].
+func (l *StringList) UnmarshalJSON(data []byte) error {
+	var one string
+	if err := json.Unmarshal(data, &one); err == nil {
+		*l = StringList{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(data, &many); err != nil {
+		return err
+	}
+	*l = many
+	return nil
+}
+
+// Principal says who a statement is about: AWS accounts, users and roles
+// (AWS) or AWS services (Service).
+type Principal struct {
+	AWS     StringList `json:"AWS"`
+	Service StringList `json:"Service"`
+}
+
+// UnmarshalJSON accepts an object such as {"AWS": "arn:aws:iam::444455556666:root"}
+// and the plain string "*", which it stores as AWS ["*"]: anyone.
+func (p *Principal) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		if s != "*" {
+			return fmt.Errorf(`principal %q: only "*" may be a plain string`, s)
+		}
+		*p = Principal{AWS: StringList{"*"}}
+		return nil
+	}
+	// A struct with the same fields but no UnmarshalJSON method, so decoding
+	// into it doesn't call this method again.
+	var fields struct {
+		AWS     StringList `json:"AWS"`
+		Service StringList `json:"Service"`
+	}
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*p = Principal(fields)
+	return nil
+}
+
+// Statement is one statement of a bucket policy.
+type Statement struct {
+	Sid       string                           `json:"Sid"`
+	Effect    string                           `json:"Effect"`
+	Principal Principal                        `json:"Principal"`
+	Action    StringList                       `json:"Action"`
+	Resource  StringList                       `json:"Resource"`
+	Condition map[string]map[string]StringList `json:"Condition"`
+}
+
+// Policy is a whole bucket policy document.
+type Policy struct {
+	Version   string      `json:"Version"`
+	Statement []Statement `json:"Statement"`
+}
+
+// Settings are a bucket's four Block Public Access settings.
+type Settings struct {
+	BlockPublicAcls       bool
+	IgnorePublicAcls      bool
+	BlockPublicPolicy     bool
+	RestrictPublicBuckets bool
+}
+
+// Bucket is what an audit knows about one S3 bucket.
+type Bucket struct {
+	Name        string
+	Policy      Policy
+	ACLGrantees []string // who the bucket's ACL grants access to
+	Settings    Settings
+}
+
+// The two ACL groups that make a bucket public.
+const (
+	AllUsers           = "http://acs.amazonaws.com/groups/global/AllUsers"
+	AuthenticatedUsers = "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"
+)
+
+// RestrictingKeys are the condition keys that limit an Allow for "*" to
+// known networks, organizations or accounts, so it isn't public.
+var RestrictingKeys = []string{"aws:SourceIp", "aws:SourceVpce", "aws:PrincipalOrgID", "aws:PrincipalAccount"}
+
+// PublicStatement reports whether s grants access to anyone on the internet.
+func PublicStatement(s Statement) bool {
+	if s.Effect != "Allow" || !slices.Contains(s.Principal.AWS, "*") {
+		return false
+	}
+	for _, keys := range s.Condition {
+		for key := range keys {
+			for _, restricting := range RestrictingKeys {
+				if strings.EqualFold(key, restricting) {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// Exposure returns "public", "blocked" or "private" for b.
+func Exposure(b Bucket) string {
+	publicPolicy := false
+	for _, s := range b.Policy.Statement {
+		if PublicStatement(s) {
+			publicPolicy = true
+		}
+	}
+	publicACL := slices.Contains(b.ACLGrantees, AllUsers) || slices.Contains(b.ACLGrantees, AuthenticatedUsers)
+
+	switch {
+	case publicPolicy && !b.Settings.RestrictPublicBuckets, publicACL && !b.Settings.IgnorePublicAcls:
+		return "public"
+	case publicPolicy || publicACL:
+		return "blocked"
+	default:
+		return "private"
+	}
+}
+
+// RequiresTLS reports whether p denies every S3 request made without HTTPS.
+func RequiresTLS(p Policy) bool {
+	for _, s := range p.Statement {
+		if s.Effect == "Deny" &&
+			slices.Contains(s.Principal.AWS, "*") &&
+			(slices.Contains(s.Action, "s3:*") || slices.Contains(s.Action, "*")) &&
+			slices.Contains(s.Condition["Bool"]["aws:SecureTransport"], "false") {
+			return true
+		}
+	}
+	return false
+}

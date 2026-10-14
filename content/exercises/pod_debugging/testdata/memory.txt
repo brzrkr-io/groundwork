@@ -1,0 +1,71 @@
+Name:             report-58c6d7f9b-lm4vq
+Namespace:        shop
+Priority:         0
+Service Account:  default
+Node:             worker-1/172.18.0.3
+Start Time:       Tue, 13 Oct 2026 20:58:15 -0500
+Labels:           app=report
+                  pod-template-hash=58c6d7f9b
+Annotations:      <none>
+Status:           Running
+IP:               10.244.0.9
+IPs:
+  IP:  10.244.0.9
+Controlled By:  ReplicaSet/report-58c6d7f9b
+Containers:
+  report:
+    Container ID:  containerd://35b3914c0d886a1fc40acbe60493d131c974c3f9ea0558e8b32fda54f4ff8d15
+    Image:         ghcr.io/stefanprodan/podinfo:6.9.2
+    Image ID:      ghcr.io/stefanprodan/podinfo@sha256:cab90e04829cdae73199a8402882a4e3ccaf251b8a0d50bdefede0ab3f6371e7
+    Port:          <none>
+    Host Port:     <none>
+    Command:
+      ./podinfo
+      --stress-memory=300
+    State:          Terminated
+      Reason:       OOMKilled
+      Exit Code:    137
+      Started:      Tue, 13 Oct 2026 20:59:57 -0500
+      Finished:     Tue, 13 Oct 2026 20:59:58 -0500
+    Last State:     Terminated
+      Reason:       OOMKilled
+      Exit Code:    137
+      Started:      Tue, 13 Oct 2026 20:58:57 -0500
+      Finished:     Tue, 13 Oct 2026 20:58:58 -0500
+    Ready:          False
+    Restart Count:  4
+    Limits:
+      memory:  128Mi
+    Requests:
+      memory:     64Mi
+    Environment:  <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-f4slq (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       False 
+  ContainersReady             False 
+  PodScheduled                True 
+Volumes:
+  kube-api-access-f4slq:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   Burstable
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason     Age                 From               Message
+  ----     ------     ----                ----               -------
+  Normal   Scheduled  114s                default-scheduler  Successfully assigned shop/report-58c6d7f9b-lm4vq to worker-1
+  Normal   Pulling    113s                kubelet            spec.containers{report}: Pulling image "ghcr.io/stefanprodan/podinfo:6.9.2"
+  Normal   Pulled     107s                kubelet            spec.containers{report}: Successfully pulled image "ghcr.io/stefanprodan/podinfo:6.9.2" in 370ms (5.623s including waiting). Image size: 32859322 bytes.
+  Normal   Created    12s (x5 over 107s)  kubelet            spec.containers{report}: Container created
+  Normal   Started    12s (x5 over 107s)  kubelet            spec.containers{report}: Container started
+  Normal   Pulled     12s (x4 over 107s)  kubelet            spec.containers{report}: Container image "ghcr.io/stefanprodan/podinfo:6.9.2" already present on machine and can be accessed by the pod
+  Warning  BackOff    10s (x5 over 106s)  kubelet            spec.containers{report}: Back-off restarting failed container report in pod report-58c6d7f9b-lm4vq_shop(65f6c3b7-436f-4059-9058-5bef47584a4f)

@@ -4,7 +4,7 @@ You build a small but real Kubernetes controller. Whenever a team labels a
 Deployment `groundwork.dev/expose: "true"`, your controller gives it a
 Service, keeps that Service correct, and removes it when the label goes away.
 
-**New here:** Services, owner references and garbage collection, `metav1.IsControlledBy`, writing your own methods; plus practice wiring informers, workqueues and reconcile together.
+**New here:** owner references and garbage collection, `metav1.IsControlledBy`, writing your own methods; plus practice wiring informers, workqueues and reconcile together.
 
 ## Learn
 
@@ -73,10 +73,11 @@ vs actual*. This project plugs them together:
 Do the tasks in order. Tasks 1 to 6 each have a test you can pass on its own.
 Task 7's test runs the whole controller, so it needs everything else working.
 
-### Services, from zero
+### Recap: Services
 
-Pods come and go, and each new Pod gets a new IP. A *Service* is a stable
-address in front of a changing set of Pods:
+You wrote Services in *Services: selectors, ports and endpoints* and built
+them in Go in *Kubernetes objects: Services and selectors*. The one this
+controller makes looks like this:
 
 ```yaml
 apiVersion: v1

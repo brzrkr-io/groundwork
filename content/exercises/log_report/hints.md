@@ -209,3 +209,41 @@ return enc.Encode(jsonReport{
 	P95Ms:    r.P95.Milliseconds(),
 })
 ```
+
+## Task 7: Test the whole pipeline with a golden file
+
+The test has three parts: produce the real report for `testdata/access.log`
+(that's `got`), read `testdata/report.golden` (that's `want`), and compare
+the two as text.
+
+### Closer
+
+`os.ReadFile(filepath.Join("testdata", "access.log"))` gives bytes;
+`ReadLog(strings.NewReader(string(data)))` parses them. Render with
+`WriteText(&got, Summarize(parsed))` into a `var got strings.Builder`, then
+compare `got.String()` with `string(want)`.
+
+### Answer
+
+```go
+data, err := os.ReadFile(filepath.Join("testdata", "access.log"))
+if err != nil {
+	t.Fatal(err)
+}
+parsed, err := ReadLog(strings.NewReader(string(data)))
+if err != nil {
+	t.Fatalf("ReadLog(access.log) returned error %v", err)
+}
+var got strings.Builder
+if err := WriteText(&got, Summarize(parsed)); err != nil {
+	t.Fatalf("WriteText returned error %v", err)
+}
+
+want, err := os.ReadFile(filepath.Join("testdata", "report.golden"))
+if err != nil {
+	t.Fatal(err)
+}
+if got.String() != string(want) {
+	t.Errorf("report for access.log =\n%s\nwant (report.golden):\n%s", got.String(), want)
+}
+```

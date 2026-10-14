@@ -1,0 +1,98 @@
+// Package trust is the Groundwork exercise "Assume role: trust policies and temporary credentials".
+package trust
+
+import (
+	"encoding/json"
+	"regexp"
+	"strings"
+	"time"
+)
+
+// StringList is a JSON value that is either one string or a list of strings,
+// as IAM allows for Action, Principal and condition values.
+type StringList []string
+
+// UnmarshalJSON accepts "sts:AssumeRole" as well as ["sts:AssumeRole", "sts:TagSession"].
+func (l *StringList) UnmarshalJSON(data []byte) error {
+	var one string
+	if err := json.Unmarshal(data, &one); err == nil {
+		*l = StringList{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(data, &many); err != nil {
+		return err
+	}
+	*l = many
+	return nil
+}
+
+// Principal says who a trust statement is about: IAM users, roles and
+// accounts (AWS), AWS services (Service) or an identity provider (Federated).
+type Principal struct {
+	AWS       StringList `json:"AWS"`
+	Service   StringList `json:"Service"`
+	Federated StringList `json:"Federated"`
+}
+
+// TrustStatement is one statement of a role's trust policy.
+type TrustStatement struct {
+	Effect    string                           `json:"Effect"`
+	Principal Principal                        `json:"Principal"`
+	Action    StringList                       `json:"Action"`
+	Condition map[string]map[string]StringList `json:"Condition"`
+}
+
+// TrustPolicy is a role's whole trust policy document.
+type TrustPolicy struct {
+	Version   string           `json:"Version"`
+	Statement []TrustStatement `json:"Statement"`
+}
+
+// Credentials are what sts:AssumeRole returns: a key pair, a session token
+// and the moment they stop working.
+type Credentials struct {
+	AccessKeyID     string    `json:"AccessKeyId"`
+	SecretAccessKey string    `json:"SecretAccessKey"`
+	SessionToken    string    `json:"SessionToken"`
+	Expiration      time.Time `json:"Expiration"`
+}
+
+// Match reports whether value matches the IAM pattern, where * matches any
+// run of characters (including none) and ? matches exactly one.
+// It is case-sensitive.
+func Match(pattern, value string) bool {
+	expr := regexp.QuoteMeta(pattern)
+	expr = strings.ReplaceAll(expr, `\*`, ".*")
+	expr = strings.ReplaceAll(expr, `\?`, ".")
+	return regexp.MustCompile("^" + expr + "$").MatchString(value)
+}
+
+// IsTemporary reports whether c are temporary credentials from STS: the key
+// ID starts with "ASIA" and there is a session token.
+func IsTemporary(c Credentials) bool {
+	// TODO(1): Check the key ID prefix and the session token.
+	return false
+}
+
+// NeedsRefresh reports whether c expire in less than five minutes from now,
+// or have already expired.
+func NeedsRefresh(c Credentials, now time.Time) bool {
+	// TODO(2): Compare the time left until c.Expiration with five minutes.
+	return false
+}
+
+// TrustsCaller reports whether s lets caller (an IAM ARN or an AWS service
+// name) call sts:AssumeRole.
+func TrustsCaller(s TrustStatement, caller string) bool {
+	// TODO(3): Check the effect, the action and the AWS and Service principals.
+	return false
+}
+
+// TrustsWorkflow reports whether s lets a token from provider, carrying
+// claims, call sts:AssumeRoleWithWebIdentity.
+func TrustsWorkflow(s TrustStatement, provider string, claims map[string]string) bool {
+	// TODO(4): Check the effect, the action, the Federated principal and
+	// every condition.
+	return false
+}

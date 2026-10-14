@@ -1,0 +1,59 @@
+Name:             search-7c8d9f6b5-w2xpr
+Namespace:        shop
+Priority:         0
+Service Account:  default
+Node:             worker-1/172.18.0.3
+Start Time:       Tue, 13 Oct 2026 20:58:15 -0500
+Labels:           app=search
+                  pod-template-hash=7c8d9f6b5
+Annotations:      <none>
+Status:           Running
+IP:               10.244.0.10
+IPs:
+  IP:  10.244.0.10
+Controlled By:  ReplicaSet/search-7c8d9f6b5
+Containers:
+  search:
+    Container ID:  containerd://d6c3aefdb75c902a9812c220419aa0e3969512457be7303769dd1da878908031
+    Image:         ghcr.io/stefanprodan/podinfo:6.9.2
+    Image ID:      ghcr.io/stefanprodan/podinfo@sha256:cab90e04829cdae73199a8402882a4e3ccaf251b8a0d50bdefede0ab3f6371e7
+    Port:          9898/TCP (http)
+    Host Port:     0/TCP (http)
+    Command:
+      ./podinfo
+      --unready
+    State:          Running
+      Started:      Tue, 13 Oct 2026 20:58:22 -0500
+    Ready:          False
+    Restart Count:  0
+    Readiness:      http-get http://:http/readyz delay=0s timeout=1s period=5s successThreshold=1 failureThreshold=3
+    Environment:    <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-2bw8g (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       False 
+  ContainersReady             False 
+  PodScheduled                True 
+Volumes:
+  kube-api-access-2bw8g:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason     Age                 From               Message
+  ----     ------     ----                ----               -------
+  Normal   Scheduled  114s                default-scheduler  Successfully assigned shop/search-7c8d9f6b5-w2xpr to worker-1
+  Normal   Pulling    113s                kubelet            spec.containers{search}: Pulling image "ghcr.io/stefanprodan/podinfo:6.9.2"
+  Normal   Pulled     107s                kubelet            spec.containers{search}: Successfully pulled image "ghcr.io/stefanprodan/podinfo:6.9.2" in 379ms (5.994s including waiting). Image size: 32859322 bytes.
+  Normal   Created    107s                kubelet            spec.containers{search}: Container created
+  Normal   Started    107s                kubelet            spec.containers{search}: Container started
+  Warning  Unhealthy  2s (x23 over 107s)  kubelet            spec.containers{search}: Readiness probe failed: HTTP probe failed with statuscode: 503

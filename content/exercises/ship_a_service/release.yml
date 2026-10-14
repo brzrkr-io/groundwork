@@ -1,5 +1,5 @@
 # Ships inventoryd when someone pushes a version tag such as v1.4.0.
 # In the real repository: .github/workflows/release.yml.
 
-# TODO(4): Write the workflow named release: a job "test" that checks the
+# TODO(5): Write the workflow named release: a job "test" that checks the
 # code again, then a job "image" that pushes ghcr.io/acme/inventoryd.

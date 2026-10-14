@@ -1,17 +1,18 @@
 # YAML manifests: reading them into Go
 
-Teams keep Kubernetes objects in YAML files in Git and run `kubectl apply -f`.
-Platform tools (linters, CI checks, deploy bots) read those same files, so
-your Go code needs to read them too.
+You've kept Kubernetes objects in YAML files and run `kubectl apply -f` all
+through *Kubernetes fundamentals*. Platform tools (linters, CI checks,
+deploy bots) read those same files, so your Go code needs to read them too.
 
-**New here:** YAML, `sigs.k8s.io/yaml`, `metav1.TypeMeta`, multi-document streams, `strings.SplitSeq`.
+**New here:** `sigs.k8s.io/yaml` in Go, `metav1.TypeMeta`, splitting multi-document streams.
 
 ## Learn
 
 ### What a manifest is
 
-A *manifest* is a text file that describes one or more Kubernetes objects.
-It has the parts you built in *Kubernetes objects: building a Deployment*:
+A *manifest* is a text file that describes one or more Kubernetes objects,
+such as the ones you wrote in *Pods: your first manifest*. In Go, its parts
+are the ones you built in *Kubernetes objects: building a Deployment*:
 `apiVersion`, `kind`, `metadata` and `spec`.
 
 ```yaml
@@ -29,9 +30,10 @@ spec:
           image: registry.example.com/shop/checkout:2.1.0
 ```
 
-### YAML in five rules
+### Recap: YAML in five rules
 
-*YAML* holds the same data as JSON, using indentation instead of braces.
+*YAML*, from *CI workflows*, holds the same data as JSON, using indentation
+instead of braces.
 
 | YAML | JSON | Meaning |
 |---|---|---|

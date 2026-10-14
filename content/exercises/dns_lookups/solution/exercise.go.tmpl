@@ -1,0 +1,82 @@
+// Package dnslookup is the Groundwork exercise "DNS: lookups, timeouts and failure types".
+package dnslookup
+
+import (
+	"context"
+	"errors"
+	"net"
+	"net/netip"
+	"time"
+)
+
+// Status is the outcome of one DNS lookup, as a monitor prints it.
+type Status string
+
+// The possible outcomes of a lookup.
+const (
+	OK       Status = "ok"
+	NotFound Status = "nxdomain"
+	Timeout  Status = "timeout"
+	ServFail Status = "servfail"
+	Failed   Status = "error"
+)
+
+// Resolver looks up the addresses of a host name. *net.Resolver (such as
+// net.DefaultResolver) has this method, and tests pass in fakes.
+type Resolver interface {
+	LookupHost(ctx context.Context, host string) ([]string, error)
+}
+
+// Result is the outcome of looking up one name.
+type Result struct {
+	Host   string
+	IPv4   []string // from A records
+	IPv6   []string // from AAAA records
+	Status Status
+}
+
+// Classify turns the error from a lookup into a Status.
+func Classify(err error) Status {
+	if err == nil {
+		return OK
+	}
+	dnsErr, ok := errors.AsType[*net.DNSError](err)
+	switch {
+	case !ok:
+		return Failed
+	case dnsErr.IsNotFound:
+		return NotFound
+	case dnsErr.IsTimeout: // before IsTemporary: Go sets both on most timeouts
+		return Timeout
+	case dnsErr.IsTemporary:
+		return ServFail
+	default:
+		return Failed
+	}
+}
+
+// SplitFamilies sorts addresses into IPv4 and IPv6, keeping their order and
+// skipping anything that isn't an IP address.
+func SplitFamilies(addrs []string) (v4, v6 []string) {
+	for _, s := range addrs {
+		addr, err := netip.ParseAddr(s)
+		if err != nil {
+			continue
+		}
+		if addr.Is4() {
+			v4 = append(v4, s)
+		} else {
+			v6 = append(v6, s)
+		}
+	}
+	return v4, v6
+}
+
+// Lookup resolves host through r, giving up after timeout.
+func Lookup(r Resolver, host string, timeout time.Duration) Result {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	addrs, err := r.LookupHost(ctx, host)
+	v4, v6 := SplitFamilies(addrs)
+	return Result{Host: host, IPv4: v4, IPv6: v6, Status: Classify(err)}
+}

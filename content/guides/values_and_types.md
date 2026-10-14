@@ -288,7 +288,9 @@ the disk is completely full.
 
 ### Overflow: when the box is full
 
-An `int` is 64 bits, so it has a largest value: 9,223,372,036,854,775,807.
+Go's `int` is 32 or 64 bits, depending on the platform you build for. On
+today's 64-bit machines it's 64 bits, so it has a largest value:
+9,223,372,036,854,775,807.
 Go does not grow the box. Add one more and the number *overflows*: it wraps
 around to the most negative value.
 

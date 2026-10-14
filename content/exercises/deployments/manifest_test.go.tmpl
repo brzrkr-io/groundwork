@@ -1,0 +1,25 @@
+package deployments
+
+import (
+	"os"
+	"testing"
+
+	"sigs.k8s.io/yaml"
+)
+
+// This file reads your manifests for the tests. You don't need to change it.
+
+// readManifest parses the YAML file name into obj, a pointer to a typed
+// Kubernetes object such as *corev1.Pod. It is as strict as the API server:
+// a field the type doesn't have, such as a misspelled "contaners" or one
+// indented under the wrong parent, is an error.
+func readManifest(t *testing.T, name string, obj any) {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	if err := yaml.UnmarshalStrict(raw, obj); err != nil {
+		t.Fatalf("%s: %v\n(check the spelling and indentation of the field it names)", name, err)
+	}
+}

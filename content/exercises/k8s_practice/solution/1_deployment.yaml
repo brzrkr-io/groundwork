@@ -1,0 +1,45 @@
+# Task 1: the notes Deployment, fixed: a tag that exists, and a readiness
+# probe on the port podinfo listens on.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notes
+  namespace: notes
+  labels:
+    app: notes
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notes
+  template:
+    metadata:
+      labels:
+        app: notes
+    spec:
+      containers:
+        - name: notes
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          ports:
+            - name: http
+              containerPort: 9898
+          env:
+            - name: PODINFO_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: notes-config
+                  key: level
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              memory: 128Mi

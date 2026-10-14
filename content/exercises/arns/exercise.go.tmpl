@@ -1,0 +1,40 @@
+// Package arns is the Groundwork exercise "ARNs: accounts, regions and resource scope".
+package arns
+
+// ARN is an Amazon Resource Name split into its parts:
+// arn:Partition:Service:Region:Account:Resource.
+type ARN struct {
+	Partition string // "aws" for most accounts
+	Service   string // "ec2", "s3", "iam", ...
+	Region    string // "eu-west-1", or "" for global services
+	Account   string // "111122223333", or "" (S3 buckets)
+	Resource  string // everything after the fifth colon
+}
+
+// Parse splits an ARN string into its parts.
+func Parse(s string) (ARN, error) {
+	// TODO(1): Split s into its six parts and return them as an ARN.
+	// Return ARN{} and an error when s is not a valid ARN.
+	return ARN{}, nil
+}
+
+// Scope returns "global", "account" or "regional": how far a resource's
+// name reaches.
+func Scope(a ARN) string {
+	// TODO(2): Decide the scope from a.Region and a.Account.
+	return ""
+}
+
+// RegionOfZone returns the region an availability zone belongs to, such
+// as "us-east-1" for "us-east-1a".
+func RegionOfZone(zone string) (string, error) {
+	// TODO(3): Cut the zone letter off and check what is left.
+	return "", nil
+}
+
+// ForeignResources returns the ARNs in arns that belong to an account
+// other than account, in their original order.
+func ForeignResources(account string, arns []string) ([]string, error) {
+	// TODO(4): Parse each ARN and keep the ones owned by another account.
+	return nil, nil
+}

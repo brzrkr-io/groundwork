@@ -1,0 +1,59 @@
+// Package cloudtrail is the Groundwork exercise "CloudTrail: trace a leaked access key".
+package cloudtrail
+
+import "time"
+
+// UserIdentity says who made an API call, and with which access key.
+type UserIdentity struct {
+	Type        string `json:"type"`
+	ARN         string `json:"arn"`
+	AccountID   string `json:"accountId"`
+	AccessKeyID string `json:"accessKeyId"`
+	UserName    string `json:"userName"`
+}
+
+// Event is one CloudTrail record. Fields this exercise doesn't use, such as
+// requestParameters, are left out; encoding/json skips them.
+type Event struct {
+	EventTime       time.Time    `json:"eventTime"`
+	EventSource     string       `json:"eventSource"`
+	EventName       string       `json:"eventName"`
+	AWSRegion       string       `json:"awsRegion"`
+	SourceIPAddress string       `json:"sourceIPAddress"`
+	UserAgent       string       `json:"userAgent"`
+	UserIdentity    UserIdentity `json:"userIdentity"`
+	ErrorCode       string       `json:"errorCode"`
+	ErrorMessage    string       `json:"errorMessage"`
+	ReadOnly        bool         `json:"readOnly"`
+}
+
+// Summary is the one-screen overview of a set of events for an incident report.
+type Summary struct {
+	First     time.Time // earliest EventTime
+	Last      time.Time // latest EventTime
+	SourceIPs []string  // sorted, no duplicates
+	Regions   []string  // sorted, no duplicates
+	Actions   []string  // "service:EventName", sorted, no duplicates
+	Denied    int       // events with an ErrorCode
+}
+
+// Load reads a CloudTrail log file, {"Records": [...]}, and returns its
+// events in file order.
+func Load(path string) ([]Event, error) {
+	// TODO(1): Read the file and decode its "Records" list. Add the imports
+	// you need.
+	return nil, nil
+}
+
+// ByAccessKey returns the events made with access key keyID, oldest first.
+func ByAccessKey(events []Event, keyID string) []Event {
+	// TODO(2): Keep the matching events, then sort them by EventTime.
+	return nil
+}
+
+// Summarize returns the first and last times, the source IPs, regions and
+// actions, and the number of failed calls in events.
+func Summarize(events []Event) Summary {
+	// TODO(3): Fill in every Summary field.
+	return Summary{}
+}

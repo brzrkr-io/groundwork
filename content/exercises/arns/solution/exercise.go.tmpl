@@ -1,0 +1,83 @@
+// Package arns is the Groundwork exercise "ARNs: accounts, regions and resource scope".
+package arns
+
+import (
+	"fmt"
+	"strings"
+)
+
+// ARN is an Amazon Resource Name split into its parts:
+// arn:Partition:Service:Region:Account:Resource.
+type ARN struct {
+	Partition string // "aws" for most accounts
+	Service   string // "ec2", "s3", "iam", ...
+	Region    string // "eu-west-1", or "" for global services
+	Account   string // "111122223333", or "" (S3 buckets)
+	Resource  string // everything after the fifth colon
+}
+
+// Parse splits an ARN string into its parts.
+func Parse(s string) (ARN, error) {
+	// At most 6 parts: any colons in the resource stay in the last one.
+	parts := strings.SplitN(s, ":", 6)
+	if len(parts) != 6 || parts[0] != "arn" {
+		return ARN{}, fmt.Errorf("%q is not an ARN: want arn:partition:service:region:account:resource", s)
+	}
+	a := ARN{
+		Partition: parts[1],
+		Service:   parts[2],
+		Region:    parts[3],
+		Account:   parts[4],
+		Resource:  parts[5],
+	}
+	if a.Partition == "" || a.Service == "" || a.Resource == "" {
+		return ARN{}, fmt.Errorf("%q is not an ARN: partition, service and resource must not be empty", s)
+	}
+	return a, nil
+}
+
+// Scope returns "global", "account" or "regional": how far a resource's
+// name reaches.
+func Scope(a ARN) string {
+	switch {
+	case a.Region != "":
+		return "regional"
+	case a.Account != "":
+		return "account"
+	default:
+		return "global"
+	}
+}
+
+// RegionOfZone returns the region an availability zone belongs to, such
+// as "us-east-1" for "us-east-1a".
+func RegionOfZone(zone string) (string, error) {
+	if zone == "" {
+		return "", fmt.Errorf("%q is not a zone name: it is empty", zone)
+	}
+	letter := zone[len(zone)-1]
+	region := zone[:len(zone)-1]
+	if letter < 'a' || letter > 'z' {
+		return "", fmt.Errorf("%q is not a zone name: it must end in a letter a-z", zone)
+	}
+	if strings.Count(region, "-") < 2 || region[len(region)-1] < '0' || region[len(region)-1] > '9' {
+		return "", fmt.Errorf("%q is not a zone name: %q is not a region", zone, region)
+	}
+	return region, nil
+}
+
+// ForeignResources returns the ARNs in arns that belong to an account
+// other than account, in their original order.
+func ForeignResources(account string, arns []string) ([]string, error) {
+	var foreign []string
+	for _, s := range arns {
+		a, err := Parse(s)
+		if err != nil {
+			return nil, err
+		}
+		if a.Account != "" && a.Account != account {
+			foreign = append(foreign, s)
+		}
+	}
+	return foreign, nil
+}

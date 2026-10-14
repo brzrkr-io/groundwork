@@ -1,0 +1,85 @@
+package iam
+
+import "testing"
+
+// readPolicy, checkRules, expect and from are in policy_test.go.
+
+func TestBackupWriter(t *testing.T) {
+	const file = "1_backup_writer.json"
+	p := readPolicy(t, file)
+	checkRules(t, file, p)
+	const server = "192.0.2.10"
+	expect(t, file, []policy{p}, []check{
+		{"upload tonight's backup", allowed,
+			from(server, "s3:PutObject", "arn:aws:s3:::acme-db-backups/nightly/2026-10-13.sql.gz")},
+		{"upload into a subfolder", allowed,
+			from(server, "s3:PutObject", "arn:aws:s3:::acme-db-backups/nightly/orders/2026-10-13.sql.gz")},
+		{"read a backup", denied,
+			from(server, "s3:GetObject", "arn:aws:s3:::acme-db-backups/nightly/2026-10-13.sql.gz")},
+		{"delete a backup", denied,
+			from(server, "s3:DeleteObject", "arn:aws:s3:::acme-db-backups/nightly/2026-10-12.sql.gz")},
+		{"upload to weekly", denied,
+			from(server, "s3:PutObject", "arn:aws:s3:::acme-db-backups/weekly/2026-10-11.sql.gz")},
+		{"upload to a look-alike bucket", denied,
+			from(server, "s3:PutObject", "arn:aws:s3:::acme-db-backups-old/nightly/2026-10-13.sql.gz")},
+		{"make a backup public", denied,
+			from(server, "s3:PutObjectAcl", "arn:aws:s3:::acme-db-backups/nightly/2026-10-13.sql.gz")},
+		{"change the bucket policy", denied,
+			from(server, "s3:PutBucketPolicy", "arn:aws:s3:::acme-db-backups")},
+	})
+}
+
+func TestLogReader(t *testing.T) {
+	const file = "2_log_reader.json"
+	p := readPolicy(t, file)
+	checkRules(t, file, p)
+	const laptop = "198.51.100.7"
+	expect(t, file, []policy{p}, []check{
+		{"list the bucket", allowed,
+			from(laptop, "s3:ListBucket", "arn:aws:s3:::acme-app-logs")},
+		{"read a prod web log", allowed,
+			from(laptop, "s3:GetObject", "arn:aws:s3:::acme-app-logs/prod/web/2026-10-13.log")},
+		{"read a prod api log", allowed,
+			from(laptop, "s3:GetObject", "arn:aws:s3:::acme-app-logs/prod/api/2026-10-12.log")},
+		{"read a staging log", denied,
+			from(laptop, "s3:GetObject", "arn:aws:s3:::acme-app-logs/staging/web/2026-10-13.log")},
+		{"overwrite a log", denied,
+			from(laptop, "s3:PutObject", "arn:aws:s3:::acme-app-logs/prod/web/2026-10-13.log")},
+		{"delete a log", denied,
+			from(laptop, "s3:DeleteObject", "arn:aws:s3:::acme-app-logs/prod/web/2026-10-13.log")},
+		{"list another bucket", denied,
+			from(laptop, "s3:ListBucket", "arn:aws:s3:::acme-db-backups")},
+		{"read a look-alike bucket", denied,
+			from(laptop, "s3:GetObject", "arn:aws:s3:::acme-app-logs-archive/prod/web/2026-01-01.log")},
+	})
+}
+
+func TestDeployBot(t *testing.T) {
+	const file = "3_deploy_bot.json"
+	p := readPolicy(t, file)
+	checkRules(t, file, p)
+	const (
+		office = "203.0.113.25"
+		home   = "198.51.100.7"
+		web    = "arn:aws:ec2:eu-west-1:111122223333:instance/i-0abc1234def567890"
+	)
+	expect(t, file, []policy{p}, []check{
+		{"start from the office", allowed, from(office, "ec2:StartInstances", web)},
+		{"stop from the office", allowed, from(office, "ec2:StopInstances", web)},
+		{"reboot from the office", allowed, from(office, "ec2:RebootInstances", web)},
+		{"reboot another instance", allowed,
+			from("203.0.113.200", "ec2:RebootInstances", "arn:aws:ec2:eu-west-1:111122223333:instance/i-0fed9876cba543210")},
+		{"describe from the office", allowed, from("203.0.113.200", "ec2:DescribeInstances", "*")},
+		{"terminate", denied, from(office, "ec2:TerminateInstances", web)},
+		{"launch a new instance", denied, from(office, "ec2:RunInstances", "arn:aws:ec2:eu-west-1:111122223333:instance/*")},
+		{"start in another region", denied,
+			from(office, "ec2:StartInstances", "arn:aws:ec2:us-east-1:111122223333:instance/i-0abc1234def567890")},
+		{"start in another account", denied,
+			from(office, "ec2:StartInstances", "arn:aws:ec2:eu-west-1:444455556666:instance/i-0abc1234def567890")},
+		{"delete a volume", denied,
+			from(office, "ec2:DeleteVolume", "arn:aws:ec2:eu-west-1:111122223333:volume/vol-0123456789abcdef0")},
+		{"stop from home", denied, from(home, "ec2:StopInstances", web)},
+		{"describe from home", denied, from(home, "ec2:DescribeInstances", "*")},
+		{"start from a coffee shop", denied, from("192.0.2.44", "ec2:StartInstances", web)},
+	})
+}

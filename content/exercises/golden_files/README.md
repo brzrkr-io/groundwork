@@ -5,7 +5,7 @@ Checking that output with a giant string inside your test gets painful fast.
 *Golden files* keep the expected output in a file of its own, where you can
 read it and review changes like any other file.
 
-**New here:** the `testdata` directory, `os.ReadFile`, `[]byte` vs `string`, an `-update` flag.
+**New here:** the `testdata` directory, comparing `[]byte` with `string`, an `-update` flag with `flag.Bool`.
 
 ## Learn
 
@@ -45,8 +45,8 @@ escapes and quotes in the way.
 
 ### Reading a file
 
-`os.ReadFile` reads a whole file. It returns the contents as a `[]byte` (a
-slice of bytes) plus an error:
+As in *Subtests and helpers: files and t.TempDir*, `os.ReadFile` reads a
+whole file and returns its contents as a `[]byte` plus an error:
 
 ```go
 data, err := os.ReadFile(filepath.Join("testdata", "config.yaml"))
@@ -91,7 +91,7 @@ if *update {
 
 - `flag.Bool` returns a pointer to a `bool`. It is `false` unless you pass
   `-update`; `*update` reads its value. (The `flag` package gets its own
-  exercise later.)
+  exercises in *CLI tools and the OS*.)
 - `os.WriteFile` replaces the file's content. `0o644` is the usual file
   permission.
 
@@ -101,8 +101,9 @@ Run it like this:
 go test -run TestRenderInventory -update
 ```
 
-Then comes the important part: **read the new golden file** (in a real
-project, `git diff testdata/`) and check the change is the one you wanted.
+Then comes the important part: **read the new golden file** and check the
+change is the one you wanted. (In a real project, Git shows you exactly
+what changed; you'll use it in *Git and version control*.)
 `-update` makes the test agree with the code, whatever the code does, so the
 review is your real check.
 

@@ -13,10 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     # TODO(4): GitHub refuses to start this workflow:
     #   Expected format {org}/{repo}[/path]@ref. Actual 'acme/slack-notify'
-    # and the security review flagged two more steps that run whatever code
-    # their owners push next. Make every action run a version you chose.
+    # and the security review flagged the other three steps: each one runs
+    # whatever code its owner points that ref at next, or doesn't resolve.
+    # Pin every action to a full commit SHA with its release in a comment.
     steps:
-      - uses: actions/checkout@main
+      - uses: actions/checkout@3d3c42e
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod

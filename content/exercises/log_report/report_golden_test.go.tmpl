@@ -1,0 +1,11 @@
+package logreport
+
+import "testing"
+
+// TestReportGolden runs the whole pipeline on testdata/access.log and
+// compares the text report with testdata/report.golden.
+func TestReportGolden(t *testing.T) {
+	// TODO(7): Read testdata/access.log, parse it with ReadLog, summarize it,
+	// render it with WriteText, and fail the test if the text differs from
+	// testdata/report.golden.
+}

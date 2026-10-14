@@ -262,16 +262,16 @@ Flakiness comes from anything outside your inputs:
 | map order | Go deliberately varies the order of `range` over a map |
 | timing | "sleep 1 second and hope the goroutine finished" |
 
-The cure is to make those things **inputs**. Instead of calling `time.Now()` deep inside, take the current time as a parameter:
+The cure is to make those things **inputs**. Instead of reading the clock deep inside, take the current time as a parameter. Here both times are *Unix timestamps*: whole seconds since 1 January 1970, a common way to store a moment as a plain number:
 
 ```go
 package cert
 
-import "time"
-
 // ExpiresSoon reports whether a certificate expires within 14 days of now.
-func ExpiresSoon(expiry, now time.Time) bool {
-	return expiry.Sub(now) < 14*24*time.Hour
+// expiry and now are Unix timestamps (seconds since 1 January 1970).
+func ExpiresSoon(expiry, now int64) bool {
+	const fourteenDays = 14 * 24 * 60 * 60 // in seconds
+	return expiry-now < fourteenDays
 }
 ```
 
@@ -280,24 +280,22 @@ The test then pins the clock to one fixed moment:
 ```go
 package cert
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
 func TestExpiresSoon(t *testing.T) {
-	now := time.Date(2026, time.October, 13, 9, 0, 0, 0, time.UTC)
+	const day = 24 * 60 * 60     // one day in seconds
+	var now int64 = 1_791_882_000 // 13 October 2026, 09:00 UTC
 
-	if !ExpiresSoon(now.Add(3*24*time.Hour), now) {
+	if !ExpiresSoon(now+3*day, now) {
 		t.Error("cert expiring in 3 days: ExpiresSoon = false, want true")
 	}
-	if ExpiresSoon(now.Add(90*24*time.Hour), now) {
+	if ExpiresSoon(now+90*day, now) {
 		t.Error("cert expiring in 90 days: ExpiresSoon = true, want false")
 	}
 }
 ```
 
-It passes today, and it will still pass in 2030, because nothing in it depends on the real date.
+It passes today, and it will still pass in 2030, because nothing in it depends on the real date. Only the caller in production reads the real clock and passes it in. (Go's `time` package has proper types for moments and durations; *Time and durations: cert expiry, uptime, maintenance windows* teaches them, and the idea stays the same.)
 
 For bigger dependencies, like an AWS client or an HTTP API, you pass in a *fake*: a small stand-in that behaves the way you script it, with no network. Interfaces make the swap possible, as you saw in *Interfaces: swap in a fake for tests*. The *Abstraction* guide explains why this works, and you build fakes in *Fakes and dependency injection* and *Fakes: a fake clock for retries*.
 

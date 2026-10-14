@@ -1,0 +1,88 @@
+package kustomize
+
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+)
+
+// podinfo is the image name in base/deployment.yaml, without its tag.
+const podinfo = "ghcr.io/stefanprodan/podinfo"
+
+func TestBase(t *testing.T) {
+	const file = "base/kustomization.yaml"
+	k := readKustomization(t, file)
+	for _, want := range []string{"base/deployment.yaml", "base/service.yaml"} {
+		if !slices.ContainsFunc(k.Resources, func(r string) bool { return resolves("base", r, want) }) {
+			t.Errorf("%s: resources is %q, want it to list %s (written relative to base/)", file, k.Resources, strings.TrimPrefix(want, "base/"))
+		}
+	}
+	if len(k.Resources) != 2 {
+		t.Errorf("%s: resources has %d entries, want 2: the Deployment and the Service", file, len(k.Resources))
+	}
+}
+
+func TestStaging(t *testing.T) {
+	checkOverlay(t, "overlays/staging", "staging", "6.9.2")
+}
+
+func TestReplicasPatch(t *testing.T) {
+	const file = "overlays/production/replicas.yaml"
+	var d appsv1.Deployment
+	readManifest(t, file, &d)
+	if d.APIVersion != "apps/v1" || d.Kind != "Deployment" || d.Name != "web" {
+		t.Errorf("%s: the patch is for apiVersion %q, kind %q, name %q; want apps/v1, Deployment, web: the patch must name the object it changes",
+			file, d.APIVersion, d.Kind, d.Name)
+	}
+	switch {
+	case d.Spec.Replicas == nil:
+		t.Errorf("%s: spec.replicas is not set, want 4", file)
+	case *d.Spec.Replicas != 4:
+		t.Errorf("%s: spec.replicas is %d, want 4", file, *d.Spec.Replicas)
+	}
+	if len(d.Spec.Template.Spec.Containers) > 0 {
+		t.Errorf("%s: the patch repeats the containers; a patch holds only what changes", file)
+	}
+}
+
+func TestProduction(t *testing.T) {
+	const dir = "overlays/production"
+	k := checkOverlay(t, dir, "production", "6.9.1")
+	if !slices.ContainsFunc(k.Patches, func(p patch) bool { return resolves(dir, p.Path, dir+"/replicas.yaml") }) {
+		t.Errorf("%s/kustomization.yaml: patches doesn't include the file replicas.yaml, so production keeps 2 replicas", dir)
+	}
+}
+
+// checkOverlay checks the kustomization in dir: built on the base, in
+// namespace ns, with podinfo's tag changed to tag. It returns the file.
+func checkOverlay(t *testing.T, dir, ns, tag string) kustomization {
+	t.Helper()
+	file := dir + "/kustomization.yaml"
+	k := readKustomization(t, file)
+	if !slices.ContainsFunc(k.Resources, func(r string) bool { return resolves(dir, r, "base") }) {
+		t.Errorf("%s: resources is %q, want it to include the base, written relative to %s/: ../../base", file, k.Resources, dir)
+	}
+	if k.Namespace != ns {
+		t.Errorf("%s: namespace is %q, want %q", file, k.Namespace, ns)
+	}
+	var found bool
+	for _, img := range k.Images {
+		if img.Name != podinfo {
+			t.Errorf("%s: images has name %q, which no container uses; want %q (the image without its tag)", file, img.Name, podinfo)
+			continue
+		}
+		found = true
+		if img.NewTag != tag {
+			t.Errorf("%s: newTag for %s is %q, want %q", file, podinfo, img.NewTag, tag)
+		}
+		if img.NewName != "" && img.NewName != podinfo {
+			t.Errorf("%s: newName is %q; the image stays %s, only the tag changes", file, img.NewName, podinfo)
+		}
+	}
+	if !found {
+		t.Errorf("%s: images has no entry for %s, want newTag %q", file, podinfo, tag)
+	}
+	return k
+}

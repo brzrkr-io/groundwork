@@ -1,0 +1,44 @@
+// Package hashring is the Groundwork exercise "Hash rings: find a key's node".
+package hashring
+
+// Point returns where s sits on the ring: a number from 0 to 4,294,967,295.
+func Point(s string) uint32 {
+	// TODO(1): Return the CRC-32 (IEEE) checksum of s. Add "hash/crc32" to
+	// the imports.
+	return 0
+}
+
+// Next returns the index of the first point in points at or after h, or 0
+// when h is past the last point. points must be sorted from low to high and
+// must not be empty.
+func Next(points []uint32, h uint32) int {
+	// TODO(2): Binary-search points for h and wrap around past the end. Add
+	// "slices" to the imports.
+	return -1
+}
+
+// Ring routes keys to nodes. Every node sits on the ring at one point, and a
+// key belongs to the node at the first point at or after the key's hash,
+// wrapping around after the last point.
+type Ring struct {
+	points []uint32          // every point on the ring, sorted from low to high
+	owners map[uint32]string // point -> the node that sits there
+}
+
+// New returns an empty Ring.
+func New() *Ring {
+	return &Ring{owners: make(map[uint32]string)}
+}
+
+// Add places each node on the ring at Point(node). Points that are already
+// on the ring are skipped, so adding a node twice changes nothing.
+func (r *Ring) Add(nodes ...string) {
+	// TODO(3): Record each node's point in r.owners and r.points, and keep
+	// r.points sorted.
+}
+
+// Get returns the node that owns key, or "" if the ring is empty.
+func (r *Ring) Get(key string) string {
+	// TODO(4): Find the point for key with Next and return its owner.
+	return ""
+}

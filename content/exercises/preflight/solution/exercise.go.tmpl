@@ -1,0 +1,354 @@
+// Package preflight is the Groundwork exercise "Practice: preflight check CLI".
+package preflight
+
+import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"io/fs"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+)
+
+// Version is what "preflight version" prints.
+const Version = "1.4.0"
+
+// command is one preflight subcommand: a one-line summary for the help text
+// and the function that does the work.
+type command struct {
+	summary string
+	run     func(args []string, stdin io.Reader, stdout, stderr io.Writer, lookup func(string) (string, bool)) int
+}
+
+// commands maps each command name to its command.
+var commands = map[string]command{
+	"check":   {summary: "check the settings and the host list before a deploy", run: runCheck},
+	"init":    {summary: "write a config file with the default settings", run: runInit},
+	"version": {summary: "print the version", run: runVersion},
+}
+
+// Run is the whole preflight program. args is os.Args[1:], so args[0] is the
+// command name. lookup reads environment variables, like os.LookupEnv. Run
+// returns the exit code: 0 for success, 1 when problems were found and 2 for
+// a usage or config error.
+func Run(args []string, stdin io.Reader, stdout, stderr io.Writer, lookup func(string) (string, bool)) int {
+	if len(args) == 0 {
+		writeUsage(stderr)
+		return 2
+	}
+	name := args[0]
+	if name == "help" || name == "-h" || name == "--help" {
+		writeUsage(stdout)
+		return 0
+	}
+	cmd, ok := commands[name]
+	if !ok {
+		fmt.Fprintf(stderr, "preflight: unknown command %q\n", name)
+		writeUsage(stderr)
+		return 2
+	}
+	return cmd.run(args[1:], stdin, stdout, stderr, lookup)
+}
+
+// writeUsage writes the help text to w, listing every command in commands.
+func writeUsage(w io.Writer) {
+	fmt.Fprintln(w, "usage: preflight <command> [flags]")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "commands:")
+	for _, name := range slices.Sorted(maps.Keys(commands)) {
+		fmt.Fprintf(w, "  %-8s %s\n", name, commands[name].summary)
+	}
+}
+
+// runVersion handles "preflight version".
+// It is finished: use it as the example for the other handlers.
+func runVersion(args []string, stdin io.Reader, stdout, stderr io.Writer, lookup func(string) (string, bool)) int {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0 // "preflight version -h" asked for help
+		}
+		return 2 // the flag package has already printed the problem
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "preflight: version takes no arguments")
+		return 2
+	}
+	fmt.Fprintf(stdout, "preflight %s\n", Version)
+	return 0
+}
+
+// Settings is the final configuration of a preflight check.
+type Settings struct {
+	Env       string `json:"env"`        // dev, staging or prod
+	HostsFile string `json:"hosts_file"` // the host list; "-" means stdin
+	MaxHosts  int    `json:"max_hosts"`  // most hosts one deploy may touch
+}
+
+// Defaults returns the built-in settings.
+func Defaults() Settings {
+	return Settings{Env: "staging", HostsFile: "hosts.txt", MaxHosts: 10}
+}
+
+// Validate returns an error describing the first bad setting in s, checking
+// Env, then HostsFile, then MaxHosts. It returns nil when all are good.
+func (s Settings) Validate() error {
+	switch s.Env {
+	case "dev", "staging", "prod":
+	default:
+		return fmt.Errorf("env must be dev, staging or prod, got %q", s.Env)
+	}
+	if s.HostsFile == "" {
+		return errors.New("hosts_file must not be empty")
+	}
+	if s.MaxHosts < 1 {
+		return fmt.Errorf("max_hosts must be at least 1, got %d", s.MaxHosts)
+	}
+	return nil
+}
+
+// runInit handles "preflight init [-config PATH] [-force]".
+func runInit(args []string, stdin io.Reader, stdout, stderr io.Writer, lookup func(string) (string, bool)) int {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	path := fs.String("config", "preflight.json", "config file to write")
+	force := fs.Bool("force", false, "replace an existing config file")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "preflight: init takes no arguments")
+		return 2
+	}
+
+	if _, err := os.Stat(*path); err == nil && !*force {
+		fmt.Fprintf(stderr, "preflight: %s already exists; use -force to replace it\n", *path)
+		return 1
+	}
+	data, err := json.MarshalIndent(Defaults(), "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "preflight: %v\n", err)
+		return 1
+	}
+	if err := WriteFileAtomic(*path, append(data, '\n')); err != nil {
+		fmt.Fprintf(stderr, "preflight: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "wrote %s\n", *path)
+	return 0
+}
+
+// WriteFileAtomic replaces path with data via a temp file and a rename,
+// keeping the existing file's permissions (0o644 for a new file).
+func WriteFileAtomic(path string, data []byte) error {
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			tmp.Close()
+			os.Remove(tmp.Name())
+		}
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return err
+	}
+	ok = true
+	return nil
+}
+
+// CheckHosts reads a host list from r, one host per line, skipping blank
+// lines and # comments. It returns one message per problem, in line order,
+// then a message if the list is empty or longer than maxHosts. Every host
+// must end in "." + env. The error is only for a failed read.
+func CheckHosts(r io.Reader, env string, maxHosts int) ([]string, error) {
+	var problems []string
+	seen := map[string]bool{}
+	count := 0
+	lineNo := 0
+	sc := bufio.NewScanner(r)
+	for sc.Scan() {
+		lineNo++
+		host := strings.TrimSpace(sc.Text())
+		if host == "" || strings.HasPrefix(host, "#") {
+			continue
+		}
+		count++
+		switch {
+		case strings.ContainsAny(host, " \t"):
+			problems = append(problems, fmt.Sprintf("line %d: invalid host %q", lineNo, host))
+		case !strings.HasSuffix(host, "."+env):
+			problems = append(problems, fmt.Sprintf("line %d: host %q is not in %s", lineNo, host, env))
+		case seen[host]:
+			problems = append(problems, fmt.Sprintf("line %d: duplicate host %q", lineNo, host))
+		default:
+			seen[host] = true
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		problems = append(problems, "no hosts")
+	} else if count > maxHosts {
+		problems = append(problems, fmt.Sprintf("%d hosts, more than max_hosts %d", count, maxHosts))
+	}
+	return problems, nil
+}
+
+// fileSettings mirrors the JSON config file. A field is nil when its key is
+// missing from the file.
+type fileSettings struct {
+	Env       *string `json:"env"`
+	HostsFile *string `json:"hosts_file"`
+	MaxHosts  *int    `json:"max_hosts"`
+}
+
+// Load builds the settings from the defaults, then the JSON config file at
+// path (a missing file is skipped), then the PREFLIGHT_ENV,
+// PREFLIGHT_HOSTS_FILE and PREFLIGHT_MAX_HOSTS environment variables.
+func Load(path string, lookup func(string) (string, bool)) (Settings, error) {
+	s := Defaults()
+
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return Settings{}, err
+	}
+	if err == nil {
+		var f fileSettings
+		if err := json.Unmarshal(data, &f); err != nil {
+			return Settings{}, fmt.Errorf("%s: %w", path, err)
+		}
+		if f.Env != nil {
+			s.Env = *f.Env
+		}
+		if f.HostsFile != nil {
+			s.HostsFile = *f.HostsFile
+		}
+		if f.MaxHosts != nil {
+			s.MaxHosts = *f.MaxHosts
+		}
+	}
+
+	if v, ok := lookup("PREFLIGHT_ENV"); ok {
+		s.Env = v
+	}
+	if v, ok := lookup("PREFLIGHT_HOSTS_FILE"); ok {
+		s.HostsFile = v
+	}
+	if v, ok := lookup("PREFLIGHT_MAX_HOSTS"); ok {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return Settings{}, fmt.Errorf("invalid PREFLIGHT_MAX_HOSTS %q: %w", v, err)
+		}
+		s.MaxHosts = n
+	}
+	return s, nil
+}
+
+// checkFlags holds the check command's flag values after parsing.
+type checkFlags struct {
+	config   string
+	env      string
+	hosts    string
+	maxHosts int
+}
+
+// runCheck handles "preflight check [-config PATH] [-env ENV] [-hosts FILE]
+// [-max-hosts N]".
+func runCheck(args []string, stdin io.Reader, stdout, stderr io.Writer, lookup func(string) (string, bool)) int {
+	var cli checkFlags
+	fs := flag.NewFlagSet("check", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&cli.config, "config", "preflight.json", "config file to read")
+	fs.StringVar(&cli.env, "env", "", "environment: dev, staging or prod")
+	fs.StringVar(&cli.hosts, "hosts", "", `host list file, or "-" for stdin`)
+	fs.IntVar(&cli.maxHosts, "max-hosts", 0, "most hosts one deploy may touch")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "preflight: check takes no arguments")
+		return 2
+	}
+
+	s, err := Load(cli.config, lookup)
+	if err != nil {
+		fmt.Fprintf(stderr, "preflight: %v\n", err)
+		return 2
+	}
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "env":
+			s.Env = cli.env
+		case "hosts":
+			s.HostsFile = cli.hosts
+		case "max-hosts":
+			s.MaxHosts = cli.maxHosts
+		}
+	})
+	if err := s.Validate(); err != nil {
+		fmt.Fprintf(stderr, "preflight: %v\n", err)
+		return 2
+	}
+
+	in := stdin
+	if s.HostsFile != "-" {
+		f, err := os.Open(s.HostsFile)
+		if err != nil {
+			fmt.Fprintf(stderr, "preflight: %v\n", err)
+			return 2
+		}
+		defer f.Close()
+		in = f
+	}
+	problems, err := CheckHosts(in, s.Env, s.MaxHosts)
+	if err != nil {
+		fmt.Fprintf(stderr, "preflight: reading hosts: %v\n", err)
+		return 2
+	}
+
+	for _, p := range problems {
+		fmt.Fprintln(stdout, p)
+	}
+	if len(problems) > 0 {
+		fmt.Fprintf(stderr, "preflight: %d problem(s) found\n", len(problems))
+		return 1
+	}
+	fmt.Fprintf(stderr, "preflight: ok for %s\n", s.Env)
+	return 0
+}

@@ -1,0 +1,115 @@
+package practice
+
+import (
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+func TestDeployment(t *testing.T) {
+	const file = "1_deployment.yaml"
+	_, c := readDeployment(t, file)
+	if want := "ghcr.io/stefanprodan/podinfo:6.9.2"; c.Image != want {
+		t.Errorf("%s: image is %q, want %q, the newest 6.9 tag that exists", file, c.Image, want)
+	}
+	for _, p := range []struct {
+		field string
+		probe *corev1.Probe
+		path  string
+	}{
+		{"readinessProbe", c.ReadinessProbe, "/readyz"},
+		{"livenessProbe", c.LivenessProbe, "/healthz"},
+	} {
+		if p.probe == nil || p.probe.HTTPGet == nil {
+			t.Errorf("%s: the container has no %s with httpGet; keep it", file, p.field)
+			continue
+		}
+		get := p.probe.HTTPGet
+		if get.Path != p.path {
+			t.Errorf("%s: %s checks %q, want %q", file, p.field, get.Path, p.path)
+		}
+		if !listensOn(c, get.Port) {
+			t.Errorf("%s: %s checks port %s, but podinfo listens on 9898, the port named http", file, p.field, get.Port.String())
+		}
+	}
+}
+
+func TestConfigMap(t *testing.T) {
+	const file = "2_configmap.yaml"
+	var cm corev1.ConfigMap
+	readManifest(t, file, &cm)
+	if cm.Kind != "ConfigMap" || cm.Name != "notes-config" || cm.Namespace != "notes" {
+		t.Fatalf("%s: kind %q, name %q, namespace %q, want the ConfigMap notes-config in notes", file, cm.Kind, cm.Name, cm.Namespace)
+	}
+	_, c := readDeployment(t, "1_deployment.yaml")
+	for _, e := range c.Env {
+		ref := e.ValueFrom
+		if ref == nil || ref.ConfigMapKeyRef == nil || ref.ConfigMapKeyRef.Name != cm.Name {
+			continue
+		}
+		key := ref.ConfigMapKeyRef.Key
+		if value, ok := cm.Data[key]; !ok {
+			t.Errorf("%s: data has no key %q, which 1_deployment.yaml reads into %s; the Pods stop with CreateContainerConfigError",
+				file, key, e.Name)
+		} else if value != "info" {
+			t.Errorf("%s: %s is %q; keep the value info", file, key, value)
+		}
+	}
+}
+
+func TestService(t *testing.T) {
+	const file = "3_service.yaml"
+	var svc corev1.Service
+	readManifest(t, file, &svc)
+	if svc.Kind != "Service" || svc.Name != "notes" || svc.Namespace != "notes" {
+		t.Fatalf("%s: kind %q, name %q, namespace %q, want the Service notes in notes", file, svc.Kind, svc.Name, svc.Namespace)
+	}
+	d, c := readDeployment(t, "1_deployment.yaml")
+	pods := d.Spec.Template.Labels
+	if len(svc.Spec.Selector) == 0 {
+		t.Errorf("%s: the selector is empty, want labels of the notes Pods: %v", file, pods)
+	}
+	for key, value := range svc.Spec.Selector {
+		if pods[key] != value {
+			t.Errorf("%s: the selector asks for %s=%s, but the Pods have %v, so the Service has no endpoints", file, key, value, pods)
+		}
+	}
+	if len(svc.Spec.Ports) != 1 {
+		t.Fatalf("%s: the Service has %d ports, want 1", file, len(svc.Spec.Ports))
+	}
+	p := svc.Spec.Ports[0]
+	if p.Port != 80 {
+		t.Errorf("%s: port is %d; keep 80, other apps call http://notes.notes/", file, p.Port)
+	}
+	if !listensOn(c, p.TargetPort) {
+		t.Errorf("%s: targetPort %s isn't a port the container listens on; podinfo listens on 9898, named http", file, p.TargetPort.String())
+	}
+}
+
+// readDeployment reads the notes Deployment and returns it and its one
+// container.
+func readDeployment(t *testing.T, file string) (*appsv1.Deployment, *corev1.Container) {
+	t.Helper()
+	var d appsv1.Deployment
+	readManifest(t, file, &d)
+	if d.Kind != "Deployment" || d.Name != "notes" {
+		t.Fatalf("%s: kind %q, name %q, want the Deployment notes", file, d.Kind, d.Name)
+	}
+	if len(d.Spec.Template.Spec.Containers) != 1 {
+		t.Fatalf("%s: the Pod template has %d containers, want 1", file, len(d.Spec.Template.Spec.Containers))
+	}
+	return &d, &d.Spec.Template.Spec.Containers[0]
+}
+
+// listensOn reports whether port, a number or a name, is one of c's ports.
+func listensOn(c *corev1.Container, port intstr.IntOrString) bool {
+	for _, cp := range c.Ports {
+		if port.Type == intstr.String && port.StrVal == cp.Name ||
+			port.Type == intstr.Int && port.IntVal == cp.ContainerPort {
+			return true
+		}
+	}
+	return false
+}

@@ -1,0 +1,29 @@
+# Task 4: podinfo reads /etc/podinfo/config.yaml when it starts. That file
+# comes from the ConfigMap in report-config.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report
+  namespace: shop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: report
+  template:
+    metadata:
+      labels:
+        app: report
+    spec:
+      volumes:
+        - name: config
+          configMap:
+            name: report-config
+      containers:
+        - name: report
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          command: ["./podinfo", "--config-path=/etc/podinfo"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/podinfo
+              readOnly: true

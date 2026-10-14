@@ -1,0 +1,106 @@
+// Package cloudtrail is the Groundwork exercise "CloudTrail: trace a leaked access key".
+package cloudtrail
+
+import (
+	"encoding/json"
+	"fmt"
+	"maps"
+	"os"
+	"slices"
+	"strings"
+	"time"
+)
+
+// UserIdentity says who made an API call, and with which access key.
+type UserIdentity struct {
+	Type        string `json:"type"`
+	ARN         string `json:"arn"`
+	AccountID   string `json:"accountId"`
+	AccessKeyID string `json:"accessKeyId"`
+	UserName    string `json:"userName"`
+}
+
+// Event is one CloudTrail record. Fields this exercise doesn't use, such as
+// requestParameters, are left out; encoding/json skips them.
+type Event struct {
+	EventTime       time.Time    `json:"eventTime"`
+	EventSource     string       `json:"eventSource"`
+	EventName       string       `json:"eventName"`
+	AWSRegion       string       `json:"awsRegion"`
+	SourceIPAddress string       `json:"sourceIPAddress"`
+	UserAgent       string       `json:"userAgent"`
+	UserIdentity    UserIdentity `json:"userIdentity"`
+	ErrorCode       string       `json:"errorCode"`
+	ErrorMessage    string       `json:"errorMessage"`
+	ReadOnly        bool         `json:"readOnly"`
+}
+
+// Summary is the one-screen overview of a set of events for an incident report.
+type Summary struct {
+	First     time.Time // earliest EventTime
+	Last      time.Time // latest EventTime
+	SourceIPs []string  // sorted, no duplicates
+	Regions   []string  // sorted, no duplicates
+	Actions   []string  // "service:EventName", sorted, no duplicates
+	Denied    int       // events with an ErrorCode
+}
+
+// Load reads a CloudTrail log file, {"Records": [...]}, and returns its
+// events in file order.
+func Load(path string) ([]Event, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var file struct {
+		Records []Event `json:"Records"`
+	}
+	if err := json.Unmarshal(data, &file); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return file.Records, nil
+}
+
+// ByAccessKey returns the events made with access key keyID, oldest first.
+func ByAccessKey(events []Event, keyID string) []Event {
+	var found []Event
+	for _, e := range events {
+		if e.UserIdentity.AccessKeyID == keyID {
+			found = append(found, e)
+		}
+	}
+	slices.SortFunc(found, func(a, b Event) int {
+		return a.EventTime.Compare(b.EventTime)
+	})
+	return found
+}
+
+// Summarize returns the first and last times, the source IPs, regions and
+// actions, and the number of failed calls in events.
+func Summarize(events []Event) Summary {
+	var s Summary
+	if len(events) == 0 {
+		return s
+	}
+	ips, regions, actions := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	s.First, s.Last = events[0].EventTime, events[0].EventTime
+	for _, e := range events {
+		if e.EventTime.Before(s.First) {
+			s.First = e.EventTime
+		}
+		if e.EventTime.After(s.Last) {
+			s.Last = e.EventTime
+		}
+		ips[e.SourceIPAddress] = true
+		regions[e.AWSRegion] = true
+		service := strings.TrimSuffix(e.EventSource, ".amazonaws.com")
+		actions[service+":"+e.EventName] = true
+		if e.ErrorCode != "" {
+			s.Denied++
+		}
+	}
+	s.SourceIPs = slices.Sorted(maps.Keys(ips))
+	s.Regions = slices.Sorted(maps.Keys(regions))
+	s.Actions = slices.Sorted(maps.Keys(actions))
+	return s
+}

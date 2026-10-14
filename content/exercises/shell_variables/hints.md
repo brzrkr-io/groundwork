@@ -51,3 +51,22 @@ and capture that number with `$(...)`.
 count=$(wc -l < "$1")
 echo "$1: $count hosts"
 ```
+
+## Task 4: Hand the settings to the check
+
+Two variables must be in the environment before you run the check: export
+them. `DEPLOY_ENV` comes from `$1`; `LOG_LEVEL` keeps the caller's value
+unless it's missing or empty.
+
+### Closer
+
+`export NAME="value"` sets and exports in one line. For the level, the
+value is `"${LOG_LEVEL:-debug}"`. Then run `bash testdata/check_env.sh`.
+
+### Answer
+
+```bash
+export DEPLOY_ENV="$1"
+export LOG_LEVEL="${LOG_LEVEL:-debug}"
+bash testdata/check_env.sh
+```

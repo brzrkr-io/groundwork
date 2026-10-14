@@ -1,0 +1,26 @@
+# Task 1: page someone when the deploy API's error ratio is too high.
+# Prometheus loads rule files through rule_files in prometheus.yml. In a
+# real repository this would be, for example, prometheus/rules/errors.yml.
+groups:
+  - name: deploy-api-errors
+    rules:
+      # A finished example: page someone when Prometheus can't scrape the API.
+      - alert: TargetDown
+        expr: up{job="deploy-api"} == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: Prometheus can't scrape the deploy API
+          runbook_url: https://runbooks.example.com/deploy-api/target-down
+
+      # More than 5% of requests failed over the last 5 minutes. Both sides
+      # are summed, so the ratio is one number for the whole service.
+      - alert: HighErrorRatio
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: More than 5% of deploy API requests are failing
+          runbook_url: https://runbooks.example.com/deploy-api/high-error-ratio

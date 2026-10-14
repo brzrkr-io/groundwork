@@ -1,0 +1,89 @@
+package iam
+
+import "testing"
+
+// readPolicy, checkRules, expect and from are in policy_test.go.
+
+func TestCIArtifacts(t *testing.T) {
+	const file = "1_ci_artifacts.json"
+	p := readPolicy(t, file)
+	checkRules(t, file, p)
+	const (
+		runner = "192.0.2.50"
+		build  = "arn:aws:s3:::acme-ci-artifacts/builds/1234/app.tar.gz"
+	)
+	expect(t, file, []policy{p}, []check{
+		{"upload a build", allowed, from(runner, "s3:PutObject", build)},
+		{"download an older build", allowed,
+			from(runner, "s3:GetObject", "arn:aws:s3:::acme-ci-artifacts/builds/1233/app.tar.gz")},
+		{"delete a build", denied,
+			from(runner, "s3:DeleteObject", "arn:aws:s3:::acme-ci-artifacts/builds/1200/app.tar.gz")},
+		{"make a build public", denied, from(runner, "s3:PutObjectAcl", build)},
+		{"overwrite a release", denied,
+			from(runner, "s3:PutObject", "arn:aws:s3:::acme-ci-artifacts/releases/v1.4.0/app.tar.gz")},
+		{"upload to another bucket", denied,
+			from(runner, "s3:PutObject", "arn:aws:s3:::acme-ci-artifacts-public/builds/1234/app.tar.gz")},
+		{"read the database backups", denied,
+			from(runner, "s3:GetObject", "arn:aws:s3:::acme-db-backups/nightly/2026-10-13.sql.gz")},
+		{"change the bucket policy", denied,
+			from(runner, "s3:PutBucketPolicy", "arn:aws:s3:::acme-ci-artifacts")},
+		{"delete the bucket", denied,
+			from(runner, "s3:DeleteBucket", "arn:aws:s3:::acme-ci-artifacts")},
+		{"list every bucket", denied, from(runner, "s3:ListAllMyBuckets", "*")},
+	})
+}
+
+func TestReportReader(t *testing.T) {
+	const file = "2_report_reader.json"
+	p := readPolicy(t, file)
+	checkRules(t, file, p)
+	const office = "203.0.113.25"
+	expect(t, file, []policy{p}, []check{
+		{"aws s3 ls", allowed, from(office, "s3:ListBucket", "arn:aws:s3:::acme-reports")},
+		{"aws s3 cp summary", allowed,
+			from(office, "s3:GetObject", "arn:aws:s3:::acme-reports/2026/09/summary.pdf")},
+		{"aws s3 cp costs", allowed,
+			from(office, "s3:GetObject", "arn:aws:s3:::acme-reports/2026/10/costs.csv")},
+		{"overwrite a report", denied,
+			from(office, "s3:PutObject", "arn:aws:s3:::acme-reports/2026/10/costs.csv")},
+		{"delete a report", denied,
+			from(office, "s3:DeleteObject", "arn:aws:s3:::acme-reports/2026/09/summary.pdf")},
+		{"read the archive", denied,
+			from(office, "s3:GetObject", "arn:aws:s3:::acme-reports-archive/2020/summary.pdf")},
+		{"list the archive", denied,
+			from(office, "s3:ListBucket", "arn:aws:s3:::acme-reports-archive")},
+	})
+}
+
+func TestBackupGuardrail(t *testing.T) {
+	const file = "3_backup_guardrail.json"
+	p := readPolicy(t, file)
+	checkRules(t, file, p)
+	const (
+		server = "192.0.2.10"
+		daily  = "arn:aws:s3:::acme-db-backups/daily/2026-10-01.sql.gz"
+		tmp    = "arn:aws:s3:::acme-db-backups/tmp/2026-10-13.sql.gz"
+	)
+	expect(t, file, []policy{p}, []check{
+		{"upload to tmp", allowed, from(server, "s3:PutObject", tmp)},
+		{"copy into daily", allowed,
+			from(server, "s3:PutObject", "arn:aws:s3:::acme-db-backups/daily/2026-10-13.sql.gz")},
+		{"read a daily backup", allowed, from(server, "s3:GetObject", daily)},
+		{"clean up tmp", allowed, from(server, "s3:DeleteObject", tmp)},
+		{"list the bucket", allowed, from(server, "s3:ListBucket", "arn:aws:s3:::acme-db-backups")},
+		{"delete a daily backup", deniedByDeny, from(server, "s3:DeleteObject", daily)},
+		{"delete a daily backup in a subfolder", deniedByDeny,
+			from(server, "s3:DeleteObject", "arn:aws:s3:::acme-db-backups/daily/orders/2026-10-01.sql.gz")},
+	})
+
+	// Someone attaches a policy like AWS's AmazonS3FullAccess to the same
+	// role. A guardrail has to hold anyway.
+	fullAccess := policy{
+		Version:   "2012-10-17",
+		Statement: []statement{{Effect: "Allow", Action: stringList{"s3:*"}, Resource: stringList{"*"}}},
+	}
+	expect(t, file+" + full access", []policy{p, fullAccess}, []check{
+		{"full access: delete a daily backup", deniedByDeny, from(server, "s3:DeleteObject", daily)},
+		{"full access: clean up tmp", allowed, from(server, "s3:DeleteObject", tmp)},
+	})
+}

@@ -1,0 +1,112 @@
+// Package debugging is the Groundwork exercise "Debugging pods: describe, events and exit codes".
+package debugging
+
+import (
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// The causes Diagnose can report.
+const (
+	CauseImage         = "image"         // the image can't be pulled
+	CauseUnschedulable = "unschedulable" // no node has room for the Pod
+	CauseConfig        = "config"        // a ConfigMap, Secret or key is missing
+	CauseMemory        = "memory"        // killed for going over its memory limit
+	CauseLiveness      = "liveness"      // restarted by a failing liveness probe
+	CauseCrash         = "crash"         // the app exits with an error
+	CauseReadiness     = "readiness"     // running, but failing its readiness probe
+	CauseNone          = "none"          // nothing wrong found
+)
+
+// Termination is the "Last State: Terminated" block of
+// `kubectl describe pod`: why the container's previous run ended.
+type Termination struct {
+	Reason   string // such as "Error", "OOMKilled" or "Completed"
+	ExitCode int
+}
+
+// ErrNoTermination means the describe output has no "Last State:
+// Terminated" block: the container hasn't been restarted.
+var ErrNoTermination = errors.New("no earlier termination")
+
+// Signal returns the number of the signal that killed a container with
+// this exit code, and true; or 0 and false if no signal killed it. Exit
+// codes above 128 mean "killed by signal code - 128".
+func Signal(code int) (sig int, killed bool) {
+	if code > 128 {
+		return code - 128, true
+	}
+	return 0, false
+}
+
+// LastTermination finds the "Last State:" line in the output of
+// `kubectl describe pod` and, if it says Terminated, returns the Reason
+// and Exit Code from the lines indented under it. It returns
+// ErrNoTermination if there is no such block, and another error if the
+// exit code is missing or not a number.
+func LastTermination(describe string) (Termination, error) {
+	lines := strings.Split(describe, "\n")
+	for i, line := range lines {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), ":")
+		if key != "Last State" || strings.TrimSpace(value) != "Terminated" {
+			continue
+		}
+		var t Termination
+		exitCode := ""
+		depth := indent(line)
+		// The block is every following line indented deeper than "Last State:".
+		for _, field := range lines[i+1:] {
+			if indent(field) <= depth {
+				break
+			}
+			key, value, _ := strings.Cut(strings.TrimSpace(field), ":")
+			switch key {
+			case "Reason":
+				t.Reason = strings.TrimSpace(value)
+			case "Exit Code":
+				exitCode = strings.TrimSpace(value)
+			}
+		}
+		code, err := strconv.Atoi(exitCode)
+		if err != nil {
+			return Termination{}, fmt.Errorf("last state exit code %q: %w", exitCode, err)
+		}
+		t.ExitCode = code
+		return t, nil
+	}
+	return Termination{}, ErrNoTermination
+}
+
+// indent returns the number of spaces at the start of line.
+func indent(line string) int {
+	return len(line) - len(strings.TrimLeft(line, " "))
+}
+
+// Diagnose returns the most likely cause of a Pod's trouble, one of the
+// Cause constants, from the output of `kubectl describe pod`. The README
+// lists the checks in order; the first that matches wins.
+func Diagnose(describe string) string {
+	has := func(s string) bool { return strings.Contains(describe, s) }
+	last, err := LastTermination(describe)
+	restarted := err == nil
+
+	switch {
+	case has("ErrImagePull") || has("ImagePullBackOff"):
+		return CauseImage
+	case has("FailedScheduling"):
+		return CauseUnschedulable
+	case has("CreateContainerConfigError"):
+		return CauseConfig
+	case restarted && last.Reason == "OOMKilled":
+		return CauseMemory
+	case has("failed liveness probe"):
+		return CauseLiveness
+	case restarted && last.ExitCode != 0:
+		return CauseCrash
+	case has("Readiness probe failed"):
+		return CauseReadiness
+	}
+	return CauseNone
+}

@@ -1,0 +1,5 @@
+# Task 4: production runs the base in the namespace production, on the
+# tested podinfo 6.9.1, with 4 replicas.
+#
+# TODO(4): Start from the base, use the namespace production, change
+# podinfo's tag to 6.9.1, and apply the patch in replicas.yaml.

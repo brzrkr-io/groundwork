@@ -4,7 +4,7 @@ Real tools are split into packages: one for the inventory, one for planning
 deploys, one for the command line. This exercise shows how Go finds your
 packages and how one package calls another.
 
-**New here:** packages, modules, `go.mod`, import paths, calling another package.
+**New here:** packages, import paths, calling another package; modules and `go.mod` properly, after a first look in *database/sql: query deploys from Go*.
 
 ## Learn
 
@@ -31,9 +31,10 @@ were one big file.
 
 ### A module is a tree of packages
 
-The `go.mod` file at the top of this exercise marks a *module*: a tree of
-folders (packages) that are built and versioned together. Its first line
-gives the module its name, the *module path*:
+The `go.mod` file at the top of this exercise marks a *module*. You opened
+one in *database/sql: query deploys from Go*; here's what it means. A module
+is a tree of folders (packages) that are built and versioned together. Its
+first line gives the module its name, the *module path*:
 
 ```text
 module example.com/shop

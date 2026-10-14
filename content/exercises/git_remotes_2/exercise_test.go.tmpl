@@ -1,0 +1,129 @@
+package gitremotes
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// Each test builds a fresh sandbox with setup.sh, runs your scripts in
+// task order up to the one it checks, then inspects the repos with git.
+var scripts = []string{
+	"1_whats_waiting.sh",
+	"2_rebase_and_push.sh",
+	"3_push_rebased_branch.sh",
+}
+
+func TestWhatsWaiting(t *testing.T) {
+	web, printed := runTasks(t, 1)
+	switch printed {
+	case "Pin base image to alpine 3.20\n":
+	case "":
+		t.Errorf("1_whats_waiting.sh printed nothing, want:\nPin base image to alpine 3.20")
+	default:
+		t.Errorf("1_whats_waiting.sh printed:\n%s\nwant:\nPin base image to alpine 3.20", printed)
+	}
+	if got := git(t, web, "log", "--format=%s", "-1", "main"); got != "Raise web replicas to 4" {
+		t.Errorf("your main now ends with %q, want it unchanged, ending with \"Raise web replicas to 4\": fetch doesn't change your branches", got)
+	}
+	if got := git(t, web, "log", "--format=%s", "-1", "origin/main"); got != "Pin base image to alpine 3.20" {
+		t.Errorf("origin/main ends with %q, want \"Pin base image to alpine 3.20\"; did you fetch?", got)
+	}
+}
+
+func TestRebaseAndPush(t *testing.T) {
+	web, _ := runTasks(t, 2)
+	origin := filepath.Join(filepath.Dir(web), "origin.git")
+	want := "Raise web replicas to 4\nPin base image to alpine 3.20\nAdd deploy script\nAdd web config"
+	if got := git(t, origin, "log", "--format=%s", "main"); got != want {
+		t.Errorf("git log --format=%%s main on origin:\n%s\nwant:\n%s", got, want)
+	}
+	if got := git(t, origin, "rev-list", "--merges", "main"); got != "" {
+		t.Errorf("origin's main has merge commits:\n%s\nwant a straight line: pull with --rebase", got)
+	}
+	if got, want := git(t, web, "rev-parse", "main"), git(t, origin, "rev-parse", "main"); got != want {
+		t.Errorf("your main is %s, want the same commit as origin's main, %s", got, want)
+	}
+}
+
+func TestPushRebasedBranch(t *testing.T) {
+	web, _ := runTasks(t, 3)
+	origin := filepath.Join(filepath.Dir(web), "origin.git")
+	if got := git(t, origin, "log", "--format=%s", "main..feature/retries"); got != "Retry failed deploys\nAdd retry helper" {
+		t.Errorf("commits on origin's feature/retries that main doesn't have:\n%s\nwant:\nRetry failed deploys\nAdd retry helper", got)
+	}
+	if _, _, err := run(filepath.Dir(web), origin, "git", "merge-base", "--is-ancestor", "main", "feature/retries"); err != nil {
+		t.Errorf("origin's feature/retries doesn't start from the newest main; rebase it onto main, then push")
+	}
+	if got, want := git(t, web, "rev-parse", "feature/retries"), git(t, origin, "rev-parse", "feature/retries"); got != want {
+		t.Errorf("your feature/retries is %s but origin's is %s, want them the same", got, want)
+	}
+	if got := git(t, origin, "rev-list", "--merges", "main..feature/retries"); got != "" {
+		t.Errorf("origin's feature/retries has merge commits:\n%s\nwant only the two rebased commits", got)
+	}
+}
+
+// runTasks builds a fresh sandbox with setup.sh, then runs task scripts 1 to
+// n inside your clone, web, in order, as you would by hand. It returns the
+// clone's path and what script n printed.
+func runTasks(t *testing.T, n int) (web, printed string) {
+	t.Helper()
+	home := t.TempDir()
+	sandbox := filepath.Join(home, "sandbox")
+	if _, stderr, err := run(home, ".", "bash", "setup.sh", sandbox); err != nil {
+		t.Fatalf("setup.sh failed (%v):\n%s", err, stderr)
+	}
+	web = filepath.Join(sandbox, "web")
+	for _, script := range scripts[:n] {
+		path, err := filepath.Abs(script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, err := run(home, web, "bash", path)
+		if err != nil {
+			t.Fatalf("%s failed (%v). It printed:\n%s%s", script, err, stdout, stderr)
+		}
+		printed = stdout
+	}
+	return web, printed
+}
+
+// git runs a git command in dir and returns what it printed, without the
+// final newline.
+func git(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	stdout, stderr, err := run(filepath.Dir(dir), dir, "git", args...)
+	if err != nil {
+		t.Fatalf("git %s failed (%v):\n%s", strings.Join(args, " "), err, stderr)
+	}
+	return strings.TrimSuffix(stdout, "\n")
+}
+
+// run runs a command in dir, hermetically: no personal Git config, hooks or
+// GIT_* variables, a fixed author and date, no Git repos outside home, and
+// no editor or pager waiting for input.
+func run(home, dir, name string, args ...string) (stdout, stderr string, err error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	cmd.Env = append(cmd.Env,
+		"GIT_CEILING_DIRECTORIES="+home,
+		"HOME="+home, "XDG_CONFIG_HOME="+home, "LC_ALL=C", "TZ=UTC",
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		"GIT_AUTHOR_NAME=Sam Rivera", "GIT_AUTHOR_EMAIL=sam@example.com",
+		"GIT_COMMITTER_NAME=Sam Rivera", "GIT_COMMITTER_EMAIL=sam@example.com",
+		"GIT_AUTHOR_DATE=2026-10-01 12:00:00 +0000", "GIT_COMMITTER_DATE=2026-10-01 12:00:00 +0000",
+		"GIT_EDITOR=true", "GIT_PAGER=cat", "PAGER=cat",
+	)
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	err = cmd.Run()
+	return out.String(), errOut.String(), err
+}

@@ -1,0 +1,5 @@
+# Task 1: podinfo's settings, kept out of the image.
+#
+# TODO(1): Write a ConfigMap named web-config in the namespace shop, with
+# PODINFO_LEVEL set to debug and PODINFO_UI_MESSAGE set to
+# "hello from a ConfigMap".

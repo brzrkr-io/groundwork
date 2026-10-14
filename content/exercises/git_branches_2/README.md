@@ -75,8 +75,8 @@ turns it into success: if `cmd` fails, `true` runs and succeeds.
 
 ### Writing a whole file from a script
 
-A *heredoc* (from *Linux and the shell*) writes several lines at once. The
-quoted `'EOF'` keeps bash from expanding anything inside:
+A *here-doc*, as in *Redirection: >, >>, 2> and here-docs*, writes several
+lines at once. The quoted `'EOF'` keeps bash from expanding anything inside:
 
 ```bash
 cat > config/db.yaml <<'EOF'

@@ -22,8 +22,8 @@ one in `runs-on`, one in setup-go's `with`, replacing `go-version-file`.
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go }}
       - run: go test ./...
@@ -50,11 +50,11 @@ new step's `with:` has three inputs; `path` and `restore-keys` are blocks:
 ### Answer
 
 ```yaml
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/go/pkg/mod
@@ -73,16 +73,17 @@ artifact and a shell.
 
 ### Closer
 
-Upload with `actions/upload-artifact@v7` and `with:` `name` and `path`.
-`smoke:` goes under `jobs:`, beside `build:`, with `needs: build`. Its first
-step is `actions/download-artifact@v8` with the same `name`; the second runs
-`chmod +x statusd`, then `./statusd -version`, joined with `&&`.
+Upload with `actions/upload-artifact` (pinned as in the README) and `with:`
+`name` and `path`. `smoke:` goes under `jobs:`, beside `build:`, with
+`needs: build`. Its first step is `actions/download-artifact` with the same
+`name`; the second runs `chmod +x statusd`, then `./statusd -version`,
+joined with `&&`.
 
 ### Answer
 
 ```yaml
       - run: go build -o bin/statusd .
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: statusd
           path: bin/statusd
@@ -91,7 +92,7 @@ step is `actions/download-artifact@v8` with the same `name`; the second runs
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: statusd
       - run: chmod +x statusd && ./statusd -version

@@ -1,0 +1,43 @@
+$ kubectl -n shop get pods -l app=search
+NAME                     READY   STATUS    RESTARTS      AGE
+search-58645485b-8d2lk   0/1     Running   1 (39s ago)   100s
+search-58645485b-rq9tz   0/1     Running   1 (41s ago)   100s
+
+$ kubectl -n shop describe pod search-58645485b-8d2lk
+Name:             search-58645485b-8d2lk
+Namespace:        shop
+...
+Containers:
+  search:
+    Image:         ghcr.io/stefanprodan/podinfo:6.9.2
+    Port:          9898/TCP (http)
+    Host Port:     0/TCP (http)
+    Command:
+      sh
+      -c
+      echo loading search index; sleep 60; exec ./podinfo
+    State:          Running
+      Started:      Tue, 13 Oct 2026 21:18:27 -0500
+    Last State:     Terminated
+      Reason:       Error
+      Exit Code:    137
+      Started:      Tue, 13 Oct 2026 21:17:27 -0500
+      Finished:     Tue, 13 Oct 2026 21:18:27 -0500
+    Ready:          False
+    Restart Count:  1
+    Liveness:       http-get http://:http/healthz delay=0s timeout=1s period=10s successThreshold=1 failureThreshold=3
+    Readiness:      http-get http://:http/readyz delay=0s timeout=1s period=10s successThreshold=1 failureThreshold=3
+...
+Events:
+  Type     Reason     Age                 From               Message
+  ----     ------     ----                ----               -------
+  Normal   Scheduled  100s                default-scheduler  Successfully assigned shop/search-58645485b-8d2lk to kind-worker
+  Normal   Pulled     39s (x2 over 99s)   kubelet            spec.containers{search}: Container image "ghcr.io/stefanprodan/podinfo:6.9.2" already present on machine and can be accessed by the pod
+  Normal   Created    39s (x2 over 99s)   kubelet            spec.containers{search}: Container created
+  Normal   Started    39s (x2 over 99s)   kubelet            spec.containers{search}: Container started
+  Warning  Unhealthy  10s (x13 over 99s)  kubelet            spec.containers{search}: Readiness probe failed: Get "http://10.244.0.44:9898/readyz": dial tcp 10.244.0.44:9898: connect: connection refused
+  Warning  Unhealthy  10s (x6 over 90s)   kubelet            spec.containers{search}: Liveness probe failed: Get "http://10.244.0.44:9898/healthz": dial tcp 10.244.0.44:9898: connect: connection refused
+  Normal   Killing    10s (x2 over 70s)   kubelet            spec.containers{search}: Container search failed liveness probe, will be restarted
+
+$ kubectl -n shop logs search-58645485b-8d2lk --previous
+loading search index

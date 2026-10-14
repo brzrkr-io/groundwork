@@ -1,0 +1,134 @@
+package debugging
+
+import (
+	"errors"
+	"os"
+	"testing"
+)
+
+// fixture returns the contents of testdata/name.
+func fixture(t *testing.T, name string) string {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestSignal(t *testing.T) {
+	tests := []struct {
+		code   int
+		sig    int
+		killed bool
+	}{
+		{137, 9, true},  // SIGKILL: OOM killer, or kill -9
+		{143, 15, true}, // SIGTERM: asked to stop
+		{130, 2, true},  // SIGINT: Ctrl+C
+		{0, 0, false},
+		{1, 0, false},
+		{128, 0, false},
+	}
+	for _, tt := range tests {
+		sig, killed := Signal(tt.code)
+		if sig != tt.sig || killed != tt.killed {
+			t.Errorf("Signal(%d) = %d, %t, want %d, %t", tt.code, sig, killed, tt.sig, tt.killed)
+		}
+	}
+}
+
+func TestLastTermination(t *testing.T) {
+	tests := []struct {
+		file string
+		want Termination
+	}{
+		{"crash.txt", Termination{Reason: "Error", ExitCode: 1}},
+		{"memory.txt", Termination{Reason: "OOMKilled", ExitCode: 137}},
+		{"liveness.txt", Termination{Reason: "Completed", ExitCode: 0}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			got, err := LastTermination(fixture(t, tt.file))
+			if err != nil {
+				t.Fatalf("LastTermination(%s) error = %v, want nil", tt.file, err)
+			}
+			if got != tt.want {
+				t.Errorf("LastTermination(%s) = %+v, want %+v", tt.file, got, tt.want)
+			}
+		})
+	}
+
+	// Only the block under "Last State:" counts, not the State above it.
+	t.Run("State and Last State differ", func(t *testing.T) {
+		describe := `Containers:
+  api:
+    State:          Terminated
+      Reason:       OOMKilled
+      Exit Code:    137
+    Last State:     Terminated
+      Reason:       Error
+      Exit Code:    2
+    Ready:          False
+    Restart Count:  3
+`
+		want := Termination{Reason: "Error", ExitCode: 2}
+		if got, err := LastTermination(describe); err != nil || got != want {
+			t.Errorf("LastTermination = %+v, %v, want %+v, nil", got, err, want)
+		}
+	})
+
+	for _, file := range []string{"healthy.txt", "image.txt", "readiness.txt"} {
+		t.Run(file, func(t *testing.T) {
+			_, err := LastTermination(fixture(t, file))
+			if !errors.Is(err, ErrNoTermination) {
+				t.Errorf("LastTermination(%s) error = %v, want ErrNoTermination: it has no Last State", file, err)
+			}
+		})
+	}
+
+	t.Run("exit code is not a number", func(t *testing.T) {
+		describe := "    Last State:     Terminated\n      Reason:       Error\n      Exit Code:    ???\n    Ready:  False\n"
+		_, err := LastTermination(describe)
+		if err == nil || errors.Is(err, ErrNoTermination) {
+			t.Errorf("LastTermination(%q) error = %v, want an error about the exit code", describe, err)
+		}
+	})
+}
+
+func TestDiagnose(t *testing.T) {
+	tests := []struct {
+		file string
+		want string
+	}{
+		{"image.txt", CauseImage},
+		{"unschedulable.txt", CauseUnschedulable},
+		{"config.txt", CauseConfig},
+		{"memory.txt", CauseMemory},
+		{"liveness.txt", CauseLiveness},
+		{"crash.txt", CauseCrash},
+		{"readiness.txt", CauseReadiness},
+		{"healthy.txt", CauseNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			if got := Diagnose(fixture(t, tt.file)); got != tt.want {
+				t.Errorf("Diagnose(%s) = %q, want %q", tt.file, got, tt.want)
+			}
+		})
+	}
+
+	// A liveness probe kills with SIGKILL after the grace period, so the
+	// last exit code is 137 and not 0. Liveness is checked before crash.
+	t.Run("killed by liveness", func(t *testing.T) {
+		describe := `    Last State:     Terminated
+      Reason:       Error
+      Exit Code:    137
+    Ready:          False
+Events:
+  Normal   Killing    10s (x2 over 70s)   kubelet  spec.containers{search}: Container search failed liveness probe, will be restarted
+`
+		if got := Diagnose(describe); got != CauseLiveness {
+			t.Errorf("Diagnose = %q, want %q: the events say the liveness probe killed it", got, CauseLiveness)
+		}
+	})
+}

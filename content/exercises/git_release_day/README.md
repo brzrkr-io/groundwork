@@ -2,7 +2,7 @@
 
 It's release day for the `web` service. `main` has a change that must not
 ship, a reviewed feature branch is waiting, and the release needs a version,
-a tag and release notes. Everything in this module, in one sitting.
+a tag and release notes. Revert, merge, commit, tag and log, in one sitting.
 
 **New here:** `git log --no-merges`; the rest is practice.
 

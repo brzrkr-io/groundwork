@@ -1,27 +1,35 @@
 # AWS SDK configuration: regions, profiles and credentials
 
-Every program that talks to AWS starts the same way: work out *which region*
-to talk to and *who you are*. Get this right, and never print your secret key
-while doing it.
+In *Cloud fundamentals* you learned where AWS resources live and who may
+touch them. Now you call AWS from Go. Every such program starts the same way:
+work out *which region* to talk to and *which credentials* to sign requests
+with, and never print the secret while doing it.
 
-**New here:** the AWS SDK for Go, `aws.Config`, `config.LoadDefaultConfig`, functional options, credentials providers.
+**New here:** the AWS SDK for Go, `aws.Config`, `config.LoadDefaultConfig`, functional options, credentials providers, profiles and the shared config files.
 
 ## Learn
 
-### AWS in one minute
+### Recap: regions and credentials
 
-*AWS* (Amazon Web Services) rents out servers, storage and databases through
-an API. Each resource sits in a *region*, a group of data centres with a name
-like `us-east-1` or `eu-west-1`. A request to `eu-west-1` only sees what is in
-`eu-west-1`.
+From the guides *The cloud from the ground up* and
+*Cloud and cluster access: IAM, RBAC and short-lived credentials*:
 
-To call the API you need *credentials*:
+- Most resources live in one *region* (`us-east-1`, `eu-west-1`). An API
+  request goes to one region and only sees what is there, so every client
+  needs a region.
+- Every request is signed with *credentials*, and IAM checks them against
+  the policies, as in *IAM policies: how AWS decides allow or deny*.
+- Credentials are either long-term user keys or temporary role credentials,
+  as in *Assume role: trust policies and temporary credentials*:
 
 | Part | Example | Safe to log? |
 |---|---|---|
-| *access key ID* | `AKIA...` | only shortened |
+| *access key ID* | `AKIA...` (long-term) or `ASIA...` (temporary) | only shortened |
 | *secret access key* | `wJal...` | never |
 | *session token* | only for temporary credentials | never |
+
+Programs running in AWS should get temporary credentials from a role. On a
+laptop, and in this exercise, they come from files.
 
 ### Profiles and the two shared files
 

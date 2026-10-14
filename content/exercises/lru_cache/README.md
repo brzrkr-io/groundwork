@@ -4,16 +4,16 @@ A cache with no size limit grows until the kernel kills your process. You'll
 build an *LRU cache*: when it's full, it throws away the entry nobody has
 used for the longest time, and every operation stays fast however big it is.
 
-**New here:** bounded caches, eviction policies, doubly linked lists, `container/list`, O(1).
+**New here:** bounded caches, eviction policies, a map plus a linked list working together.
 
 ## Learn
 
 ### Why bound a cache?
 
-A Kubernetes pod usually runs with a memory limit, such as `memory: 256Mi`.
-Go over it and the kernel's *OOM killer* stops the process: the pod restarts
-as `OOMKilled`, and the cache starts empty again, so every request hits the
-slow backend at once.
+A container usually runs with a memory limit, such as 256 MiB. As the
+*Containers and images* guide showed, go over it and the kernel's *OOM
+killer* stops the process (exit code 137, `OOMKilled`). The cache starts
+empty again, so every request hits the slow backend at once.
 
 The TTL cache from *TTL caching: expire on read* forgets old entries, but
 only after their TTL. A burst of new keys can fill memory long before that. A
@@ -49,13 +49,14 @@ order (list):   [api] ⇄  [cache] ⇄  [db]
 The front of the list is the most recently used entry, the back the least.
 
 - The *map* takes a key straight to its element in the list.
-- The *doubly linked list* keeps the order. Each element points to the one
-  before it and the one after it, so you can unlink any element, or move it
-  to the front, by changing a few pointers.
+- The *doubly linked list* keeps the order. As in *Linked lists: a deploy
+  queue with container/list*, moving an element you hold to the front, or
+  unlinking it, changes a few pointers and nothing else.
 
-*O(1)* ("constant time") means an operation takes the same work whether the
-cache holds 10 entries or 10 million. With a slice instead of a list, moving
-an entry to the front shifts every entry before it: *O(n)*, slower as it grows.
+Together, every operation is *O(1)* ("constant time", as in the
+*Algorithms and Big-O* guide): the same work whether the cache holds 10
+entries or 10 million. With a slice instead of a list, moving an entry to
+the front shifts every entry before it: *O(n)*, slower as it grows.
 
 | Operation | Map + list | Slice only |
 |---|---|---|
@@ -63,33 +64,24 @@ an entry to the front shifts every entry before it: *O(n)*, slower as it grows.
 | mark it most recent | O(1): move to front | O(n): shift entries |
 | evict the least recent | O(1): remove the back | O(1): drop the last |
 
-### container/list
+### Recap: container/list
 
-The standard library's `container/list` is a doubly linked list. Every
-element is a `*list.Element` with a `Value` field of type `any`:
+From *Linked lists: a deploy queue with container/list*, here with a list of
+recent on-call pages:
 
 ```go
-import "container/list"
-
-recent := list.New()
-first := recent.PushFront("deploy-41") // returns the new *list.Element
-recent.PushFront("deploy-42")          // order: deploy-42, deploy-41
-recent.MoveToFront(first)              // order: deploy-41, deploy-42
-last := recent.Back()                  // the element holding "deploy-42"
-recent.Remove(last)                    // order: deploy-41
-recent.Len()                           // => 1
-for el := recent.Front(); el != nil; el = el.Next() {
-	fmt.Println(el.Value) // deploy-41
-}
+pages := list.New()
+disk := pages.PushFront("DiskFull") // keep the *list.Element
+pages.PushFront("HighLatency")      // order: HighLatency, DiskFull
+pages.MoveToFront(disk)             // order: DiskFull, HighLatency
+oldest := pages.Back()              // the element holding "HighLatency"
+pages.Remove(oldest)                // order: DiskFull
+pages.Len()                         // => 1
 ```
 
-`Back()` returns `nil` on an empty list. `PushFront`'s result is worth
-keeping: it's how you find that element again later without a scan.
-
-> **Why is it written like this?** `container/list` is a package of the
-> standard library, so Go requires the import. The `for el := ...; el !=
-> nil; el = el.Next()` loop is the convention for walking a list. Using the
-> package instead of writing your own pointers is the author's choice.
+`Back()` returns `nil` on an empty list. Keeping `PushFront`'s result is
+what makes the cache fast: the map stores it, so a key leads straight to
+its element without a walk.
 
 ### Getting the entry back out
 
@@ -108,30 +100,26 @@ An `entry` stores its own `key` as well as its `value`. Evicting starts from
 `c.order.Back()`, which gives you an element, not a key, and you need the
 key to delete it from `c.items` too.
 
-> **Why is it written like this?** The `x.(T)` syntax is what Go requires.
-> Using the one-result form (which panics on the wrong type) instead of `v,
-> ok := x.(T)` is the author's choice: nothing but `*entry` ever goes in the
-> list. Storing a pointer is also a choice: with a plain `entry` you'd get a
-> copy, and changing it would change nothing in the list.
+> **Why is it written like this?** Using the one-result form of `x.(T)`
+> (which panics on the wrong type) instead of `v, ok := x.(T)` is the
+> author's choice: nothing but `*entry` ever goes in the list. Storing a
+> pointer is also a choice: with a plain `entry` you'd get a copy, and
+> changing it would change nothing in the list.
 
 ### What's already written
 
 `New`, `Len` (it counts `c.items`), `Keys` (it walks `c.order` from front to
-back), `Evictions` (it returns `c.evictions`), and the locks: every method
-locks `c.mu` and defers the unlock, as in *Mutexes*. The tests check `Keys`
-and `Len`, so they see both the list and the map.
-
-**Watch out:** inside `Get` and `Put`, `c.mu` is already locked. Don't call
-`c.Len()`, `c.Keys()` or `c.Get()` from there: they lock `c.mu` again, and a
-`sync.Mutex` can't be locked twice, not even by the same goroutine. Nothing
-errors; the program just freezes until the tests time out after a minute.
-Read the fields (`c.items`, `c.order`) directly instead.
+back) and `Evictions` (it returns `c.evictions`). `Len`, `Keys` and
+`Evictions` lock `c.mu` and defer the unlock, as in *Mutexes*; `Get` and
+`Put` don't lock yet (task 5). The tests check `Keys` and `Len`, so they see
+both the list and the map.
 
 ## Your task
 
 Your team runs a container registry proxy. It caches which digest each image
-tag points to (`nginx:1.27` → `sha256:4f1c`), and its pod has a memory
-limit. Finish the LRU cache so it never holds more than `capacity` tags.
+tag points to (`nginx:1.27` → `sha256:4f1c`), and its container has a
+memory limit. Finish the LRU cache so it never holds more than `capacity`
+tags.
 
 ### 1. Add new entries
 
@@ -216,7 +204,39 @@ c.Get("redis:7.4")                  // => "", false
 - Which end of the list holds the least recently used entry?
 - The map needs the evicted key. Which field of the entry holds it?
 - Use either `len(c.items)` or `c.order.Len()`: they stay equal. Not
-  `c.Len()`: see **Watch out** above.
+  `c.Len()`: see **Watch out** in task 5.
+
+### 5. Make it safe for concurrent use
+
+**Goal:** make `Get` and `Put` lock `c.mu` for their whole run.
+
+The proxy serves many requests at once, and every one calls `Get` or `Put`.
+Both change the list and the map, so two at the same time can corrupt them.
+Start `Get` and `Put` the way `Len` starts: lock `c.mu`, then defer the
+unlock.
+
+The test runs 20 goroutines that each `Put`, `Get` and `Len` 5 different
+tags in a cache that holds 10. Afterwards:
+
+```go
+c.Len()       // => 10
+c.Evictions() // => 90 (100 different tags went in)
+```
+
+With the race detector on, a missing lock fails the test with
+`race detected during execution of test`. It can also crash the whole test
+run with `fatal error: concurrent map writes`: Go stops a program the
+moment it catches two goroutines writing one map.
+
+**Watch out:** once `Get` and `Put` hold `c.mu`, don't call `c.Len()`,
+`c.Keys()` or `c.Get()` from inside them: those lock `c.mu` again, and a
+`sync.Mutex` can't be locked twice, not even by the same goroutine. Nothing
+errors; the program just freezes until the tests time out after a minute.
+Read the fields (`c.items`, `c.order`) directly instead.
+
+**Think it through:**
+- Which two lines start `Len`, and why does the second one use `defer`?
+- Does any of your code in `Get` or `Put` call another method of `c`?
 
 ## Learn more
 

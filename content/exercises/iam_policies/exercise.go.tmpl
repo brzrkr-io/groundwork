@@ -1,0 +1,69 @@
+// Package iam is the Groundwork exercise "IAM policies: how AWS decides allow or deny".
+package iam
+
+import "encoding/json"
+
+// StringList is a JSON value that is either one string or a list of strings,
+// as IAM allows for Action, Resource and condition values.
+type StringList []string
+
+// UnmarshalJSON accepts "s3:GetObject" as well as ["s3:GetObject", "s3:PutObject"].
+func (l *StringList) UnmarshalJSON(data []byte) error {
+	var one string
+	if err := json.Unmarshal(data, &one); err == nil {
+		*l = StringList{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(data, &many); err != nil {
+		return err
+	}
+	*l = many
+	return nil
+}
+
+// Statement is one rule of a policy: it allows or denies the actions in
+// Action on the resources in Resource.
+type Statement struct {
+	Sid      string     // an optional label, such as "ReadAppAssets"
+	Effect   string     // "Allow" or "Deny"
+	Action   StringList // such as "s3:GetObject" or "ec2:Describe*"
+	Resource StringList // ARNs, which may contain * and ?
+}
+
+// Policy is an IAM policy document.
+type Policy struct {
+	Version   string // always "2012-10-17"
+	Statement []Statement
+}
+
+// Decision is what AWS decides for one request.
+type Decision string
+
+// The three possible decisions.
+const (
+	Allow        Decision = "Allow"        // a statement allows it, and none denies it
+	ExplicitDeny Decision = "ExplicitDeny" // a statement denies it
+	ImplicitDeny Decision = "ImplicitDeny" // no statement mentions it
+)
+
+// Match reports whether value matches pattern, where * in pattern stands
+// for any run of characters (including none) and ? for exactly one.
+func Match(pattern, value string) bool {
+	// TODO(1): Turn pattern into a regular expression and match value.
+	return false
+}
+
+// Applies reports whether statement s is about this action and resource:
+// one of its Action patterns matches action (ignoring case) and one of its
+// Resource patterns matches resource.
+func Applies(s Statement, action, resource string) bool {
+	// TODO(2): Check s.Action and s.Resource with Match.
+	return false
+}
+
+// Evaluate decides a request against every statement of every policy.
+func Evaluate(policies []Policy, action, resource string) Decision {
+	// TODO(3): A matching Deny wins, then a matching Allow, else ImplicitDeny.
+	return ImplicitDeny
+}

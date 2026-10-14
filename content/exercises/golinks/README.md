@@ -557,9 +557,17 @@ kubectl kustomize deploy/overlays/dev | grep -E 'image:|LOG_LEVEL'
     ghcr.io/<you>/golinks:${{ github.ref_name }}` and `build-args:
     VERSION=${{ github.ref_name }}`
 
-Use the versions from *Practice: containerize and ship a service*:
-`actions/checkout@v7`, `actions/setup-go@v7`, `docker/login-action@v4`,
-`docker/build-push-action@v7`.
+Pin every action as in *CI workflows*: the full commit SHA, then
+`# vX.Y.Z`. The test checks every `uses` line. The pins, the same as in
+*Practice: containerize and ship a service*:
+
+| Action | Release | Commit |
+|---|---|---|
+| `actions/checkout` | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `actions/setup-go` | v7.0.0 | `b7ad1dad31e06c5925ef5d2fc7ad053ef454303e` |
+| `docker/login-action` | v4.6.0 | `dbcb813823bdd20940b903addbd779551569679f` |
+| `docker/build-push-action` | v7.4.0 | `c3c9e263c25d99ce0380d002d59b67737d91b0dc` |
+| `docker/setup-buildx-action` (optional) | v4.4.1 | `f87e5991a6d7451dcb8d9637bfbc97413f497069` |
 
 **Think it through:**
 - A pull request also runs this workflow. What stops it from publishing an image?
@@ -650,6 +658,21 @@ docker rmi golinks:dev
    grep -rl groundwork.local/golinks --include='*.go' . | xargs sed -i 's#groundwork.local/golinks#github.com/<you>/golinks#'
    go mod tidy && go test ./...
    printf 'bin/\n*.db\n' > .gitignore
+   ```
+
+   Your actions are pinned to commit SHAs, so nothing updates them by
+   itself. Let Dependabot open a pull request when a new release comes out;
+   it changes the SHA and the `# vX.Y.Z` comment together:
+
+   ```bash
+   cat > .github/dependabot.yml <<'EOF'
+   version: 2
+   updates:
+     - package-ecosystem: github-actions
+       directory: /
+       schedule:
+         interval: weekly
+   EOF
    ```
 
 3. Commit and push:

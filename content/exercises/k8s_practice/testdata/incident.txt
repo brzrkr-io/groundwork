@@ -1,0 +1,129 @@
+INCIDENT: notes is down after this morning's deploy
+====================================================
+Everything is in the namespace notes. Each part was captured after the
+fix before it was applied.
+
+--- 1. 09:12, right after kubectl apply -f . ------------------------------
+
+$ kubectl -n notes get pods
+NAME                     READY   STATUS             RESTARTS   AGE
+notes-7dfb4c4645-5rclq   0/1     ImagePullBackOff   0          49s
+notes-7dfb4c4645-vsw7z   0/1     ImagePullBackOff   0          49s
+
+$ kubectl -n notes describe pod notes-7dfb4c4645-5rclq
+Name:             notes-7dfb4c4645-5rclq
+Namespace:        notes
+Node:             worker-1/172.18.0.3
+Labels:           app=notes
+                  pod-template-hash=7dfb4c4645
+Status:           Pending
+Controlled By:  ReplicaSet/notes-7dfb4c4645
+Containers:
+  notes:
+    Image:          ghcr.io/stefanprodan/podinfo:6.9.20
+    Port:           9898/TCP (http)
+    Host Port:      0/TCP (http)
+    State:          Waiting
+      Reason:       ImagePullBackOff
+    Ready:          False
+    Restart Count:  0
+    Limits:
+      memory:  128Mi
+    Requests:
+      cpu:      100m
+      memory:   64Mi
+    Liveness:   http-get http://:http/healthz delay=0s timeout=1s period=10s successThreshold=1 failureThreshold=3
+    Readiness:  http-get http://:8080/readyz delay=0s timeout=1s period=10s successThreshold=1 failureThreshold=3
+    Environment:
+      PODINFO_LEVEL:  <set to the key 'level' of config map 'notes-config'>  Optional: false
+...
+Events:
+  Type     Reason     Age                From               Message
+  ----     ------     ----               ----               -------
+  Normal   Scheduled  49s                default-scheduler  Successfully assigned notes/notes-7dfb4c4645-5rclq to worker-1
+  Normal   BackOff    21s (x2 over 48s)  kubelet            spec.containers{notes}: Back-off pulling image "ghcr.io/stefanprodan/podinfo:6.9.20"
+  Warning  Failed     21s (x2 over 48s)  kubelet            spec.containers{notes}: Error: ImagePullBackOff
+  Normal   Pulling    8s (x3 over 48s)   kubelet            spec.containers{notes}: Pulling image "ghcr.io/stefanprodan/podinfo:6.9.20"
+  Warning  Failed     7s (x3 over 48s)   kubelet            spec.containers{notes}: Failed to pull image "ghcr.io/stefanprodan/podinfo:6.9.20": rpc error: code = NotFound desc = failed to pull and unpack image "ghcr.io/stefanprodan/podinfo:6.9.20": failed to resolve reference "ghcr.io/stefanprodan/podinfo:6.9.20": ghcr.io/stefanprodan/podinfo:6.9.20: not found
+  Warning  Failed     7s (x3 over 48s)   kubelet            spec.containers{notes}: Error: ErrImagePull
+
+The release page lists these podinfo 6.9 tags: 6.9.0, 6.9.1, 6.9.2.
+The team wanted the newest.
+
+--- 2. 09:20, after fixing the image tag ----------------------------------
+
+$ kubectl -n notes get pods
+NAME                     READY   STATUS                       RESTARTS   AGE
+notes-64c4697cf9-lwpds   0/1     CreateContainerConfigError   0          25s
+notes-7dfb4c4645-5rclq   0/1     ImagePullBackOff             0          8m
+notes-7dfb4c4645-vsw7z   0/1     ImagePullBackOff             0          8m
+
+$ kubectl -n notes describe pod notes-64c4697cf9-lwpds
+...
+Events:
+  Type     Reason     Age                From               Message
+  ----     ------     ----               ----               -------
+  Normal   Scheduled  25s                default-scheduler  Successfully assigned notes/notes-64c4697cf9-lwpds to worker-1
+  Normal   Pulled     14s (x3 over 25s)  kubelet            spec.containers{notes}: Container image "ghcr.io/stefanprodan/podinfo:6.9.2" already present on machine and can be accessed by the pod
+  Warning  Failed     14s (x3 over 25s)  kubelet            spec.containers{notes}: Error: couldn't find key level in ConfigMap notes/notes-config
+
+$ kubectl -n notes get configmap notes-config -o yaml
+apiVersion: v1
+data:
+  log-level: info
+kind: ConfigMap
+metadata:
+  name: notes-config
+  namespace: notes
+...
+
+--- 3. 09:31, after fixing the ConfigMap ----------------------------------
+
+$ kubectl -n notes get pods
+NAME                     READY   STATUS             RESTARTS   AGE
+notes-64c4697cf9-lwpds   0/1     Running            0          11m
+notes-7dfb4c4645-5rclq   0/1     ImagePullBackOff   0          19m
+notes-7dfb4c4645-vsw7z   0/1     ErrImagePull       0          19m
+
+$ kubectl -n notes describe pod notes-64c4697cf9-lwpds
+...
+    Readiness:  http-get http://:8080/readyz delay=0s timeout=1s period=10s successThreshold=1 failureThreshold=3
+...
+Events:
+  Type     Reason     Age                From               Message
+  ----     ------     ----               ----               -------
+  Normal   Created    30s                kubelet            spec.containers{notes}: Container created
+  Normal   Started    30s                kubelet            spec.containers{notes}: Container started
+  Warning  Unhealthy  9s (x4 over 30s)   kubelet            spec.containers{notes}: Readiness probe failed: Get "http://10.244.0.50:8080/readyz": dial tcp 10.244.0.50:8080: connect: connection refused
+
+$ kubectl -n notes logs notes-64c4697cf9-lwpds
+{"level":"info","ts":"2026-10-14T14:31:02.141Z","caller":"podinfo/main.go:153","msg":"Starting podinfo","version":"6.9.2","revision":"e86405a8674ecab990d0a389824c7ebbd82973b5","port":"9898"}
+{"level":"info","ts":"2026-10-14T14:31:02.142Z","caller":"http/server.go:224","msg":"Starting HTTP Server.","addr":":9898"}
+
+--- 4. 09:40, after fixing the readiness probe ----------------------------
+
+$ kubectl -n notes get pods --show-labels
+NAME                     READY   STATUS    RESTARTS   AGE   LABELS
+notes-59bb7b7554-bvdm8   1/1     Running   0          2m    app=notes,pod-template-hash=59bb7b7554
+notes-59bb7b7554-h2wxg   1/1     Running   0          2m    app=notes,pod-template-hash=59bb7b7554
+
+$ kubectl -n notes describe service notes
+Name:                     notes
+Namespace:                notes
+Labels:                   <none>
+Annotations:              <none>
+Selector:                 app=notes-api
+Type:                     ClusterIP
+IP Family Policy:         SingleStack
+IP Families:              IPv4
+IP:                       10.96.98.251
+IPs:                      10.96.98.251
+Port:                     http  80/TCP
+TargetPort:               80/TCP
+Endpoints:                
+Session Affinity:         None
+Internal Traffic Policy:  Cluster
+Events:                   <none>
+
+$ kubectl -n notes run debug --rm -it --restart=Never --image=curlimages/curl:8.11.1 -- curl -sS http://notes/
+curl: (7) Failed to connect to notes port 80 after 1 ms: Could not connect to server

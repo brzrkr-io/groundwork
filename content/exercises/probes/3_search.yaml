@@ -1,0 +1,36 @@
+# Task 3: search never becomes ready. testdata/search_describe.txt has what
+# kubectl describe and kubectl logs showed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search
+  namespace: shop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: search
+  template:
+    metadata:
+      labels:
+        app: search
+    spec:
+      containers:
+        - name: search
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          # Stands in for a slow start: search loads its index for a minute
+          # before it listens.
+          command: ["sh", "-c", "echo loading search index; sleep 60; exec ./podinfo"]
+          ports:
+            - name: http
+              containerPort: 9898
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          # TODO(3): Add a startup probe on /healthz that allows search at
+          # least 120 seconds to start.

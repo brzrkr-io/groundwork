@@ -7,9 +7,10 @@
 **You'll learn:**
 
 - The three things security protects (confidentiality, integrity, availability).
-- Authentication versus authorization, and least privilege in AWS IAM and Kubernetes RBAC.
+- Authentication versus authorization, and least privilege for scripts, files and CI jobs.
 - How to handle secrets: where they live, how they leak, how to rotate them.
-- How injection works, and why `exec.Command` with separate arguments prevents it.
+- How file permissions keep secrets on disk private.
+- How injection works, and why passing values as separate arguments prevents it.
 - What TLS verification, hashing, checksums and pinned dependencies protect against.
 - Safe defaults, failing closed, and audit logs.
 
@@ -29,56 +30,49 @@ Every rule in this guide protects one or more of these. They can pull against ea
 
 Two questions, always in this order:
 
-- *Authentication* (authn): **who are you?** Proved with a password, access key, certificate or token.
+- *Authentication* (authn): **who are you?** Proved with a password, SSH key, certificate or token.
 - *Authorization* (authz): **what may you do?** Is that identity allowed this action on this thing?
+
+You've met both on Linux. Logging in as `deploy` is authentication; the kernel checking `deploy` against a file's permission bits on every `open` is authorization (see the *The operating system for programmers* guide).
 
 HTTP keeps them apart too: `401 Unauthorized` really means "I don't know who you are"; `403 Forbidden` means "I know who you are, and no".
 
-| | AWS | Kubernetes |
+| | Linux | A Git host or web API |
 |---|---|---|
-| Identity | IAM user or role | User, group or ServiceAccount |
-| Proves it with | Signed requests (access key or role credentials) | Client cert, token |
-| Permissions | IAM policies | Role or ClusterRole |
-| Attached by | Policy on the user or role | RoleBinding or ClusterRoleBinding |
+| Identity | User and its groups | Account or token |
+| Proves it with | Password, SSH key | Password, SSH key, API token |
+| Permissions | File modes, `sudo` rules | Token scopes, repo roles |
 
-In both, the default answer is **no**. AWS denies anything no policy allows, and an explicit `Deny` beats any `Allow`. Kubernetes RBAC only adds permissions; with no binding, a ServiceAccount can't read or change any objects.
+The safe default is **no**: a file with mode `0600` is closed to everyone but its owner, and a token scoped to read one repo can't push to it.
 
-To check before you act: `kubectl auth can-i delete pods -n prod`, or an EC2 `DryRun` call, which you'll use in *AWS API errors: EC2 dry-run permission checks*.
+Clouds and Kubernetes ask the same two questions with bigger permission systems: AWS IAM and Kubernetes RBAC. They get their own guide, *Cloud and cluster access: IAM, RBAC and short-lived credentials*, read in *Cloud fundamentals*.
 
 ## Least privilege
 
 *Least privilege* means giving each person or program only the permissions its job needs, and nothing more.
 
-Here's a policy statement that shows up in real accounts, attached to a nightly backup script "just to get it working":
+Here's a setup found on real servers, made "just to get it working": the nightly backup script runs from root's crontab, as `root`, and uploads with a storage token that has full admin rights.
 
-```text
-{
-  "Effect": "Allow",
-  "Action": "*",
-  "Resource": "*"
-}
-```
+If that script has a bug, or someone can edit it, it can do anything to the machine and anything to the storage. Its job only needs this:
 
-That says: this script may do anything, to anything. If its key leaks, the attacker can read every bucket, delete every database and create new admin users. The script only needed this:
+| The job needs to | Least-privilege version |
+|---|---|
+| Read the database dump in `/var/backups/db` | Run as a `backup` user in the `dbdump` group; the dump is mode `0640`, group `dbdump` |
+| Upload to one storage folder | A token that may only upload into `backups/nightly/` |
+| Run every night | The `backup` user's crontab, not root's |
 
-```text
-{
-  "Effect": "Allow",
-  "Action": ["s3:PutObject"],
-  "Resource": "arn:aws:s3:::acme-db-backups/nightly/*"
-}
-```
+Same script, same job. If this token leaks, the attacker can only write files into one backup folder. The damage a leak can do is called the *blast radius*, and least privilege is how you shrink it.
 
-Same script, same job. If this key leaks, the attacker can only write (or overwrite) files in one backup folder. The damage a leak can do is called the *blast radius*, and least privilege is how you shrink it.
-
-**A CI token with too much reach.** A team's pipeline uses one admin's personal access token: write access to every repo, plus the production deploy role. One day a compromised test dependency reads the job's environment and sends the token home. The attacker can now push code to any repo and deploy it. Least privilege for CI means:
+**A CI token with too much reach.** A team's pipeline uses one admin's personal access token: write access to every repo, plus the production deploy credentials. One day a compromised test dependency reads the job's environment and sends the token home. The attacker can now push code to any repo and deploy it. Least privilege for CI means:
 
 - **One identity per job**, scoped to one repo and one purpose, read-only unless the job must write.
 - **Short-lived credentials** instead of stored tokens (see below).
 - **No secrets for untrusted code**, such as jobs triggered by pull requests from forks.
-- **Pull, don't push**, where possible: a GitOps agent inside the cluster pulls from git, so CI needs no cluster credentials at all (see the *Declarative systems and control loops* guide).
+- **Pull, don't push**, where possible: an agent inside the cluster pulls from git, so CI needs no cluster credentials at all. You'll meet this idea later, in the *Declarative systems and control loops* guide.
 
-One more habit: **remove what isn't used.** IAM shows when a role last used each service; unused permissions are pure risk.
+One more habit: **remove what isn't used.** Most systems show when a token or key was last used; unused permissions are pure risk.
+
+In AWS, least privilege is written down as IAM policies; you'll write and fix them in *Cloud fundamentals*.
 
 ## Secrets
 
@@ -90,8 +84,8 @@ A developer tests a script with an access key pasted into `config.go` and pushes
 
 Deleting the file in a new commit doesn't help: the key is still in git history, and it was copied the moment it was pushed. The fix, in order:
 
-1. **Deactivate the key** in IAM, right now.
-2. **Find out what it did**, from CloudTrail (see the audit section below).
+1. **Deactivate the key** right now (for an AWS key, in the IAM page of the AWS console).
+2. **Find out what it did**, from the provider's audit log (see the audit section below).
 3. Replace it, and remove it from history so it doesn't leak again.
 
 ### Where secrets should live
@@ -104,10 +98,7 @@ Kubernetes Secrets are only base64-encoded, not encrypted, unless the cluster tu
 
 ### Better than storing a secret: not having one
 
-Prefer *short-lived credentials* that expire on their own, so there's no long-lived key to leak:
-
-- An EC2 instance or EKS pod with an IAM role gets temporary credentials from AWS automatically. The SDK's default credential chain finds them, as in *AWS SDK configuration: many regions, no leaked keys*.
-- CI systems like GitHub Actions can swap a signed identity token (OIDC) for a short-lived AWS role session, so no AWS key is stored in CI at all.
+Prefer *short-lived credentials* that expire on their own, so there's no long-lived key to leak. Most platforms offer them: a cloud server gets temporary credentials from the cloud itself, and a CI job can swap a signed identity token for a session that lasts an hour. You'll see how AWS and Kubernetes do it in the *Cloud and cluster access: IAM, RBAC and short-lived credentials* guide.
 
 ### Rotation
 
@@ -158,64 +149,92 @@ It's a safety net, not a guarantee. These all skip `String` and print `hunter2`:
 
 CI systems also mask known secrets in logs, but only exact matches; a base64-encoded copy slips through.
 
-## Injection: when data becomes code
+## Secrets on disk: file permissions
 
-In *Variables: build ops commands* you built command strings by gluing pieces together. That's fine for printing. It's dangerous when the result is *run*, and part of it came from someone else.
+Secrets often end up in files: an SSH key, `~/.aws/credentials`, a kubeconfig, a `.env` file. The permission bits from the *The operating system for programmers* guide decide who else on the machine can read them.
 
-A chat bot restarts services: a user types `restart web`, and the bot runs a shell command with the name glued in. Now a user types `restart web; echo PWNED`:
+| Mode | Who can read it | Use for |
+|---|---|---|
+| `0600` | Only the owner | Keys, tokens, credential files |
+| `0640` | The owner, plus one group | A config with a password that one service's group must read |
+| `0644` | Everyone on the machine | Anything that is *not* secret |
+
+Some tools enforce this: `ssh` refuses to use a private key that other users can read, and says `UNPROTECTED PRIVATE KEY FILE!`.
+
+In Go, you choose the mode when you create the file:
 
 ```go
 package main
 
 import (
 	"fmt"
-	"os/exec"
+	"os"
 )
 
-func run(label string, cmd *exec.Cmd) {
-	out, err := cmd.Output()
-	if err != nil {
-		fmt.Println(label, "failed:", err)
+func main() {
+	if err := os.WriteFile("token.txt", []byte("s3cr3t\n"), 0o600); err != nil {
+		fmt.Println("write failed:", err)
 		return
 	}
-	fmt.Printf("%s %q\n", label, out)
+	info, err := os.Stat("token.txt")
+	if err != nil {
+		fmt.Println("stat failed:", err)
+		return
+	}
+	fmt.Println(info.Mode())
 }
+```
 
-func main() {
-	service := "web; echo PWNED" // imagine this came from a chat command
+It prints `-rw-------`: read and write for the owner, nothing for the group or anyone else.
 
-	// Unsafe: one string handed to a shell. The shell sees ";" and
-	// runs a second command.
-	run("unsafe:", exec.Command("sh", "-c", "echo restarting "+service))
+Three traps:
 
-	// Safe: no shell. echo gets the whole value as one argument.
-	run("safe:  ", exec.Command("echo", "restarting", service))
-}
+- **The mode only applies when the file is created.** `os.WriteFile` on an existing `0644` file keeps `0644`. Fix the mode with `os.Chmod`, or write a new file and rename it over the old one, as in *Atomic writes: temp file and rename*.
+- **The directory matters too.** Anyone who can write to the directory can delete your file and put their own in its place.
+- **`root` skips the checks.** That's one more reason services run as their own user.
+
+## Injection: when data becomes code
+
+In *Variables: build ops commands* you built command strings by gluing pieces together. That's fine for printing. It's dangerous when the result is *run*, and part of it came from someone else.
+
+A chat bot restarts services: a user types `restart web`, and the bot runs a shell command with the name glued in. Now a user types `restart web; echo PWNED`. You can try both versions in a terminal:
+
+```bash
+service='web; echo PWNED'   # imagine this came from a chat command
+
+# Unsafe: the value is pasted into a new command line that a shell runs.
+sh -c "echo restarting $service"
+
+# Safe: the value reaches echo as one argument; no shell reads it again.
+echo restarting "$service"
 ```
 
 It prints:
 
 ```text
-unsafe: "restarting web\nPWNED\n"
-safe:   "restarting web; echo PWNED\n"
+restarting web
+PWNED
+restarting web; echo PWNED
 ```
 
 Step by step:
 
-1. **Unsafe.** The bot builds `echo restarting web; echo PWNED` and gives it to `sh`. To a shell, `;` means "start another command", so it runs both. An attacker would type `rm -rf /` instead.
-2. **Safe.** `exec.Command("echo", "restarting", service)` starts `echo` directly, with no shell. Each Go string is one argument, so the `;` is just a character inside the third one.
+1. **Unsafe.** The outer shell builds the text `echo restarting web; echo PWNED` and hands it to a new `sh`. To a shell, `;` means "start another command", so it runs both. An attacker would type `rm -rf /` instead.
+2. **Safe.** `"$service"` in double quotes is one argument, as in *Shell variables*. The `;` is just a character inside it, and `echo` prints it.
 
-This is *injection*: untrusted data ends up interpreted as code. The same bug appears as SQL injection (queries built with `+`) and path traversal (a filename like `../../etc/passwd`; see *Checksums and archives: verify and extract safely*).
+This is *injection*: untrusted data ends up interpreted as code. You've already fixed one kind, SQL injection, in *database/sql: fix the SQL injection*. Another is path traversal: a filename like `../../etc/passwd` (see *Checksums and archives: verify and extract safely*).
+
+Go programs that start other programs have the same choice. You'll write them later, in *Running commands: output, exit codes and timeouts* in the *Concurrency* module: `exec.Command("echo", "restarting", service)` starts `echo` directly with each Go string as one argument, like the safe line above, while `exec.Command("sh", "-c", "echo restarting "+service)` is the unsafe one.
 
 The defences:
 
-- **Keep data and code apart.** Separate arguments to `exec.Command`, placeholders in SQL, never `sh -c` with outside input. More in *Running commands: output, exit codes and timeouts*.
+- **Keep data and code apart.** Separate arguments, placeholders in SQL, never `sh -c` with outside input.
 - **Validate against an allowlist.** A service name should match something like `^[a-z0-9][a-z0-9-]{0,62}$`. Reject anything else instead of stripping "bad" characters. Forbidding a leading `-` matters even without a shell: a value like `--all` would be read as an option, not a name.
 - **Treat everything from outside as untrusted**: chat messages, HTTP requests, webhooks, file names.
 
 ## TLS: is this really the server?
 
-*TLS* (the S in HTTPS) gives a connection confidentiality, integrity, and proof you're talking to the real server. The *Networking from the ground up* guide covers how it works.
+*TLS* (the S in HTTPS) gives a connection confidentiality, integrity, and proof you're talking to the real server. The *Networking from the ground up* guide, read in *Networking and HTTP*, covers how it works.
 
 That proof comes from the server's *certificate*: a document saying "this key belongs to `vault.internal`", signed by a *certificate authority* (CA) your machine trusts. Go's HTTP client checks the signature chain and that the name matches the host you asked for.
 
@@ -316,38 +335,41 @@ Failing closed costs availability: if the auth service is down, so is your API. 
 
 When something goes wrong, the first question is "who did what, when?" An *audit log* answers it.
 
-- **AWS CloudTrail** records API calls: which identity, what action (`DeleteBucket`), on what, when, from which IP, and whether it was allowed. By default it keeps 90 days of calls that create, change or delete things; reads of S3 objects are logged only if you turn on *data events*.
+- **Cloud audit logs** such as AWS CloudTrail record API calls: which identity, what action (`DeleteBucket`), on what, when, from which IP, and whether it was allowed. You'll trace a leaked key through them in *CloudTrail: trace a leaked access key*.
 - **Kubernetes audit logs** record requests to the API server, once the cluster turns them on.
 - **Your own tools** should do the same: "`alice` ran `restart web` in prod at 14:02: ok". You'll write one in *Files: an append-only audit log*.
 
-Good audit logs are append-only, stored where the actor can't edit them, and never contain secrets. In the leaked-key story, CloudTrail is how you learn what the attacker touched, which is why data events matter for buckets holding anything sensitive.
+Good audit logs are append-only, stored where the actor can't edit them, and never contain secrets. In the leaked-key story, the audit log is how you learn what the attacker touched.
 
 ## Common mistakes
 
 - **"Fixing" a committed secret with another commit.** Rotate it; git history keeps the old one.
-- **`"Action": "*"` to get something working.** Grant the exact actions on the exact resources.
+- **Admin rights "just to get it working".** Grant the exact permissions on the exact things.
 - **One powerful shared CI token.** Each pipeline gets its own minimal, short-lived credentials.
-- **Shell commands built with `+` or `Sprintf`.** Use `exec.Command` with separate arguments.
+- **Shell commands built with `+` or `Sprintf`.** Pass values as separate arguments instead.
 - **`InsecureSkipVerify: true`.** Trust the right CA instead.
 - **Failing open by accident.** An error path that skips the auth check is an open door.
+- **Secret files left at `0644`.** Anyone on the machine can read them; use `0600`.
 
 ## Check yourself
 
 1. A teammate pushed an AWS key to a public repo an hour ago and has just deleted it in a new commit. What should happen first, and why isn't the new commit enough?
-2. Your CI pipeline only needs to upload build artifacts to one S3 prefix. Its IAM user has `AdministratorAccess`. What's the risk, and what would you change?
-3. A Slack bot runs `exec.Command("sh", "-c", "kubectl rollout restart deploy/"+name)`. What can a user do, and how do you fix it?
+2. Your nightly backup script runs as `root`, and its storage token has full admin rights, though the job only uploads one file to one folder. What's the risk, and what would you change?
+3. A Slack bot runs `sh -c "kubectl rollout restart deploy/$name"` with `name` taken from the chat message. What can a user do, and how do you fix it?
 4. Why doesn't `InsecureSkipVerify: true` just mean "encrypted but slightly less safe"?
 5. You download a release and its SHA-256 from the same compromised server, and they match. Are you safe?
 6. A cleanup job can't read its "protected buckets" list at startup. What should it do?
+7. A deploy tool saves an API token with `os.WriteFile(path, data, 0o644)`. What's wrong, and why doesn't changing the mode to `0o600` in the code fix a file that already exists?
 
 ## Answers
 
-1. Deactivate the key in IAM immediately, then check CloudTrail for what it was used for. The key is still in git history, and scanners may have copied it within minutes; only revoking it stops its use.
-2. The blast radius is the whole account: a leaked CI credential could read or delete anything. Give the pipeline its own role allowing only `s3:PutObject` on that prefix, ideally assumed through OIDC so no long-lived key is stored at all.
-3. A user can add `; any command` and the shell runs it with the bot's permissions: shell injection. Run `exec.Command("kubectl", "rollout", "restart", "deploy/"+name)` with no shell, and validate `name` against an allowlist pattern first.
+1. Deactivate the key immediately, then check the provider's audit log for what it was used for. The key is still in git history, and scanners may have copied it within minutes; only revoking it stops its use.
+2. The blast radius is the whole machine and all the storage: any bug or leak can do anything. Run it as its own user with group read access to the dump only, and give it a token that can only upload into that one folder.
+3. A user can add `; any command` and the shell runs it with the bot's permissions: shell injection. Pass the value as its own argument instead of building a shell string (in Go, `exec.Command("kubectl", "rollout", "restart", "deploy/"+name)`), and validate `name` against an allowlist pattern first.
 4. Encryption only helps if you're talking to the right party. Without verification, an attacker in the middle can present their own certificate: the connection is encrypted, but to the attacker, who can read and change everything.
 5. No. An attacker who controls the server can replace both the file and its checksum. The expected value must come from a separate trusted source, or the release must be signed.
 6. Fail closed: stop with an error and delete nothing. Carrying on without the list could delete exactly the buckets it was meant to protect.
+7. Mode `0644` lets every user on the machine read the token. The mode only applies when a file is created, so an existing file keeps `0644`: fix it with `os.Chmod`, or write a new file and rename it into place.
 
 ## Key terms
 
@@ -360,6 +382,7 @@ Good audit logs are append-only, stored where the actor can't edit them, and nev
 | Blast radius | How much damage one compromised credential can do |
 | Secret | Any value that grants access |
 | Secret manager | A service that stores, controls and audits secrets |
+| File mode | The permission bits on a file, like `0600` for owner-only |
 | Short-lived credentials | Credentials that expire on their own |
 | Rotation | Replacing a secret regularly or after a leak |
 | Injection | Untrusted data being run as code |
@@ -386,8 +409,7 @@ Good audit logs are append-only, stored where the actor can't edit them, and nev
 
 ## Go deeper
 
-- [Security best practices in IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html) (AWS): least privilege and temporary credentials, from the source.
-- [Using RBAC Authorization](https://kubernetes.io/docs/reference/access-authn-authz/rbac/) (kubernetes.io): Roles, bindings and real examples.
+- [Linux file permissions explained](https://www.redhat.com/en/blog/linux-file-permissions-explained) (Red Hat): modes, `chmod` and why secrets need `0600`.
 - [Secrets Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html) (OWASP): storing, rotating and auditing secrets.
 - [OS Command Injection Defense Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html) (OWASP): more injection examples and defences.
 - [How Go Mitigates Supply Chain Attacks](https://go.dev/blog/supply-chain) (Go blog): what `go.sum` and the checksum database protect you from.

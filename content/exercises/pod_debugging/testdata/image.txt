@@ -1,0 +1,55 @@
+Name:             cart-6f8d9c7b54-9xkqp
+Namespace:        shop
+Priority:         0
+Service Account:  default
+Node:             worker-1/172.18.0.3
+Start Time:       Tue, 13 Oct 2026 20:58:15 -0500
+Labels:           app=cart
+                  pod-template-hash=6f8d9c7b54
+Annotations:      <none>
+Status:           Pending
+IP:               10.244.0.8
+IPs:
+  IP:  10.244.0.8
+Controlled By:  ReplicaSet/cart-6f8d9c7b54
+Containers:
+  cart:
+    Container ID:   
+    Image:          ghcr.io/stefanprodan/podinfo:6.9.9
+    Image ID:       
+    Port:           <none>
+    Host Port:      <none>
+    State:          Waiting
+      Reason:       ImagePullBackOff
+    Ready:          False
+    Restart Count:  0
+    Environment:    <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-kgnpl (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       False 
+  ContainersReady             False 
+  PodScheduled                True 
+Volumes:
+  kube-api-access-kgnpl:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason     Age                 From               Message
+  ----     ------     ----                ----               -------
+  Normal   Scheduled  114s                default-scheduler  Successfully assigned shop/cart-6f8d9c7b54-9xkqp to worker-1
+  Normal   Pulling    25s (x4 over 113s)  kubelet            spec.containers{cart}: Pulling image "ghcr.io/stefanprodan/podinfo:6.9.9"
+  Warning  Failed     24s (x4 over 109s)  kubelet            spec.containers{cart}: Failed to pull image "ghcr.io/stefanprodan/podinfo:6.9.9": rpc error: code = NotFound desc = failed to pull and unpack image "ghcr.io/stefanprodan/podinfo:6.9.9": failed to resolve reference "ghcr.io/stefanprodan/podinfo:6.9.9": ghcr.io/stefanprodan/podinfo:6.9.9: not found
+  Warning  Failed     24s (x4 over 109s)  kubelet            spec.containers{cart}: Error: ErrImagePull
+  Normal   BackOff    1s (x7 over 109s)   kubelet            spec.containers{cart}: Back-off pulling image "ghcr.io/stefanprodan/podinfo:6.9.9"
+  Warning  Failed     1s (x7 over 109s)   kubelet            spec.containers{cart}: Error: ImagePullBackOff

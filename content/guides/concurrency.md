@@ -107,8 +107,8 @@ give at most about 8 times the speed, and 10,000 tasks just add overhead.
 
 ## Processes, threads and goroutines
 
-Three layers run your code. You'll meet the first two again in *The operating
-system for programmers*.
+Three layers run your code. You met the first two in *The operating system
+for programmers* guide; here's how goroutines sit on top.
 
 - A *process* is a running program with its own private memory. Your Go
   binary, `nginx` and `kubelet` are separate processes. They can't see each
@@ -810,6 +810,8 @@ order, not starting order. If order matters, you have two simple options:
 | Ship logs to a backend | pipeline: read, parse, batch, send |
 | Kubernetes controller | a workqueue feeding a few workers |
 | Script over AWS accounts | worker pool sized under the API rate limit |
+| Stop a job on Ctrl-C or `SIGTERM` | a goroutine turns the signal into a cancelled context |
+| Run `kubectl` with a deadline | `exec.CommandContext` kills the child when the context ends |
 | HTTP server | `net/http` runs your handlers in goroutines, many at once |
 
 Two notes:

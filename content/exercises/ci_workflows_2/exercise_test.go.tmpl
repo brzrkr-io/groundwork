@@ -8,12 +8,13 @@ import (
 	"testing"
 )
 
-// The helpers readWorkflow, needs, pinned, findStep, findRun and stepNames
-// are in workflow_test.go.
+// The helpers readWorkflow, needs, checkPins, findStep, findRun and
+// stepNames are in workflow_test.go.
 
 func TestCheckoutFirst(t *testing.T) {
 	const file = "1_test.yml"
 	test := findJob(t, file, readWorkflow(t, file), "test")
+	checkPins(t, file)
 	checkout := findStep(test.Steps, "actions/checkout")
 	setup := findStep(test.Steps, "actions/setup-go")
 	run := findRun(test.Steps, "go test ./...")
@@ -26,6 +27,7 @@ func TestCheckoutFirst(t *testing.T) {
 func TestQuotedVersions(t *testing.T) {
 	const file = "2_versions.yml"
 	test := findJob(t, file, readWorkflow(t, file), "test")
+	checkPins(t, file)
 	versions, ok := test.Strategy.Matrix["go"].([]any)
 	if !ok {
 		t.Fatalf("%s: job test has the matrix go: %v, want a list of Go versions", file, test.Strategy.Matrix["go"])
@@ -54,6 +56,7 @@ func TestQuotedVersions(t *testing.T) {
 func TestDeployWaits(t *testing.T) {
 	const file = "3_deploy.yml"
 	wf := readWorkflow(t, file)
+	checkPins(t, file)
 	for _, id := range []string{"lint", "test"} {
 		if _, ok := wf.Jobs[id]; !ok {
 			t.Errorf("%s: the %s job is gone; keep it, deploy has to wait for it", file, id)
@@ -78,14 +81,7 @@ func TestPinnedActions(t *testing.T) {
 				file, stepNames(lint.Steps), action)
 		}
 	}
-	for _, id := range slices.Sorted(maps.Keys(wf.Jobs)) {
-		for i, s := range wf.Jobs[id].Steps {
-			if s.Uses != "" && !pinned.MatchString(s.Uses) {
-				t.Errorf("%s: job %s, step %d uses %s, want @ and a version tag (@v7, @v1.4.2) or a full 40-character commit SHA",
-					file, id, i+1, s.Uses)
-			}
-		}
-	}
+	checkPins(t, file)
 }
 
 // findJob returns the job with the id, or stops the test if there is none.

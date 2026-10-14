@@ -8,7 +8,7 @@ every time something ships:
 api v1.4.2 -> production: 3 replicas x 256 MiB = 768 MiB
 ```
 
-**New here:** grouped imports; otherwise practice.
+**New here:** nothing; practice.
 
 ## Learn
 
@@ -21,23 +21,13 @@ This exercise uses only what you've already learned:
 | `strings.TrimSpace`, `strings.ToLower` | *Strings* |
 | `fmt.Sprintf`, `%s`, `%d`, `%.2f` | *Formatting with fmt* |
 | `float64(...)`, calling your own function | *Type conversion* |
+| grouped `import ( ... )` | *Reading Go code: the parts of a file* |
 
-### Grouped imports
+### Recap: grouped imports
 
-The file starts with no imports. You'll need `strings` and `fmt`. Several
-imports can be grouped like a `const` block:
-
-```go
-import (
-	"os"
-	"time"
-)
-```
-
-> **Why is it written like this?** **Go requires** each path in quotes, and
-> every import to be used. **Convention:** one `import ( ... )` block, with
-> paths sorted A–Z (gofmt sorts them for you). **Your choice:** one block or
-> separate `import` lines; both compile.
+The file starts with no imports. You'll need `strings` and `fmt`, so group
+them in one `import ( ... )` block, one quoted path per line, as in *Reading
+Go code: the parts of a file*. gofmt sorts them A–Z for you.
 
 ### Expressions as arguments
 

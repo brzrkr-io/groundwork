@@ -1,0 +1,9 @@
+# Task 1: your first Pod. Apply it with: kubectl apply -f 1_hello.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hello
+spec:
+  containers:
+    - name: hello
+      image: ghcr.io/stefanprodan/podinfo:6.9.2

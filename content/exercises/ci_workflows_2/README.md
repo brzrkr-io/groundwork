@@ -5,7 +5,7 @@ workflows broke this week; each file has a `TODO` that quotes the log or the
 review. Read the symptom, find the cause, fix only that.
 
 **New here:** reading a run log, YAML numbers vs strings, a first look at
-`strategy.matrix`, `needs` with a list, pinning actions to a commit SHA,
+`strategy.matrix`, `needs` with a list, reviewing action pins,
 `if: failure()`.
 
 ## Learn
@@ -85,38 +85,38 @@ only after **all** of them succeed, and it is skipped if any one fails:
 With no `needs`, a job doesn't care how the others end: it may finish before
 they do.
 
-### Pin every action
+### Review the pins
 
-`uses: owner/repo@ref` runs code from someone else's repository, with your
-repository's token and secrets. The `ref` decides which code:
-
-| Ref | What it is | Can it change under you? |
-|---|---|---|
-| `@main`, `@master` | a branch | yes, with every commit the owner pushes |
-| `@v7` | a major-version tag | yes: the owner moves it to each new v7 release |
-| `@v7.0.1` | an exact version tag | rarely, but anyone with push access can move it |
-| `@3d3c42e5aac5ba805825da76410c181273ba90b1` | a commit SHA | no, never |
-| nothing | | GitHub rejects the workflow file |
+In *CI workflows* you pinned every action to a full commit SHA with its
+release in a comment. Here's why that rule is worth the long lines.
 
 A tag is only a name pointing at a commit, and it can be moved. In March
 2025 attackers took over the popular `tj-actions/changed-files` action and
 moved its version tags to code that printed CI secrets into the build logs.
+Workflows that used any of its version tags ran the attacker's code.
 Workflows pinned to a commit SHA kept running the old code and were safe.
 
-So the usual rule is: GitHub's own `actions/...` may use a version tag such
-as `@v7`, and **third-party actions get the full commit SHA**, with the
-version as a comment so people (and Dependabot, which updates both) can read
-it:
+When you review a `uses` line, look for these:
+
+| You see | Problem | Fix |
+|---|---|---|
+| `owner/repo` with no `@` | GitHub rejects the workflow file | add the SHA and comment |
+| `@main`, `@master` | a branch: new code with every push | the release's SHA |
+| `@v4`, `@v4.6.0` | a tag: its owner (or a thief) can move it | the release's SHA |
+| `@dbcb813` | a short SHA: GitHub won't resolve it | all 40 characters |
+| `@<SHA> # v4.6.0` | the comment must name the release the SHA *is* | check both with `git ls-remote` |
+
+A correct pin, for an action this exercise doesn't use:
 
 ```yaml
 - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
 ```
 
-To find the commit of a tag, look at the action's Releases page, or ask Git
-(you know it from the Git module):
+To check one, list the tag as in *CI workflows* and compare:
 
 ```sh
-git ls-remote --tags https://github.com/docker/login-action v4.6.0
+git ls-remote --tags https://github.com/docker/login-action 'v4.6.0*'
+# dbcb813823bdd20940b903addbd779551569679f	refs/tags/v4.6.0
 ```
 
 > **Why is it written like this?**
@@ -124,8 +124,8 @@ git ls-remote --tags https://github.com/docker/login-action v4.6.0
 >   and a commit SHA must be the full 40 characters.
 > - **Convention:** the `# vX.Y.Z` comment after a SHA. YAML ignores
 >   everything after ` #`, so it changes nothing for GitHub.
-> - **Watch out:** some tags are *annotated*. Then `git ls-remote` prints two
->   lines, and the one ending in `^{}` holds the commit SHA you want.
+> - **Watch out:** for an *annotated* tag `git ls-remote` prints two lines,
+>   and the one ending in `^{}` holds the commit SHA you want.
 
 ### Steps that run on failure
 
@@ -195,32 +195,32 @@ today:   lint ──┐                 fixed:  lint ──┐
 
 ### 4. Pin every action
 
-**Goal:** in `4_pinned.yml`, make every `uses` name a version that can't
-move without you.
+**Goal:** in `4_pinned.yml`, pin every `uses` to a commit that can't move
+without you.
 
-- Every step that `uses` an action has `@` and either a version tag
-  (`@v7`, `@v7.0.1`) or a full 40-character commit SHA. Never a branch,
-  never nothing.
+- Every `uses` line is `owner/repo@<full 40-character commit SHA> # vX.Y.Z`,
+  as in *CI workflows*: the SHA and release from the table below.
+- The comment names the same release as the SHA.
 - Keep all four action steps (checkout, setup-go, golangci-lint,
-  slack-notify).
-- Recommended, not checked: a tag for GitHub's own `actions/...`, a commit
-  SHA plus a `# vX.Y.Z` comment for the two third-party actions.
+  slack-notify), with their `if:` and `with:` as they are.
 
 The releases to pin to:
 
 | Action | Release | Commit |
 |---|---|---|
 | `actions/checkout` | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `actions/setup-go` | v7.0.0 | `b7ad1dad31e06c5925ef5d2fc7ad053ef454303e` |
 | `golangci/golangci-lint-action` | v9.3.0 | `ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a` |
 | `acme/slack-notify` (your company's own) | v1.4.2 | `521900d1e65917abfbbe5ca9f186b195f932c7bd` |
 
 **Think it through:**
-- Which `uses` lines follow a branch, and which have no ref at all?
+- Which `uses` line follows a branch, which a tag, which a short SHA, and
+  which has no ref at all? The table in Learn names each problem.
 - Who could change the code behind each one tomorrow?
 
 ## Learn more
 
 - [Using workflow run logs](https://docs.github.com/en/actions/how-tos/monitor-workflows/use-workflow-run-logs)
 - [Using jobs in a workflow](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-jobs): `needs`
-- [Secure use reference](https://docs.github.com/en/actions/reference/security/secure-use): why to pin third-party actions to a commit SHA
+- [Secure use reference](https://docs.github.com/en/actions/reference/security/secure-use): why to pin actions to a full commit SHA
 - [actions/setup-go](https://github.com/actions/setup-go): see the note on quoting `go-version`

@@ -1,0 +1,167 @@
+package dnslookup
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"slices"
+	"testing"
+	"time"
+)
+
+// The real resolver must fit the Resolver interface, or Lookup couldn't use it.
+var _ Resolver = net.DefaultResolver
+
+// These are the kinds of errors a real lookup returns.
+var (
+	notFoundErr = &net.DNSError{Err: "no such host", Name: "nosuch.example.com", Server: "10.0.0.2:53", IsNotFound: true}
+	timeoutErr  = &net.DNSError{Err: "i/o timeout", Name: "api.example.com", Server: "10.0.0.2:53", IsTimeout: true, IsTemporary: true}
+	servFailErr = &net.DNSError{Err: "server misbehaving", Name: "api.example.com", Server: "10.0.0.2:53", IsTemporary: true}
+	refusedErr  = &net.DNSError{Err: "server misbehaving", Name: "api.example.com", Server: "10.0.0.2:53"}
+)
+
+func TestClassify(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want Status
+	}{
+		{"no error", nil, OK},
+		{"no such host", notFoundErr, NotFound},
+		{"wrapped no such host", fmt.Errorf("check api: %w", notFoundErr), NotFound},
+		{"timeout", timeoutErr, Timeout},
+		{"wrapped timeout", fmt.Errorf("check api: %w", timeoutErr), Timeout},
+		{"server failure", servFailErr, ServFail},
+		{"wrapped server failure", fmt.Errorf("check api: %w", servFailErr), ServFail},
+		{"refused (no flag set)", refusedErr, Failed},
+		{"not a DNS error", errors.New("no route to host"), Failed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Classify(tt.err); got != tt.want {
+				t.Errorf("Classify(%v) = %q, want %q", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSplitFamilies(t *testing.T) {
+	tests := []struct {
+		name   string
+		addrs  []string
+		wantV4 []string
+		wantV6 []string
+	}{
+		{
+			name:   "mixed",
+			addrs:  []string{"203.0.113.10", "2001:db8::10", "203.0.113.11"},
+			wantV4: []string{"203.0.113.10", "203.0.113.11"},
+			wantV6: []string{"2001:db8::10"},
+		},
+		{
+			name:   "only IPv6",
+			addrs:  []string{"2001:db8::2", "fd00::5"},
+			wantV6: []string{"2001:db8::2", "fd00::5"},
+		},
+		{
+			name:   "skips names and blanks",
+			addrs:  []string{"localhost", "10.0.0.5", ""},
+			wantV4: []string{"10.0.0.5"},
+		},
+		{
+			name: "nothing",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v4, v6 := SplitFamilies(tt.addrs)
+			if !slices.Equal(v4, tt.wantV4) || !slices.Equal(v6, tt.wantV6) {
+				t.Errorf("SplitFamilies(%q) = %q, %q, want %q, %q", tt.addrs, v4, v6, tt.wantV4, tt.wantV6)
+			}
+		})
+	}
+}
+
+// fakeResolver answers every lookup with the same addresses and error, and
+// remembers what Lookup passed in.
+type fakeResolver struct {
+	addrs []string
+	err   error
+
+	host string
+	ctx  context.Context
+}
+
+func (f *fakeResolver) LookupHost(ctx context.Context, host string) ([]string, error) {
+	f.host, f.ctx = host, ctx
+	return f.addrs, f.err
+}
+
+func TestLookup(t *testing.T) {
+	const timeout = 2 * time.Second
+	tests := []struct {
+		name  string
+		host  string
+		addrs []string
+		err   error
+		want  Result
+	}{
+		{
+			name:  "answered",
+			host:  "api.example.com",
+			addrs: []string{"203.0.113.10", "2001:db8::10"},
+			want:  Result{Host: "api.example.com", IPv4: []string{"203.0.113.10"}, IPv6: []string{"2001:db8::10"}, Status: OK},
+		},
+		{
+			name:  "IPv4 only",
+			host:  "db.internal",
+			addrs: []string{"10.0.3.7", "10.0.3.8"},
+			want:  Result{Host: "db.internal", IPv4: []string{"10.0.3.7", "10.0.3.8"}, Status: OK},
+		},
+		{
+			name: "no such host",
+			host: "nosuch.example.com",
+			err:  notFoundErr,
+			want: Result{Host: "nosuch.example.com", Status: NotFound},
+		},
+		{
+			name: "timeout",
+			host: "api.example.com",
+			err:  timeoutErr,
+			want: Result{Host: "api.example.com", Status: Timeout},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &fakeResolver{addrs: tt.addrs, err: tt.err}
+			call := fmt.Sprintf("Lookup(fake, %q, %v)", tt.host, timeout)
+
+			before := time.Now()
+			got := Lookup(f, tt.host, timeout)
+			after := time.Now()
+
+			if got.Host != tt.want.Host || got.Status != tt.want.Status ||
+				!slices.Equal(got.IPv4, tt.want.IPv4) || !slices.Equal(got.IPv6, tt.want.IPv6) {
+				t.Errorf("%s = %+v, want %+v", call, got, tt.want)
+			}
+			if f.ctx == nil {
+				t.Fatalf("%s never called r.LookupHost", call)
+			}
+			if f.host != tt.host {
+				t.Errorf("%s looked up %q, want %q", call, f.host, tt.host)
+			}
+			deadline, ok := f.ctx.Deadline()
+			if !ok {
+				t.Fatalf("%s passed a context with no deadline, want one from context.WithTimeout", call)
+			}
+			if deadline.Before(before.Add(timeout)) || deadline.After(after.Add(timeout)) {
+				t.Errorf("%s passed a context that expires %v from the call, want %v",
+					call, deadline.Sub(before).Round(time.Millisecond), timeout)
+			}
+			if f.ctx.Err() == nil {
+				t.Errorf("%s returned without cancelling its context, want cancel called (defer cancel())", call)
+			}
+		})
+	}
+}

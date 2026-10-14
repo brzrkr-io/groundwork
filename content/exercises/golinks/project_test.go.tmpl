@@ -429,6 +429,7 @@ func TestDevOverlay(t *testing.T) {
 func TestCIWorkflow(t *testing.T) {
 	const file = "ci.yml"
 	wf := readWorkflow(t, file)
+	checkPins(t, file)
 	if wf.Name != "ci" {
 		t.Errorf("%s: name is %q, want %q", file, wf.Name, "ci")
 	}
@@ -476,11 +477,6 @@ func TestCIWorkflow(t *testing.T) {
 	}
 	if login < checkout || buildPush < login {
 		t.Errorf("%s: job image has steps in the order %v, want checkout, login-action, build-push-action", file, stepNames(steps))
-	}
-	for _, s := range steps {
-		if s.Uses != "" && !pinned.MatchString(s.Uses) {
-			t.Errorf("%s: job image uses %s; pin it to a version, such as @v4", file, s.Uses)
-		}
 	}
 	with := steps[login].With
 	if with["registry"] != "ghcr.io" || expression(with["username"]) != "${{ github.actor }}" ||

@@ -5,7 +5,12 @@ environment and region they're in, and what they run. You'll build
 `inventory`, a command-line tool that loads that list from JSON, checks it
 for mistakes, filters it, and prints a table for people or JSON for scripts.
 
-**New here:** `json.Decoder.DisallowUnknownFields`, `text/tabwriter`, `json.Encoder.SetIndent`, `fs.StringVar`, `fs.Func`. Everything else is practice from this module.
+This project closes the *Practical Go* phase. The command line comes from
+*CLI tools and the OS*, the JSON from *Text and data*, and the
+`cmd/` + `internal/` layout from *Practice: lay out a tool*: now it's one
+multi-package tool.
+
+**New here:** `text/tabwriter`, `netip.ParseAddr`. Everything else is practice from earlier modules.
 
 ## Learn
 
@@ -72,9 +77,10 @@ the command line last.
 
 ### Rejecting unknown JSON keys
 
-By default, JSON keys that match no struct field are silently ignored. A typo
-like `"regoin"` would leave `Region` empty with no warning. A `json.Decoder`
-can make that an error:
+As in *Decoding JSON: load a service config*: by default, JSON keys that
+match no struct field are silently ignored, so a typo like `"regoin"` would
+leave `Region` empty with no warning. `DisallowUnknownFields` makes it an
+error:
 
 ```go
 dec := json.NewDecoder(os.Stdin) // reads JSON from any io.Reader
@@ -86,7 +92,9 @@ err := dec.Decode(&cfg)          // & so Decode can fill cfg in
 ### Checking an IP address
 
 `netip.ParseAddr` (package `net/netip`) checks that a string is an IPv4 or
-IPv6 address. Here you only need its error, so throw the value away with `_`:
+IPv6 address. Here you only need its error, so throw the value away with `_`.
+*IP addresses: classify, allowlist, overlap* in the next module does much more
+with this package.
 
 ```go
 _, err := netip.ParseAddr("192.168.1.256") // err != nil: 256 is too big
@@ -114,22 +122,24 @@ knows how wide each column is. `kubectl get pods` prints tables this way.
 
 ### Pretty-printed JSON
 
-A `json.Encoder` writes JSON to an `io.Writer`. `SetIndent("", "  ")` makes
-`Encode` indent with two spaces; `Encode` also adds a final newline.
+As in *Project: access log report*, a `json.Encoder` writes JSON to an
+`io.Writer`. `SetIndent("", "  ")` makes `Encode` indent with two spaces;
+`Encode` also adds a final newline.
 
 A `nil` slice encodes as `null`, but an empty (non-nil) slice encodes as `[]`.
 
 ### Flags that fill a variable you already have
 
-`fs.String` gives you a *new* pointer. `fs.StringVar` stores the value in a
+`fs.String` gives you a *new* pointer. `fs.StringVar`, which the starter of
+*Config precedence: defaults, file, env and flags* used, stores the value in a
 variable you already have, such as a struct field:
 
 ```go
 fs.StringVar(&cfg.Owner, "owner", "", "team that owns the `service`")
 ```
 
-`fs.Func` calls your function once each time the flag appears, which makes a
-*repeatable* flag:
+`fs.Func`, from *Flags: repeatable and validated flags*, calls your function
+once each time the flag appears, which makes a *repeatable* flag:
 
 ```go
 var ports []string
@@ -150,6 +160,8 @@ fs.Func("port", "a `port` to open (repeatable)", func(p string) error {
 the first of them.
 
 ### Exit codes
+
+The same split as in *Standard streams: stdin, stdout, stderr and exit codes*:
 
 | Code | Meaning | Examples |
 |---|---|---|

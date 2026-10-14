@@ -1,0 +1,276 @@
+// Package review is the Groundwork exercise "Practice: review an AWS account".
+package review
+
+import (
+	"cmp"
+	"encoding/json"
+	"fmt"
+	"os"
+	"slices"
+	"strings"
+	"time"
+)
+
+// Account is a snapshot of the settings a reviewer looks at, as an export
+// script would save them to a JSON file.
+type Account struct {
+	ID             string          `json:"id"`
+	SecurityGroups []SecurityGroup `json:"securityGroups"`
+	Policies       []NamedPolicy   `json:"policies"`
+	Buckets        []Bucket        `json:"buckets"`
+	AccessKeys     []AccessKey     `json:"accessKeys"`
+}
+
+// SecurityGroup is a security group and its inbound rules.
+type SecurityGroup struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Inbound []Rule `json:"inbound"`
+}
+
+// Rule is one inbound security group rule. Protocol "-1" means all
+// protocols and all ports.
+type Rule struct {
+	Protocol string `json:"protocol"`
+	FromPort int    `json:"fromPort"`
+	ToPort   int    `json:"toPort"`
+	CIDR     string `json:"cidr"`
+}
+
+// NamedPolicy is an IAM policy and the name it was saved under.
+type NamedPolicy struct {
+	Name     string `json:"name"`
+	Document Policy `json:"document"`
+}
+
+// Bucket is an S3 bucket with its bucket policy and whether Block Public
+// Access is on.
+type Bucket struct {
+	Name              string `json:"name"`
+	BlockPublicAccess bool   `json:"blockPublicAccess"`
+	Policy            Policy `json:"policy"`
+}
+
+// AccessKey is an IAM user's access key. LastUsed is the zero time when the
+// key has never been used.
+type AccessKey struct {
+	User     string    `json:"user"`
+	ID       string    `json:"id"`
+	Status   string    `json:"status"`
+	Created  time.Time `json:"created"`
+	LastUsed time.Time `json:"lastUsed"`
+}
+
+// Policy is an IAM policy document or bucket policy.
+type Policy struct {
+	Version   string
+	Statement []Statement
+}
+
+// Statement is one statement of a policy. Principal is only set in bucket
+// policies.
+type Statement struct {
+	Sid       string
+	Effect    string
+	Principal Principal
+	Action    StringList
+	Resource  StringList
+	Condition map[string]map[string]StringList
+}
+
+// StringList is a JSON value that is either one string or a list of strings.
+type StringList []string
+
+// UnmarshalJSON accepts "s3:GetObject" as well as ["s3:GetObject", "s3:PutObject"].
+func (l *StringList) UnmarshalJSON(data []byte) error {
+	var one string
+	if err := json.Unmarshal(data, &one); err == nil {
+		*l = StringList{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(data, &many); err != nil {
+		return err
+	}
+	*l = many
+	return nil
+}
+
+// Principal says who a bucket policy statement applies to. "*" in AWS means
+// anyone.
+type Principal struct {
+	AWS StringList
+}
+
+// UnmarshalJSON accepts "*" as well as {"AWS": "arn:..."} or {"AWS": [...]}.
+func (p *Principal) UnmarshalJSON(data []byte) error {
+	var one string
+	if err := json.Unmarshal(data, &one); err == nil {
+		p.AWS = StringList{one}
+		return nil
+	}
+	var obj struct{ AWS StringList }
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+	p.AWS = obj.AWS
+	return nil
+}
+
+// Finding is one problem the review found.
+type Finding struct {
+	Severity string // "high", "medium" or "low"
+	Resource string
+	Problem  string
+}
+
+// Load reads an account snapshot from a JSON file.
+func Load(path string) (Account, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Account{}, err
+	}
+	var a Account
+	if err := json.Unmarshal(data, &a); err != nil {
+		return Account{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return a, nil
+}
+
+// Review loads the snapshot at path and returns the report of every finding.
+func Review(path string, now time.Time) (string, error) {
+	a, err := Load(path)
+	if err != nil {
+		return "", err
+	}
+	var all []Finding
+	all = append(all, OpenAdminPorts(a.SecurityGroups)...)
+	all = append(all, BroadPolicies(a.Policies)...)
+	all = append(all, PublicBuckets(a.Buckets)...)
+	all = append(all, StaleKeys(a.AccessKeys, now)...)
+	return Report(all), nil
+}
+
+// OpenAdminPorts finds inbound rules that open SSH (22) or RDP (3389) to the
+// whole internet.
+func OpenAdminPorts(groups []SecurityGroup) []Finding {
+	var findings []Finding
+	for _, g := range groups {
+		for _, r := range g.Inbound {
+			if r.CIDR != "0.0.0.0/0" && r.CIDR != "::/0" {
+				continue
+			}
+			for _, port := range []int{22, 3389} {
+				all := r.Protocol == "-1"
+				inRange := r.Protocol == "tcp" && r.FromPort <= port && port <= r.ToPort
+				if all || inRange {
+					findings = append(findings, Finding{
+						Severity: "high",
+						Resource: g.ID + " (" + g.Name + ")",
+						Problem:  fmt.Sprintf("port %d open to %s", port, r.CIDR),
+					})
+				}
+			}
+		}
+	}
+	return findings
+}
+
+// BroadPolicies finds Allow statements that grant every action, or every
+// action of a service, on every resource.
+func BroadPolicies(policies []NamedPolicy) []Finding {
+	var findings []Finding
+	for _, p := range policies {
+		for _, s := range p.Document.Statement {
+			if s.Effect != "Allow" || !slices.Contains(s.Resource, "*") {
+				continue
+			}
+			for _, action := range s.Action {
+				f := Finding{Resource: "policy " + p.Name}
+				switch {
+				case action == "*":
+					f.Severity, f.Problem = "high", "allows every action on every resource"
+				case strings.HasSuffix(action, ":*"):
+					f.Severity, f.Problem = "medium", "allows "+action+" on every resource"
+				default:
+					continue
+				}
+				findings = append(findings, f)
+			}
+		}
+	}
+	return findings
+}
+
+// PublicBuckets finds buckets that anyone on the internet can use through
+// their bucket policy.
+func PublicBuckets(buckets []Bucket) []Finding {
+	var findings []Finding
+	for _, b := range buckets {
+		if b.BlockPublicAccess {
+			continue
+		}
+		for _, s := range b.Policy.Statement {
+			if s.Effect == "Allow" && slices.Contains(s.Principal.AWS, "*") && len(s.Condition) == 0 {
+				findings = append(findings, Finding{
+					Severity: "high",
+					Resource: "bucket " + b.Name,
+					Problem:  "anyone can " + strings.Join(s.Action, ", "),
+				})
+			}
+		}
+	}
+	return findings
+}
+
+// StaleKeys finds active access keys that are too old or were never used.
+func StaleKeys(keys []AccessKey, now time.Time) []Finding {
+	var findings []Finding
+	for _, k := range keys {
+		if k.Status != "Active" {
+			continue
+		}
+		resource := "user " + k.User
+		if days := int(now.Sub(k.Created).Hours() / 24); days > 90 {
+			findings = append(findings, Finding{
+				Severity: "medium",
+				Resource: resource,
+				Problem:  fmt.Sprintf("access key %s is %d days old", k.ID, days),
+			})
+		}
+		if k.LastUsed.IsZero() {
+			findings = append(findings, Finding{
+				Severity: "low",
+				Resource: resource,
+				Problem:  "access key " + k.ID + " has never been used",
+			})
+		}
+	}
+	return findings
+}
+
+// severityRank orders severities from most to least urgent.
+var severityRank = map[string]int{"high": 0, "medium": 1, "low": 2}
+
+// Report sorts the findings and formats them, one per line, followed by a
+// count per severity.
+func Report(findings []Finding) string {
+	sorted := slices.Clone(findings)
+	slices.SortFunc(sorted, func(a, b Finding) int {
+		if c := cmp.Compare(severityRank[a.Severity], severityRank[b.Severity]); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.Resource, b.Resource); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Problem, b.Problem)
+	})
+	var sb strings.Builder
+	counts := map[string]int{}
+	for _, f := range sorted {
+		fmt.Fprintf(&sb, "[%s] %s: %s\n", f.Severity, f.Resource, f.Problem)
+		counts[f.Severity]++
+	}
+	fmt.Fprintf(&sb, "%d high, %d medium, %d low\n", counts["high"], counts["medium"], counts["low"])
+	return sb.String()
+}

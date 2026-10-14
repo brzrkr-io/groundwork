@@ -92,13 +92,12 @@ func TestParseLine(t *testing.T) {
 
 func TestReadLog(t *testing.T) {
 	t.Run("testdata/access.log", func(t *testing.T) {
-		f, err := os.Open("testdata/access.log")
+		data, err := os.ReadFile("testdata/access.log")
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer f.Close()
 
-		got, err := ReadLog(f)
+		got, err := ReadLog(strings.NewReader(string(data)))
 		if err != nil {
 			t.Fatalf("ReadLog(access.log) returned error %v, want nil", err)
 		}

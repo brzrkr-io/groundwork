@@ -4,7 +4,7 @@ Not every signal means "stop". Services treat `SIGHUP` as "re-read your
 config", so you can change settings without dropping a connection. Here you
 fix a log-shipping agent that dies when asked to reload.
 
-**New here:** `SIGHUP`, `switch` on a signal.
+**New here:** `SIGHUP` and reloading config on a signal.
 
 ## Learn
 
@@ -29,8 +29,8 @@ with the old config**. A typo should never take down production.
 
 ### Telling signals apart
 
-Signals compare with `==`, so `switch` works. One `case` can list several
-values, separated by commas:
+Signals compare with `==`, so the `switch` from *Switch: size, method,
+latency* works. One `case` can list several values, separated by commas:
 
 ```go
 switch sig {

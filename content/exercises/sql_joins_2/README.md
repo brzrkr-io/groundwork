@@ -1,4 +1,4 @@
-# LEFT JOIN: services with no on-call
+# Left joins: services with no on-call
 
 The scariest rows are the ones that *aren't there*: a service nobody is on
 call for, a team that never deployed. An inner join hides them. A *LEFT
@@ -10,7 +10,7 @@ JOIN* keeps them, so you can find them.
 
 ### Recap
 
-As in *JOINs: services, teams and who to page*: `JOIN other ON condition`
+As in *Joins: services, teams and who to page*: `JOIN other ON condition`
 combines matching rows, and an inner join drops rows with no match. The
 tables are the same: `teams`, `services`, `oncall`, `deploys` (see
 `testdata/`).

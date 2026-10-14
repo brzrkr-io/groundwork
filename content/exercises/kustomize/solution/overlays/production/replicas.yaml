@@ -1,0 +1,8 @@
+# Task 3: a patch: just enough of the Deployment to say which object it is,
+# and the one field production changes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 4

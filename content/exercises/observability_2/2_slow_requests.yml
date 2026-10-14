@@ -1,0 +1,7 @@
+# Task 2: open a ticket when the deploy API gets slow. Same shape as
+# 1_error_ratio.yml. In a real repository this would be, for example,
+# prometheus/rules/latency.yml.
+groups:
+  - name: deploy-api-latency
+    rules:
+      # TODO(2): Add the SlowRequests rule here.

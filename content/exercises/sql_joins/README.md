@@ -1,4 +1,4 @@
-# JOINs: services, teams and who to page
+# Joins: services, teams and who to page
 
 A deploy failed. Which team owns that service, and which Slack channel do you
 alert? The answer is spread over three tables. A *JOIN* puts the pieces back
@@ -43,7 +43,7 @@ matches the service's `id`, and returns one combined row.
 
 `JOIN` on its own means *inner join*: rows with **no** match on the other
 side are dropped. A service with nobody on call doesn't appear above.
-(*LEFT JOIN: services with no on-call* shows how to keep them.)
+(*Left joins: services with no on-call* shows how to keep them.)
 
 ```text
 services            oncall               JOIN result

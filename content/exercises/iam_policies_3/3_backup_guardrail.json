@@ -1,0 +1,24 @@
+{
+  "Version": "2012-10-17",
+  "Id": "TODO(3): someone deleted daily/2026-10-01.sql.gz with this role although the guardrail forbids it; make the guardrail work, then delete this Id line",
+  "Statement": [
+    {
+      "Sid": "WriteBackups",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::acme-db-backups/*"
+    },
+    {
+      "Sid": "ListBackups",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::acme-db-backups"
+    },
+    {
+      "Sid": "NeverDeleteDailyBackups",
+      "Effect": "Deny",
+      "Action": "s3:DeleteObject",
+      "Resource": "arn:aws:s3:::acme-db-backups"
+    }
+  ]
+}

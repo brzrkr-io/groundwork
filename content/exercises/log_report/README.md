@@ -5,9 +5,10 @@ log. Here you build a small analyser for nginx-style logs: it parses each
 line, notes broken lines, and reports status codes, busy paths and latency
 percentiles as text (for humans) and JSON (for dashboards).
 
-**New here:** nothing new in the language; a project combining reading
-lines, regular expressions, time, JSON and errors. Small new tools:
-`time.ParseDuration`, percentiles, `maps.Keys`, `json.Encoder`.
+**New here:** the nearest-rank percentile, rounding up with whole numbers,
+`io.WriteString`, `enc.SetIndent`, `Duration.Milliseconds`. Everything else
+is a project combining reading lines, regular expressions, time, JSON,
+errors, sorting and a golden-file test (see "Tools you already have").
 
 ## Learn
 
@@ -44,8 +45,11 @@ One package, `logreport`, split into files by job.
 | `parse.go` | `Entry`, `ParseLine`, `Log`, `ReadLog` | 1, 2 |
 | `stats.go` | `PathCount`, `CountByClass`, `TopPaths`, `Percentile` | 3, 4, 5 |
 | `report.go` | `Report`, `Summarize` (done), `WriteText`, `WriteJSON` | 6 |
-| `logreport_test.go` | one test per task | read only |
+| `logreport_test.go` | one test per task, for tasks 1 to 6 | read only |
+| `report_golden_test.go` | your own test of the whole pipeline | 7 |
+| `grader_test.go` | how your task 7 test is graded | read only |
 | `testdata/access.log` | sample log with a blank line and two broken lines | read only |
+| `testdata/report.golden` | the text report `testdata/access.log` should give | read only |
 
 Data flows one way:
 
@@ -56,17 +60,35 @@ io.Reader ──ReadLog──▶ Log ──Summarize──▶ Report ──Write
 ```
 
 Each task has its own test, so you get a ✓ per piece. Types, signatures, the
-regular expression and `Summarize` are already written.
+regular expression and `Summarize` are already written. In the last task you
+write a test yourself, as in the *Testing* module.
+
+### Tools you already have
+
+| You need | Use | Taught in |
+|---|---|---|
+| read lines from an `io.Reader` | `bufio.Scanner`, `sc.Err()` | *Reading input line by line: a hosts list* |
+| text as an `io.Reader` | `strings.NewReader(s)` | *Reading input line by line: a hosts list* |
+| pull fields out of a line | named groups in a `regexp` | *Regular expressions: release tags and log lines* |
+| parse a timestamp | `time.Parse` with a layout | *Time and durations: cert expiry, uptime, maintenance windows* |
+| text like `"90s"` to a `time.Duration` | `time.ParseDuration` | *Time and durations: cert expiry, uptime, maintenance windows* |
+| sort by your own rule | `slices.SortFunc`, `cmp.Compare` | *Sorting* |
+| a map's keys in order | `slices.Sorted(maps.Keys(m))` | *Sorting* |
+| a copy of a slice | `slices.Clone` | *append and copy* |
+| print into a writer | `fmt.Fprintf(w, ...)` | *Stringers: a kubectl-style deployment report* |
+| JSON straight to a writer | `json.NewEncoder(w)`, `enc.Encode(v)` | *Encoding JSON: fix the alert stream* |
+| compare output with a file | a golden file in `testdata/` | *Test fixtures and golden files* |
 
 ### nginx timestamps
 
-As in *Time and durations*, a layout is the reference time written in your
-format. The starter has it: `timeLayout = "02/Jan/2006:15:04:05 -0700"`.
+The starter has the timestamp layout, the reference time written in nginx's
+format: `timeLayout = "02/Jan/2006:15:04:05 -0700"`.
 
 ### Seconds to a Duration, exactly
 
 Floats aren't exact: `0.043` seconds via float maths might become
-`42.999999ms`. Instead, add a unit and let `time.ParseDuration` read it:
+`42.999999ms`. Instead, add a unit to the text and let `time.ParseDuration`
+read it:
 
 ```go
 d, err := time.ParseDuration("1.5m") // exactly 90s
@@ -92,22 +114,12 @@ The *p95 latency* is the time 95% of requests beat. This project uses the
 
 For 10 durations, p50 is the 5th fastest and p95 the 10th (the slowest).
 
-### Sorted map keys
+### Writing a string to an io.Writer
 
-`maps.Keys(m)` gives a map's keys in random order. `slices.Sorted(...)`
-collects them into a sorted slice:
-
-```go
-for _, host := range slices.Sorted(maps.Keys(uptime)) {
-	fmt.Println(host, uptime[host])
-}
-```
-
-### Writing to an io.Writer
-
-`io.Writer` is the mirror of `io.Reader`: anything you can write bytes to (a
-file, a network connection, a `strings.Builder`). `fmt.Fprintf(w, ...)` is
-`Printf` into `w`.
+`io.Writer` is anything you can write bytes to (a file, a network
+connection, a `strings.Builder`). Besides `fmt.Fprintf(w, ...)`, the
+function `io.WriteString(w, s)` writes one string and returns the number of
+bytes written plus an error.
 
 A handy pattern: build all the text in a `strings.Builder`, write it once,
 and return that one error:
@@ -119,15 +131,20 @@ _, err := io.WriteString(w, b.String())
 return err
 ```
 
-### Streaming JSON
+### Indented JSON from an encoder
 
-`json.NewEncoder(w)` writes JSON straight to a writer. `enc.SetIndent("",
-"  ")` indents like `MarshalIndent`. `enc.Encode(v)` writes the value plus a
-newline.
+`enc.SetIndent("", "  ")` makes a `json.Encoder` indent like
+`json.MarshalIndent` from *Encoding JSON: a deployment status report*. Call
+it once, before `enc.Encode(v)`.
 
 > **Why is it written like this?** You keep the encoder in a variable
 > because you need to call two methods on it (`SetIndent`, then `Encode`).
 > The name `enc` is a common convention.
+
+### Durations as whole milliseconds
+
+`d.Milliseconds()` turns a `time.Duration` into an `int64` count of whole
+milliseconds: `(2500 * time.Millisecond).Milliseconds()` is `2500`.
 
 ## Your task
 
@@ -329,6 +346,38 @@ These are the real numbers for `testdata/access.log`.
 - Writing to a broken `w` must return an error. Where does that error come
   from in each function?
 - Imports for `report.go`: `"fmt"`, `"maps"`, `"slices"`, `"strings"`.
+
+### 7. Test the whole pipeline with a golden file
+
+**Goal:** in `report_golden_test.go`, write `TestReportGolden` so it fails
+whenever the text report for `testdata/access.log` differs from
+`testdata/report.golden`.
+
+The tests for tasks 1 to 6 each check one piece. This test checks that the
+pieces fit together, the way the on-call team will run them:
+
+- read `testdata/access.log` with `os.ReadFile`, and pass it to `ReadLog`
+  through `strings.NewReader`,
+- `Summarize` the log and render it with `WriteText` into a
+  `strings.Builder`,
+- read `testdata/report.golden` and fail with `t.Errorf` if the text
+  differs; stop with `t.Fatal` if reading or parsing fails.
+
+`report.golden` holds the same report as the `WriteText` example in task 6.
+
+`TestGrader` grades your test, much like in the *Testing* module, but by
+changing the files instead of the code. Your test must pass on the real
+files, and fail in a scratch folder where `report.golden` says a different
+number, where `report.golden` lost its last line, and where `access.log`
+lost its last request. Finish tasks 1 to 6 first: your test can only pass
+when the whole pipeline works.
+
+**Think it through:**
+- As in *Test fixtures and golden files*: get `got`, read `want` from the
+  golden file, compare. Which variable holds `got` here?
+- `ReadLog` wants an `io.Reader`, and `os.ReadFile` gives you `[]byte`.
+  What turns text into a reader?
+- Imports: `"os"`, `"path/filepath"`, `"strings"`.
 
 ## Learn more
 

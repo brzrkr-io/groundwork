@@ -1,0 +1,30 @@
+# Task 3: indexer has been Pending for an hour. testdata/indexer_describe.txt
+# and testdata/nodes.txt have what kubectl showed.
+#
+# TODO(3): Lower the CPU request so the Pod fits on a node. Change nothing
+# else.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indexer
+  namespace: shop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: indexer
+  template:
+    metadata:
+      labels:
+        app: indexer
+    spec:
+      containers:
+        - name: indexer
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          resources:
+            requests:
+              cpu: 1500m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi

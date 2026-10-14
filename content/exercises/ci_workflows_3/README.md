@@ -92,7 +92,7 @@ A good key changes exactly when the folders' contents should: build it from
 lock file. For a Node.js project it looks like this:
 
 ```yaml
-- uses: actions/cache@v6
+- uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
   with:
     path: |
       ~/.npm
@@ -131,7 +131,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: ./make-report.sh            # writes out/coverage.html
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage
           path: out/coverage.html
@@ -140,7 +140,7 @@ jobs:
     needs: report                        # the artifact must exist first
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: coverage                 # lands as ./coverage.html
       - run: ls -l coverage.html
@@ -196,7 +196,8 @@ The Actions tab then shows `test (1.26, ubuntu-latest)`,
 `actions/cache`, keyed on the runner's OS and `go.sum`.
 
 - setup-go gets `cache: false`.
-- A new step uses `actions/cache`, pinned to a version (such as `@v6`).
+- A new step uses `actions/cache`, pinned as in *CI workflows*:
+  `actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0`.
 - The steps run in this order: checkout, setup-go, cache, `go test ./...`.
 - `path` lists two lines: `~/go/pkg/mod` and `~/.cache/go-build`.
 - `key` contains `${{ runner.os }}` and `${{ hashFiles('**/go.sum') }}`,
@@ -221,15 +222,18 @@ Cache restored from key: Linux-go-5d1b0a9c...
 a new job `smoke`.
 
 - In the job `build`, after `go build -o bin/statusd .`, add a step with
-  `actions/upload-artifact` (pinned, such as `@v7`), `name: statusd` and
-  `path: bin/statusd`.
+  `actions/upload-artifact`, `name: statusd` and `path: bin/statusd`.
 - Add the job `smoke`:
   - it `needs` `build` and runs on `ubuntu-latest`,
-  - step 1: `actions/download-artifact` (pinned, such as `@v8`) with
-    `name: statusd` and no `path`,
+  - step 1: `actions/download-artifact` with `name: statusd` and no
+    `path`,
   - then make the file executable with `chmod +x statusd` and run
     `./statusd -version`: one step with `&&` between the two commands, or
     two steps.
+- Pin both actions as in *CI workflows*:
+  `actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2`
+  and
+  `actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2`.
 
 `statusd -version` prints the version and exits. If the binary can't start,
 the step fails, and the run goes red before anything ships.

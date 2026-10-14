@@ -1,0 +1,35 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadAppAssets",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::acme-app-assets",
+        "arn:aws:s3:::acme-app-assets/*"
+      ]
+    },
+    {
+      "Sid": "LookAround",
+      "Effect": "Allow",
+      "Action": "ec2:Describe*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "OwnSandbox",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::acme-dev-sandbox",
+        "arn:aws:s3:::acme-dev-sandbox/*"
+      ]
+    },
+    {
+      "Sid": "KeepSandboxPrivate",
+      "Effect": "Deny",
+      "Action": "s3:PutBucketPolicy",
+      "Resource": "arn:aws:s3:::acme-dev-sandbox"
+    }
+  ]
+}

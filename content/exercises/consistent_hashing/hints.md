@@ -1,8 +1,9 @@
 ## Task 1: Place nodes on the ring
 
-Loop over `nodes`, and inside that loop count `i` up to `r.replicas`. Build
-each label from the node, `"#"` and the number, hash it, and store the point
-in both `r.owners` and `r.points` unless the map already has it.
+It's the `Add` from *Hash rings: find a key's node* with one more loop: for
+each node, count `i` up to `r.replicas`. Build each label from the node,
+`"#"` and the number, hash it, and store the point in both `r.owners` and
+`r.points` unless the map already has it.
 
 ### Closer
 
@@ -50,17 +51,15 @@ if i == len(r.points) {
 return r.owners[r.points[i]]
 ```
 
-## Task 3: Remove a node
+## Task 3: Remove a node's points
 
-Drop every point whose owner is `node` from `r.points`, then drop the same
-entries from `r.owners`. The order matters: the slice step needs the map to
-know who owns each point.
+Keep only the points whose owner isn't `node`. The point is a number, so ask
+`r.owners` who sits there.
 
 ### Closer
 
 `r.points = slices.DeleteFunc(r.points, func(p uint32) bool { ... })`, where
-the function checks `r.owners[p] == node`. Then
-`maps.DeleteFunc(r.owners, func(_ uint32, owner string) bool { ... })`.
+the function returns `true` for points to delete: `r.owners[p] == node`.
 
 ### Answer
 
@@ -68,6 +67,21 @@ the function checks `r.owners[p] == node`. Then
 r.points = slices.DeleteFunc(r.points, func(p uint32) bool {
 	return r.owners[p] == node
 })
+```
+
+## Task 4: Forget a node's owners
+
+Now drop every map entry whose value is `node`. This goes after the task 3
+code, because that code still needs the map to know who owns each point.
+
+### Closer
+
+`maps.DeleteFunc(r.owners, func(_ uint32, owner string) bool { ... })`. The
+point (the key) doesn't matter here, so `_` ignores it.
+
+### Answer
+
+```go
 maps.DeleteFunc(r.owners, func(_ uint32, owner string) bool {
 	return owner == node
 })

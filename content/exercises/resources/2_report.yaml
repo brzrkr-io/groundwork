@@ -1,0 +1,31 @@
+# Task 2: report keeps crashing. testdata/report_describe.txt has what
+# kubectl showed.
+#
+# TODO(2): Give it enough memory: a request of at least 300Mi, a limit of
+# at least 384Mi, and the request no bigger than the limit.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report
+  namespace: shop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: report
+  template:
+    metadata:
+      labels:
+        app: report
+    spec:
+      containers:
+        - name: report
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          # Stands in for the real report job: holds 300 MB in memory.
+          command: ["./podinfo", "--stress-memory=300"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi

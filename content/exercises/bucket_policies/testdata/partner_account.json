@@ -1,0 +1,26 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PartnerRead",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::444455556666:root"
+      },
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::acme-exports/*"
+    },
+    {
+      "Sid": "PartnerList",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::acme-exports",
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalAccount": "444455556666"
+        }
+      }
+    }
+  ]
+}

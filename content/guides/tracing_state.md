@@ -146,7 +146,7 @@ One run of the body is a *pass* (also called an *iteration*). The check in step 
 
 ### Worked trace: total disk usage
 
-A script asks a server how full each of its three disks is and adds them up. The function `diskUsedGB` stands in for the real question; in this module you've met `switch`, so it uses one.
+A script asks a server how full each of its three disks is and adds them up. The function `diskUsedGB` stands in for the real question. It uses a `switch`, which picks the `case` that matches `disk` and runs only that one (you'll write your own in *Switch: size, method, latency*).
 
 ```go
 package main

@@ -1,0 +1,12 @@
+{
+  "Version": "2012-10-17",
+  "Id": "TODO(1): CI only ever called s3:PutObject and s3:GetObject on acme-ci-artifacts/builds/; narrow this policy to that, then delete this Id line",
+  "Statement": [
+    {
+      "Sid": "CIArtifacts",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": "*"
+    }
+  ]
+}

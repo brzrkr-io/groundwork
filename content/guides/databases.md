@@ -142,7 +142,7 @@ HAVING COUNT(*) >= 2;
 
 Trace it: `WHERE` keeps the four failed deploys; `GROUP BY` puts them into one pile per service; `COUNT(*)` counts each pile; `HAVING` keeps only piles of two or more. Result: `checkout | 2`.
 
-## JOINs: putting tables back together
+## Joins: putting tables back together
 
 Keys split facts across tables. A *join* combines them again by matching rows on a condition.
 
@@ -283,7 +283,7 @@ Never build a query by gluing in input:
 query := "SELECT version FROM deploys WHERE service = '" + service + "'"
 ```
 
-If `service` is `x' OR '1'='1`, the quote ends your string and the rest becomes SQL: `WHERE service = 'x' OR '1'='1'` matches every row. With `'; DELETE FROM deploys; --`, the input adds its own statement. That's *SQL injection*: input changing the meaning of a query. It's one case of the general problem in the *Security basics for automation* guide: data crossing into code.
+If `service` is `x' OR '1'='1`, the quote ends your string and the rest becomes SQL: `WHERE service = 'x' OR '1'='1'` matches every row. With `'; DELETE FROM deploys; --`, the input adds its own statement. That's *SQL injection*: input changing the meaning of a query. It's one case of a general problem, data crossing into code, which you'll meet again in the *Security basics for automation* guide with *CLI tools and the OS*.
 
 ### Placeholders keep them apart
 

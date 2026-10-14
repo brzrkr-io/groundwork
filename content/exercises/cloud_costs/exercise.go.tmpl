@@ -1,0 +1,77 @@
+// Package costs is the Groundwork exercise "Cloud costs: estimates and budget alarms".
+package costs
+
+import (
+	"encoding/json"
+	"os"
+)
+
+// HoursPerMonth is how many hours AWS bills for a month of running nonstop.
+const HoursPerMonth = 730
+
+// Prices holds the on-demand prices of one region, in US dollars.
+type Prices struct {
+	Region        string             `json:"region"`
+	EC2Hourly     map[string]float64 `json:"ec2_hourly"`           // per instance-hour, by instance type
+	EBSPerGB      float64            `json:"ebs_gp3_gb_month"`     // per GB-month of gp3 disk
+	S3PerGB       float64            `json:"s3_standard_gb_month"` // per GB-month in S3 Standard
+	NATHourly     float64            `json:"nat_hourly"`           // per NAT gateway-hour
+	NATPerGB      float64            `json:"nat_gb"`               // per GB through a NAT gateway
+	TransferPerGB float64            `json:"transfer_out_gb"`      // per GB out to the internet
+}
+
+// LoadPrices reads a price list such as testdata/prices.json.
+func LoadPrices(path string) (Prices, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Prices{}, err
+	}
+	var p Prices
+	err = json.Unmarshal(data, &p)
+	return p, err
+}
+
+// Item is one line of a monthly estimate. Which fields count depends on
+// Service:
+//
+//	"ec2":      Count instances of InstanceType, each running Hours
+//	"ebs":      GB of gp3 disk
+//	"s3":       GB stored in S3 Standard
+//	"nat":      Count NAT gateways running Hours, plus GB processed
+//	"transfer": GB sent out to the internet
+type Item struct {
+	Service      string
+	InstanceType string
+	Count        int
+	Hours        float64
+	GB           float64
+}
+
+// Bill is a monthly estimate in US dollars, rounded to cents.
+type Bill struct {
+	Total     float64
+	ByService map[string]float64
+}
+
+// LineCost returns what one item costs per month in US dollars, not
+// rounded.
+func LineCost(item Item, p Prices) (float64, error) {
+	// TODO(1): Price the item according to its Service. Return an error for
+	// an unknown service or instance type. Add "fmt" to the imports.
+	return 0, nil
+}
+
+// Estimate adds up the cost of items, in total and per service.
+func Estimate(items []Item, p Prices) (Bill, error) {
+	// TODO(2): Sum the line costs, then round the total and every service
+	// to cents. Add "math" to the imports.
+	return Bill{}, nil
+}
+
+// BudgetAlerts returns the AWS Budgets-style alerts for a monthly budget
+// after spending spent in the first day days of a days-long month.
+func BudgetAlerts(budget, spent float64, day, days int, thresholds []int) []string {
+	// TODO(3): Build one ACTUAL or FORECASTED alert per threshold that is
+	// reached.
+	return nil
+}

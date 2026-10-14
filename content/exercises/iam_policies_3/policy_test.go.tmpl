@@ -1,0 +1,338 @@
+package iam
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/netip"
+	"os"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// This file reads IAM policy files and decides requests the way AWS does,
+// simplified as in "IAM policies: how AWS decides allow or deny", plus
+// conditions. You don't need to change it.
+
+// stringList is a JSON value that is either one string or a list of strings,
+// as IAM allows for Action, Resource and condition values.
+type stringList []string
+
+// UnmarshalJSON accepts "s3:GetObject" as well as ["s3:GetObject", "s3:PutObject"].
+func (l *stringList) UnmarshalJSON(data []byte) error {
+	var one string
+	if err := json.Unmarshal(data, &one); err == nil {
+		*l = stringList{one}
+		return nil
+	}
+	var many []string
+	if err := json.Unmarshal(data, &many); err != nil {
+		return err
+	}
+	*l = many
+	return nil
+}
+
+// statement is one rule of a policy. Condition maps an operator
+// ("IpAddress") to condition keys ("aws:SourceIp") and their values.
+type statement struct {
+	Sid       string
+	Effect    string
+	Action    stringList
+	Resource  stringList
+	Condition map[string]map[string]stringList
+}
+
+// policy is one policy file.
+type policy struct {
+	Version   string
+	ID        string `json:"Id"`
+	Statement []statement
+}
+
+// request is one API call: an action on a resource, and what AWS knows about
+// the call, such as {"aws:SourceIp": "203.0.113.25"}.
+type request struct {
+	action, resource string
+	context          map[string]string
+}
+
+func (r request) String() string {
+	s := r.action + " on " + r.resource
+	if ip, ok := r.context["aws:SourceIp"]; ok {
+		s += " from " + ip
+	}
+	return s
+}
+
+// The three decisions, as in "IAM policies: how AWS decides allow or deny".
+const (
+	allow        = "Allow"
+	explicitDeny = "ExplicitDeny"
+	implicitDeny = "ImplicitDeny"
+)
+
+// readPolicy parses the policy file name in the exercise folder. Fields these
+// tests don't know (often a typo such as "Actions") are an error.
+func readPolicy(t *testing.T, name string) policy {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var p policy
+	if err := dec.Decode(&p); err != nil {
+		if syntax, ok := errors.AsType[*json.SyntaxError](err); ok {
+			line := 1 + bytes.Count(raw[:syntax.Offset], []byte("\n"))
+			t.Fatalf("%s line %d is not valid JSON: %v", name, line, err)
+		}
+		t.Fatalf("%s is not a policy these tests can read: %v", name, err)
+	}
+	return p
+}
+
+// operators lists the condition operators these tests know.
+var operators = []string{"StringEquals", "StringLike", "IpAddress", "NotIpAddress", "Bool"}
+
+// checkRules reports everything in policy p (read from file) that IAM
+// would reject or a reviewer would flag.
+func checkRules(t *testing.T, file string, p policy) {
+	t.Helper()
+	if p.Version != "2012-10-17" {
+		t.Errorf(`%s: Version is %q, want "2012-10-17"`, file, p.Version)
+	}
+	if len(p.Statement) == 0 {
+		t.Fatalf("%s has no statements yet; its Id says what to write", file)
+	}
+	if p.ID != "" {
+		t.Errorf(`%s still has "Id": %q; delete the Id line when you're done (IAM allows Id only in resource-based policies)`, file, p.ID)
+	}
+	for i, s := range p.Statement {
+		where := fmt.Sprintf("%s: statement %d", file, i+1)
+		if s.Sid != "" {
+			where += fmt.Sprintf(" (%s)", s.Sid)
+		}
+		if s.Effect != "Allow" && s.Effect != "Deny" {
+			t.Errorf(`%s has Effect %q, want "Allow" or "Deny"`, where, s.Effect)
+		}
+		if len(s.Action) == 0 {
+			t.Errorf("%s has no Action", where)
+		}
+		if len(s.Resource) == 0 {
+			t.Errorf("%s has no Resource", where)
+		}
+		for _, a := range s.Action {
+			if s.Effect == "Allow" && (a == "*" || strings.HasSuffix(a, ":*")) {
+				t.Errorf("%s allows %q: every action, today's and the ones AWS adds tomorrow; list the actions the job needs instead", where, a)
+			}
+		}
+		for op, keys := range s.Condition {
+			if !slices.Contains(operators, op) {
+				t.Errorf("%s uses the condition operator %q; these tests know %s", where, op, strings.Join(operators, ", "))
+			}
+			for key, values := range keys {
+				if len(values) == 0 {
+					t.Errorf("%s: condition %s %s has no values", where, op, key)
+				}
+				for _, v := range values {
+					if _, err := parseRange(v); err != nil && (op == "IpAddress" || op == "NotIpAddress") {
+						t.Errorf("%s: condition %s %s has %q, want an IP address or a CIDR range such as 192.0.2.0/24", where, op, key, v)
+					}
+				}
+			}
+		}
+	}
+}
+
+// parseRange reads "203.0.113.0/24", or a single address "203.0.113.7",
+// which IAM treats as a /32.
+func parseRange(v string) (netip.Prefix, error) {
+	if p, err := netip.ParsePrefix(v); err == nil {
+		return p, nil
+	}
+	a, err := netip.ParseAddr(v)
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+	return netip.PrefixFrom(a, a.BitLen()), nil
+}
+
+// evaluate decides r against every statement of every policy: a matching
+// Deny wins, then a matching Allow, else the implicit deny.
+func evaluate(policies []policy, r request) string {
+	allowed := false
+	for _, p := range policies {
+		for _, s := range p.Statement {
+			if !applies(s, r) {
+				continue
+			}
+			if s.Effect == "Deny" {
+				return explicitDeny
+			}
+			if s.Effect == "Allow" {
+				allowed = true
+			}
+		}
+	}
+	if allowed {
+		return allow
+	}
+	return implicitDeny
+}
+
+// applies reports whether s matches r: an action (ignoring case), a
+// resource, and every condition.
+func applies(s statement, r request) bool {
+	return matchAny(s.Action, r.action, true) &&
+		matchAny(s.Resource, r.resource, false) &&
+		conditionsHold(s.Condition, r.context)
+}
+
+func matchAny(patterns []string, value string, ignoreCase bool) bool {
+	for _, p := range patterns {
+		if ignoreCase && match(strings.ToLower(p), strings.ToLower(value)) {
+			return true
+		}
+		if !ignoreCase && match(p, value) {
+			return true
+		}
+	}
+	return false
+}
+
+// match reports whether value matches pattern, where * stands for any run
+// of characters and ? for exactly one.
+func match(pattern, value string) bool {
+	expr := regexp.QuoteMeta(pattern)
+	expr = strings.ReplaceAll(expr, `\*`, ".*")
+	expr = strings.ReplaceAll(expr, `\?`, ".")
+	return regexp.MustCompile("^" + expr + "$").MatchString(value)
+}
+
+// conditionsHold reports whether every key under every operator holds
+// (AND). A key holds when any of its values matches (OR). A key missing from
+// the request fails, except under NotIpAddress, as in AWS.
+func conditionsHold(cond map[string]map[string]stringList, ctx map[string]string) bool {
+	for op, keys := range cond {
+		for key, values := range keys {
+			got, ok := lookup(ctx, key)
+			if !ok {
+				if op == "NotIpAddress" {
+					continue
+				}
+				return false
+			}
+			if !holds(op, got, values) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// lookup finds key in ctx. Condition key names ignore case in AWS.
+func lookup(ctx map[string]string, key string) (string, bool) {
+	for k, v := range ctx {
+		if strings.EqualFold(k, key) {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// holds reports whether the request's value got satisfies operator op with
+// one of values. NotIpAddress holds when got is in none of the ranges.
+func holds(op, got string, values []string) bool {
+	switch op {
+	case "NotIpAddress":
+		return !holds("IpAddress", got, values)
+	case "IpAddress":
+		addr, err := netip.ParseAddr(got)
+		if err != nil {
+			return false
+		}
+		for _, v := range values {
+			if p, err := parseRange(v); err == nil && p.Contains(addr) {
+				return true
+			}
+		}
+	case "StringEquals":
+		return slices.Contains(values, got)
+	case "StringLike":
+		for _, v := range values {
+			if match(v, got) {
+				return true
+			}
+		}
+	case "Bool":
+		for _, v := range values {
+			if strings.EqualFold(got, v) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// want is the decision a test expects for a request.
+type want int
+
+const (
+	allowed      want = iota // Allow
+	denied                   // ExplicitDeny or ImplicitDeny: either is fine
+	deniedByDeny             // ExplicitDeny only
+)
+
+func (w want) String() string {
+	switch w {
+	case allowed:
+		return "Allow"
+	case denied:
+		return "a deny (implicit or explicit)"
+	case deniedByDeny:
+		return "ExplicitDeny"
+	}
+	return fmt.Sprintf("want(%d)", int(w))
+}
+
+func (w want) ok(decision string) bool {
+	switch w {
+	case allowed:
+		return decision == allow
+	case denied:
+		return decision != allow
+	case deniedByDeny:
+		return decision == explicitDeny
+	}
+	return false
+}
+
+// check is one request a test sends, with the decision it expects.
+type check struct {
+	name string
+	want want
+	req  request
+}
+
+// expect evaluates every check against policies (read from file) and
+// reports the ones with the wrong decision.
+func expect(t *testing.T, file string, policies []policy, checks []check) {
+	t.Helper()
+	for _, c := range checks {
+		t.Run(c.name, func(t *testing.T) {
+			if got := evaluate(policies, c.req); !c.want.ok(got) {
+				t.Errorf("evaluate(%s, %v) = %s, want %v", file, c.req, got, c.want)
+			}
+		})
+	}
+}
+
+// from builds a request for action on resource, made from the address ip.
+func from(ip, action, resource string) request {
+	return request{action: action, resource: resource, context: map[string]string{"aws:SourceIp": ip}}
+}

@@ -1,0 +1,8 @@
+# Task 2: the Deployment reads the key level, so that's the key's name.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notes-config
+  namespace: notes
+data:
+  level: info

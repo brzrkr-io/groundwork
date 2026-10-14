@@ -112,12 +112,12 @@ GitHub's container registry is `ghcr.io`; images there are named
 Here is the pair for another registry:
 
 ```yaml
-- uses: docker/login-action@v4
+- uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
   with:
     registry: registry.example.com
     username: deploy-bot
     password: ${{ secrets.REGISTRY_PASSWORD }}
-- uses: docker/build-push-action@v7
+- uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
   with:
     context: .
     push: true
@@ -204,6 +204,17 @@ was already pending, the newer replaces it. The long form says the same:
 Releases of `statusd` and `alertd` are built on a laptop and copied to
 servers by hand. You'll automate them: a version tag builds a stamped
 binary, pushes an image, and promotes it from staging to production.
+
+Pin every action as in *CI workflows*: full commit SHA, then `# vX.Y.Z`.
+The test checks every `uses` line in each file. The pins you need:
+
+| Action | Release | Commit |
+|---|---|---|
+| `actions/checkout` | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `actions/setup-go` | v7.0.0 | `b7ad1dad31e06c5925ef5d2fc7ad053ef454303e` |
+| `docker/login-action` | v4.6.0 | `dbcb813823bdd20940b903addbd779551569679f` |
+| `docker/build-push-action` | v7.4.0 | `c3c9e263c25d99ce0380d002d59b67737d91b0dc` |
+| `docker/setup-buildx-action` (optional) | v4.4.1 | `f87e5991a6d7451dcb8d9637bfbc97413f497069` |
 
 ### 1. Release on version tags
 

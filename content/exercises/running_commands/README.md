@@ -2,9 +2,10 @@
 
 Ops tools constantly run other tools: `systemctl`, `kubectl`, `git`,
 `terraform`. Go's `os/exec` package starts a program, collects what it prints
-and tells you how it exited, with no shell in between.
+and tells you how it exited, with no shell in between. And with the context
+you met in *Context and cancellation*, a hung tool can't hang your tool too.
 
-**New here:** `os/exec`, exit codes, `*exec.ExitError`, a timeout recipe with `context`.
+**New here:** `os/exec`, `*exec.ExitError`, `exec.CommandContext`.
 
 ## Learn
 
@@ -34,9 +35,10 @@ a string; `strings.TrimSpace` removes the spaces and newlines around it.
 
 ### Exit codes
 
-A program reports success with its *exit code*: `0` means success, anything
-else is failure. `systemctl is-active nginx` prints `inactive` and exits
-with `3` when nginx is stopped.
+A program reports success with its *exit code*, as in *Exit codes, && and
+||* and *Standard streams: stdin, stdout, stderr and exit codes*: `0` means
+success, anything else is failure. `systemctl is-active nginx` prints
+`inactive` and exits with `3` when nginx is stopped.
 
 A non-zero exit gives an error of type `*exec.ExitError`. Get it with
 `errors.AsType`, as in *Wrapping errors*:
@@ -65,10 +67,11 @@ cmd.Env = append(os.Environ(), "LANG=C", "TZ=UTC")   // ours plus two more
 > so you must store the result (Go requires using it). To append a whole
 > slice, put `...` after it: `append(list, more...)`.
 
-### Timeouts
+### Timeouts with a context
 
-A *context* carries a deadline (the Concurrency module covers it properly).
-Here's the recipe, with different names than you'll use:
+In *Context and cancellation* you built contexts with `context.WithTimeout`
+and watched `ctx.Done()` yourself. `exec.CommandContext` does that watching
+for you: it starts the program and, if the context ends first, kills it.
 
 ```go
 ctx, stop := context.WithTimeout(context.Background(), 30*time.Second)
@@ -80,9 +83,10 @@ When the deadline passes, Go kills the program and the error just says
 `signal: killed`. Afterwards `ctx.Err()` is `context.DeadlineExceeded`, which
 tells you *why*. Wrap it with `%w` so callers can check it with `errors.Is`.
 
-> **Why is it written like this?** `WithTimeout` returns a cancel function,
-> and `go vet` warns if you don't call it; `defer` is the convention. The name
-> (`cancel`, `stop`) is your choice.
+> **Why is it written like this?** As in *Context and cancellation*, always
+> call the cancel function (`go vet` warns if you don't), and `defer` is the
+> convention. The name (`cancel`, `stop`) is your choice. The context is the
+> first argument, as in every context-aware Go API.
 
 ### How the tests fake a tool
 

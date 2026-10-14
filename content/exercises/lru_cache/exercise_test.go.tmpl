@@ -164,26 +164,26 @@ func TestEvict(t *testing.T) {
 		wantEvictions(t, c, 2)
 		wantGet(t, c, "postgres:16", "sha256:e83d", true)
 	})
+}
 
-	t.Run("safe for concurrent use", func(t *testing.T) {
-		c := New(10)
-		var wg sync.WaitGroup
-		for i := range 20 {
-			wg.Go(func() {
-				for j := range 5 {
-					tag := fmt.Sprintf("app-%d:v%d", i, j)
-					c.Put(tag, "sha256:0000")
-					c.Get(tag)
-					c.Len()
-				}
-			})
-		}
-		wg.Wait()
-		// 100 different tags went into a cache that holds 10.
-		wantLen(t, c, 10)
-		if got := len(c.Keys()); got != 10 {
-			t.Errorf("len(Keys()) = %d, want 10", got)
-		}
-		wantEvictions(t, c, 90)
-	})
+func TestConcurrent(t *testing.T) {
+	c := New(10)
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Go(func() {
+			for j := range 5 {
+				tag := fmt.Sprintf("app-%d:v%d", i, j)
+				c.Put(tag, "sha256:0000")
+				c.Get(tag)
+				c.Len()
+			}
+		})
+	}
+	wg.Wait()
+	// 100 different tags went into a cache that holds 10.
+	wantLen(t, c, 10)
+	if got := c.order.Len(); got != 10 {
+		t.Errorf("c.order.Len() = %d, want 10 (the list and the map got out of step)", got)
+	}
+	wantEvictions(t, c, 90)
 }

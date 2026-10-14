@@ -1,0 +1,98 @@
+package resources
+
+import (
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+)
+
+func TestGuaranteed(t *testing.T) {
+	const file = "1_web.yaml"
+	c := readContainer(t, file, "web")
+	for _, field := range []string{"requests", "limits"} {
+		list := c.Resources.Requests
+		if field == "limits" {
+			list = c.Resources.Limits
+		}
+		checkQuantity(t, file, field, corev1.ResourceCPU, list, "==", "250m")
+		checkQuantity(t, file, field, corev1.ResourceMemory, list, "==", "128Mi")
+	}
+	if got := qosClass(c); got != corev1.PodQOSGuaranteed {
+		t.Errorf("%s: the Pods would get the QoS class %s, want Guaranteed", file, got)
+	}
+}
+
+func TestEnoughMemory(t *testing.T) {
+	const file = "2_report.yaml"
+	c := readContainer(t, file, "report")
+	checkQuantity(t, file, "requests", corev1.ResourceMemory, c.Resources.Requests, ">=", "300Mi")
+	checkQuantity(t, file, "limits", corev1.ResourceMemory, c.Resources.Limits, ">=", "384Mi")
+	req, okReq := c.Resources.Requests[corev1.ResourceMemory]
+	limit, okLimit := c.Resources.Limits[corev1.ResourceMemory]
+	if okReq && okLimit && req.Cmp(limit) > 0 {
+		t.Errorf("%s: the memory request %s is bigger than the limit %s; the API server rejects that",
+			file, req.String(), limit.String())
+	}
+}
+
+func TestFitsOnANode(t *testing.T) {
+	const file = "3_indexer.yaml"
+	c := readContainer(t, file, "indexer")
+	checkQuantity(t, file, "requests", corev1.ResourceCPU, c.Resources.Requests, "<=", "800m")
+	checkQuantity(t, file, "requests", corev1.ResourceCPU, c.Resources.Requests, ">", "0")
+	checkQuantity(t, file, "requests", corev1.ResourceMemory, c.Resources.Requests, "==", "512Mi")
+	checkQuantity(t, file, "limits", corev1.ResourceCPU, c.Resources.Limits, "==", "2")
+	checkQuantity(t, file, "limits", corev1.ResourceMemory, c.Resources.Limits, "==", "1Gi")
+}
+
+// readContainer reads the Deployment name from file and returns its one
+// container.
+func readContainer(t *testing.T, file, name string) *corev1.Container {
+	t.Helper()
+	var d appsv1.Deployment
+	readManifest(t, file, &d)
+	if d.Kind != "Deployment" || d.Name != name {
+		t.Fatalf("%s: kind %q, name %q, want the Deployment %s", file, d.Kind, d.Name, name)
+	}
+	if len(d.Spec.Template.Spec.Containers) != 1 {
+		t.Fatalf("%s: the Pod template has %d containers, want 1", file, len(d.Spec.Template.Spec.Containers))
+	}
+	return &d.Spec.Template.Spec.Containers[0]
+}
+
+// checkQuantity compares list[name] with want using op: "==", "<=", ">="
+// or ">". Quantities compare by value, so "0.25" equals "250m".
+func checkQuantity(t *testing.T, file, field string, name corev1.ResourceName, list corev1.ResourceList, op, want string) {
+	t.Helper()
+	got, ok := list[name]
+	if !ok {
+		t.Errorf("%s: resources.%s has no %s, want %s %s", file, field, name, op, want)
+		return
+	}
+	c := got.Cmp(resource.MustParse(want))
+	pass := map[string]bool{"==": c == 0, "<=": c <= 0, ">=": c >= 0, ">": c > 0}[op]
+	if !pass {
+		t.Errorf("%s: resources.%s.%s is %s, want %s %s", file, field, name, got.String(), op, want)
+	}
+}
+
+// qosClass works out the QoS class Kubernetes gives a Pod with this one
+// container. A missing request defaults to the limit.
+func qosClass(c *corev1.Container) corev1.PodQOSClass {
+	r := c.Resources
+	if len(r.Requests) == 0 && len(r.Limits) == 0 {
+		return corev1.PodQOSBestEffort
+	}
+	for _, name := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		limit, ok := r.Limits[name]
+		if !ok {
+			return corev1.PodQOSBurstable
+		}
+		if req, ok := r.Requests[name]; ok && req.Cmp(limit) != 0 {
+			return corev1.PodQOSBurstable
+		}
+	}
+	return corev1.PodQOSGuaranteed
+}

@@ -5,8 +5,8 @@ Ops tools answer "how long until…" and "is it time yet?" all day. Go's
 `time` package gives you two types for this: points in time and lengths of
 time.
 
-**New here:** `time.Time`, `time.Duration`, `time.Parse`, layouts,
-`time.ParseDuration`, `Sub`, `Add`, `Before`, `After`.
+**New here:** `time.Time`, `time.Parse`, layouts, `time.ParseDuration`,
+`Sub`, `Add`, `Before`, `After`, `time.Duration` arithmetic.
 
 ## Learn
 
@@ -17,8 +17,9 @@ time.
 | `time.Time` | A point in time (an *instant*) | 2026-10-11 09:00 UTC |
 | `time.Duration` | A length of time | 90 minutes |
 
-A `time.Duration` is an `int64` counting nanoseconds. Build one from unit
-constants such as `time.Second`, `time.Minute`, `time.Hour`:
+You met `time.Duration` in *Fakes: a fake clock for retries*. Underneath,
+it's an `int64` counting nanoseconds. Build one from unit constants such as
+`time.Second`, `time.Minute`, `time.Hour`:
 
 ```go
 d := 150 * time.Minute

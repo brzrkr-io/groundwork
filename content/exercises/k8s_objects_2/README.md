@@ -1,10 +1,10 @@
 # Kubernetes objects: Services and selectors
 
-A Deployment keeps Pods running, but nothing can reach them yet. In this
-exercise you fix a buggy Service builder and write a check that catches a
-broken Deployment before you send it to the cluster.
+You wrote Services by hand in *Services: selectors, ports and endpoints*.
+Here you build them in Go: you fix a buggy Service builder and write a
+check that catches a broken Deployment before you send it to the cluster.
 
-**New here:** Services, `intstr.IntOrString`, sorting map keys with `slices.Sorted(maps.Keys(m))`.
+**New here:** `corev1.Service` in Go, `intstr.IntOrString`, sorting map keys with `slices.Sorted(maps.Keys(m))`.
 
 ## Learn
 
@@ -21,14 +21,12 @@ A Deployment has two sets of labels that matter here:
 | `d.Spec.Selector.MatchLabels` | Labels the Deployment uses to find its Pods. |
 | `d.Spec.Template.Labels` | Labels each new Pod gets. |
 
-### Services
+### Recap: Services
 
-Each new Pod gets a new IP address. A *Service* gives a set of Pods one
-stable name and address. The default type, *ClusterIP*, is reachable only
-from inside the cluster.
-
-A Service doesn't list its Pods. It has a *selector*: every Pod whose labels
-match gets traffic. It has two port numbers:
+A *Service* gives a set of Pods one stable name and address; the default
+type, *ClusterIP*, is reachable only from inside the cluster. It doesn't
+list its Pods: every ready Pod whose labels match its *selector* gets
+traffic. In Go its two port fields are:
 
 | Field | Meaning |
 |---|---|

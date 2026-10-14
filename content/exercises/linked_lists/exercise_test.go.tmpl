@@ -1,0 +1,144 @@
+package deployqueue
+
+import (
+	"slices"
+	"testing"
+)
+
+// queued walks q.deploys itself, so TestPush doesn't depend on Services.
+func queued(t *testing.T, q *Queue) []string {
+	t.Helper()
+	var got []string
+	for el := q.deploys.Front(); el != nil; el = el.Next() {
+		d, ok := el.Value.(*Deploy)
+		if !ok {
+			t.Fatalf("an element of q.deploys holds a %T, want a *Deploy", el.Value)
+		}
+		got = append(got, d.Service)
+	}
+	return got
+}
+
+func TestPush(t *testing.T) {
+	t.Run("joins at the back", func(t *testing.T) {
+		q := New()
+		api := &Deploy{Service: "api", Version: "v1.4.2"}
+		web := &Deploy{Service: "web", Version: "v2.0.0"}
+		q.Push(api)
+		el := q.Push(web)
+		if got, want := queued(t, q), []string{"api", "web"}; !slices.Equal(got, want) {
+			t.Fatalf("after Push(api), Push(web), q.deploys holds %q, want %q", got, want)
+		}
+		if el == nil {
+			t.Fatal("Push(web) returned nil, want the element that holds web")
+		}
+		if el.Value != web {
+			t.Errorf("Push(web) returned an element holding %v, want the same *Deploy that was pushed", el.Value)
+		}
+	})
+
+	t.Run("three deploys", func(t *testing.T) {
+		q := New()
+		for _, s := range []string{"db", "cache", "web"} {
+			q.Push(&Deploy{Service: s, Version: "v1"})
+		}
+		if got, want := queued(t, q), []string{"db", "cache", "web"}; !slices.Equal(got, want) {
+			t.Errorf("q.deploys holds %q, want %q", got, want)
+		}
+		if got := q.deploys.Len(); got != 3 {
+			t.Errorf("q.deploys.Len() = %d, want 3", got)
+		}
+	})
+}
+
+func TestServices(t *testing.T) {
+	t.Run("empty queue", func(t *testing.T) {
+		if got := New().Services(); len(got) != 0 {
+			t.Errorf("New().Services() = %q, want an empty slice", got)
+		}
+	})
+
+	t.Run("front to back", func(t *testing.T) {
+		q := New()
+		q.Push(&Deploy{Service: "api", Version: "v1.4.2"})
+		q.Push(&Deploy{Service: "web", Version: "v2.0.0"})
+		if got, want := q.Services(), []string{"api", "web"}; !slices.Equal(got, want) {
+			t.Errorf("Services() = %q, want %q", got, want)
+		}
+		q.Push(&Deploy{Service: "db", Version: "v9.1.0"})
+		if got, want := q.Services(), []string{"api", "web", "db"}; !slices.Equal(got, want) {
+			t.Errorf("after Push(db), Services() = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestExpedite(t *testing.T) {
+	t.Run("the hotfix runs next", func(t *testing.T) {
+		q := New()
+		q.Push(&Deploy{Service: "api", Version: "v1.4.2"})
+		q.Push(&Deploy{Service: "web", Version: "v2.0.0"})
+		fix := q.Push(&Deploy{Service: "db", Version: "v9.1.1-hotfix"})
+		q.Expedite(fix)
+		if got, want := q.Services(), []string{"db", "api", "web"}; !slices.Equal(got, want) {
+			t.Errorf("after Expedite(db), Services() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("from the middle", func(t *testing.T) {
+		q := New()
+		q.Push(&Deploy{Service: "api", Version: "v1.4.2"})
+		web := q.Push(&Deploy{Service: "web", Version: "v2.0.1-hotfix"})
+		q.Push(&Deploy{Service: "db", Version: "v9.1.0"})
+		q.Expedite(web)
+		if got, want := q.Services(), []string{"web", "api", "db"}; !slices.Equal(got, want) {
+			t.Errorf("after Expedite(web), Services() = %q, want %q", got, want)
+		}
+		q.Expedite(web) // already at the front
+		if got, want := q.Services(), []string{"web", "api", "db"}; !slices.Equal(got, want) {
+			t.Errorf("after Expedite(web) twice, Services() = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestNext(t *testing.T) {
+	t.Run("empty queue", func(t *testing.T) {
+		d, ok := New().Next()
+		if d != nil || ok {
+			t.Errorf("New().Next() = %v, %t, want nil, false", d, ok)
+		}
+	})
+
+	t.Run("front first", func(t *testing.T) {
+		q := New()
+		api := &Deploy{Service: "api", Version: "v1.4.2"}
+		web := &Deploy{Service: "web", Version: "v2.0.0"}
+		q.Push(api)
+		q.Push(web)
+		for _, want := range []*Deploy{api, web} {
+			d, ok := q.Next()
+			if d != want || !ok {
+				t.Fatalf("Next() = %v, %t, want %v, true", d, ok, want)
+			}
+		}
+		if got := q.deploys.Len(); got != 0 {
+			t.Errorf("after taking both deploys, q.deploys.Len() = %d, want 0", got)
+		}
+		if d, ok := q.Next(); d != nil || ok {
+			t.Errorf("Next() on the emptied queue = %v, %t, want nil, false", d, ok)
+		}
+	})
+
+	t.Run("after a hotfix", func(t *testing.T) {
+		q := New()
+		q.Push(&Deploy{Service: "api", Version: "v1.4.2"})
+		fix := q.Push(&Deploy{Service: "db", Version: "v9.1.1-hotfix"})
+		q.Expedite(fix)
+		d, ok := q.Next()
+		if !ok || d == nil || d.Service != "db" {
+			t.Fatalf("Next() = %v, %t, want the db hotfix, true", d, ok)
+		}
+		if got, want := q.Services(), []string{"api"}; !slices.Equal(got, want) {
+			t.Errorf("after Next(), Services() = %q, want %q", got, want)
+		}
+	})
+}

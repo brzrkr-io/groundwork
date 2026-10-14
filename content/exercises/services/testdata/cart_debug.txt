@@ -1,0 +1,33 @@
+$ kubectl -n shop get service cart
+NAME   TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+cart   ClusterIP   10.96.143.191   <none>        80/TCP    6m
+
+$ kubectl -n shop describe service cart
+Name:                     cart
+Namespace:                shop
+Labels:                   <none>
+Annotations:              <none>
+Selector:                 app=cart-api,tier=backend
+Type:                     ClusterIP
+IP Family Policy:         SingleStack
+IP Families:              IPv4
+IP:                       10.96.143.191
+IPs:                      10.96.143.191
+Port:                     http  80/TCP
+TargetPort:               9898/TCP
+Endpoints:                
+Session Affinity:         None
+Internal Traffic Policy:  Cluster
+Events:                   <none>
+
+$ kubectl -n shop get endpointslices -l kubernetes.io/service-name=cart
+NAME         ADDRESSTYPE   PORTS     ENDPOINTS   AGE
+cart-l5cjh   IPv4          <unset>   <unset>     6m
+
+$ kubectl -n shop get pods -l app=cart --show-labels
+NAME                   READY   STATUS    RESTARTS   AGE   LABELS
+cart-bd7459986-6gdpk   1/1     Running   0          6m    app=cart,pod-template-hash=bd7459986,tier=backend
+cart-bd7459986-6kqjp   1/1     Running   0          6m    app=cart,pod-template-hash=bd7459986,tier=backend
+
+$ kubectl -n shop run debug --rm -it --restart=Never --image=curlimages/curl:8.11.1 -- curl -sS http://cart/
+curl: (7) Failed to connect to cart port 80 after 0 ms: Could not connect to server

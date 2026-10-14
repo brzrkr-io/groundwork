@@ -1,0 +1,15 @@
+# Task 2: a Pod with labels and a named port.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web
+  labels:
+    app: web
+    tier: frontend
+spec:
+  containers:
+    - name: web
+      image: ghcr.io/stefanprodan/podinfo:6.9.2
+      ports:
+        - name: http
+          containerPort: 9898

@@ -1,0 +1,139 @@
+package podstatus
+
+import (
+	"os"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestParseReady(t *testing.T) {
+	tests := []struct {
+		in           string
+		ready, total int
+	}{
+		{"1/1", 1, 1},
+		{"0/1", 0, 1},
+		{"1/2", 1, 2},
+		{"12/12", 12, 12},
+	}
+	for _, tt := range tests {
+		ready, total, err := ParseReady(tt.in)
+		if err != nil {
+			t.Errorf("ParseReady(%q) error = %v, want nil", tt.in, err)
+			continue
+		}
+		if ready != tt.ready || total != tt.total {
+			t.Errorf("ParseReady(%q) = %d, %d, want %d, %d", tt.in, ready, total, tt.ready, tt.total)
+		}
+	}
+
+	for _, bad := range []string{"11", "one/1", "1/two", ""} {
+		_, _, err := ParseReady(bad)
+		if err == nil {
+			t.Errorf("ParseReady(%q) error = nil, want an error", bad)
+			continue
+		}
+		if !strings.Contains(err.Error(), `"`+bad+`"`) {
+			t.Errorf("ParseReady(%q) error = %q, want it to quote the value, like %q", bad, err, `"`+bad+`"`)
+		}
+	}
+}
+
+func TestParseLine(t *testing.T) {
+	tests := []struct {
+		line string
+		want Pod
+	}{
+		{
+			"checkout-7b9f6d8c5d-2mvzr       1/1     Running                      0               3h12m",
+			Pod{Name: "checkout-7b9f6d8c5d-2mvzr", Ready: 1, Total: 1, Status: "Running", Restarts: 0},
+		},
+		{
+			"gateway-5c4d8b7f9-hl2jd         1/2     Running                      0               26m",
+			Pod{Name: "gateway-5c4d8b7f9-hl2jd", Ready: 1, Total: 2, Status: "Running", Restarts: 0},
+		},
+		{
+			"worker-5d6f7c8b9-n7vbx          0/1     CrashLoopBackOff             6 (2m14s ago)   12m",
+			Pod{Name: "worker-5d6f7c8b9-n7vbx", Ready: 0, Total: 1, Status: "CrashLoopBackOff", Restarts: 6},
+		},
+		{
+			"report   0/1   OOMKilled   4 (71s ago)   8m",
+			Pod{Name: "report", Ready: 0, Total: 1, Status: "OOMKilled", Restarts: 4},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want.Name, func(t *testing.T) {
+			got, err := ParseLine(tt.line)
+			if err != nil {
+				t.Fatalf("ParseLine(%q) error = %v, want nil", tt.line, err)
+			}
+			if got != tt.want {
+				t.Errorf("ParseLine(%q) =\n  %+v\nwant\n  %+v", tt.line, got, tt.want)
+			}
+		})
+	}
+
+	bad := []struct{ name, line string }{
+		{"too few columns", "web-1 1/1 Running"},
+		{"READY is not a fraction", "web-1   ready   Running   0   5m"},
+		{"RESTARTS is not a number", "web-1   1/1   Running   lots   5m"},
+	}
+	for _, tt := range bad {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := ParseLine(tt.line); err == nil {
+				t.Errorf("ParseLine(%q) error = nil, want an error", tt.line)
+			}
+		})
+	}
+}
+
+func TestNeedsAttention(t *testing.T) {
+	data, err := os.ReadFile("testdata/get_pods.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		output string
+		want   []string
+	}{
+		{
+			"get_pods.txt",
+			string(data),
+			[]string{
+				"cart-6f8d9c7b54-9xkqp", "gateway-5c4d8b7f9-hl2jd", "indexer-85f7c9d6b-t4wcx",
+				"payments-6d5f8b9c47-7zkxn", "report-58c6d7f9b-lm4vq", "search-7c8d9f6b5-w2xpr",
+				"settings-sync-6b7c8d9f5-d9kwm", "worker-5d6f7c8b9-n7vbx",
+			},
+		},
+		{
+			"all healthy",
+			"NAME    READY   STATUS      RESTARTS     AGE\nweb-a   1/1     Running     2 (1h ago)   2d\nbackup  0/1     Completed   0            1h\n",
+			nil,
+		},
+		{
+			"three restarts is too many",
+			"NAME    READY   STATUS    RESTARTS     AGE\nweb-a   1/1     Running   3 (5m ago)   2d\nweb-b   1/1     Running   0            2d\n",
+			[]string{"web-a"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NeedsAttention(tt.output)
+			if err != nil {
+				t.Fatalf("NeedsAttention error = %v, want nil", err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("NeedsAttention(%s) =\n  %q\nwant\n  %q", tt.name, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("broken row", func(t *testing.T) {
+		out := "NAME    READY   STATUS    RESTARTS   AGE\nweb-a   1/1     Running\n"
+		if _, err := NeedsAttention(out); err == nil {
+			t.Errorf("NeedsAttention(%q) error = nil, want the error from the broken row", out)
+		}
+	})
+}

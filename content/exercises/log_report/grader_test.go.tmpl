@@ -1,0 +1,96 @@
+package logreport
+
+// This file is how Groundwork grades the test you write in task 7. You don't
+// need to change it, but you are welcome to read it.
+//
+// TestGrader re-runs TestReportGolden on the real testdata, where it must
+// pass, and then in a scratch folder whose testdata has one change, where it
+// must fail. Your real testdata folder is never touched.
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// learnerTest selects the test you write in report_golden_test.go.
+const learnerTest = "^TestReportGolden$"
+
+// changes are the testdata edits your test must notice.
+var changes = []struct {
+	name   string
+	bug    string // completes "your test didn't notice when ..."
+	change func(log, golden string) (string, string)
+}{
+	{
+		name: "golden_changed",
+		bug:  `report.golden said "requests: 61" instead of "requests: 16" (does your test compare with the golden file?)`,
+		change: func(log, golden string) (string, string) {
+			return log, strings.Replace(golden, "requests: 16", "requests: 61", 1)
+		},
+	},
+	{
+		name: "golden_cut_short",
+		bug:  `report.golden lost its last line (does your test compare the whole text?)`,
+		change: func(log, golden string) (string, string) {
+			lines := strings.SplitAfter(strings.TrimSuffix(golden, "\n"), "\n")
+			return log, strings.Join(lines[:len(lines)-1], "")
+		},
+	},
+	{
+		name: "log_changed",
+		bug:  `access.log lost its last request (does your test read testdata/access.log with ReadLog?)`,
+		change: func(log, golden string) (string, string) {
+			lines := strings.SplitAfter(strings.TrimSuffix(log, "\n"), "\n")
+			return strings.Join(lines[:len(lines)-1], ""), golden
+		},
+	},
+}
+
+func TestGrader(t *testing.T) {
+	out, err := runLearnerTest("")
+	if strings.Contains(out, "no tests to run") {
+		t.Fatalf("found no test matching %s in report_golden_test.go", learnerTest)
+	}
+	if err != nil {
+		t.Fatalf("TestReportGolden must pass on the real code and testdata first (finish tasks 1 to 6), but it failed:\n%s", out)
+	}
+
+	log, err := os.ReadFile(filepath.Join("testdata", "access.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden, err := os.ReadFile(filepath.Join("testdata", "report.golden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range changes {
+		t.Run(c.name, func(t *testing.T) {
+			newLog, newGolden := c.change(string(log), string(golden))
+			scratch := t.TempDir()
+			if err := os.Mkdir(filepath.Join(scratch, "testdata"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(scratch, "testdata", "access.log"), []byte(newLog), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(scratch, "testdata", "report.golden"), []byte(newGolden), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := runLearnerTest(scratch); err == nil {
+				t.Errorf("your test didn't notice when %s", c.bug)
+			}
+		})
+	}
+}
+
+// runLearnerTest re-runs this test binary with only your test selected, in
+// the folder dir. An empty dir means the exercise folder.
+func runLearnerTest(dir string) (string, error) {
+	cmd := exec.Command(os.Args[0], "-test.run="+learnerTest)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}

@@ -24,7 +24,7 @@ Open a terminal and type `ls`. Three different programs are involved.
 
 The shell is an ordinary program whose job is starting other programs. *bash* (the Bourne Again SHell) is the default on most Linux servers and CI runners, so this guide uses it. zsh, the macOS default, differs in places (it doesn't split unquoted variables), so run scripts with bash.
 
-Processes, file descriptors, redirection (`>`, `2>`), pipes (`|`) and exit codes belong to the kernel; the shell only sets them up. They're explained in *The operating system for programmers*, which you'll read in *CLI tools and the OS*.
+Processes, file descriptors, redirection (`>`, `2>`), pipes (`|`) and exit codes belong to the kernel; the shell only sets them up. *The operating system for programmers*, the guide before this one, explains them; this guide shows how you type them.
 
 ## Commands, arguments and options
 
@@ -45,6 +45,20 @@ By convention, arguments that start with a dash are *options* (also called flags
 | `--` | `rm -- -oops.log` | "no more options": everything after is a plain argument |
 
 **The program decides what its options mean, not the shell.** `-n` is "namespace" to kubectl and "line numbers" to grep. Check with `man grep` or `grep --help`. You'll practise this in *Shell commands and quoting*.
+
+## Files and folders
+
+Most commands work on files, and every file has a path. A path that starts with `/` is *absolute* and means the same thing from anywhere. Any other path is *relative* to the folder you're in (`pwd` prints it): `logs/app.log`, `./deploy.sh` (`.` is this folder), `../shared/app.yaml` (`..` is the folder above).
+
+| Command | Does | Watch out |
+|---|---|---|
+| `mkdir -p a/b/c` | make a folder, and any missing parents | without `-p`, a missing parent is an error |
+| `cp src dest` | copy a file | `cp -r` for a folder |
+| `mv src dest` | move or rename | silently replaces an existing `dest` |
+| `rm file` | delete a file | no undo, no trash can; `rm -r` deletes a whole folder |
+| `ls -a` | list, including hidden files | |
+
+A name that starts with a dot (`.env`, `.gitignore`, `.git/`) is *hidden*: `ls` and the wildcard `*` skip it, `ls -a` shows it. Config files hide this way so they don't clutter listings, which is also how secrets in `.env` get forgotten. You'll practise all of this in *Files and folders: paths, mkdir, cp, mv and rm*.
 
 ## What the shell does to a line
 
@@ -133,9 +147,18 @@ today="$(date +%F)"            # date +%F prints e.g. 2026-10-13
 echo "writing backup-${today}.tar.gz"
 ```
 
-### export
+### export and the environment
 
-A plain variable exists only inside this shell. `export AWS_REGION=eu-west-1` copies it into the environment of every program the shell starts, so `terraform` can read it. You'll practise all of this in *Shell variables*.
+A plain variable exists only inside this shell. The *environment* is the set of variables that every program the shell starts receives a copy of. `export` puts a variable there:
+
+```bash
+region=eu-west-1             # plain: only this shell sees it
+export AWS_REGION=eu-west-1  # exported: terraform, aws and your Go program see it
+LOG_LEVEL=debug ./deploy.sh  # set for this one command only
+env | grep AWS_              # env prints the whole environment
+```
+
+A child gets a **copy**, so nothing it changes comes back to the shell that started it. `unset NAME` removes a variable. *Unset* and *empty* are different: `NAME=` sets it to the empty string. `${NAME:-default}` uses the default in both cases, `${NAME-default}` only when it's unset, and `set -u` stops the script only on an unset one. You'll practise all of this in *Shell variables*.
 
 ## Exit status, `&&` and `||`
 
@@ -159,6 +182,32 @@ go test ./... && docker build -t api . && docker push api
 ```
 
 The image is pushed only if tests and the build both pass. Practise in *Exit codes, && and ||*.
+
+## Redirection and here-docs
+
+*The operating system for programmers* shows what redirection does to a process's streams. In bash you write it at the end of a command:
+
+```bash
+echo "replicas: 3" > app.yaml        # stdout into a file, replacing it
+echo "port: 8080" >> app.yaml        # stdout added to the end
+./deploy.sh 2> errors.txt            # stderr into a file
+./deploy.sh > deploy.log 2>&1        # both into one file: > first, then 2>&1
+grep -c ERROR < app.log              # stdin from a file
+rm -f old.pid 2> /dev/null           # throw errors away
+```
+
+**`>` empties the file before the command even starts.** `sort app.log > app.log` leaves an empty file, because the shell truncated it before `sort` read a line. Write to a new file, then `mv` it over the old one.
+
+A *here-doc* feeds several lines to a command's stdin, written right in the script. With `cat >`, it writes a whole file:
+
+```bash
+cat > config/db.yaml <<'EOF'
+host: db-new.internal
+port: 5432
+EOF
+```
+
+Everything up to the line holding only `EOF` becomes the input. Quote the first `'EOF'` and bash leaves `$` alone, so the file gets exactly what you typed; unquoted, `$variables` are expanded first. Practise in *Redirection: >, >>, 2> and here-docs*.
 
 ## Conditions: `if` and test
 
@@ -403,6 +452,8 @@ A good rule: a short script that runs commands in order stays bash. A script tha
 8. A bash function needs to give back a version string like `1.4.2`. Why can't it use `return`, and what does it do instead?
 9. In bash, what exit status means success, and when does the second command run in `a && b`? In `a || b`?
 10. A bash script with `set -euo pipefail` runs `count="$(grep -c ERROR app.log)"`. Why does it stop when the log has no errors, and how do you allow zero matches?
+11. A bash script runs `export DEPLOY_ENV=prod` and then `./check.sh`. Another sets `deploy_env=prod` without `export` and runs `./check.sh`. Which `check.sh` can read the value, and why?
+12. Why does the bash line `sort app.log > app.log` leave `app.log` empty?
 
 ## Answers
 
@@ -416,6 +467,8 @@ A good rule: a short script that runs commands in order stays bash. A script tha
 8. `return` only sets the exit status, a number from 0 to 255. The function prints the result with `echo`, and the caller captures it: `version="$(get_version)"`.
 9. 0 means success; 1–255 mean failure. In `a && b`, `b` runs only if `a` succeeded (exited 0). In `a || b`, `b` runs only if `a` failed, as in `cd /srv/app || exit 1`.
 10. `grep` exits 1 when it finds no matching lines, and `set -e` treats any non-zero status as a failure. Write `count="$(grep -c ERROR app.log || true)"`: grep still prints `0`, and `|| true` makes the line succeed.
+11. Only the first. `export` puts the variable into the environment, which every child process gets a copy of. A plain variable stays inside the shell that set it.
+12. The shell sets up `> app.log` before `sort` starts, and `>` empties the file. By the time `sort` reads it, there is nothing left. Write to a new file and `mv` it over the old one.
 
 ## Key terms
 
@@ -437,6 +490,10 @@ A good rule: a short script that runs commands in order stays bash. A script tha
 | shebang | the `#!` first line naming the program that runs a script |
 | `set -euo pipefail` | bash options that stop a script on errors, unset variables and failed pipeline stages |
 | pipeline | commands joined by `\|`, each one's output feeding the next |
+| absolute / relative path | a path from the root `/` / a path from the current folder |
+| hidden file | a file whose name starts with `.`; `ls -a` shows it |
+| environment | the `NAME=value` variables a process gets a copy of; `export` adds a shell variable to it |
+| here-doc | `<<'EOF'` ... `EOF`: lines written in the script, fed to a command's stdin |
 
 ## Watch
 

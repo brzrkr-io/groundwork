@@ -1,0 +1,94 @@
+package kustomize
+
+import (
+	"os"
+	"path"
+	"slices"
+	"strings"
+	"testing"
+
+	"sigs.k8s.io/yaml"
+)
+
+// This file reads manifests and kustomization files for the tests. You
+// don't need to change it.
+
+// readManifest parses the YAML file name into obj, a pointer to a typed
+// Kubernetes object such as *appsv1.Deployment. It is as strict as the API
+// server: a field the type doesn't have is an error.
+func readManifest(t *testing.T, name string, obj any) {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	if err := yaml.UnmarshalStrict(raw, obj); err != nil {
+		t.Fatalf("%s: %v\n(check the spelling and indentation of the field it names)", name, err)
+	}
+}
+
+// kustomization is the part of a kustomization.yaml file the tests read.
+type kustomization struct {
+	APIVersion string   `json:"apiVersion"`
+	Kind       string   `json:"kind"`
+	Resources  []string `json:"resources"`
+	Namespace  string   `json:"namespace"`
+	Images     []struct {
+		Name    string `json:"name"`
+		NewName string `json:"newName"`
+		NewTag  string `json:"newTag"`
+	} `json:"images"`
+	Patches []patch `json:"patches"`
+}
+
+// patch is one entry of a kustomization's patches: a file, or the patch
+// written inline.
+type patch struct {
+	Path  string `json:"path"`
+	Patch string `json:"patch"`
+}
+
+// knownFields are the top-level fields kustomize understands.
+var knownFields = []string{
+	"apiVersion", "kind", "metadata", "resources", "components", "namespace",
+	"namePrefix", "nameSuffix", "labels", "commonLabels", "commonAnnotations",
+	"images", "replicas", "patches", "patchesStrategicMerge", "patchesJson6902",
+	"configMapGenerator", "secretGenerator", "generatorOptions", "replacements",
+	"helmCharts", "transformers", "generators", "validators", "openapi",
+	"crds", "buildMetadata", "sortOptions", "vars", "bases",
+}
+
+// readKustomization parses the kustomization file name and checks its
+// apiVersion, kind and top-level fields.
+func readKustomization(t *testing.T, name string) kustomization {
+	t.Helper()
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("can't read %s: %v", name, err)
+	}
+	var fields map[string]any
+	if err := yaml.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("%s is not valid YAML: %v", name, err)
+	}
+	for field := range fields {
+		if !slices.Contains(knownFields, field) {
+			t.Errorf("%s: kustomize doesn't know the field %q; check its spelling and indentation", name, field)
+		}
+	}
+	var k kustomization
+	if err := yaml.Unmarshal(raw, &k); err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	if k.APIVersion != "kustomize.config.k8s.io/v1beta1" || k.Kind != "Kustomization" {
+		t.Errorf("%s: apiVersion %q, kind %q, want kustomize.config.k8s.io/v1beta1 and Kustomization",
+			name, k.APIVersion, k.Kind)
+	}
+	return k
+}
+
+// resolves reports whether entry, a path written in the kustomization file
+// in folder dir, points at target: "../../base" in overlays/staging points
+// at base.
+func resolves(dir, entry, target string) bool {
+	return path.Clean(path.Join(dir, strings.TrimSuffix(entry, "/"))) == target
+}

@@ -4,13 +4,14 @@ Ops tools live on files: host lists, login banners, inventories, generated
 configs. Here you read a whole file, read a file line by line, and write a
 file safely, using the `os` package.
 
-**New here:** `os.ReadFile`, `os.Open`, `os.Create`, `defer`, `fs.ErrNotExist`, permission bits.
+**New here:** `os.Open`, `os.Create`, `fs.ErrNotExist`, permission bits.
 
 ## Learn
 
 ### Small files: read it all at once
 
-`os.ReadFile` returns the whole file as a `[]byte` (raw bytes) and an error:
+You used `os.ReadFile` in *Subtests and helpers: files and t.TempDir*. It
+returns the whole file as a `[]byte` (raw bytes) and an error:
 
 ```go
 data, err := os.ReadFile("/etc/hostname")
@@ -64,7 +65,7 @@ for sc.Scan() {
 return count, sc.Err()
 ```
 
-`defer f.Close()` runs `f.Close()` when the function returns, on every path.
+As in *defer*, `defer f.Close()` runs `f.Close()` when the function returns, on every path.
 Each open file uses an OS *file descriptor*, and a process only gets so many.
 
 > **Why is it written like this?** `defer` is Go syntax. Putting it right

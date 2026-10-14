@@ -65,7 +65,7 @@ From your side, all four look identical: silence. You **cannot** tell a slow ser
 
 Without a limit, case (4) can hang your tool forever. A *timeout* is the longest you will wait before treating the call as failed.
 
-- **Always set one.** Go's default `http.Client` has no timeout at all. You'll set them in *Context and cancellation* and in the *Production services* module.
+- **Always set one.** Go's default `http.Client` has no timeout at all. You set them with contexts in *Context and cancellation* and *Context: cancelling HTTP requests*; the *Production services* module builds on them.
 - **Pick it from data.** Say the API normally answers in 200 ms, and 99 calls in 100 answer within 900 ms (its *99th percentile*, or p99). Then a 2 s timeout is sane. Thirty seconds is just a slower hang.
 - **A timeout is not an answer.** After it fires you still don't know whether the work happened. That's why the next two sections go together.
 
@@ -340,7 +340,7 @@ SIGTERM arrives
 grace period over and still running? --> SIGKILL
 ```
 
-A Go program that doesn't handle `SIGTERM` exits on the spot, cutting off the requests it was serving, so users see errors on every deploy. You'll fix that in *Graceful shutdown: drain in-flight requests*.
+A Go program that doesn't handle `SIGTERM` exits on the spot, cutting off the requests it was serving, so users see errors on every deploy. You stopped a batch job cleanly in *Signals: graceful stop for a rolling drain*; you'll do the same for an HTTP server in *Graceful shutdown: drain in-flight requests*.
 
 ## Observability: seeing inside
 
@@ -354,7 +354,9 @@ You can't attach a debugger to 40 production pods. You learn what happened from 
 
 - **Logs** are events. Structured logs can be searched and filtered: *Structured logging with slog*.
 - **Metrics** are cheap numbers over time, ideal for alerts: *Prometheus-style metrics: counters and /metrics*.
-- **Traces** follow one request across services, stitched together by an ID each hop passes on. You add request IDs in *Middleware: logging, request IDs and panics*.
+- **Traces** follow one request across services, stitched together by an ID each hop passes on. You added request IDs in *Middleware: logging, request IDs and panics*; the standard trace header, `traceparent`, comes next.
+
+The three work best together: the same trace ID in every log line, alerts on the metrics, and the trace to find the slow hop. You'll pass trace IDs through logs and calls in *Observability: trace IDs through logs and calls*, then write the alerts and follow an incident from alert to slow hop in *Observability: alert rules and an incident walk-through*.
 
 In an incident you usually go metrics (what's wrong, since when), then traces (which hop), then logs (exactly what it said).
 

@@ -32,7 +32,8 @@ pattern vanish from `git status`, and `git add .` skips them.
 Order matters: later lines win, so an exception goes **after** the pattern it
 excuses.
 
-You can write the file from a script like any other:
+You can write the file from a script with `>` and `>>`, as in
+*Redirection: >, >>, 2> and here-docs*:
 
 ```bash
 printf '%s\n' 'tmp/' '*.tmp' > .gitignore    # one argument per line, replace the file

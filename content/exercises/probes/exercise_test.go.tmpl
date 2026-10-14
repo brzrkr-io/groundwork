@@ -1,0 +1,94 @@
+package probes
+
+import (
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+func TestReadinessProbe(t *testing.T) {
+	const file = "1_web.yaml"
+	c := readContainer(t, file, "web")
+	checkHTTPProbe(t, file, "readinessProbe", c.ReadinessProbe, "/readyz", c)
+}
+
+func TestLivenessProbe(t *testing.T) {
+	const file = "2_cart.yaml"
+	c := readContainer(t, file, "cart")
+	checkHTTPProbe(t, file, "livenessProbe", c.LivenessProbe, "/healthz", c)
+	checkHTTPProbe(t, file, "readinessProbe", c.ReadinessProbe, "/readyz", c)
+}
+
+func TestStartupProbe(t *testing.T) {
+	const file = "3_search.yaml"
+	c := readContainer(t, file, "search")
+	checkHTTPProbe(t, file, "livenessProbe", c.LivenessProbe, "/healthz", c)
+	checkHTTPProbe(t, file, "readinessProbe", c.ReadinessProbe, "/readyz", c)
+	p := c.StartupProbe
+	if !checkHTTPProbe(t, file, "startupProbe", p, "/healthz", c) {
+		return
+	}
+	// Kubernetes fills in these defaults for fields you leave out.
+	period, failures := p.PeriodSeconds, p.FailureThreshold
+	if period == 0 {
+		period = 10
+	}
+	if failures == 0 {
+		failures = 3
+	}
+	if allowed := p.InitialDelaySeconds + period*failures; allowed < 120 {
+		t.Errorf("%s: the startup probe allows %ds before the container is restarted "+
+			"(initialDelaySeconds %d + periodSeconds %d x failureThreshold %d), want at least 120s",
+			file, allowed, p.InitialDelaySeconds, period, failures)
+	}
+}
+
+// readContainer reads the Deployment name from file and returns its one
+// container.
+func readContainer(t *testing.T, file, name string) *corev1.Container {
+	t.Helper()
+	var d appsv1.Deployment
+	readManifest(t, file, &d)
+	if d.Kind != "Deployment" || d.Name != name {
+		t.Fatalf("%s: kind %q, name %q, want the Deployment %s", file, d.Kind, d.Name, name)
+	}
+	if len(d.Spec.Template.Spec.Containers) != 1 {
+		t.Fatalf("%s: the Pod template has %d containers, want 1", file, len(d.Spec.Template.Spec.Containers))
+	}
+	return &d.Spec.Template.Spec.Containers[0]
+}
+
+// checkHTTPProbe checks that p is an HTTP GET of path on a port container c
+// listens on, and reports whether p exists at all.
+func checkHTTPProbe(t *testing.T, file, field string, p *corev1.Probe, path string, c *corev1.Container) bool {
+	t.Helper()
+	if p == nil {
+		t.Errorf("%s: the container has no %s, want an httpGet of %s on the port named http", file, field, path)
+		return false
+	}
+	get := p.HTTPGet
+	if get == nil {
+		t.Errorf("%s: %s has no httpGet, want an httpGet of %s on the port named http", file, field, path)
+		return true
+	}
+	if get.Path != path {
+		t.Errorf("%s: %s checks the path %q, want %q", file, field, get.Path, path)
+	}
+	if !listensOn(c, get.Port) {
+		t.Errorf("%s: %s checks port %s, which the container doesn't list; want http (9898)", file, field, get.Port.String())
+	}
+	return true
+}
+
+// listensOn reports whether port, a number or a name, is one of c's ports.
+func listensOn(c *corev1.Container, port intstr.IntOrString) bool {
+	for _, cp := range c.Ports {
+		if port.Type == intstr.String && port.StrVal == cp.Name ||
+			port.Type == intstr.Int && port.IntVal == cp.ContainerPort {
+			return true
+		}
+	}
+	return false
+}

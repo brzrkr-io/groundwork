@@ -15,10 +15,13 @@ exercises that are nearly finished, and a watcher that re-runs the tests every
 time you save. From [Exercism's Go track](https://exercism.org/tracks/go/concepts)
 it takes concept-first lessons, a README with numbered tasks and worked
 examples, and tests you can read. Each concept gets **several exercises**: an
-introduction, a "fix the bug" round, and a small realistic task. Every module
-ends with a practice exercise, and every phase ends with a multi-file project.
+introduction, a "fix the bug" round, and a small realistic task. Most
+modules end with a *practice* exercise, which combines that module's ideas
+and adds nothing new, or a *project*: a larger, multi-file program of two
+hours or more, such as an access-log report or an uptime monitor. The course
+closes with capstones that bring everything together.
 
-Alongside the exercises, **29 guides** teach the ideas underneath them: how
+Alongside the exercises, **33 guides** teach the ideas underneath them: how
 a program runs, state, functions, debugging, data structures, Big-O, memory,
 abstraction, errors, testing, the shell, Git, databases, code quality and
 review, containers, CI/CD, the operating system, networking, concurrency,
@@ -69,10 +72,10 @@ solution, and **n** to move to the next exercise. Truly stuck? After a task's
 Answer hint, **s** shows the solution early (you confirm first).
 
 ```text
-groundwork  ·  module 1 of 20: Basics                     ━━━━━━━━━━━━━━━━━━━━  1/362 done
+groundwork  ·  module 1 of 23: Basics                     ━━━━━━━━━━━━━━━━━━━━  2/375 done
 
-002  Variables                                                         ✗ 2 of 3 failing
-edit  exercises/01_basics/002_variables/exercise.go
+003  Variables                                                         ✗ 2 of 3 failing
+edit  exercises/01_basics/003_variables/exercise.go
 
  Results   Instructions i   Hints h   Solution s   Exercises l   Guides g   Keys ?
 ─────────────────────────────────────────────────────────────────────────────────────────
@@ -132,7 +135,7 @@ groundwork cards [--all] flashcards from the guides, for Anki on your phone or d
 ```
 
 `EX` is usually just the exercise number (`12`). A folder name such as
-`012_variables` works too. A guide is its number (`17`) or name
+`012_constants` works too. A guide is its number (`17`) or name
 (`concurrency`). Commands work from anywhere inside the course folder;
 `groundwork guides` works anywhere.
 
@@ -165,16 +168,17 @@ Reading and reviewing work on a phone; exercises are for the computer.
 ├── exercises/
 │   ├── 01_basics/                one folder per module
 │   │   ├── 001_hello_go/
-│   │   ├── 002_variables/        a concept's introduction...
-│   │   ├── 003_variables/        ...then its practice rounds, same topic name
-│   │   ├── 004_variables/
+│   │   ├── 002_reading_go/
+│   │   ├── 003_variables/        a concept's introduction...
+│   │   ├── 004_variables/        ...then its practice rounds, same topic name
+│   │   ├── 005_variables/
 │   │   │   ├── README.md         instructions
 │   │   │   ├── exercise.go       you edit this
 │   │   │   ├── exercise_test.go  the tests (read them!)
 │   │   │   └── go.mod            every exercise is its own little Go module
 │   │   └── …
 │   ├── 02_control_flow/
-│   └── …                         20 modules, 362 exercises, numbered in order
+│   └── …                         23 modules, 375 exercises, numbered in order
 └── solutions/                    reference solutions, same layout, unlocked when you pass
 ```
 

@@ -1,18 +1,226 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
+	"net"
+	"net/http"
 	"os"
 	"path"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // The helpers readDockerfile, find, stages, envVars, show and execForm are in
-// dockerfile_test.go. readWorkflow, triggers, needs, pinned, findStep,
+// dockerfile_test.go. readWorkflow, triggers, needs, checkPins, findStep,
 // findRun, eventNames, stepNames and stringList are in workflow_test.go.
+
+func TestRun(t *testing.T) {
+	t.Run("ready while serving, clean stop when cancelled", func(t *testing.T) {
+		r := startRun(t, newService(time.Second))
+		if !eventually(r.svc.ready.Load) {
+			t.Fatal("run never set s.ready to true; store true once the server is serving")
+		}
+		resp, err := http.Get(r.url + "/readyz")
+		if err != nil {
+			t.Fatalf("GET /readyz while run is serving: %v; start s.srv.Serve(ln) in a goroutine", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET /readyz while run is serving = %d, want 200", resp.StatusCode)
+		}
+
+		r.cancel()
+		if err := r.wait(t); err != nil {
+			t.Errorf("run returned %v after ctx was cancelled with nothing in flight, want nil", err)
+		}
+		if r.svc.ready.Load() {
+			t.Error("s.ready is still true after run returned; store false as soon as ctx is cancelled")
+		}
+		if !strings.Contains(r.logs.String(), "draining") {
+			t.Errorf("run logged %q, want a line with \"draining\" when ctx is cancelled", r.logs.String())
+		}
+	})
+
+	t.Run("finishes the request in flight", func(t *testing.T) {
+		started, release := make(chan struct{}), make(chan struct{})
+		r := startRun(t, withHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			close(started)
+			<-release
+			fmt.Fprintln(w, "saved")
+		}), 3*time.Second))
+		if !eventually(r.svc.ready.Load) {
+			t.Fatal("run never set s.ready to true; store true once the server is serving")
+		}
+		status := r.get()
+		<-started
+
+		r.cancel()
+		if !eventually(func() bool { return !r.svc.ready.Load() }) {
+			t.Error("s.ready stayed true after ctx was cancelled; store false before Shutdown, so no new traffic arrives while you drain")
+		}
+		select {
+		case err := <-r.done:
+			t.Fatalf("run returned %v while a request was still in flight; Shutdown should wait for it", err)
+		case <-time.After(20 * time.Millisecond):
+		}
+		close(release)
+		if code := <-status; code != http.StatusOK {
+			t.Errorf("the request in flight got status %d, want 200: Shutdown lets it finish (0 means its connection was cut)", code)
+		}
+		if err := r.wait(t); err != nil {
+			t.Errorf("run returned %v after the last request finished within grace, want nil", err)
+		}
+	})
+
+	t.Run("forces a shutdown when grace runs out", func(t *testing.T) {
+		started, release := make(chan struct{}), make(chan struct{})
+		t.Cleanup(func() { close(release) })
+		r := startRun(t, withHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			close(started)
+			<-release // stuck until the test ends
+		}), 30*time.Millisecond))
+		if !eventually(r.svc.ready.Load) {
+			t.Fatal("run never set s.ready to true; store true once the server is serving")
+		}
+		status := r.get()
+		<-started
+
+		r.cancel()
+		err := r.wait(t)
+		if err == nil || !strings.HasPrefix(err.Error(), "forced shutdown: ") || !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("run returned %v while a request was stuck past grace; want Shutdown's error wrapped as \"forced shutdown: %%w\"", err)
+		}
+		select {
+		case <-status:
+		case <-time.After(time.Second):
+			t.Error("the stuck request's connection is still open after run returned; call s.srv.Close() when Shutdown gives up")
+		}
+	})
+
+	t.Run("returns Serve's error", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ln.Close() // Serve fails at once on a closed listener
+		done := make(chan error, 1)
+		go func() {
+			done <- withHandler(http.NotFoundHandler(), time.Second).run(context.Background(), ln)
+		}()
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Error("run returned nil, but Serve failed on a closed listener; return Serve's error")
+			}
+		case <-time.After(time.Second):
+			t.Error("run is still waiting, though Serve already failed; return Serve's error when it comes first")
+		}
+	})
+}
+
+// running is one call of run in the background, with what the tests need to
+// watch it.
+type running struct {
+	svc    *service
+	url    string
+	cancel context.CancelFunc
+	done   chan error
+	logs   *syncBuffer
+}
+
+// withHandler returns a service that serves h, for tests that need slow
+// requests.
+func withHandler(h http.Handler, grace time.Duration) *service {
+	return &service{srv: &http.Server{Handler: h}, grace: grace}
+}
+
+// startRun starts svc.run on a free local port, with its log output
+// captured.
+func startRun(t *testing.T, svc *service) *running {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := new(syncBuffer)
+	log.SetOutput(logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		svc.srv.Close()
+	})
+	r := &running{svc: svc, url: "http://" + ln.Addr().String(), cancel: cancel, done: make(chan error, 1), logs: logs}
+	go func() {
+		r.done <- svc.run(ctx, ln)
+	}()
+	return r
+}
+
+// get sends a GET in the background. The channel receives the status code,
+// or 0 if the request failed.
+func (r *running) get() <-chan int {
+	status := make(chan int, 1)
+	go func() {
+		resp, err := http.Get(r.url)
+		if err != nil {
+			status <- 0
+			return
+		}
+		resp.Body.Close()
+		status <- resp.StatusCode
+	}()
+	return status
+}
+
+// wait returns run's result, or stops the test if run takes too long.
+func (r *running) wait(t *testing.T) error {
+	t.Helper()
+	select {
+	case err := <-r.done:
+		return err
+	case <-time.After(2 * time.Second):
+		t.Fatal("run didn't return within 2s of ctx being cancelled; stop serving when <-ctx.Done() fires")
+		return nil
+	}
+}
+
+// eventually reports whether cond becomes true within about a second.
+func eventually(cond func() bool) bool {
+	for range 200 {
+		if cond() {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return cond()
+}
+
+// syncBuffer collects log output from several goroutines safely.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 func TestDockerfile(t *testing.T) {
 	const file = "Dockerfile"
@@ -267,6 +475,7 @@ func lastMatch(rules []ignoreRule, p string) *ignoreRule {
 func TestCIWorkflow(t *testing.T) {
 	const file = "ci.yml"
 	wf := readWorkflow(t, file)
+	checkPins(t, file)
 	if wf.Name != "ci" {
 		t.Errorf("%s: name is %q, want %q", file, wf.Name, "ci")
 	}
@@ -284,6 +493,7 @@ func TestCIWorkflow(t *testing.T) {
 func TestReleaseWorkflow(t *testing.T) {
 	const file = "release.yml"
 	wf := readWorkflow(t, file)
+	checkPins(t, file)
 	if wf.Name != "release" {
 		t.Errorf("%s: name is %q, want %q", file, wf.Name, "release")
 	}
@@ -317,11 +527,6 @@ func TestReleaseWorkflow(t *testing.T) {
 	if login < checkout || buildPush < login {
 		t.Errorf("%s: job image has steps in the order %v, want checkout, login-action, build-push-action", file, stepNames(steps))
 	}
-	for _, i := range []int{checkout, login, buildPush} {
-		if !pinned.MatchString(steps[i].Uses) {
-			t.Errorf("%s: job image uses %s; pin it to a version, such as @v4", file, steps[i].Uses)
-		}
-	}
 
 	with := steps[login].With
 	if got := with["registry"]; got != "ghcr.io" {
@@ -349,8 +554,8 @@ func TestReleaseWorkflow(t *testing.T) {
 	}
 }
 
-// checkTestJob checks the job "test": on ubuntu-latest, a pinned checkout
-// and setup-go, then go vet ./... and go test -race ./..., in that order.
+// checkTestJob checks the job "test": on ubuntu-latest, checkout and
+// setup-go, then go vet ./... and go test -race ./..., in that order.
 func checkTestJob(t *testing.T, file string, wf workflow) {
 	t.Helper()
 	test := checkJob(t, file, wf, "test")
@@ -387,8 +592,8 @@ func checkJob(t *testing.T, file string, wf workflow, id string) job {
 	return j
 }
 
-// checkSetupSteps checks that a job starts with a pinned checkout, then a
-// pinned setup-go that reads go.mod.
+// checkSetupSteps checks that a job starts with checkout, then a setup-go
+// that reads go.mod. checkPins checks how they are pinned.
 func checkSetupSteps(t *testing.T, file, id string, steps []step) {
 	t.Helper()
 	checkout := findStep(steps, "actions/checkout")
@@ -398,11 +603,6 @@ func checkSetupSteps(t *testing.T, file, id string, steps []step) {
 	}
 	if setup < checkout {
 		t.Errorf("%s: job %s runs setup-go before checkout; checkout comes first", file, id)
-	}
-	for _, i := range []int{checkout, setup} {
-		if !pinned.MatchString(steps[i].Uses) {
-			t.Errorf("%s: job %s uses %s; pin it to a version, such as @v7", file, id, steps[i].Uses)
-		}
 	}
 	if got := steps[setup].With["go-version-file"]; got != "go.mod" {
 		t.Errorf("%s: job %s: setup-go has go-version-file %v, want go.mod", file, id, got)

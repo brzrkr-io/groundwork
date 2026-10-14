@@ -1,0 +1,40 @@
+$ kubectl -n shop get pods -l app=cart
+NAME                    READY   STATUS    RESTARTS      AGE
+cart-64dc8f6d65-cnbgh   1/1     Running   3 (7s ago)    100s
+cart-64dc8f6d65-x7kfp   1/1     Running   3 (9s ago)    100s
+
+$ kubectl -n shop describe pod cart-64dc8f6d65-cnbgh
+Name:             cart-64dc8f6d65-cnbgh
+Namespace:        shop
+...
+Containers:
+  cart:
+    Image:          ghcr.io/stefanprodan/podinfo:6.9.2
+    Port:           9898/TCP (http)
+    Host Port:      0/TCP (http)
+    State:          Running
+      Started:      Tue, 13 Oct 2026 21:19:00 -0500
+    Last State:     Terminated
+      Reason:       Completed
+      Exit Code:    0
+      Started:      Tue, 13 Oct 2026 21:18:30 -0500
+      Finished:     Tue, 13 Oct 2026 21:18:59 -0500
+    Ready:          True
+    Restart Count:  3
+    Liveness:       http-get http://:http/health delay=0s timeout=1s period=10s successThreshold=1 failureThreshold=3
+    Readiness:      http-get http://:http/readyz delay=0s timeout=1s period=10s successThreshold=1 failureThreshold=3
+...
+Events:
+  Type     Reason     Age                From               Message
+  ----     ------     ----               ----               -------
+  Normal   Scheduled  100s               default-scheduler  Successfully assigned shop/cart-64dc8f6d65-cnbgh to kind-worker
+  Warning  Unhealthy  10s (x9 over 90s)  kubelet            spec.containers{cart}: Liveness probe failed: HTTP probe failed with statuscode: 404
+  Normal   Killing    10s (x3 over 70s)  kubelet            spec.containers{cart}: Container cart failed liveness probe, will be restarted
+  Normal   Pulled     6s (x4 over 99s)   kubelet            spec.containers{cart}: Container image "ghcr.io/stefanprodan/podinfo:6.9.2" already present on machine and can be accessed by the pod
+  Normal   Created    6s (x4 over 99s)   kubelet            spec.containers{cart}: Container created
+  Normal   Started    6s (x4 over 99s)   kubelet            spec.containers{cart}: Container started
+
+$ kubectl -n shop exec deployment/cart -- wget -qO- localhost:9898/healthz
+{
+  "status": "OK"
+}

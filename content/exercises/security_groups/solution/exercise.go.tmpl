@@ -1,0 +1,97 @@
+// Package firewall is the Groundwork exercise "Security groups and network ACLs: will this packet get through?".
+package firewall
+
+import (
+	"cmp"
+	"net/netip"
+	"slices"
+)
+
+// AllProtocols is the Protocol value of a rule that covers every protocol
+// and every port.
+const AllProtocols = "-1"
+
+// Packet is a client opening a connection to your server.
+type Packet struct {
+	Source     netip.Addr // the client's address
+	SourcePort int        // the client's port: replies go back to it
+	Protocol   string     // "tcp" or "udp"
+	Port       int        // the port on your server
+}
+
+// SGRule is one inbound security group rule. Security group rules only
+// allow traffic.
+type SGRule struct {
+	Protocol string       // "tcp", "udp" or AllProtocols
+	FromPort int          // the first port of the range
+	ToPort   int          // the last port of the range (included)
+	CIDR     netip.Prefix // where the traffic may come from
+}
+
+// NACLRule is one numbered network ACL rule.
+type NACLRule struct {
+	Number   int          // lowest number is checked first
+	Protocol string       // "tcp", "udp" or AllProtocols
+	FromPort int          // the first port of the range
+	ToPort   int          // the last port of the range (included)
+	CIDR     netip.Prefix // inbound: the source; outbound: the destination
+	Allow    bool         // true for ALLOW, false for DENY
+}
+
+// NACL is the network ACL of a subnet: one rule list for each direction.
+type NACL struct {
+	Inbound  []NACLRule
+	Outbound []NACLRule
+}
+
+// portMatches reports whether a rule for ruleProtocol and the ports from
+// to to covers traffic with protocol to port. Both rule types share it.
+func portMatches(ruleProtocol string, from, to int, protocol string, port int) bool {
+	if ruleProtocol == AllProtocols {
+		return true
+	}
+	return ruleProtocol == protocol && from <= port && port <= to
+}
+
+// SGAllows reports whether any rule in a security group lets p in.
+func SGAllows(rules []SGRule, p Packet) bool {
+	for _, r := range rules {
+		if r.CIDR.Contains(p.Source) && portMatches(r.Protocol, r.FromPort, r.ToPort, p.Protocol, p.Port) {
+			return true
+		}
+	}
+	return false
+}
+
+// NACLAllows reports whether a network ACL's rules let traffic through:
+// remote is the address on the other side (the source for inbound rules,
+// the destination for outbound rules), port the port the traffic goes to.
+func NACLAllows(rules []NACLRule, remote netip.Addr, protocol string, port int) bool {
+	sorted := slices.Clone(rules)
+	slices.SortFunc(sorted, func(a, b NACLRule) int {
+		return cmp.Compare(a.Number, b.Number)
+	})
+	for _, r := range sorted {
+		if r.CIDR.Contains(remote) && portMatches(r.Protocol, r.FromPort, r.ToPort, protocol, port) {
+			return r.Allow
+		}
+	}
+	return false // the final "*" rule: deny
+}
+
+// Reach follows p into the subnet and the reply back out, and reports
+// "allowed" or which firewall stopped it.
+func Reach(acl NACL, sg []SGRule, p Packet) string {
+	if !NACLAllows(acl.Inbound, p.Source, p.Protocol, p.Port) {
+		return "blocked by network ACL (inbound)"
+	}
+	if !SGAllows(sg, p) {
+		return "blocked by security group"
+	}
+	// Security groups are stateful, so the reply needs no rule there. The
+	// network ACL is stateless: the reply goes to the client's port.
+	if !NACLAllows(acl.Outbound, p.Source, p.Protocol, p.SourcePort) {
+		return "blocked by network ACL (outbound reply)"
+	}
+	return "allowed"
+}

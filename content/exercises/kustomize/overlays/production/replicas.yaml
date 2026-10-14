@@ -1,0 +1,4 @@
+# Task 3: a patch: just enough of the Deployment to say which object it is,
+# and the one field production changes.
+#
+# TODO(3): Patch the Deployment web to run 4 replicas.

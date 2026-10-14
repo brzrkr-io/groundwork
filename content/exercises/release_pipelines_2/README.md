@@ -133,6 +133,10 @@ After a bad Friday deploy of `statusd`, the review listed four findings.
 Each file holds one of them, with a `TODO` above the risky part. Fix each
 so the workflow still does its job, minus the risk.
 
+Every `uses` line is already pinned to a full commit SHA, as in
+*CI workflows*. The tests check every file for that too, so keep the pins
+as they are.
+
 ### 1. Stop leaking the deploy token
 
 **Goal:** in `1_secrets.yml`, read `DEPLOY_TOKEN` from the repository's

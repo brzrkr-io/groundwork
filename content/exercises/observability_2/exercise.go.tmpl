@@ -1,0 +1,89 @@
+// Package incident is the Groundwork exercise "Observability: alert rules and an incident walk-through".
+package incident
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+)
+
+// logLine is the part of a JSON access log line that FailedTraceIDs needs.
+type logLine struct {
+	Msg     string `json:"msg"`
+	Status  int    `json:"status"`
+	TraceID string `json:"trace_id"`
+}
+
+// FailedTraceIDs reads JSON log lines from logs and returns the trace ID of
+// every "request" line with status 500 or more, each ID once, in the order
+// they first appear.
+func FailedTraceIDs(logs io.Reader) ([]string, error) {
+	var ids []string
+	dec := json.NewDecoder(logs)
+	for {
+		var line logLine
+		err := dec.Decode(&line)
+		if errors.Is(err, io.EOF) {
+			return ids, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		// TODO(3): Append line.TraceID to ids when line is a "request" with
+		// status 500 or more, unless ids already has it.
+	}
+}
+
+// Span is one hop of a trace, as a tracing backend exports it.
+type Span struct {
+	TraceID    string `json:"trace_id"`
+	SpanID     string `json:"span_id"`
+	ParentID   string `json:"parent_id"` // "" for the first span of a trace
+	Service    string `json:"service"`
+	Name       string `json:"name"`
+	DurationMS int    `json:"duration_ms"` // includes the time of its child spans
+}
+
+// SlowestHop returns the span of traceID with the most time of its own: its
+// duration minus the durations of its direct children. ok is false when
+// spans has no span of traceID.
+func SlowestHop(spans []Span, traceID string) (hop Span, ok bool) {
+	// TODO(4): Work out each span's own time and return the span with the most.
+	return Span{}, false
+}
+
+// Investigate walks through an incident: it finds the failed requests in the
+// log file at logPath, then the slowest hop of each one's trace in the JSON
+// span file at spansPath. It returns one line per failed trace.
+func Investigate(logPath, spansPath string) ([]string, error) {
+	logs, err := os.Open(logPath)
+	if err != nil {
+		return nil, err
+	}
+	defer logs.Close()
+	ids, err := FailedTraceIDs(logs)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", logPath, err)
+	}
+
+	data, err := os.ReadFile(spansPath)
+	if err != nil {
+		return nil, err
+	}
+	var spans []Span
+	if err := json.Unmarshal(data, &spans); err != nil {
+		return nil, fmt.Errorf("%s: %w", spansPath, err)
+	}
+
+	var report []string
+	for _, id := range ids {
+		if hop, ok := SlowestHop(spans, id); ok {
+			report = append(report, fmt.Sprintf("%s: %s %s", id, hop.Service, hop.Name))
+		} else {
+			report = append(report, id+": no spans")
+		}
+	}
+	return report, nil
+}

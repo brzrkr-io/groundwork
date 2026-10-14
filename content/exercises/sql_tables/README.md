@@ -63,7 +63,7 @@ CREATE TABLE disks (
 ```
 
 Now a disk for host 99 is rejected unless host 99 exists, and a host that
-still has disks can't be deleted. This is what keeps the joins from *JOINs:
+still has disks can't be deleted. This is what keeps the joins from *Joins:
 services, teams and who to page* honest.
 
 SQLite only enforces foreign keys after `PRAGMA foreign_keys = ON`, once per

@@ -90,8 +90,9 @@ return fmt.Errorf("load config: %w", err)
 
 ### Wiring it to signals
 
-In `main`, `signal.NotifyContext` gives a context that is cancelled on Ctrl-C
-or `SIGTERM`, which is what `Run` waits on:
+In `main`, `signal.NotifyContext` (the one-call version of the watcher from
+*Signals: graceful stop for a rolling drain*) gives a context that is
+cancelled on Ctrl-C or `SIGTERM`, which is what `Run` waits on:
 
 ```go
 ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

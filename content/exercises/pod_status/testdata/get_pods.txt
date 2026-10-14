@@ -1,0 +1,13 @@
+NAME                            READY   STATUS                       RESTARTS        AGE
+cart-6f8d9c7b54-9xkqp           0/1     ImagePullBackOff             0               14m
+checkout-7b9f6d8c5d-2mvzr       1/1     Running                      0               3h12m
+checkout-7b9f6d8c5d-q8wtn       1/1     Running                      0               3h12m
+gateway-5c4d8b7f9-hl2jd         1/2     Running                      0               26m
+indexer-85f7c9d6b-t4wcx         0/1     Pending                      0               9m
+metrics-agent-pqz7k             2/2     Running                      1 (2d ago)      9d
+migrate-orders-jrwx8            0/1     Completed                    0               2d
+payments-6d5f8b9c47-7zkxn       1/1     Running                      5 (3m ago)      47m
+report-58c6d7f9b-lm4vq          0/1     OOMKilled                    4 (71s ago)     8m
+search-7c8d9f6b5-w2xpr          0/1     Running                      0               11m
+settings-sync-6b7c8d9f5-d9kwm   0/1     CreateContainerConfigError   0               5m
+worker-5d6f7c8b9-n7vbx          0/1     CrashLoopBackOff             6 (2m14s ago)   12m

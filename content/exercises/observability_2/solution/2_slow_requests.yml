@@ -1,0 +1,15 @@
+# Task 2: open a ticket when the deploy API gets slow. Same shape as
+# 1_error_ratio.yml. In a real repository this would be, for example,
+# prometheus/rules/latency.yml.
+groups:
+  - name: deploy-api-latency
+    rules:
+      # The slowest 1% of requests take longer than half a second.
+      - alert: SlowRequests
+        expr: histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 0.5
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Deploy API p99 latency is above 500ms
+          runbook_url: https://runbooks.example.com/deploy-api/slow-requests

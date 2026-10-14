@@ -173,13 +173,19 @@ func TestGet(t *testing.T) {
 	})
 }
 
-func TestRemove(t *testing.T) {
+func TestRemovePoints(t *testing.T) {
 	t.Run("only the removed node's keys move", func(t *testing.T) {
 		r := New(100)
 		r.Add("cache-1", "cache-2", "cache-3", "cache-4")
 		keys := buildKeys()
 		before := ownersOf(r, keys)
 		r.Remove("cache-2")
+		if len(r.points) != 300 {
+			t.Fatalf("after Remove(%q), len(r.points) = %d, want 300", "cache-2", len(r.points))
+		}
+		if !slices.IsSorted(r.points) {
+			t.Errorf("after Remove(%q), r.points is not sorted", "cache-2")
+		}
 		for _, k := range keys {
 			got := r.Get(k)
 			switch {
@@ -189,19 +195,6 @@ func TestRemove(t *testing.T) {
 				t.Fatalf("after Remove(%q), Get(%q) = %q, want %q (it was never on cache-2)", "cache-2", k, got, before[k])
 			}
 		}
-		if len(r.points) != 300 || len(r.owners) != 300 {
-			t.Errorf("after Remove(%q), len(r.points) = %d and len(r.owners) = %d, want 300 and 300", "cache-2", len(r.points), len(r.owners))
-		}
-		if !slices.IsSorted(r.points) {
-			t.Errorf("after Remove(%q), r.points is not sorted", "cache-2")
-		}
-
-		r.Add("cache-2")
-		for _, k := range keys {
-			if got := r.Get(k); got != before[k] {
-				t.Fatalf("after adding cache-2 back, Get(%q) = %q, want %q", k, got, before[k])
-			}
-		}
 	})
 
 	t.Run("removing a missing node does nothing", func(t *testing.T) {
@@ -209,12 +202,12 @@ func TestRemove(t *testing.T) {
 		r.Add("cache-1", "cache-2")
 		r.Remove("cache-9")
 		r.Remove("")
-		if len(r.points) != 20 || len(r.owners) != 20 {
-			t.Errorf("after Remove(%q), len(r.points) = %d and len(r.owners) = %d, want 20 and 20", "cache-9", len(r.points), len(r.owners))
+		if len(r.points) != 20 {
+			t.Errorf("after Remove(%q), len(r.points) = %d, want 20", "cache-9", len(r.points))
 		}
 	})
 
-	t.Run("removing every node empties the ring", func(t *testing.T) {
+	t.Run("removing every node leaves no points", func(t *testing.T) {
 		r := New(10)
 		r.Add("cache-1", "cache-2")
 		r.Remove("cache-1")
@@ -227,8 +220,53 @@ func TestRemove(t *testing.T) {
 				t.Errorf("after removing every node, Get(%q) = %q, want %q", key, got, "")
 			}
 		}
-		if len(r.points) != 0 || len(r.owners) != 0 {
-			t.Errorf("after removing every node, len(r.points) = %d and len(r.owners) = %d, want 0 and 0", len(r.points), len(r.owners))
+		if len(r.points) != 0 {
+			t.Errorf("after removing every node, len(r.points) = %d, want 0", len(r.points))
+		}
+	})
+}
+
+func TestRemoveOwners(t *testing.T) {
+	t.Run("adding the node back restores every key", func(t *testing.T) {
+		r := New(100)
+		r.Add("cache-1", "cache-2", "cache-3", "cache-4")
+		keys := buildKeys()
+		before := ownersOf(r, keys)
+		r.Remove("cache-2")
+		if len(r.owners) != 300 {
+			t.Fatalf("after Remove(%q), len(r.owners) = %d, want 300", "cache-2", len(r.owners))
+		}
+		r.Add("cache-2")
+		if len(r.points) != 400 {
+			t.Fatalf("after adding cache-2 back, len(r.points) = %d, want 400 (are its old points still in r.owners?)", len(r.points))
+		}
+		for _, k := range keys {
+			if got := r.Get(k); got != before[k] {
+				t.Fatalf("after adding cache-2 back, Get(%q) = %q, want %q", k, got, before[k])
+			}
+		}
+	})
+
+	t.Run("removing a missing node does nothing", func(t *testing.T) {
+		r := New(10)
+		r.Add("cache-1", "cache-2")
+		r.Remove("cache-9")
+		r.Remove("")
+		if len(r.owners) != 20 {
+			t.Errorf("after Remove(%q), len(r.owners) = %d, want 20", "cache-9", len(r.owners))
+		}
+	})
+
+	t.Run("removing every node empties the map", func(t *testing.T) {
+		r := New(10)
+		r.Add("cache-1", "cache-2")
+		r.Remove("cache-1")
+		if len(r.owners) != 10 {
+			t.Errorf("after Remove(%q), len(r.owners) = %d, want 10", "cache-1", len(r.owners))
+		}
+		r.Remove("cache-2")
+		if len(r.owners) != 0 {
+			t.Errorf("after removing every node, len(r.owners) = %d, want 0", len(r.owners))
 		}
 	})
 }

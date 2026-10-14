@@ -1,0 +1,97 @@
+// Package dnsttl is the Groundwork exercise "DNS: TTLs and a migration check".
+package dnsttl
+
+import (
+	"fmt"
+	"strings"
+	"time"
+)
+
+// Record is one DNS answer: a name, one address, and how long resolvers may
+// cache it. Go's net.Resolver doesn't report TTLs, so this pack has its own type.
+type Record struct {
+	Name string
+	Addr string
+	TTL  int // seconds, as DNS sends it and dig prints it
+}
+
+// ExpiresAt returns when a copy of r fetched at fetched must be thrown away.
+func ExpiresAt(r Record, fetched time.Time) time.Time {
+	return fetched.Add(time.Duration(r.TTL) * time.Second)
+}
+
+// entry is one cached record and the moment it expires.
+type entry struct {
+	record  Record
+	expires time.Time
+}
+
+// Cache keeps DNS records until their TTL runs out.
+type Cache struct {
+	now     func() time.Time
+	entries map[string]entry
+}
+
+// NewCache returns an empty Cache that reads the time from now. Real code
+// passes time.Now; tests pass a fake clock.
+func NewCache(now func() time.Time) *Cache {
+	return &Cache{now: now, entries: map[string]entry{}}
+}
+
+// Put stores r under its name until its TTL runs out.
+func (c *Cache) Put(r Record) {
+	c.entries[r.Name] = entry{record: r, expires: ExpiresAt(r, c.now())}
+}
+
+// Get returns the cached record for name with its TTL counted down to the
+// whole seconds left, or false if it isn't cached or has expired.
+func (c *Cache) Get(name string) (Record, bool) {
+	e, ok := c.entries[name]
+	if !ok {
+		return Record{}, false
+	}
+	now := c.now()
+	if !now.Before(e.expires) {
+		return Record{}, false
+	}
+	r := e.record
+	r.TTL = int(e.expires.Sub(now) / time.Second)
+	return r, true
+}
+
+// Migration describes a DNS change from one address to another.
+type Migration struct {
+	Old     Record    // the record before the change
+	NewAddr string    // the address the name points to now
+	Changed time.Time // when the record was changed
+}
+
+// Answer is the address one resolver currently returns for the name.
+type Answer struct {
+	Resolver string
+	Addr     string
+}
+
+// CheckMigration reports whether every resolver has moved to the new
+// address, is still allowed to cache the old one, or is stuck on it.
+func CheckMigration(m Migration, answers []Answer, now time.Time) string {
+	var stale []string
+	for _, a := range answers {
+		if a.Addr == m.Old.Addr {
+			stale = append(stale, a.Resolver)
+		}
+	}
+	if len(stale) == 0 {
+		return fmt.Sprintf("done: all %d resolvers return %s", len(answers), m.NewAddr)
+	}
+	// A resolver that fetched the old record just before the change may keep
+	// it for one full TTL after it.
+	expires := ExpiresAt(m.Old, m.Changed)
+	list := strings.Join(stale, ", ")
+	if now.Before(expires) {
+		return fmt.Sprintf("waiting: %s still cached on %s until %s (%v left)",
+			m.Old.Addr, list, expires.Format(time.RFC3339), expires.Sub(now))
+	}
+	return fmt.Sprintf("stuck: %s still served by %s after its TTL ran out at %s",
+		m.Old.Addr, list, expires.Format(time.RFC3339))
+}

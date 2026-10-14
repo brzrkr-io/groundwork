@@ -66,7 +66,8 @@ changes the cached entry itself.
 After the new entry is in, compare the number of entries with `c.capacity`.
 If there are too many, the victim is at the back of the list. Remove it from
 both the list and the map, and count it. Count with the fields, not with
-`c.Len()`: `Put` already holds the lock that `c.Len()` would wait for.
+`c.Len()`: once task 5 locks `Put`, `c.Len()` would wait for that lock
+forever.
 
 ### Closer
 
@@ -83,4 +84,23 @@ if c.order.Len() > c.capacity {
 	delete(c.items, oldest.Value.(*entry).key)
 	c.evictions++
 }
+```
+
+## Task 5: Make it safe for concurrent use
+
+Copy how `Len` starts into the top of `Get` and of `Put`. Then check that
+neither method calls `c.Len()`, `c.Keys()` or `c.Get()`.
+
+### Closer
+
+`c.mu.Lock()` on one line, `defer c.mu.Unlock()` on the next, as the very
+first lines of each method.
+
+### Answer
+
+At the top of both `Get` and `Put`:
+
+```go
+c.mu.Lock()
+defer c.mu.Unlock()
 ```

@@ -2,7 +2,9 @@
 
 Everyone commits too early sometimes: a typo in the message, a forgotten file,
 three tiny commits that should be one. While the commits are still only on
-your machine, Git lets you tidy them before anyone sees them.
+your machine, Git lets you tidy them before anyone sees them. This is the
+first of three exercises on undoing; the next two undo on shared branches
+and rescue lost work.
 
 **New here:** `git commit --amend`, `HEAD~n`, `git reset --soft` and `--mixed`.
 
@@ -12,8 +14,13 @@ your machine, Git lets you tidy them before anyone sees them.
 
 - `bash setup.sh` rebuilds `sandbox/`; your scripts run inside it, in order
   (`cd sandbox && bash ../1_reword.sh`). The tests do the same.
-- `git add` stages, `git commit -m` saves what's staged, `git log --oneline`
-  lists commits.
+- A file lives in three places: the *working tree*, the *staging area* and
+  the commits. `git add` stages, `git commit -m` saves what's staged, and
+  `git restore --staged` unstages, as in *Staging: choose what goes in a
+  commit*.
+- A branch is a name pointing at a commit, and "changing" commits really
+  makes new ones with new hashes, as rebase did in *Rebase: catch a branch
+  up with main*.
 
 ### Amend: redo the newest commit
 
@@ -30,8 +37,10 @@ Without `-m` or `--no-edit`, Git opens an editor for the message.
 
 > **Why is it written like this?** **Git requires** `--amend` to make a
 > *new* commit with a new hash: commits never change once made. The old one
-> is simply no longer on the branch. That's why you only amend commits you
-> haven't pushed: teammates may already have the old one.
+> is simply no longer on the branch. So the golden rule from rebase applies:
+> only amend commits nobody else has. Once you've shared a commit with
+> teammates (by *pushing* it to a shared copy of the repo, coming up in
+> *Remotes: clone, push and fetch*), they may already have the old one.
 
 ### Naming older commits
 
@@ -49,13 +58,16 @@ So `git log --oneline HEAD~2` lists history from two commits back.
 
 `git reset <commit>` moves the current branch back to `<commit>`. The commits
 after it drop off the branch. What happens to their *changes* depends on the
-mode:
+mode, and the modes differ in how many of the three places they reset:
 
 | Command | Branch | Staging area | Working tree |
 |---|---|---|---|
 | `git reset --soft HEAD~1` | moved back | keeps the changes, staged | unchanged |
 | `git reset HEAD~1` (`--mixed`) | moved back | reset | keeps the changes, unstaged |
 | `git reset --hard HEAD~1` | moved back | reset | **changes thrown away** |
+
+You'll use `--hard` in *Undoing: revert a bad deploy*; here you need only
+the two that keep your work.
 
 `--soft` is the "undo the commit, keep everything ready to commit again"
 move:

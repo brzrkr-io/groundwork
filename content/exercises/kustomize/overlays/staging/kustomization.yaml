@@ -1,0 +1,5 @@
+# Task 2: staging runs the base in the namespace staging, with the newest
+# podinfo.
+#
+# TODO(2): Start from the base, put everything in the namespace staging,
+# and change podinfo's tag to 6.9.2.

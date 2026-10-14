@@ -6,7 +6,8 @@ GitHub this is a *workflow*: a YAML file that says when to run and what to
 run.
 
 **New here:** YAML, GitHub Actions workflows, `on`, `jobs`, `runs-on`,
-`steps`, `uses`, `run`, `with`, `needs`.
+`steps`, `uses`, `run`, `with`, `needs`, pinning actions to a commit SHA,
+`git ls-remote`.
 
 ## Learn
 
@@ -54,7 +55,7 @@ jobs:
   shellcheck:                   # a job id, your choice
     runs-on: ubuntu-latest      # a fresh virtual machine for this job
     steps:
-      - uses: actions/checkout@v7         # step 1: an action
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: shellcheck scripts/*.sh      # step 2: a shell command
 ```
 
@@ -92,17 +93,60 @@ Under YAML 1.1 rules a bare `on` is the boolean `true`. GitHub reads it as
 the word `on`, so write it bare like everyone does; the tests here cope
 with it too.
 
-### Actions and versions
+### Actions and pinning
 
-An *action* is a reusable step someone published. You always say which
-version you want after `@`: `actions/checkout@v7` means "the newest
-release of major version 7": bug fixes, but no breaking changes. A branch
-such as `@main` can change under you overnight.
+An *action* is a reusable step someone published, and `uses:` runs its
+code with your repository's token and secrets. After the `@` you say
+**which** code:
+
+| Ref | What it is | Can its owner change the code behind it? |
+|---|---|---|
+| `@main` | a branch | yes, with every push |
+| `@v7`, `@v7.0.1` | a tag: a name pointing at a commit | yes: a tag can be moved to another commit |
+| `@3d3c42e5aac5ba805825da76410c181273ba90b1` | a full commit SHA | no, never |
+
+So this course pins **every** action to a full 40-character commit SHA,
+with the release it belongs to as a comment, as the *Security basics for
+automation* guide recommends for the supply chain:
+
+```yaml
+- uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+```
+
+YAML ignores everything after ` #`, so the comment changes nothing for
+GitHub. It's for people reading the file, and for Dependabot, which
+updates the SHA and the comment together.
+
+**Finding the SHA.** The SHA is the commit a release tag points at.
+`git ls-remote` lists a remote repository's tags without cloning it:
+
+```sh
+git ls-remote --tags https://github.com/actions/cache 'v6.1.0*'
+# 55cc8345863c7cc4c66a329aec7e433d2d1c52a9	refs/tags/v6.1.0
+```
+
+Copy the first column. The quotes and `*` matter for *annotated* tags
+(tags with their own message): Git then prints a second line ending in
+`^{}`, and **that** line holds the commit. GitHub's release page links the
+same commit. The SHAs for this exercise:
+
+| Action | Release | Commit |
+|---|---|---|
+| `actions/checkout` | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `actions/setup-go` | v7.0.0 | `b7ad1dad31e06c5925ef5d2fc7ad053ef454303e` |
+
+> **Why is it written like this?**
+> - **GitHub requires:** an `@ref` on every `uses`, and a commit SHA must be
+>   the full 40 characters.
+> - **Convention:** `# vX.Y.Z` after a SHA, one space before the `#`.
+> - **Author's choice:** SHAs for *every* action, GitHub's own included, so
+>   there is one rule to remember. Many teams only require them for
+>   third-party actions; tags are still movable for both.
 
 `actions/setup-go` installs Go. Tell it which version through `with`:
 
 ```yaml
-- uses: actions/setup-go@v7
+- uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
   with:
     go-version: '1.25'          # a fixed version
 ```
@@ -166,14 +210,22 @@ tests the code on pushes to `main` and on every pull request.
 - Triggers: `push` limited to the branch `main`, and `pull_request`.
 - One job with the id `test`, on `ubuntu-latest`, with these steps in
   order:
-  1. `actions/checkout`, pinned to a version (such as `@v7`),
-  2. `actions/setup-go`, pinned to a version, reading the Go version from
-     `go.mod` with `go-version-file`,
+  1. `actions/checkout`, pinned,
+  2. `actions/setup-go`, pinned, reading the Go version from `go.mod` with
+     `go-version-file`,
   3. a step that runs `go vet ./...`,
   4. a step that runs `go test ./...`.
 
-"Pinned" means `@` and a version tag (`@v7`, `@v7.0.1`) or a full commit
-hash, never a branch like `@main`.
+"Pinned" means the full commit SHA from the table in Learn, then a space,
+`#` and the release:
+
+```text
+actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+```
+
+The test checks every `uses` line in the file this way. A tag (`@v7`), a
+branch (`@main`) or a short SHA fails, and so does a comment that names a
+different release than the SHA.
 
 **Think it through:**
 - What's on the runner before checkout? Why does that decide the order?

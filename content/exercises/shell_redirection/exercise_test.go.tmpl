@@ -1,0 +1,114 @@
+package shellredirection
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestDeployLog(t *testing.T) {
+	dir := workdir(t)
+	writeFile(t, dir, "deploy.log", "old run\nbuild failed\n")
+	expectQuiet(t, dir, "1_deploy_log.sh")
+	expectFile(t, dir, "deploy.log", "deploy started\nbuild ok\n")
+	// A second run must replace the log, not grow it.
+	expectQuiet(t, dir, "1_deploy_log.sh")
+	expectFile(t, dir, "deploy.log", "deploy started\nbuild ok\n")
+}
+
+func TestSplitOutput(t *testing.T) {
+	dir := workdir(t)
+	expectQuiet(t, dir, "2_split_output.sh")
+	expectFile(t, dir, "result.txt", "api: ok\nworker: ok\n")
+	expectFile(t, dir, "warnings.txt", "checking api...\nwarning: worker restarted once\n")
+}
+
+func TestOneLog(t *testing.T) {
+	dir := workdir(t)
+	expectQuiet(t, dir, "3_one_log.sh")
+	expectFile(t, dir, "all.log", "checking api...\napi: ok\nwarning: worker restarted once\nworker: ok\n")
+}
+
+func TestWriteConfig(t *testing.T) {
+	dir := workdir(t)
+	expectQuiet(t, dir, "4_write_config.sh", "api", "3")
+	expectFile(t, dir, "app.yaml", "service: api\nreplicas: 3\nimage: registry.example.com/api:stable\n")
+	expectQuiet(t, dir, "4_write_config.sh", "worker", "1")
+	expectFile(t, dir, "app.yaml", "service: worker\nreplicas: 1\nimage: registry.example.com/worker:stable\n")
+}
+
+// workdir copies the scripts and testdata/deploy.sh into a fresh temporary
+// folder, so the files your scripts write never land in the exercise.
+func workdir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "testdata"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"1_deploy_log.sh", "2_split_output.sh", "3_one_log.sh", "4_write_config.sh", "testdata/deploy.sh"} {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, dir, name, string(data))
+	}
+	return dir
+}
+
+// expectQuiet runs the script in dir and checks that it succeeds and
+// prints nothing: everything should have gone into files.
+func expectQuiet(t *testing.T, dir, script string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("bash", append([]string{script}, args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C", "TZ=UTC")
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Run(); cmd.ProcessState == nil {
+		t.Fatalf("could not start bash: %v", err)
+	}
+	command := strings.Join(append([]string{"bash", script}, args...), " ")
+	if code := cmd.ProcessState.ExitCode(); code != 0 {
+		msg := fmt.Sprintf("%s exited with status %d, want 0.", command, code)
+		if errOut.Len() > 0 {
+			msg += "\nbash said:\n" + errOut.String()
+		}
+		t.Fatal(msg)
+	}
+	if out.Len() > 0 {
+		t.Errorf("%s printed to the terminal (stdout):\n%s\nwant nothing there: redirect it into the file. "+
+			"If those are stderr's lines, 2>&1 came before > FILE and copied stdout's old target, the terminal: write > FILE first, then 2>&1", command, out.String())
+	}
+	if errOut.Len() > 0 {
+		t.Errorf("%s printed to the terminal (stderr):\n%s\nwant nothing there: redirect stream 2 too", command, errOut.String())
+	}
+}
+
+// expectFile checks that the file name in dir holds want.
+func expectFile(t *testing.T, dir, name, want string) {
+	t.Helper()
+	got, err := os.ReadFile(filepath.Join(dir, name))
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("%s wasn't created, want it to hold:\n%s", name, want)
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Errorf("%s holds:\n%s\nwant:\n%s", name, got, want)
+	}
+}
+
+func writeFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

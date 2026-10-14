@@ -1,0 +1,11 @@
+# The ConfigMap for task 4. It is complete: one key, config.yaml, whose value
+# is a whole file. Mounted as a volume, each key becomes a file.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: report-config
+  namespace: shop
+data:
+  config.yaml: |
+    level: debug
+    ui-message: hello from a mounted file

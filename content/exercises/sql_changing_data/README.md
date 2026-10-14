@@ -13,7 +13,7 @@ gets careful.
 
 Open `testdata/schema.sql` and `testdata/data.sql`: `services` (with the
 version production runs now, `current_version`) and 18 `deploys`, each
-pointing at a service by `service_id`, as in *JOINs: services, teams and who
+pointing at a service by `service_id`, as in *Joins: services, teams and who
 to page*. Each test loads a fresh copy, runs your file, then checks what the
 tables hold.
 

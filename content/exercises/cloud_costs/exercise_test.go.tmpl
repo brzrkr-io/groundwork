@@ -1,0 +1,215 @@
+package costs
+
+import (
+	"math"
+	"slices"
+	"testing"
+)
+
+// near reports whether two dollar amounts are equal, give or take the tiny
+// errors every float calculation has.
+func near(a, b float64) bool {
+	return math.Abs(a-b) < 1e-9
+}
+
+func loadPrices(t *testing.T) Prices {
+	t.Helper()
+	p, err := LoadPrices("testdata/prices.json")
+	if err != nil {
+		t.Fatalf("LoadPrices(%q) returned error %v, want nil", "testdata/prices.json", err)
+	}
+	return p
+}
+
+func TestLineCost(t *testing.T) {
+	p := loadPrices(t)
+	tests := []struct {
+		name string
+		item Item
+		want float64
+	}{
+		{"two t3.micro all month", Item{Service: "ec2", InstanceType: "t3.micro", Count: 2, Hours: HoursPerMonth}, 15.184},
+		{"one m5.large all month", Item{Service: "ec2", InstanceType: "m5.large", Count: 1, Hours: HoursPerMonth}, 70.08},
+		{"three c5.xlarge for 100 hours", Item{Service: "ec2", InstanceType: "c5.xlarge", Count: 3, Hours: 100}, 51},
+		{"four t3.small for a day", Item{Service: "ec2", InstanceType: "t3.small", Count: 4, Hours: 24}, 1.9968},
+		{"500 GB of disk", Item{Service: "ebs", GB: 500}, 40},
+		{"20 GB of disk", Item{Service: "ebs", GB: 20}, 1.6},
+		{"1200 GB in S3", Item{Service: "s3", GB: 1200}, 27.6},
+		{"50 GB in S3", Item{Service: "s3", GB: 50}, 1.15},
+		{"one NAT gateway, 250 GB", Item{Service: "nat", Count: 1, Hours: HoursPerMonth, GB: 250}, 44.1},
+		{"three NAT gateways, no traffic", Item{Service: "nat", Count: 3, Hours: HoursPerMonth}, 98.55},
+		{"1000 GB out", Item{Service: "transfer", GB: 1000}, 90},
+		{"150 GB out", Item{Service: "transfer", GB: 150}, 13.5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := LineCost(tt.item, p)
+			if err != nil {
+				t.Fatalf("LineCost(%+v, prices) returned error %v, want nil", tt.item, err)
+			}
+			if !near(got, tt.want) {
+				t.Errorf("LineCost(%+v, prices) = %v, want %v", tt.item, got, tt.want)
+			}
+		})
+	}
+
+	bad := []struct {
+		name string
+		item Item
+	}{
+		{"unknown service", Item{Service: "lambda", GB: 10}},
+		{"service in capitals", Item{Service: "EC2", InstanceType: "t3.micro", Count: 1, Hours: 1}},
+		{"unknown instance type", Item{Service: "ec2", InstanceType: "t3.nano", Count: 1, Hours: 1}},
+		{"no instance type", Item{Service: "ec2", Count: 1, Hours: 1}},
+	}
+	for _, tt := range bad {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := LineCost(tt.item, p)
+			if err == nil {
+				t.Errorf("LineCost(%+v, prices) = %v, nil; want an error", tt.item, got)
+			}
+		})
+	}
+}
+
+func TestEstimate(t *testing.T) {
+	p := loadPrices(t)
+	tests := []struct {
+		name  string
+		items []Item
+		want  Bill
+	}{
+		{
+			name: "small web app",
+			items: []Item{
+				{Service: "ec2", InstanceType: "t3.small", Count: 2, Hours: HoursPerMonth},
+				{Service: "ec2", InstanceType: "t3.micro", Count: 1, Hours: HoursPerMonth},
+				{Service: "ebs", GB: 60},
+				{Service: "s3", GB: 120},
+				{Service: "nat", Count: 1, Hours: HoursPerMonth, GB: 80},
+				{Service: "transfer", GB: 150},
+			},
+			want: Bill{Total: 95.47, ByService: map[string]float64{
+				"ec2": 37.96, "ebs": 4.8, "s3": 2.76, "nat": 36.45, "transfer": 13.5,
+			}},
+		},
+		{
+			name: "rounded to cents",
+			items: []Item{
+				{Service: "ec2", InstanceType: "c5.xlarge", Count: 1, Hours: 1},
+				{Service: "ec2", InstanceType: "t3.micro", Count: 1, Hours: 1},
+				{Service: "s3", GB: 3},
+			},
+			want: Bill{Total: 0.25, ByService: map[string]float64{"ec2": 0.18, "s3": 0.07}},
+		},
+		{
+			name: "total rounded once, at the end",
+			items: []Item{
+				{Service: "ec2", InstanceType: "t3.micro", Count: 1, Hours: 1},
+				{Service: "s3", GB: 1},
+				{Service: "transfer", GB: 0.05},
+			},
+			want: Bill{Total: 0.04, ByService: map[string]float64{"ec2": 0.01, "s3": 0.02, "transfer": 0}},
+		},
+		{
+			name:  "no items",
+			items: nil,
+			want:  Bill{Total: 0, ByService: map[string]float64{}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Estimate(tt.items, p)
+			if err != nil {
+				t.Fatalf("Estimate(%+v, prices) returned error %v, want nil", tt.items, err)
+			}
+			if !near(got.Total, tt.want.Total) {
+				t.Errorf("Estimate(%+v, prices).Total = %v, want %v", tt.items, got.Total, tt.want.Total)
+			}
+			if len(got.ByService) != len(tt.want.ByService) {
+				t.Errorf("Estimate(%+v, prices).ByService = %v, want %v", tt.items, got.ByService, tt.want.ByService)
+			}
+			for service, want := range tt.want.ByService {
+				if cost, ok := got.ByService[service]; !ok || !near(cost, want) {
+					t.Errorf("Estimate(%+v, prices).ByService[%q] = %v, want %v", tt.items, service, cost, want)
+				}
+			}
+		})
+	}
+
+	bad := [][]Item{
+		{{Service: "ec2", InstanceType: "t3.micro", Count: 1, Hours: 1}, {Service: "lambda", GB: 1}},
+		{{Service: "ec2", InstanceType: "x9.huge", Count: 1, Hours: 1}},
+	}
+	for _, items := range bad {
+		t.Run("error", func(t *testing.T) {
+			got, err := Estimate(items, p)
+			if err == nil {
+				t.Errorf("Estimate(%+v, prices) = %+v, nil; want an error", items, got)
+			}
+		})
+	}
+}
+
+func TestBudgetAlerts(t *testing.T) {
+	tests := []struct {
+		name       string
+		budget     float64
+		spent      float64
+		day, days  int
+		thresholds []int
+		want       []string
+	}{
+		{
+			name: "day 20 of 30", budget: 1000, spent: 812.50, day: 20, days: 30,
+			thresholds: []int{50, 80, 100, 120},
+			want: []string{
+				"ACTUAL 50%: $812.50 of $1000.00",
+				"ACTUAL 80%: $812.50 of $1000.00",
+				"FORECASTED 100%: $1218.75 of $1000.00",
+				"FORECASTED 120%: $1218.75 of $1000.00",
+			},
+		},
+		{
+			name: "quiet month", budget: 1000, spent: 100, day: 10, days: 30,
+			thresholds: []int{50, 80, 100},
+			want:       nil,
+		},
+		{
+			name: "exactly at a threshold", budget: 200, spent: 160, day: 30, days: 30,
+			thresholds: []int{80, 100},
+			want:       []string{"ACTUAL 80%: $160.00 of $200.00"},
+		},
+		{
+			name: "early spike", budget: 500, spent: 100, day: 4, days: 30,
+			thresholds: []int{50, 100, 120, 200},
+			want: []string{
+				"FORECASTED 50%: $750.00 of $500.00",
+				"FORECASTED 100%: $750.00 of $500.00",
+				"FORECASTED 120%: $750.00 of $500.00",
+			},
+		},
+		{
+			name: "over budget", budget: 1000, spent: 1050.40, day: 28, days: 31,
+			thresholds: []int{100},
+			want:       []string{"ACTUAL 100%: $1050.40 of $1000.00"},
+		},
+		{
+			name: "no thresholds", budget: 1000, spent: 5000, day: 1, days: 30,
+			thresholds: nil,
+			want:       nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BudgetAlerts(tt.budget, tt.spent, tt.day, tt.days, tt.thresholds)
+			if len(got) == 0 && len(tt.want) == 0 {
+				return
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("BudgetAlerts(%v, %v, %d, %d, %v) =\n%q\nwant\n%q",
+					tt.budget, tt.spent, tt.day, tt.days, tt.thresholds, got, tt.want)
+			}
+		})
+	}
+}

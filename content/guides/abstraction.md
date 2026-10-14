@@ -2,7 +2,7 @@
 
 **In one sentence:** abstraction is hiding the details of something behind a name and a promise, so you can use it without knowing how it works inside.
 
-**Why it matters:** you type `kubectl apply -f deploy.yaml` and a Deployment appears; you never wrote the HTTP requests, the database writes or the scheduling decisions. Every tool you build is the same trick in miniature, and knowing how abstractions work (and how they break) is what lets you debug them when they fail.
+**Why it matters:** you type `ls` and your files appear; you never read the disk or decoded the folder format. Later in your career, `kubectl apply -f deploy.yaml` will hide a whole cluster the same way. Every tool you build is the same trick in miniature, and knowing how abstractions work (and how they break) is what lets you debug them when they fail.
 
 **You'll learn:**
 
@@ -23,37 +23,32 @@ The pedal is the part you touch: the *interface*. The engine is the part that do
 
 Now drive an electric car. The implementation is completely different (no fuel, no gears), but the pedal and the promise are the same. You can drive it without retraining. That is the whole payoff of abstraction: **the inside can change without the outside noticing.**
 
-### kubectl apply
+### `ls`
 
-Here is what one command hides:
+Here is what one shell command hides:
 
 ```text
-you type:     kubectl apply -f deploy.yaml
+you type:     ls
                   |
-kubectl:      reads the YAML, finds the cluster in ~/.kube/config,
-              sends an HTTPS request to the API server
+the shell:    finds the program /usr/bin/ls and starts it
                   |
-API server:   checks who you are and what you may do, validates
-              the object, saves it in etcd (the cluster database)
+ls:           asks the operating system for the entries in the
+              folder, sorts the names, lays them out in columns
                   |
-controllers:  notice the new Deployment, create a ReplicaSet,
-              which creates Pods
+the OS:       reads the folder through the file system
                   |
-scheduler:    picks a node for each Pod
-                  |
-kubelet:      on that node, asks the container runtime to pull
-              the image and start the containers
+the disk:     returns raw bytes from numbered blocks
 ```
 
-You needed none of that to deploy. You needed one name (`apply`) and one promise ("the cluster will match this file").
+You needed none of that to see your files. You needed one name (`ls`) and one promise ("show me what's in this folder").
 
 ### The three parts
 
-| Part | Car | kubectl apply |
+| Part | Car | `ls` |
 |---|---|---|
-| A name | the accelerator | `kubectl apply` |
-| A promise (the *contract*) | press harder, go faster | the cluster will match the file |
-| Hidden details | engine, fuel, gears | HTTP, etcd, controllers, scheduler |
+| A name | the accelerator | `ls` |
+| A promise (the *contract*) | press harder, go faster | list what's in this folder |
+| Hidden details | engine, fuel, gears | starting a program, the file system, disk blocks |
 
 An *abstraction* is all three together. Another way to say it: abstraction is **choosing what you are allowed to ignore**. A good abstraction lets you ignore a lot, safely.
 
@@ -204,7 +199,7 @@ Step by step:
 
 (Real notifiers would send HTTP requests and return an error; printing keeps the example small.)
 
-Adding Microsoft Teams later means writing one new type with a `Notify` method. `alert` does not change at all. Neither do its tests. You practise this in *Interfaces* and *Interfaces: swap in a fake for tests*.
+Adding Microsoft Teams later means writing one new type with a `Notify` method. `alert` does not change at all. Neither do its tests. You'll practise this in *Interfaces* and *Interfaces: swap in a fake for tests*.
 
 *Generics* are a cousin: one `Sum` function for both `int` and `float64` abstracts over the *type* of the data.
 
@@ -341,6 +336,30 @@ Three ideas that are often mixed up. They work together, but each answers a diff
 | *Encapsulation* | What is nobody allowed to touch? | an unexported `token` field |
 
 You decompose a problem into parts, give each part an abstraction (a name and a contract), and encapsulate its details so nobody can come to depend on them.
+
+## Case study (looking ahead): `kubectl apply`
+
+This one is a preview: Kubernetes comes much later, in *Kubernetes fundamentals*. Read it for the shape, not the details. Here is what one command hides:
+
+```text
+you type:     kubectl apply -f deploy.yaml
+                  |
+kubectl:      reads the YAML, finds the cluster in ~/.kube/config,
+              sends an HTTPS request to the API server
+                  |
+API server:   checks who you are and what you may do, validates
+              the object, saves it in etcd (the cluster database)
+                  |
+controllers:  notice the new Deployment, create a ReplicaSet,
+              which creates Pods
+                  |
+scheduler:    picks a node for each Pod
+                  |
+kubelet:      on that node, asks the container runtime to pull
+              the image and start the containers
+```
+
+Same three parts as `ls`, just more layers. The name is `kubectl apply`. The promise is "the cluster will match this file". The hidden details are HTTP, etcd, controllers and the scheduler. You need none of them to deploy, and all of them the day it breaks.
 
 ## Common mistakes
 

@@ -36,8 +36,8 @@ func New(capacity int) *Cache {
 // Get returns the value stored under key and true, and marks key as the
 // most recently used. If key is missing it returns "" and false.
 func (c *Cache) Get(key string) (string, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// TODO(5): Lock c.mu and defer the unlock, as Len does.
+
 	// TODO(2): Look key up in c.items. On a hit, move its element to the
 	// front of c.order and return its value.
 	return "", false
@@ -47,8 +47,8 @@ func (c *Cache) Get(key string) (string, bool) {
 // new key takes the cache over capacity, Put evicts the least recently used
 // entry.
 func (c *Cache) Put(key, value string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// TODO(5): Lock c.mu and defer the unlock, as Len does.
+
 	// TODO(3): If key is already cached, update its value, move it to the
 	// front, and return.
 

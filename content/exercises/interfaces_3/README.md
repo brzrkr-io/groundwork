@@ -6,7 +6,7 @@ environment variables", you can test it with a fake store and stack
 overrides on top of defaults.
 
 **New here:** fakes for testing, empty structs, writing a method from scratch
-to satisfy an interface.
+to satisfy an interface; what an environment variable is.
 
 ## Learn
 
@@ -15,6 +15,15 @@ to satisfy an interface.
 As in *Interfaces*, an interface lists methods, and any type with those
 methods satisfies it. A function with an interface parameter works with
 every type that satisfies it, even types written later.
+
+### Environment variables, in one minute
+
+Every running program gets a small set of *environment variables* from
+whoever started it: name/value pairs of text such as `HOME=/home/sam` or
+`CACHE_URL=redis://cache:6379`. Servers and containers often get their
+settings this way. Go reads one with `os.Getenv("CACHE_URL")`, which returns
+`""` if it isn't set. The *Linux and the shell* module shows how to set them;
+here you only need to know that their values depend on the machine.
 
 ### Interfaces make code testable
 

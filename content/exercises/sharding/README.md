@@ -92,9 +92,10 @@ rows to another database while the service keeps running.
 | 4 | 8 | about 50% |
 
 Going from `n` to `n+1` shards moves about `n/(n+1)` of the keys: almost
-all of them. That's why the next exercise,
-*Consistent hashing: a ring with virtual nodes*, exists: it adds a shard
-while moving only about `1/(n+1)` of the keys.
+all of them. Next you'll fix that with a *hash ring*: first a small one in
+*Hash rings: find a key's node*, then the full version in
+*Consistent hashing: a ring with virtual nodes*. A ring adds a shard while
+moving only about `1/(n+1)` of the keys.
 
 ### Dividing to get a fraction
 

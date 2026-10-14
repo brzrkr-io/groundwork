@@ -44,12 +44,12 @@ terminal starts there), `cd` into that folder, which is the path without the
 file name:
 
 ```bash
-cd exercises/06_shell/129_shell_commands   # use the path on your edit line
+cd exercises/07_shell/144_shell_commands   # use the path on your edit line
 ls
 # 1_deploy_line.sh  2_reminder.sh  3_status_table.sh  README.md ...
 ```
 
-**Tab** finishes a name for you: type `cd exercises/06` and press Tab. Use
+**Tab** finishes a name for you: type `cd exercises/07` and press Tab. Use
 it all the time; it saves typing and typos.
 
 ### A script is a list of commands
@@ -126,7 +126,7 @@ echo "build (debug)    done"
 ```
 
 There are two kinds, and the difference is the `$` sign. A `$` asks bash to
-swap in a variable's value (the next exercise is all about that). `$HOME`,
+swap in a variable's value (*Shell variables* is all about that). `$HOME`,
 for example, holds your home folder:
 
 | Quotes | Inside them | Example | Prints |

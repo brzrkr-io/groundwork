@@ -1,0 +1,26 @@
+# Task 2: kubectl apply rejects this Deployment with:
+#
+#   The Deployment "api" is invalid: spec.template.metadata.labels: Invalid
+#   value: {"app":"api-server"}: `selector` does not match template `labels`
+#
+# TODO(2): Fix it. Keep the selector as it is: other objects already select
+# app: api.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api-server
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/stefanprodan/podinfo:6.9.2

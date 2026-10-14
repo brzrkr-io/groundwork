@@ -1,0 +1,156 @@
+package iam
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestMatch(t *testing.T) {
+	tests := []struct {
+		pattern, value string
+		want           bool
+	}{
+		{"s3:GetObject", "s3:GetObject", true},
+		{"s3:GetObject", "s3:GetObjectAcl", false},
+		{"s3:Get*", "s3:GetObject", true},
+		{"s3:Get*", "s3:Get", true},
+		{"s3:Get*", "s3:PutObject", false},
+		{"*Object", "s3:DeleteObject", true},
+		{"*", "", true},
+		{"*", "arn:aws:s3:::acme-app-logs/prod/web.log", true},
+		{"s3:Get?bject", "s3:GetObject", true},
+		{"s3:Get?bject", "s3:Getbject", false},
+		{"?", "", false},
+		{"arn:aws:s3:::acme-app-logs/*", "arn:aws:s3:::acme-app-logs/prod/web.log", true},
+		{"arn:aws:s3:::acme-app-logs/*", "arn:aws:s3:::acme-app-logs", false},
+		{"arn:aws:s3:::*/*.log", "arn:aws:s3:::acme-app-logs/prod/web.log", true},
+		{"arn:aws:s3:::*/*.log", "arn:aws:s3:::acme-app-logs/prod/web.txt", false},
+		{"arn:aws:s3:::acme.assets/*", "arn:aws:s3:::acmexassets/logo.png", false},
+		{"arn:aws:s3:::reports-(old)/*", "arn:aws:s3:::reports-(old)/2020.csv", true},
+		{"arn:aws:s3:::c++-builds/*", "arn:aws:s3:::cc-builds/app", false},
+		{"s3:getobject", "s3:GetObject", false},
+		{"logs", "app-logs-old", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.pattern+" "+tt.value, func(t *testing.T) {
+			if got := Match(tt.pattern, tt.value); got != tt.want {
+				t.Errorf("Match(%q, %q) = %v, want %v", tt.pattern, tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplies(t *testing.T) {
+	readLogs := Statement{
+		Effect:   "Allow",
+		Action:   StringList{"s3:GetObject", "s3:ListBucket"},
+		Resource: StringList{"arn:aws:s3:::acme-app-logs", "arn:aws:s3:::acme-app-logs/*"},
+	}
+	describe := Statement{
+		Effect:   "Allow",
+		Action:   StringList{"ec2:Describe*"},
+		Resource: StringList{"*"},
+	}
+	noTerminate := Statement{
+		Effect:   "Deny",
+		Action:   StringList{"ec2:TerminateInstances"},
+		Resource: StringList{"arn:aws:ec2:eu-west-1:111122223333:instance/*"},
+	}
+	empty := Statement{Effect: "Allow"}
+	tests := []struct {
+		name     string
+		s        Statement
+		action   string
+		resource string
+		want     bool
+	}{
+		{"first action, object", readLogs, "s3:GetObject", "arn:aws:s3:::acme-app-logs/prod/web.log", true},
+		{"second action, bucket", readLogs, "s3:ListBucket", "arn:aws:s3:::acme-app-logs", true},
+		{"action in other case", readLogs, "S3:getobject", "arn:aws:s3:::acme-app-logs/prod/web.log", true},
+		{"action not listed", readLogs, "s3:PutObject", "arn:aws:s3:::acme-app-logs/prod/web.log", false},
+		{"other bucket", readLogs, "s3:GetObject", "arn:aws:s3:::acme-db-backups/nightly/x.sql.gz", false},
+		{"resource in other case", readLogs, "s3:GetObject", "arn:aws:s3:::ACME-APP-LOGS/prod/web.log", false},
+		{"wildcard action", describe, "ec2:DescribeInstances", "*", true},
+		{"wildcard action in other case", describe, "EC2:describeVolumes", "*", true},
+		{"wildcard action, other action", describe, "ec2:StartInstances", "*", false},
+		{"deny applies too", noTerminate, "ec2:TerminateInstances", "arn:aws:ec2:eu-west-1:111122223333:instance/i-0abc1234def567890", true},
+		{"deny, other region", noTerminate, "ec2:TerminateInstances", "arn:aws:ec2:us-east-1:111122223333:instance/i-0abc1234def567890", false},
+		{"no actions or resources", empty, "s3:GetObject", "arn:aws:s3:::acme-app-logs/prod/web.log", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Applies(tt.s, tt.action, tt.resource); got != tt.want {
+				t.Errorf("Applies(%+v, %q, %q) = %v, want %v", tt.s, tt.action, tt.resource, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEvaluate(t *testing.T) {
+	policies := map[string]Policy{
+		"developer.json":  loadPolicy(t, "developer.json"),
+		"guardrails.json": loadPolicy(t, "guardrails.json"),
+	}
+	const (
+		logo    = "arn:aws:s3:::acme-app-assets/logo.png"
+		sandbox = "arn:aws:s3:::acme-dev-sandbox"
+		payroll = "arn:aws:s3:::acme-payroll/2026-09.csv"
+		web     = "arn:aws:ec2:eu-west-1:111122223333:instance/i-0abc1234def567890"
+	)
+	dev := []string{"developer.json"}
+	both := []string{"developer.json", "guardrails.json"}
+	guard := []string{"guardrails.json"}
+	tests := []struct {
+		name     string
+		files    []string
+		action   string
+		resource string
+		want     Decision
+	}{
+		{"read an asset", dev, "s3:GetObject", logo, Allow},
+		{"list the assets bucket", dev, "s3:ListBucket", "arn:aws:s3:::acme-app-assets", Allow},
+		{"write an asset", dev, "s3:PutObject", logo, ImplicitDeny},
+		{"bucket with a longer name", dev, "s3:GetObject", "arn:aws:s3:::acme-app-assets-backup/logo.png", ImplicitDeny},
+		{"resource in other case", dev, "s3:GetObject", "arn:aws:s3:::Acme-App-Assets/logo.png", ImplicitDeny},
+		{"describe instances", dev, "ec2:DescribeInstances", "*", Allow},
+		{"describe, other case", dev, "EC2:describeVolumes", "*", Allow},
+		{"start an instance", dev, "ec2:StartInstances", web, ImplicitDeny},
+		{"write to own sandbox", dev, "s3:PutObject", sandbox + "/notes.txt", Allow},
+		{"deny in the same policy", dev, "s3:PutBucketPolicy", sandbox, ExplicitDeny},
+		{"delete own sandbox", dev, "s3:DeleteBucket", sandbox, Allow},
+		{"guardrail denies the delete", both, "s3:DeleteBucket", sandbox, ExplicitDeny},
+		{"guardrail doesn't match", both, "s3:GetObject", logo, Allow},
+		{"terminate without guardrail", dev, "ec2:TerminateInstances", web, ImplicitDeny},
+		{"terminate with guardrail", both, "ec2:TerminateInstances", web, ExplicitDeny},
+		{"guardrails alone: payroll", guard, "s3:GetObject", payroll, ExplicitDeny},
+		{"guardrails alone allow nothing", guard, "s3:GetObject", logo, ImplicitDeny},
+		{"no policies at all", nil, "s3:GetObject", logo, ImplicitDeny},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var ps []Policy
+			for _, f := range tt.files {
+				ps = append(ps, policies[f])
+			}
+			if got := Evaluate(ps, tt.action, tt.resource); got != tt.want {
+				t.Errorf("Evaluate(%q, %q, %q) = %q, want %q", tt.files, tt.action, tt.resource, got, tt.want)
+			}
+		})
+	}
+}
+
+// loadPolicy decodes testdata/<name> into a Policy.
+func loadPolicy(t *testing.T, name string) Policy {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatalf("can't read testdata/%s: %v", name, err)
+	}
+	var p Policy
+	if err := json.Unmarshal(raw, &p); err != nil {
+		t.Fatalf("testdata/%s: %v", name, err)
+	}
+	return p
+}

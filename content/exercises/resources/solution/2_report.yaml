@@ -1,0 +1,27 @@
+# Task 2: report was OOMKilled: its 256Mi limit was below what it uses.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report
+  namespace: shop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: report
+  template:
+    metadata:
+      labels:
+        app: report
+    spec:
+      containers:
+        - name: report
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          # Stands in for the real report job: holds 300 MB in memory.
+          command: ["./podinfo", "--stress-memory=300"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 320Mi # the job holds 300 MB, about 286Mi
+            limits:
+              memory: 400Mi # headroom for the Go runtime on top

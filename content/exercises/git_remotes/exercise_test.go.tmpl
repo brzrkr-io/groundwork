@@ -1,0 +1,199 @@
+package gitremotes
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// Each test builds a fresh sandbox with setup.sh, runs your scripts in
+// task order up to the one it checks, then inspects the repos with git.
+var scripts = []string{
+	"1_clone.sh",
+	"2_push_branch.sh",
+	"3_review_as_alex.sh",
+	"4_land_and_pull.sh",
+}
+
+const (
+	oldConfig = "name: web\nreplicas: 3\nport: 8080\n"
+	newConfig = oldConfig + "request_timeout: 30s\n"
+)
+
+func TestClone(t *testing.T) {
+	sandbox, _ := runTasks(t, 1)
+	web := repo(t, sandbox, "web")
+	origin := filepath.Join(sandbox, "origin.git")
+	if got, want := git(t, web, "rev-parse", "HEAD"), git(t, origin, "rev-parse", "main"); got != want {
+		t.Errorf("web is at commit %s, want origin's main, %s", got, want)
+	}
+	if got := git(t, web, "config", "--get", "remote.origin.url"); !strings.HasSuffix(got, "origin.git") {
+		t.Errorf("web's remote origin is %q, want the origin.git folder", got)
+	}
+	if got := gitOr(web, "config", "--local", "user.name"); got != "Sam Rivera" {
+		t.Errorf("git config --local user.name in web = %q, want %q", got, "Sam Rivera")
+	}
+	if got := gitOr(web, "config", "--local", "user.email"); got != "sam@example.com" {
+		t.Errorf("git config --local user.email in web = %q, want %q", got, "sam@example.com")
+	}
+}
+
+func TestPushBranch(t *testing.T) {
+	sandbox, _ := runTasks(t, 2)
+	web := repo(t, sandbox, "web")
+	origin := filepath.Join(sandbox, "origin.git")
+	if gitOr(origin, "rev-parse", "--verify", "-q", "refs/heads/fix/timeout") == "" {
+		t.Fatalf("origin.git has no branch fix/timeout; push it with git push -u origin fix/timeout")
+	}
+	if got := git(t, origin, "log", "--format=%s", "main..fix/timeout"); got != "Add a 30s request timeout" {
+		t.Errorf("commits on origin's fix/timeout that main doesn't have:\n%s\nwant exactly one:\nAdd a 30s request timeout", got)
+	}
+	if got := git(t, origin, "show", "fix/timeout:config/app.yaml"); got+"\n" != newConfig {
+		t.Errorf("config/app.yaml on origin's fix/timeout:\n%s\nwant:\n%s", got, newConfig)
+	}
+	if got := gitOr(web, "rev-parse", "--abbrev-ref", "fix/timeout@{upstream}"); got != "origin/fix/timeout" {
+		t.Errorf("the upstream of web's fix/timeout is %q, want \"origin/fix/timeout\"; push with -u to set it", got)
+	}
+	if got := git(t, web, "status", "--porcelain"); got != "" {
+		t.Errorf("git status --porcelain in web:\n%s\nwant nothing left to commit", got)
+	}
+}
+
+func TestFetchAsAlex(t *testing.T) {
+	sandbox, printed := runTasks(t, 3)
+	alex := repo(t, sandbox, "alex")
+	origin := filepath.Join(sandbox, "origin.git")
+	switch printed {
+	case "Add a 30s request timeout\n":
+	case "":
+		t.Errorf("3_review_as_alex.sh printed nothing, want:\nAdd a 30s request timeout")
+	default:
+		t.Errorf("3_review_as_alex.sh printed:\n%s\nwant:\nAdd a 30s request timeout", printed)
+	}
+	if gitOr(alex, "rev-parse", "--verify", "-q", "refs/remotes/origin/fix/timeout") == "" {
+		t.Errorf("alex has no origin/fix/timeout; git fetch brings it in")
+	}
+	if got, want := git(t, alex, "rev-parse", "main"), git(t, origin, "rev-parse", "main"); got != want {
+		t.Errorf("Alex's main moved to %s, want it still at %s: fetch doesn't change your branches", got, want)
+	}
+	if got := git(t, alex, "branch", "--show-current"); got != "main" {
+		t.Errorf("alex is on %q, want main", got)
+	}
+	if got := readFile(t, alex, "config/app.yaml"); got != oldConfig {
+		t.Errorf("alex/config/app.yaml changed:\n%s\nwant it untouched:\n%s", got, oldConfig)
+	}
+}
+
+func TestLandAndPull(t *testing.T) {
+	sandbox, _ := runTasks(t, 4)
+	web := repo(t, sandbox, "web")
+	alex := repo(t, sandbox, "alex")
+	origin := filepath.Join(sandbox, "origin.git")
+	if got := git(t, origin, "log", "--format=%s", "main"); got != "Add a 30s request timeout\nAdd README\nAdd deploy script\nAdd web config" {
+		t.Errorf("git log --format=%%s main on origin:\n%s\nwant:\nAdd a 30s request timeout\nAdd README\nAdd deploy script\nAdd web config", got)
+	}
+	want := git(t, origin, "rev-parse", "main")
+	if got := git(t, web, "rev-parse", "main"); got != want {
+		t.Errorf("web's main is %s, want the same commit as origin's main, %s", got, want)
+	}
+	if got := git(t, alex, "rev-parse", "main"); got != want {
+		t.Errorf("Alex's main is %s, want the same commit as origin's main, %s; pull in alex", got, want)
+	}
+	if got := readFile(t, alex, "config/app.yaml"); got != newConfig {
+		t.Errorf("alex/config/app.yaml:\n%s\nwant:\n%s", got, newConfig)
+	}
+}
+
+// runTasks builds a fresh sandbox with setup.sh, then runs task scripts 1 to
+// n inside it, in order, as you would by hand. It returns the sandbox's path
+// and what script n printed.
+func runTasks(t *testing.T, n int) (sandbox, printed string) {
+	t.Helper()
+	home := t.TempDir()
+	sandbox = filepath.Join(home, "sandbox")
+	if _, stderr, err := run(home, ".", "bash", "setup.sh", sandbox); err != nil {
+		t.Fatalf("setup.sh failed (%v):\n%s", err, stderr)
+	}
+	for _, script := range scripts[:n] {
+		path, err := filepath.Abs(script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stdout, stderr, err := run(home, sandbox, "bash", path)
+		if err != nil {
+			t.Fatalf("%s failed (%v). It printed:\n%s%s", script, err, stdout, stderr)
+		}
+		printed = stdout
+	}
+	return sandbox, printed
+}
+
+// repo returns the path of the clone called name in the sandbox, and stops
+// the test if it doesn't exist.
+func repo(t *testing.T, sandbox, name string) string {
+	t.Helper()
+	dir := filepath.Join(sandbox, name)
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+		t.Fatalf("sandbox/%s is not a Git repository (%v); clone origin.git into %s", name, err, name)
+	}
+	return dir
+}
+
+func readFile(t *testing.T, dir, name string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+// git runs a git command in dir and returns what it printed, without the
+// final newline.
+func git(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	stdout, stderr, err := run(filepath.Dir(dir), dir, "git", args...)
+	if err != nil {
+		t.Fatalf("git %s failed (%v):\n%s", strings.Join(args, " "), err, stderr)
+	}
+	return strings.TrimSuffix(stdout, "\n")
+}
+
+// gitOr is git for questions that may have no answer: it returns "" when
+// the command fails.
+func gitOr(dir string, args ...string) string {
+	stdout, _, err := run(filepath.Dir(dir), dir, "git", args...)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSuffix(stdout, "\n")
+}
+
+// run runs a command in dir, hermetically: no personal Git config, hooks or
+// GIT_* variables, a fixed author and date, no Git repos outside home, and
+// no editor or pager waiting for input.
+func run(home, dir, name string, args ...string) (stdout, stderr string, err error) {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	cmd.Env = append(cmd.Env,
+		"GIT_CEILING_DIRECTORIES="+home,
+		"HOME="+home, "XDG_CONFIG_HOME="+home, "LC_ALL=C", "TZ=UTC",
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		"GIT_AUTHOR_NAME=Sam Rivera", "GIT_AUTHOR_EMAIL=sam@example.com",
+		"GIT_COMMITTER_NAME=Sam Rivera", "GIT_COMMITTER_EMAIL=sam@example.com",
+		"GIT_AUTHOR_DATE=2026-10-01 12:00:00 +0000", "GIT_COMMITTER_DATE=2026-10-01 12:00:00 +0000",
+		"GIT_EDITOR=true", "GIT_PAGER=cat", "PAGER=cat",
+	)
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	err = cmd.Run()
+	return out.String(), errOut.String(), err
+}

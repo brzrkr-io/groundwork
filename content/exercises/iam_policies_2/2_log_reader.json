@@ -1,0 +1,5 @@
+{
+  "Version": "2012-10-17",
+  "Id": "TODO(2): let the log reader list acme-app-logs and read the files under prod/ only, then delete this Id line",
+  "Statement": []
+}

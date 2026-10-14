@@ -1,0 +1,53 @@
+// Package dnslookup is the Groundwork exercise "DNS: lookups, timeouts and failure types".
+package dnslookup
+
+import (
+	"context"
+	"time"
+)
+
+// Status is the outcome of one DNS lookup, as a monitor prints it.
+type Status string
+
+// The possible outcomes of a lookup.
+const (
+	OK       Status = "ok"
+	NotFound Status = "nxdomain"
+	Timeout  Status = "timeout"
+	ServFail Status = "servfail"
+	Failed   Status = "error"
+)
+
+// Resolver looks up the addresses of a host name. *net.Resolver (such as
+// net.DefaultResolver) has this method, and tests pass in fakes.
+type Resolver interface {
+	LookupHost(ctx context.Context, host string) ([]string, error)
+}
+
+// Result is the outcome of looking up one name.
+type Result struct {
+	Host   string
+	IPv4   []string // from A records
+	IPv6   []string // from AAAA records
+	Status Status
+}
+
+// Classify turns the error from a lookup into a Status.
+func Classify(err error) Status {
+	// TODO(1): Return OK, NotFound, Timeout, ServFail or Failed depending on err (add the errors and net imports).
+	return Failed
+}
+
+// SplitFamilies sorts addresses into IPv4 and IPv6, keeping their order and
+// skipping anything that isn't an IP address.
+func SplitFamilies(addrs []string) (v4, v6 []string) {
+	// TODO(2): Append each address to v4 or v6 (add the net/netip import).
+	return v4, v6
+}
+
+// Lookup resolves host through r, giving up after timeout.
+func Lookup(r Resolver, host string, timeout time.Duration) Result {
+	// TODO(3): Make a context that times out after timeout, look host up
+	// through r, and fill in the Result from SplitFamilies and Classify.
+	return Result{Host: host, Status: Failed}
+}

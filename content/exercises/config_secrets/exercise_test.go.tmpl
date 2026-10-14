@@ -1,0 +1,161 @@
+package config
+
+import (
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+)
+
+func TestConfigMap(t *testing.T) {
+	const file = "1_configmap.yaml"
+	var cm corev1.ConfigMap
+	readManifest(t, file, &cm)
+	if cm.APIVersion != "v1" || cm.Kind != "ConfigMap" {
+		t.Fatalf("%s: apiVersion %q, kind %q, want v1 and ConfigMap", file, cm.APIVersion, cm.Kind)
+	}
+	if cm.Name != "web-config" || cm.Namespace != "shop" {
+		t.Errorf("%s: the ConfigMap is %q in namespace %q, want web-config in namespace shop", file, cm.Name, cm.Namespace)
+	}
+	want := map[string]string{"PODINFO_LEVEL": "debug", "PODINFO_UI_MESSAGE": "hello from a ConfigMap"}
+	for key, value := range want {
+		if got, ok := cm.Data[key]; !ok {
+			t.Errorf("%s: data has no key %s, want %s: %s", file, key, key, value)
+		} else if got != value {
+			t.Errorf("%s: data.%s is %q, want %q", file, key, got, value)
+		}
+	}
+}
+
+func TestSecret(t *testing.T) {
+	const file = "2_secret.yaml"
+	s := readSecret(t)
+	if s.Name != "db-credentials" || s.Namespace != "shop" {
+		t.Errorf("%s: the Secret is %q in namespace %q, want db-credentials in namespace shop", file, s.Name, s.Namespace)
+	}
+	want := map[string]string{"username": "app", "password": "correct-horse-battery"}
+	for key, value := range want {
+		if got, ok := secretValue(s, key); !ok {
+			t.Errorf("%s: the Secret has no key %s, want it to hold %q", file, key, value)
+		} else if got != value {
+			t.Errorf("%s: %s decodes to %q, want %q", file, key, got, value)
+		}
+	}
+}
+
+func TestWebEnv(t *testing.T) {
+	const file = "3_web.yaml"
+	c := readContainer(t, file, "web")
+
+	var fromConfigMap bool
+	for _, src := range c.EnvFrom {
+		if src.ConfigMapRef != nil && src.ConfigMapRef.Name == "web-config" {
+			fromConfigMap = true
+		}
+	}
+	if !fromConfigMap {
+		t.Errorf("%s: envFrom doesn't load the ConfigMap web-config; want an envFrom entry with configMapRef name web-config", file)
+	}
+
+	var found bool
+	for _, e := range c.Env {
+		if e.Name != "DB_PASSWORD" {
+			continue
+		}
+		found = true
+		if e.Value != "" {
+			t.Errorf("%s: DB_PASSWORD has a plain value; take it from the Secret with valueFrom.secretKeyRef", file)
+		}
+		ref := e.ValueFrom
+		switch {
+		case ref == nil || ref.SecretKeyRef == nil:
+			t.Errorf("%s: DB_PASSWORD has no valueFrom.secretKeyRef", file)
+		case ref.SecretKeyRef.Name != "db-credentials":
+			t.Errorf("%s: DB_PASSWORD comes from the Secret %q, want db-credentials", file, ref.SecretKeyRef.Name)
+		case ref.SecretKeyRef.Key != "password":
+			t.Errorf("%s: DB_PASSWORD comes from the key %q, want password; a missing key stops the Pod with CreateContainerConfigError",
+				file, ref.SecretKeyRef.Key)
+		}
+	}
+	if !found {
+		t.Errorf("%s: env has no DB_PASSWORD", file)
+	}
+}
+
+func TestReportVolume(t *testing.T) {
+	const file = "4_report.yaml"
+	d := readDeployment(t, file, "report")
+	c := &d.Spec.Template.Spec.Containers[0]
+
+	var volume string
+	for _, v := range d.Spec.Template.Spec.Volumes {
+		if v.ConfigMap != nil && v.ConfigMap.Name == "report-config" {
+			volume = v.Name
+		}
+	}
+	if volume == "" {
+		t.Fatalf("%s: spec.template.spec.volumes has no volume from the ConfigMap report-config", file)
+	}
+	if volume != "config" {
+		t.Errorf("%s: the volume is named %q, want config", file, volume)
+	}
+
+	var mounted bool
+	for _, m := range c.VolumeMounts {
+		if m.Name != volume {
+			continue
+		}
+		mounted = true
+		if m.MountPath != "/etc/podinfo" {
+			t.Errorf("%s: the volume is mounted at %q, want /etc/podinfo, where podinfo looks for config.yaml", file, m.MountPath)
+		}
+		if !m.ReadOnly {
+			t.Errorf("%s: the mount is writable, want readOnly: true", file)
+		}
+	}
+	if !mounted {
+		t.Errorf("%s: the container has no volumeMounts entry for the volume %q, so the files never appear", file, volume)
+	}
+}
+
+// readSecret reads the Secret in 2_secret.yaml. Values under data must be
+// valid base64, as the API server requires.
+func readSecret(t *testing.T) *corev1.Secret {
+	t.Helper()
+	var s corev1.Secret
+	readManifest(t, "2_secret.yaml", &s)
+	if s.APIVersion != "v1" || s.Kind != "Secret" {
+		t.Fatalf("2_secret.yaml: apiVersion %q, kind %q, want v1 and Secret", s.APIVersion, s.Kind)
+	}
+	return &s
+}
+
+// secretValue returns the plain value of key, from stringData or decoded
+// from data. stringData wins, as it does in the API server.
+func secretValue(s *corev1.Secret, key string) (string, bool) {
+	if v, ok := s.StringData[key]; ok {
+		return v, true
+	}
+	v, ok := s.Data[key]
+	return string(v), ok
+}
+
+// readDeployment reads file as a Deployment, checks its name and that it
+// has one container.
+func readDeployment(t *testing.T, file, name string) *appsv1.Deployment {
+	t.Helper()
+	var d appsv1.Deployment
+	readManifest(t, file, &d)
+	if d.Kind != "Deployment" || d.Name != name {
+		t.Fatalf("%s: kind %q, name %q, want the Deployment %s", file, d.Kind, d.Name, name)
+	}
+	if len(d.Spec.Template.Spec.Containers) != 1 {
+		t.Fatalf("%s: the Pod template has %d containers, want 1", file, len(d.Spec.Template.Spec.Containers))
+	}
+	return &d
+}
+
+func readContainer(t *testing.T, file, name string) *corev1.Container {
+	t.Helper()
+	return &readDeployment(t, file, name).Spec.Template.Spec.Containers[0]
+}

@@ -1,0 +1,43 @@
+$ kubectl -n shop get pods -l app=report
+NAME                      READY   STATUS      RESTARTS      AGE
+report-7f9c6b8d54-lm4vq   0/1     OOMKilled   4 (71s ago)   3m
+
+$ kubectl -n shop describe pod report-7f9c6b8d54-lm4vq
+Name:             report-7f9c6b8d54-lm4vq
+Namespace:        shop
+...
+Containers:
+  report:
+    Image:         ghcr.io/stefanprodan/podinfo:6.9.2
+    Command:
+      ./podinfo
+      --stress-memory=300
+    State:          Terminated
+      Reason:       OOMKilled
+      Exit Code:    137
+      Started:      Tue, 13 Oct 2026 20:59:57 -0500
+      Finished:     Tue, 13 Oct 2026 20:59:58 -0500
+    Last State:     Terminated
+      Reason:       OOMKilled
+      Exit Code:    137
+      Started:      Tue, 13 Oct 2026 20:58:57 -0500
+      Finished:     Tue, 13 Oct 2026 20:58:58 -0500
+    Ready:          False
+    Restart Count:  4
+    Limits:
+      memory:  256Mi
+    Requests:
+      cpu:        100m
+      memory:     128Mi
+...
+QoS Class:                   Burstable
+Events:
+  Type     Reason     Age                 From               Message
+  ----     ------     ----                ----               -------
+  Normal   Scheduled  3m                  default-scheduler  Successfully assigned shop/report-7f9c6b8d54-lm4vq to worker-1
+  Normal   Created    72s (x5 over 3m)    kubelet            spec.containers{report}: Container created
+  Normal   Started    72s (x5 over 3m)    kubelet            spec.containers{report}: Container started
+  Warning  BackOff    10s (x9 over 2m58s) kubelet            spec.containers{report}: Back-off restarting failed container report in pod report-7f9c6b8d54-lm4vq_shop(65f6c3b7-436f-4059-9058-5bef47584a4f)
+
+$ kubectl -n shop logs report-7f9c6b8d54-lm4vq --previous
+{"level":"info","ts":"2026-10-14T01:58:57.610Z","caller":"podinfo/main.go:254","msg":"starting MEMORY stress","memory":300000000}

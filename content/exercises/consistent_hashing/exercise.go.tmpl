@@ -41,6 +41,8 @@ func (r *Ring) Get(key string) string {
 // Remove takes every point of node off the ring. Removing a node that is
 // not on the ring does nothing.
 func (r *Ring) Remove(node string) {
-	// TODO(3): Delete node's points from r.points and r.owners. Add "maps"
-	// to the imports.
+	// TODO(3): Delete node's points from r.points, keeping it sorted.
+
+	// TODO(4): Delete node's entries from r.owners. Add "maps" to the
+	// imports.
 }

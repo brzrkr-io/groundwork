@@ -200,7 +200,8 @@ it for you, as the next section shows.
 ## Sorting: paying once to search fast
 
 Sorting puts items in order: hosts by name, alerts by count, log lines by
-time. You used `slices.Sort` and `slices.SortFunc` in *Sorting*. Older code
+time. Go's `slices.Sort` and `slices.SortFunc` do it for you; you'll use them in
+*Sorting*. Older code
 uses `sort.Slice` from the `sort` package; it does the same job.
 
 ```go

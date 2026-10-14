@@ -1,0 +1,422 @@
+package preflight
+
+import (
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"testing/iotest"
+)
+
+// envFrom returns a lookup function backed by a map, standing in for
+// os.LookupEnv.
+func envFrom(env map[string]string) func(string) (string, bool) {
+	return func(key string) (string, bool) {
+		v, ok := env[key]
+		return v, ok
+	}
+}
+
+// result is everything one run of a command produced.
+type result struct {
+	code           int
+	stdout, stderr string
+}
+
+// call runs fn (Run or one of the command handlers) with fake streams and a
+// fake environment.
+func call(fn func([]string, io.Reader, io.Writer, io.Writer, func(string) (string, bool)) int,
+	args []string, stdin io.Reader, env map[string]string) result {
+	var stdout, stderr strings.Builder
+	code := fn(args, stdin, &stdout, &stderr, envFrom(env))
+	return result{code, stdout.String(), stderr.String()}
+}
+
+// checkResult reports every difference between got and want.
+func checkResult(t *testing.T, name string, args []string, got, want result) {
+	t.Helper()
+	if got.code != want.code {
+		t.Errorf("%s(%q) = %d, want %d", name, args, got.code, want.code)
+	}
+	if got.stdout != want.stdout {
+		t.Errorf("%s(%q) stdout = %q, want %q", name, args, got.stdout, want.stdout)
+	}
+	if got.stderr != want.stderr {
+		t.Errorf("%s(%q) stderr = %q, want %q", name, args, got.stderr, want.stderr)
+	}
+}
+
+// writeFile creates dir/name with contents and returns its path.
+func writeFile(t *testing.T, dir, name, contents string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// wantUsage is the help text generated from the command table.
+const wantUsage = `usage: preflight <command> [flags]
+
+commands:
+  check    check the settings and the host list before a deploy
+  init     write a config file with the default settings
+  version  print the version
+`
+
+func TestDispatch(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want result
+	}{
+		{"version", []string{"version"}, result{0, "preflight 1.4.0\n", ""}},
+		{"the command does not see its own name", []string{"version", "now"},
+			result{2, "", "preflight: version takes no arguments\n"}},
+		{"help", []string{"help"}, result{0, wantUsage, ""}},
+		{"-h", []string{"-h"}, result{0, wantUsage, ""}},
+		{"--help", []string{"--help"}, result{0, wantUsage, ""}},
+		{"no arguments", []string{}, result{2, "", wantUsage}},
+		{"unknown command", []string{"deploy", "-env", "prod"},
+			result{2, "", "preflight: unknown command \"deploy\"\n" + wantUsage}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := call(Run, tt.args, strings.NewReader(""), nil)
+			checkResult(t, "Run", tt.args, got, tt.want)
+		})
+	}
+}
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		s    Settings
+		want string // the error message; "" means nil
+	}{
+		{Defaults(), ""},
+		{Settings{Env: "prod", HostsFile: "-", MaxHosts: 1}, ""},
+		{Settings{Env: "dev", HostsFile: "/srv/hosts.txt", MaxHosts: 200}, ""},
+		{Settings{Env: "production", HostsFile: "hosts.txt", MaxHosts: 10},
+			`env must be dev, staging or prod, got "production"`},
+		{Settings{Env: "", HostsFile: "hosts.txt", MaxHosts: 10},
+			`env must be dev, staging or prod, got ""`},
+		{Settings{Env: "dev", HostsFile: "", MaxHosts: 10}, "hosts_file must not be empty"},
+		{Settings{Env: "staging", HostsFile: "hosts.txt", MaxHosts: 0}, "max_hosts must be at least 1, got 0"},
+		{Settings{Env: "prod", HostsFile: "hosts.txt", MaxHosts: -3}, "max_hosts must be at least 1, got -3"},
+		{Settings{Env: "qa", HostsFile: "", MaxHosts: 0}, `env must be dev, staging or prod, got "qa"`},
+		{Settings{Env: "dev", HostsFile: "", MaxHosts: 0}, "hosts_file must not be empty"},
+	}
+	for _, tt := range tests {
+		err := tt.s.Validate()
+		got := ""
+		if err != nil {
+			got = err.Error()
+		}
+		if got != tt.want {
+			t.Errorf("%+v.Validate() = %q, want %q", tt.s, got, tt.want)
+		}
+	}
+}
+
+// wantDefaultConfig is what init writes: Defaults() as indented JSON.
+const wantDefaultConfig = `{
+  "env": "staging",
+  "hosts_file": "hosts.txt",
+  "max_hosts": 10
+}
+`
+
+// dirNames returns the sorted names of the entries in dir.
+func dirNames(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
+}
+
+// checkFile reports a failure unless path holds want, and dir holds only
+// that one file (no leftover temp files).
+func checkFile(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Errorf("reading %s: %v", path, err)
+		return
+	}
+	if string(got) != want {
+		t.Errorf("%s holds:\n%s\nwant:\n%s", path, got, want)
+	}
+	if names, want := dirNames(t, filepath.Dir(path)), []string{filepath.Base(path)}; !slices.Equal(names, want) {
+		t.Errorf("directory holds %q, want %q (no leftover temp files)", names, want)
+	}
+}
+
+func TestInit(t *testing.T) {
+	t.Run("new file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "deploy.json")
+		args := []string{"-config", path}
+		got := call(runInit, args, nil, nil)
+		checkResult(t, "runInit", args, got, result{0, "wrote " + path + "\n", ""})
+		checkFile(t, path, wantDefaultConfig)
+	})
+
+	t.Run("default path", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		got := call(runInit, []string{}, nil, nil)
+		checkResult(t, "runInit", []string{}, got, result{0, "wrote preflight.json\n", ""})
+		checkFile(t, filepath.Join(dir, "preflight.json"), wantDefaultConfig)
+	})
+
+	t.Run("existing file without -force", func(t *testing.T) {
+		path := writeFile(t, t.TempDir(), "preflight.json", `{"env": "prod"}`)
+		args := []string{"-config", path}
+		got := call(runInit, args, nil, nil)
+		checkResult(t, "runInit", args, got,
+			result{1, "", "preflight: " + path + " already exists; use -force to replace it\n"})
+		checkFile(t, path, `{"env": "prod"}`)
+	})
+
+	t.Run("existing file with -force", func(t *testing.T) {
+		path := writeFile(t, t.TempDir(), "preflight.json", `{"env": "prod"}`)
+		args := []string{"-force", "-config", path}
+		got := call(runInit, args, nil, nil)
+		checkResult(t, "runInit", args, got, result{0, "wrote " + path + "\n", ""})
+		checkFile(t, path, wantDefaultConfig)
+	})
+
+	t.Run("extra argument", func(t *testing.T) {
+		dir := t.TempDir()
+		args := []string{"-config", filepath.Join(dir, "preflight.json"), "now"}
+		got := call(runInit, args, nil, nil)
+		checkResult(t, "runInit", args, got, result{2, "", "preflight: init takes no arguments\n"})
+		if names := dirNames(t, dir); len(names) != 0 {
+			t.Errorf("runInit(%q) created %q, want nothing written", args, names)
+		}
+	})
+
+	t.Run("unknown flag", func(t *testing.T) {
+		args := []string{"-overwrite"}
+		got := call(runInit, args, nil, nil)
+		if got.code != 2 || got.stdout != "" {
+			t.Errorf("runInit(%q) = %d with stdout %q, want 2 and nothing on stdout", args, got.code, got.stdout)
+		}
+	})
+}
+
+// errDisk stands in for a failure while reading the host list.
+var errDisk = errors.New("disk read failed")
+
+func TestCheckHosts(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		env      string
+		maxHosts int
+		want     []string
+	}{
+		{"all good", "web-1.staging\nweb-2.staging\n", "staging", 10, nil},
+		{"comments, blanks and spaces are skipped", "# web tier\n\n  web-1.prod  \nweb-2.prod\n", "prod", 2, nil},
+		{"invalid host", "web-1.staging\nweb 2.staging\n", "staging", 10,
+			[]string{`line 2: invalid host "web 2.staging"`}},
+		{"tab inside a host", "db\t1.dev\n", "dev", 10,
+			[]string{`line 1: invalid host "db\t1.dev"`}},
+		{"wrong environment", "web-1.prod\ndb-1.staging\n", "prod", 10,
+			[]string{`line 2: host "db-1.staging" is not in prod`}},
+		{"the suffix needs its dot", "web-1.preprod\n", "prod", 10,
+			[]string{`line 1: host "web-1.preprod" is not in prod`}},
+		{"duplicate", "web-1.dev\nweb-2.dev\nweb-1.dev\n", "dev", 10,
+			[]string{`line 3: duplicate host "web-1.dev"`}},
+		{"line numbers count every line", "# hosts\nweb-1.prod\n\nweb-1.prod\napi 1.prod\ncache-1.dev\n", "prod", 10,
+			[]string{
+				`line 4: duplicate host "web-1.prod"`,
+				`line 5: invalid host "api 1.prod"`,
+				`line 6: host "cache-1.dev" is not in prod`,
+			}},
+		{"empty input", "", "staging", 10, []string{"no hosts"}},
+		{"only comments", "# nothing yet\n\n", "dev", 10, []string{"no hosts"}},
+		{"too many hosts", "a.dev\nb.dev\nc.dev\n", "dev", 2, []string{"3 hosts, more than max_hosts 2"}},
+		{"bad lines count as hosts", "a.dev\na.dev\n", "dev", 1,
+			[]string{`line 2: duplicate host "a.dev"`, "2 hosts, more than max_hosts 1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := CheckHosts(strings.NewReader(tt.input), tt.env, tt.maxHosts)
+			if err != nil {
+				t.Fatalf("CheckHosts(%q, %q, %d) error = %v, want nil", tt.input, tt.env, tt.maxHosts, err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("CheckHosts(%q, %q, %d) = %q, want %q", tt.input, tt.env, tt.maxHosts, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("read error", func(t *testing.T) {
+		r := io.MultiReader(strings.NewReader("web-1.dev\n"), iotest.ErrReader(errDisk))
+		got, err := CheckHosts(r, "dev", 10)
+		if !errors.Is(err, errDisk) || got != nil {
+			t.Errorf("CheckHosts(failing reader) = %q, %v, want nil, %v", got, err, errDisk)
+		}
+	})
+}
+
+func TestLoad(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "missing.json")
+	full := writeFile(t, dir, "full.json", `{"env": "prod", "hosts_file": "/srv/hosts.txt", "max_hosts": 3}`)
+	partial := writeFile(t, dir, "partial.json", `{"max_hosts": 0}`)
+
+	tests := []struct {
+		name string
+		path string
+		env  map[string]string
+		want Settings
+	}{
+		{"no file, no env: defaults", missing, nil, Settings{"staging", "hosts.txt", 10}},
+		{"file beats defaults", full, nil, Settings{"prod", "/srv/hosts.txt", 3}},
+		{"a key that is present counts, even 0", partial, nil, Settings{"staging", "hosts.txt", 0}},
+		{"env beats file", full,
+			map[string]string{"PREFLIGHT_ENV": "dev", "PREFLIGHT_MAX_HOSTS": "25"},
+			Settings{"dev", "/srv/hosts.txt", 25}},
+		{"env without a file", missing,
+			map[string]string{"PREFLIGHT_HOSTS_FILE": "-", "HOME": "/root"},
+			Settings{"staging", "-", 10}},
+		{"env set to empty still counts", full,
+			map[string]string{"PREFLIGHT_ENV": ""},
+			Settings{"", "/srv/hosts.txt", 3}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Load(tt.path, envFrom(tt.env))
+			if err != nil {
+				t.Fatalf("Load(%q, %v) error = %v, want nil", tt.path, tt.env, err)
+			}
+			if got != tt.want {
+				t.Errorf("Load(%q, %v) = %+v, want %+v", tt.path, tt.env, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		bad := writeFile(t, dir, "bad.json", `{"env": `)
+		_, err := Load(bad, envFrom(nil))
+		if err == nil || !strings.HasPrefix(err.Error(), bad+": ") {
+			t.Errorf("Load(%q) error = %v, want an error starting with %q", bad, err, bad+": ")
+		}
+	})
+
+	t.Run("unreadable config", func(t *testing.T) {
+		// A directory exists but can't be read as a file.
+		if _, err := Load(dir, envFrom(nil)); err == nil {
+			t.Errorf("Load(%q) (a directory) error = nil, want an error", dir)
+		}
+	})
+
+	for _, bad := range []string{"ten", "10x"} {
+		t.Run("invalid PREFLIGHT_MAX_HOSTS "+bad, func(t *testing.T) {
+			_, err := Load(missing, envFrom(map[string]string{"PREFLIGHT_MAX_HOSTS": bad}))
+			if err == nil || !strings.Contains(err.Error(), "PREFLIGHT_MAX_HOSTS") {
+				t.Errorf("Load with PREFLIGHT_MAX_HOSTS=%q error = %v, want an error mentioning PREFLIGHT_MAX_HOSTS", bad, err)
+			}
+		})
+	}
+}
+
+func TestCheck(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "missing.json")
+	good := writeFile(t, dir, "staging.txt", "web-1.staging\nweb-2.staging\n")
+	prodHosts := writeFile(t, dir, "prod.txt", "web-1.prod\nweb-1.prod\ndb-1.staging\n")
+	cfg := writeFile(t, dir, "preflight.json", `{"env": "prod", "hosts_file": "`+prodHosts+`"}`)
+	const prodProblems = "line 2: duplicate host \"web-1.prod\"\n" +
+		"line 3: host \"db-1.staging\" is not in prod\n"
+
+	tests := []struct {
+		name  string
+		args  []string
+		env   map[string]string
+		stdin string
+		want  result
+	}{
+		{"all good", []string{"-config", missing, "-hosts", good}, nil, "",
+			result{0, "", "preflight: ok for staging\n"}},
+		{"problems found", []string{"-config", cfg}, nil, "",
+			result{1, prodProblems, "preflight: 2 problem(s) found\n"}},
+		{"flags beat the file", []string{"-config", cfg, "-env", "staging", "-hosts", good}, nil, "",
+			result{0, "", "preflight: ok for staging\n"}},
+		{"env beats the file", []string{"-config", cfg},
+			map[string]string{"PREFLIGHT_ENV": "staging", "PREFLIGHT_HOSTS_FILE": good}, "",
+			result{0, "", "preflight: ok for staging\n"}},
+		{"too many hosts from env", []string{"-config", missing, "-hosts", good},
+			map[string]string{"PREFLIGHT_MAX_HOSTS": "1"}, "",
+			result{1, "2 hosts, more than max_hosts 1\n", "preflight: 1 problem(s) found\n"}},
+		{"flag beats env", []string{"-config", missing, "-hosts", good, "-max-hosts", "2"},
+			map[string]string{"PREFLIGHT_MAX_HOSTS": "1"}, "",
+			result{0, "", "preflight: ok for staging\n"}},
+		{"hosts from stdin", []string{"-config", missing, "-hosts", "-", "-env", "dev"}, nil, "api-1.dev\n",
+			result{0, "", "preflight: ok for dev\n"}},
+		{"stdin chosen by env", []string{"-config", missing},
+			map[string]string{"PREFLIGHT_HOSTS_FILE": "-"}, "api 1.staging\n",
+			result{1, "line 1: invalid host \"api 1.staging\"\n", "preflight: 1 problem(s) found\n"}},
+		{"bad env flag", []string{"-config", missing, "-hosts", good, "-env", "production"}, nil, "",
+			result{2, "", "preflight: env must be dev, staging or prod, got \"production\"\n"}},
+		{"typed flag equal to zero", []string{"-config", cfg, "-max-hosts", "0"}, nil, "",
+			result{2, "", "preflight: max_hosts must be at least 1, got 0\n"}},
+		{"extra argument", []string{"-config", missing, "web-1.staging"}, nil, "",
+			result{2, "", "preflight: check takes no arguments\n"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := call(runCheck, tt.args, strings.NewReader(tt.stdin), tt.env)
+			checkResult(t, "runCheck", tt.args, got, tt.want)
+		})
+	}
+
+	// These errors come from Go or from Load, so only the start of the
+	// message and its key part are checked.
+	badJSON := writeFile(t, dir, "bad.json", `{"env": `)
+	nowhere := filepath.Join(dir, "nowhere.txt")
+	errorTests := []struct {
+		name string
+		args []string
+		env  map[string]string
+		want string // stderr must start with "preflight: " and contain this
+	}{
+		{"invalid config file", []string{"-config", badJSON}, nil, badJSON},
+		{"invalid PREFLIGHT_MAX_HOSTS", []string{"-config", missing},
+			map[string]string{"PREFLIGHT_MAX_HOSTS": "ten"}, "PREFLIGHT_MAX_HOSTS"},
+		{"missing hosts file", []string{"-config", missing, "-hosts", nowhere}, nil, nowhere},
+	}
+	for _, tt := range errorTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := call(runCheck, tt.args, strings.NewReader(""), tt.env)
+			if got.code != 2 {
+				t.Errorf("runCheck(%q) = %d, want 2", tt.args, got.code)
+			}
+			if got.stdout != "" {
+				t.Errorf("runCheck(%q) stdout = %q, want nothing", tt.args, got.stdout)
+			}
+			if !strings.HasPrefix(got.stderr, "preflight: ") || !strings.Contains(got.stderr, tt.want) {
+				t.Errorf("runCheck(%q) stderr = %q, want \"preflight: \" and then a message containing %q",
+					tt.args, got.stderr, tt.want)
+			}
+		})
+	}
+
+	t.Run("stdin read error", func(t *testing.T) {
+		args := []string{"-config", missing, "-hosts", "-"}
+		stdin := io.MultiReader(strings.NewReader("web-1.staging\n"), iotest.ErrReader(errDisk))
+		got := call(runCheck, args, stdin, nil)
+		checkResult(t, "runCheck", args, got, result{2, "", "preflight: reading hosts: disk read failed\n"})
+	})
+}

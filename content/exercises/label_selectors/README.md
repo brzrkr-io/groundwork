@@ -4,14 +4,14 @@ Kubernetes connects objects with labels, not names. When a Service sends
 traffic to the wrong Pods, or to none, a label is nearly always the cause.
 Here you answer "which Pods does this pick?" in Go.
 
-**New here:** labels, label selectors, the `labels` package (`labels.Set`, `SelectorFromSet`, `Parse`, `Matches`).
+**New here:** set-based selectors (`in`, `notin`, `!key`), the `labels` package (`labels.Set`, `SelectorFromSet`, `Parse`, `Matches`).
 
 ## Learn
 
-### Labels
+### Recap: labels
 
 *Labels* are short key/value tags in an object's `metadata`, as in
-*Kubernetes objects: building a Deployment*. Teams agree on a few keys:
+*Deployments: replicas, labels and selectors*. Teams agree on a few keys:
 
 | Key | Example values | Answers |
 |---|---|---|
@@ -20,7 +20,7 @@ Here you answer "which Pods does this pick?" in Go.
 | `tier` | `web`, `api`, `batch` | Which layer? |
 | `team` | `payments`, `shop` | Who do I page? |
 
-### Why labels instead of names
+### Recap: why labels instead of names
 
 A Deployment creates Pods with random names like `checkout-7d9f8-x2b4q` and
 replaces them whenever it likes. So objects describe the labels they want:

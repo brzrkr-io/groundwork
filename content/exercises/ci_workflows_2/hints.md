@@ -13,8 +13,8 @@ the code has to come before every step that needs the code. Move one whole
 
 ```yaml
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26'
       - run: go test ./...
@@ -57,21 +57,22 @@ the `deploy` job, at the same indentation as `runs-on`.
 
 ## Task 4: Pin every action
 
-Look at each `uses` line. Two follow a branch, one has no `@` at all, and one
-is already fine. The README's table has the releases to pin to.
+Look at each `uses` line. One has a short SHA, one a tag, one a branch, and
+one no `@` at all. None of them is safe yet. The README's table has the
+releases to pin to.
 
 ### Closer
 
-A tag looks like `owner/repo@v7`. A SHA pin looks like
-`owner/repo@<40 hex characters> # vX.Y.Z`: the comment after ` #` is for
-people, YAML ignores it. Keep `if: failure()` and `with:` as they are.
+Every line becomes `owner/repo@<all 40 hex characters> # vX.Y.Z`: the SHA
+and the release from the same row of the table. Keep `if: failure()` and
+`with:` as they are.
 
 ### Answer
 
 ```yaml
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0

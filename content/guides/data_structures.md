@@ -47,7 +47,9 @@ O(n) means "steps grow in step with the number of items, n".
 
 ## Arrays: a fixed row of boxes
 
-You met arrays in *Arrays*: `[24]int` holds one counter per hour of the day.
+An *array* is a fixed number of boxes of one type: `[24]int` holds one counter
+per hour of the day. You'll write them in *Arrays*, the first exercise of this
+module.
 
 In memory, an array is one *contiguous* block: the boxes sit next to each
 other, with no gaps.
@@ -186,7 +188,7 @@ design called Swiss tables), but the idea is the same.
 
 - **No order.** Keys are scattered by their hash, so `range` over a map
   visits them in no useful order. Go even randomises it on purpose, so
-  nobody relies on it. If you need order, sort the keys, as in *Sorting*.
+  nobody relies on it. If you need order, sort the keys; *Sorting* shows how.
 - **Keys must be comparable.** Strings, numbers and booleans work; slices
   can't be keys.
 - **More memory** than a slice of the same items: the map keeps spare slots

@@ -1,0 +1,92 @@
+package services
+
+import (
+	"testing"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+func TestWebService(t *testing.T) {
+	svc := readService(t, "1_web_service.yaml", "web")
+	checkRouting(t, "1_web_service.yaml", svc, "deploy/web.yaml")
+}
+
+func TestCartService(t *testing.T) {
+	svc := readService(t, "2_cart_service.yaml", "cart")
+	checkRouting(t, "2_cart_service.yaml", svc, "deploy/cart.yaml")
+}
+
+func TestSearchService(t *testing.T) {
+	svc := readService(t, "3_search_service.yaml", "search")
+	checkRouting(t, "3_search_service.yaml", svc, "deploy/search.yaml")
+}
+
+// readService reads file as a Service and checks its kind, name, namespace
+// and type.
+func readService(t *testing.T, file, name string) *corev1.Service {
+	t.Helper()
+	var svc corev1.Service
+	readManifest(t, file, &svc)
+	if svc.APIVersion != "v1" || svc.Kind != "Service" {
+		t.Fatalf("%s: apiVersion %q, kind %q, want v1 and Service", file, svc.APIVersion, svc.Kind)
+	}
+	if svc.Name != name || svc.Namespace != "shop" {
+		t.Errorf("%s: the Service is %q in namespace %q, want %q in namespace shop", file, svc.Name, svc.Namespace, name)
+	}
+	if svc.Spec.Type != "" && svc.Spec.Type != corev1.ServiceTypeClusterIP {
+		t.Errorf("%s: type is %s, want ClusterIP (or leave type out)", file, svc.Spec.Type)
+	}
+	return &svc
+}
+
+// checkRouting checks that svc would send traffic to the Pods of the
+// Deployment in deployFile: its selector matches their labels, and its one
+// port, 80, reaches a port the container listens on.
+func checkRouting(t *testing.T, file string, svc *corev1.Service, deployFile string) {
+	t.Helper()
+	var d appsv1.Deployment
+	readManifest(t, deployFile, &d)
+	pods := d.Spec.Template.Labels
+
+	if len(svc.Spec.Selector) == 0 {
+		t.Errorf("%s: the Service has no selector, so it selects no Pods; want labels from the Pods in %s: %v",
+			file, deployFile, pods)
+	}
+	for key, value := range svc.Spec.Selector {
+		if key == "pod-template-hash" {
+			t.Errorf("%s: the selector uses pod-template-hash, which changes with every rollout; select on labels from %s",
+				file, deployFile)
+		} else if pods[key] != value {
+			t.Errorf("%s: the selector asks for %s=%s, but the Pods in %s have the labels %v, so the Service has no endpoints",
+				file, key, value, deployFile, pods)
+		}
+	}
+
+	if len(svc.Spec.Ports) != 1 {
+		t.Fatalf("%s: the Service has %d ports, want 1 (port 80, named http)", file, len(svc.Spec.Ports))
+	}
+	p := svc.Spec.Ports[0]
+	if p.Port != 80 || p.Name != "http" {
+		t.Errorf("%s: the port is {name: %q, port: %d}, want {name: \"http\", port: 80}", file, p.Name, p.Port)
+	}
+	if !reaches(p.TargetPort, d.Spec.Template.Spec.Containers) {
+		t.Errorf("%s: targetPort %s isn't a port the container in %s listens on; podinfo listens on 9898, named http",
+			file, p.TargetPort.String(), deployFile)
+	}
+}
+
+// reaches reports whether target, a number or a port name, matches a port
+// of one of the containers. A Service with no targetPort uses its port.
+func reaches(target intstr.IntOrString, containers []corev1.Container) bool {
+	for _, c := range containers {
+		for _, cp := range c.Ports {
+			if target.Type == intstr.String && target.StrVal == cp.Name ||
+				target.Type == intstr.Int && target.IntVal == cp.ContainerPort {
+				return true
+			}
+		}
+	}
+	return false
+}

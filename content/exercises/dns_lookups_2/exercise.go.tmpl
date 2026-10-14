@@ -1,0 +1,74 @@
+// Package dnsttl is the Groundwork exercise "DNS: TTLs and a migration check".
+package dnsttl
+
+import "time"
+
+// Record is one DNS answer: a name, one address, and how long resolvers may
+// cache it. Go's net.Resolver doesn't report TTLs, so this pack has its own type.
+type Record struct {
+	Name string
+	Addr string
+	TTL  int // seconds, as DNS sends it and dig prints it
+}
+
+// ExpiresAt returns when a copy of r fetched at fetched must be thrown away.
+func ExpiresAt(r Record, fetched time.Time) time.Time {
+	// TODO(1): Fix the bug: every copy expires a few nanoseconds after it was fetched.
+	return fetched.Add(time.Duration(r.TTL))
+}
+
+// entry is one cached record and the moment it expires.
+type entry struct {
+	record  Record
+	expires time.Time
+}
+
+// Cache keeps DNS records until their TTL runs out.
+type Cache struct {
+	now     func() time.Time
+	entries map[string]entry
+}
+
+// NewCache returns an empty Cache that reads the time from now. Real code
+// passes time.Now; tests pass a fake clock.
+func NewCache(now func() time.Time) *Cache {
+	return &Cache{now: now, entries: map[string]entry{}}
+}
+
+// Put stores r under its name until its TTL runs out.
+func (c *Cache) Put(r Record) {
+	c.entries[r.Name] = entry{record: r, expires: ExpiresAt(r, c.now())}
+}
+
+// Get returns the cached record for name with its TTL counted down to the
+// whole seconds left, or false if it isn't cached or has expired.
+func (c *Cache) Get(name string) (Record, bool) {
+	e, ok := c.entries[name]
+	if !ok {
+		return Record{}, false
+	}
+	// TODO(2): Return Record{}, false once e has expired. Otherwise set the
+	// record's TTL to the whole seconds left and return it.
+	return e.record, true
+}
+
+// Migration describes a DNS change from one address to another.
+type Migration struct {
+	Old     Record    // the record before the change
+	NewAddr string    // the address the name points to now
+	Changed time.Time // when the record was changed
+}
+
+// Answer is the address one resolver currently returns for the name.
+type Answer struct {
+	Resolver string
+	Addr     string
+}
+
+// CheckMigration reports whether every resolver has moved to the new
+// address, is still allowed to cache the old one, or is stuck on it.
+func CheckMigration(m Migration, answers []Answer, now time.Time) string {
+	// TODO(3): Collect the stale resolvers and return the "done", "waiting"
+	// or "stuck" line (add the fmt and strings imports).
+	return ""
+}

@@ -1,0 +1,17 @@
+# Task 2: nothing answers on http://cart/. testdata/cart_debug.txt has what
+# kubectl and curl said.
+#
+# TODO(2): Fix the selector so the Service finds the cart Pods.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cart
+  namespace: shop
+spec:
+  selector:
+    app: cart-api
+    tier: backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 9898

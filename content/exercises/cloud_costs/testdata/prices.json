@@ -1,0 +1,15 @@
+{
+  "region": "us-east-1",
+  "ec2_hourly": {
+    "t3.micro": 0.0104,
+    "t3.small": 0.0208,
+    "t3.medium": 0.0416,
+    "m5.large": 0.096,
+    "c5.xlarge": 0.17
+  },
+  "ebs_gp3_gb_month": 0.08,
+  "s3_standard_gb_month": 0.023,
+  "nat_hourly": 0.045,
+  "nat_gb": 0.045,
+  "transfer_out_gb": 0.09
+}

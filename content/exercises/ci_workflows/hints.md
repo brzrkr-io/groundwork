@@ -31,7 +31,8 @@ because the runner starts empty.
 ### Closer
 
 `push:` gets `branches: [main]` indented under it; `pull_request:` stays
-bare. The setup-go step needs a `with:` block indented under it, holding
+bare. Each action is `- uses: owner/repo@<SHA from the table> # <release>`.
+The setup-go step needs a `with:` block indented under it, holding
 `go-version-file: go.mod`.
 
 ### Answer
@@ -48,8 +49,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - run: go vet ./...
@@ -73,8 +74,8 @@ as in the `test` job, then `- run: go build -o bin/statusd .`.
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - run: go build -o bin/statusd .

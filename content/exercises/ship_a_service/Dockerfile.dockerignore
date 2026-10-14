@@ -2,4 +2,4 @@
 # BuildKit reads this file for the Dockerfile next to it; a repository with a
 # single Dockerfile usually calls it .dockerignore instead.
 
-# TODO(2): Leave out the Git history, .env files, old binaries and Markdown docs.
+# TODO(3): Leave out the Git history, .env files, old binaries and Markdown docs.

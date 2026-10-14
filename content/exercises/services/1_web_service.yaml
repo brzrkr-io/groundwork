@@ -1,0 +1,4 @@
+# Task 1: give the web Pods (deploy/web.yaml) one stable address.
+#
+# TODO(1): Write a Service named web in the namespace shop. It selects the
+# web Pods and sends port 80 (named http) to the container port named http.

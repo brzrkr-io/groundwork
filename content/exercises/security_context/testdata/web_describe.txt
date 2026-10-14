@@ -1,0 +1,13 @@
+$ kubectl -n shop get pods -l app=web
+NAME                   READY   STATUS                       RESTARTS   AGE
+web-6d8f9c7b5d-2kxqv   0/1     CreateContainerConfigError   0          2m
+web-6d8f9c7b5d-w8nzj   0/1     CreateContainerConfigError   0          2m
+
+$ kubectl -n shop describe pod web-6d8f9c7b5d-2kxqv
+...
+Events:
+  Type     Reason     Age                 From               Message
+  ----     ------     ----                ----               -------
+  Normal   Scheduled  2m                  default-scheduler  Successfully assigned shop/web-6d8f9c7b5d-2kxqv to worker-1
+  Normal   Pulled     4s (x9 over 2m)     kubelet            spec.containers{web}: Container image "ghcr.io/stefanprodan/podinfo:6.9.2" already present on machine and can be accessed by the pod
+  Warning  Failed     4s (x10 over 2m)    kubelet            spec.containers{web}: Error: container has runAsNonRoot and image has non-numeric user (app), cannot verify user is non-root (pod: "web-6d8f9c7b5d-2kxqv_shop(845cbf27-7492-48bd-8cfe-98ffa8998ec0)", container: web)

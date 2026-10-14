@@ -1,0 +1,114 @@
+package rollouts
+
+import (
+	"os"
+	"testing"
+)
+
+func TestResolve(t *testing.T) {
+	tests := []struct {
+		value    string
+		replicas int
+		roundUp  bool
+		want     int
+	}{
+		{"2", 10, true, 2},
+		{"0", 10, false, 0},
+		{"25%", 10, true, 3},  // 2.5 rounded up
+		{"25%", 10, false, 2}, // 2.5 rounded down
+		{"25%", 4, true, 1},
+		{"25%", 1, true, 1},  // 0.25 rounded up
+		{"25%", 1, false, 0}, // 0.25 rounded down
+		{"100%", 3, false, 3},
+		{"0%", 8, true, 0},
+	}
+	for _, tt := range tests {
+		got, err := Resolve(tt.value, tt.replicas, tt.roundUp)
+		if err != nil {
+			t.Errorf("Resolve(%q, %d, %t) error = %v, want nil", tt.value, tt.replicas, tt.roundUp, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("Resolve(%q, %d, %t) = %d, want %d", tt.value, tt.replicas, tt.roundUp, got, tt.want)
+		}
+	}
+
+	for _, bad := range []string{"", "two", "25 %", "%", "-1", "-10%"} {
+		if _, err := Resolve(bad, 10, true); err == nil {
+			t.Errorf("Resolve(%q, 10, true) error = nil, want an error", bad)
+		}
+	}
+}
+
+func TestBounds(t *testing.T) {
+	tests := []struct {
+		replicas              int
+		surge, unavailable    string
+		maxPods, minAvailable int
+	}{
+		{10, "25%", "25%", 13, 8}, // the defaults
+		{4, "25%", "25%", 5, 3},
+		{1, "25%", "25%", 2, 1}, // surge rounds up to 1, unavailable down to 0
+		{3, "1", "0", 4, 3},     // never below 3 ready: the safe setting
+		{3, "0", "0", 3, 2},     // both 0: unavailable becomes 1
+		{2, "0%", "10%", 2, 1},  // both round to 0: unavailable becomes 1
+		{2, "1", "5", 3, 0},     // never below 0
+	}
+	for _, tt := range tests {
+		maxPods, minAvailable, err := Bounds(tt.replicas, tt.surge, tt.unavailable)
+		if err != nil {
+			t.Errorf("Bounds(%d, %q, %q) error = %v, want nil", tt.replicas, tt.surge, tt.unavailable, err)
+			continue
+		}
+		if maxPods != tt.maxPods || minAvailable != tt.minAvailable {
+			t.Errorf("Bounds(%d, %q, %q) = %d, %d, want %d, %d",
+				tt.replicas, tt.surge, tt.unavailable, maxPods, minAvailable, tt.maxPods, tt.minAvailable)
+		}
+	}
+
+	if _, _, err := Bounds(4, "lots", "25%"); err == nil {
+		t.Errorf(`Bounds(4, "lots", "25%%") error = nil, want an error`)
+	}
+	if _, _, err := Bounds(4, "25%", "-1"); err == nil {
+		t.Errorf(`Bounds(4, "25%%", "-1") error = nil, want an error`)
+	}
+}
+
+func TestRevisionFor(t *testing.T) {
+	data, err := os.ReadFile("testdata/history.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := string(data)
+	tests := []struct {
+		image string
+		want  int
+	}{
+		{"checkout:1.4.2", 7},
+		{"checkout:1.5.0", 6},
+		{"checkout:1.3.9", 2},
+		{"checkout:1.5.1", 8},
+	}
+	for _, tt := range tests {
+		got, err := RevisionFor(history, tt.image)
+		if err != nil {
+			t.Errorf("RevisionFor(history.txt, %q) error = %v, want nil", tt.image, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("RevisionFor(history.txt, %q) = %d, want %d", tt.image, got, tt.want)
+		}
+	}
+
+	// After a rollback the same image can appear twice: take the newest.
+	twice := "deployment.apps/web \nREVISION  CHANGE-CAUSE\n3         deploy web:2.0\n5         deploy web:2.1\n9         deploy web:2.0\n"
+	if got, err := RevisionFor(twice, "web:2.0"); err != nil || got != 9 {
+		t.Errorf("RevisionFor(%q, %q) = %d, %v, want 9, nil", twice, "web:2.0", got, err)
+	}
+
+	for _, missing := range []string{"checkout:1.4", "checkout:9.9.9", "1.4.2"} {
+		if _, err := RevisionFor(history, missing); err == nil {
+			t.Errorf("RevisionFor(history.txt, %q) error = nil, want an error: no revision deployed it", missing)
+		}
+	}
+}

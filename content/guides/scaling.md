@@ -63,7 +63,7 @@ The state doesn't disappear; it moves to a service built to share it. Then app i
 
 ## Load balancing
 
-A *load balancer* sits in front of identical instances and spreads requests across them. You've used them: an nginx `upstream` block, a Kubernetes Service, an AWS Application Load Balancer.
+A *load balancer* sits in front of identical instances and spreads requests across them. You'll meet them everywhere: an nginx `upstream` block, a Kubernetes Service (in *Kubernetes fundamentals*), an AWS Application Load Balancer.
 
 ```text
                  +--> api-1 (healthy)
@@ -107,7 +107,7 @@ Sometimes you **want** the same key to land on the same server, so that server's
 (each server sits at several points, "#0", "#1": its virtual nodes)
 ```
 
-Add a server and it takes over only the keys between it and its neighbour: about 1/N of them. Placing each server at many points (*virtual nodes*) evens out the spread. You'll see the modulo problem in *Sharding: route keys and plan a rebalance* and build the ring in *Consistent hashing: a ring with virtual nodes*.
+Add a server and it takes over only the keys between it and its neighbour: about 1/N of them. Placing each server at many points (*virtual nodes*) evens out the spread. You'll see the modulo problem in *Sharding: route keys and plan a rebalance*, trace a small ring in *Hash rings: find a key's node* and add virtual nodes in *Consistent hashing: a ring with virtual nodes*.
 
 ## Caching
 
@@ -158,7 +158,7 @@ Memory is limited, so a full cache must throw something out. *Eviction policies*
 - **LFU** (least frequently used): evict whatever is read least often.
 - **TTL-first**: evict whatever expires soonest.
 
-An unbounded cache is a memory leak with good intentions. You'll build an LRU in *LRU caches: evict the least recently used*.
+An unbounded cache is a memory leak with good intentions. You'll use a linked list on its own in *Linked lists: a deploy queue with container/list*, then build an LRU from a map plus that list in *LRU caches: evict the least recently used*.
 
 ### Hit ratio
 

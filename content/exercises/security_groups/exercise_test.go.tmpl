@@ -1,0 +1,147 @@
+package firewall
+
+import (
+	"net/netip"
+	"slices"
+	"testing"
+)
+
+var (
+	addr = netip.MustParseAddr
+	cidr = netip.MustParsePrefix
+)
+
+func TestSGAllows(t *testing.T) {
+	web := []SGRule{
+		{"tcp", 443, 443, cidr("0.0.0.0/0")},
+		{"tcp", 22, 22, cidr("203.0.113.0/24")},
+		{"tcp", 8000, 8100, cidr("10.0.0.0/16")},
+		{AllProtocols, 0, 0, cidr("10.0.5.0/24")},
+	}
+	tests := []struct {
+		name  string
+		rules []SGRule
+		p     Packet
+		want  bool
+	}{
+		{"HTTPS from the internet", web, Packet{addr("198.51.100.7"), 50432, "tcp", 443}, true},
+		{"SSH from the office", web, Packet{addr("203.0.113.10"), 51000, "tcp", 22}, true},
+		{"SSH from the internet", web, Packet{addr("198.51.100.7"), 50433, "tcp", 22}, false},
+		{"HTTP is not open", web, Packet{addr("198.51.100.7"), 50434, "tcp", 80}, false},
+		{"UDP on an HTTPS rule", web, Packet{addr("198.51.100.7"), 50435, "udp", 443}, false},
+		{"first port of a range", web, Packet{addr("10.0.1.20"), 40000, "tcp", 8000}, true},
+		{"last port of a range", web, Packet{addr("10.0.1.20"), 40001, "tcp", 8100}, true},
+		{"just past a range", web, Packet{addr("10.0.1.20"), 40002, "tcp", 8101}, false},
+		{"range port from outside the VPC", web, Packet{addr("198.51.100.7"), 50436, "tcp", 8080}, false},
+		{"all protocols: UDP", web, Packet{addr("10.0.5.9"), 40003, "udp", 161}, true},
+		{"all protocols: any TCP port", web, Packet{addr("10.0.5.9"), 40004, "tcp", 9100}, true},
+		{"no rules", nil, Packet{addr("10.0.5.9"), 40005, "tcp", 443}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SGAllows(tt.rules, tt.p)
+			if got != tt.want {
+				t.Errorf("SGAllows(%+v, %+v) = %v, want %v", tt.rules, tt.p, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNACLAllows(t *testing.T) {
+	mixed := []NACLRule{
+		{200, "tcp", 443, 443, cidr("0.0.0.0/0"), true},
+		{100, AllProtocols, 0, 0, cidr("198.51.100.0/24"), false},
+		{300, "tcp", 1024, 65535, cidr("0.0.0.0/0"), true},
+	}
+	denyAllAfter443 := []NACLRule{
+		{200, AllProtocols, 0, 0, cidr("0.0.0.0/0"), false},
+		{100, "tcp", 443, 443, cidr("0.0.0.0/0"), true},
+	}
+	defaultACL := []NACLRule{
+		{100, AllProtocols, 0, 0, cidr("0.0.0.0/0"), true},
+	}
+	tests := []struct {
+		name     string
+		rules    []NACLRule
+		remote   string
+		protocol string
+		port     int
+		want     bool
+	}{
+		{"deny 100 beats allow 200", mixed, "198.51.100.7", "tcp", 443, false},
+		{"allow 200", mixed, "192.0.2.44", "tcp", 443, true},
+		{"allow 300: high port", mixed, "192.0.2.44", "tcp", 50432, true},
+		{"deny 100: high port", mixed, "198.51.100.7", "tcp", 50432, false},
+		{"no rule matches port 22", mixed, "192.0.2.44", "tcp", 22, false},
+		{"no rule matches UDP", mixed, "192.0.2.44", "udp", 443, false},
+		{"allow 100 beats deny 200", denyAllAfter443, "192.0.2.44", "tcp", 443, true},
+		{"deny 200 for port 80", denyAllAfter443, "192.0.2.44", "tcp", 80, false},
+		{"default ACL: TCP", defaultACL, "198.51.100.7", "tcp", 22, true},
+		{"default ACL: UDP", defaultACL, "192.0.2.44", "udp", 53, true},
+		{"no rules", nil, "192.0.2.44", "tcp", 443, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NACLAllows(tt.rules, addr(tt.remote), tt.protocol, tt.port)
+			if got != tt.want {
+				t.Errorf("NACLAllows(%+v, %s, %q, %d) = %v, want %v", tt.rules, tt.remote, tt.protocol, tt.port, got, tt.want)
+			}
+		})
+	}
+
+	t.Run("caller's slice keeps its order", func(t *testing.T) {
+		rules := slices.Clone(mixed)
+		NACLAllows(rules, addr("192.0.2.44"), "tcp", 443)
+		if !slices.Equal(rules, mixed) {
+			t.Errorf("NACLAllows reordered the caller's rules to %+v; sort a copy instead (slices.Clone)", rules)
+		}
+	})
+}
+
+func TestReach(t *testing.T) {
+	allowAll := []NACLRule{{100, AllProtocols, 0, 0, cidr("0.0.0.0/0"), true}}
+	blockRange := []NACLRule{
+		{90, AllProtocols, 0, 0, cidr("198.51.100.0/24"), false},
+		{100, AllProtocols, 0, 0, cidr("0.0.0.0/0"), true},
+	}
+	only443Out := []NACLRule{{100, "tcp", 443, 443, cidr("0.0.0.0/0"), true}}
+	ephemeralOut := []NACLRule{{100, "tcp", 1024, 65535, cidr("0.0.0.0/0"), true}}
+	officeOut := []NACLRule{{100, "tcp", 1024, 65535, cidr("203.0.113.0/24"), true}}
+
+	webSG := []SGRule{
+		{"tcp", 443, 443, cidr("0.0.0.0/0")},
+		{"tcp", 22, 22, cidr("203.0.113.0/24")},
+	}
+	https := Packet{addr("198.51.100.7"), 50432, "tcp", 443}
+	sshInternet := Packet{addr("198.51.100.7"), 50433, "tcp", 22}
+	sshOffice := Packet{addr("203.0.113.10"), 51515, "tcp", 22}
+	httpsOther := Packet{addr("192.0.2.44"), 61000, "tcp", 443}
+
+	tests := []struct {
+		name string
+		acl  NACL
+		p    Packet
+		want string
+	}{
+		{"open web server", NACL{allowAll, allowAll}, https, "allowed"},
+		{"SSH from the office", NACL{allowAll, allowAll}, sshOffice, "allowed"},
+		{"SSH from the internet", NACL{allowAll, allowAll}, sshInternet, "blocked by security group"},
+		{"network ACL blocks the client's range", NACL{blockRange, allowAll}, https, "blocked by network ACL (inbound)"},
+		{"network ACL is checked before the security group", NACL{blockRange, allowAll}, sshInternet, "blocked by network ACL (inbound)"},
+		{"other clients still get in", NACL{blockRange, allowAll}, httpsOther, "allowed"},
+		{"empty custom network ACL", NACL{}, https, "blocked by network ACL (inbound)"},
+		{"outbound only allows port 443", NACL{allowAll, only443Out}, https, "blocked by network ACL (outbound reply)"},
+		{"outbound only allows port 443, other client", NACL{allowAll, only443Out}, httpsOther, "blocked by network ACL (outbound reply)"},
+		{"outbound allows ephemeral ports", NACL{allowAll, ephemeralOut}, https, "allowed"},
+		{"replies only to the office: office", NACL{allowAll, officeOut}, sshOffice, "allowed"},
+		{"replies only to the office: internet", NACL{allowAll, officeOut}, https, "blocked by network ACL (outbound reply)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Reach(tt.acl, webSG, tt.p)
+			if got != tt.want {
+				t.Errorf("Reach(%+v, %+v, %+v) = %q, want %q", tt.acl, webSG, tt.p, got, tt.want)
+			}
+		})
+	}
+}

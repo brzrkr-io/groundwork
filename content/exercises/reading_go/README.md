@@ -4,8 +4,8 @@ Before you write more code, it helps to know what each part of a Go file is
 for. You'll also learn which parts Go insists on, which parts are just the way
 everyone writes them, and which parts are up to you.
 
-**New here:** how a Go file is laid out; writing a whole function yourself;
-calling a function vs naming it; constants at the top level.
+**New here:** how a Go file is laid out; grouped imports; writing a whole
+function yourself; calling a function vs naming it; constants at the top level.
 
 ## Learn
 
@@ -39,6 +39,24 @@ declarations.
 > **Why is it written like this?** Go keeps one fixed layout so every Go file
 > reads the same. Opening any project, you know where to look: imports at the
 > top, then declarations.
+
+### Importing more than one package
+
+A file that uses two packages can write two `import` lines, but Go code
+almost always groups them in one block, one path per line:
+
+```go
+import (
+	"os"
+	"time"
+)
+```
+
+> **Why is it written like this?** **Go requires** each path in quotes, and
+> every imported package to be used (an unused one is a compile error).
+> **Convention:** one `import ( ... )` block, paths sorted A–Z; gofmt sorts
+> them for you. **Your choice:** one block or separate `import` lines; both
+> compile.
 
 ### The signature line of a function
 

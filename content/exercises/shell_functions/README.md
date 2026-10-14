@@ -105,7 +105,8 @@ never text.
 
 `command -v NAME` prints where a command lives and exits 0, or prints
 nothing and exits 1 when there's no such command. `> /dev/null` throws away
-what it prints, and `!` flips the exit status:
+what it prints (as in *Redirection: >, >>, 2> and here-docs*), and `!`
+flips the exit status:
 
 ```bash
 if ! command -v terraform > /dev/null; then

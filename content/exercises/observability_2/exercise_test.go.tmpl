@@ -1,0 +1,219 @@
+package incident
+
+import (
+	"os"
+	"slices"
+	"strings"
+	"testing"
+
+	"sigs.k8s.io/yaml"
+)
+
+// ruleFile is the part of a Prometheus rule file the tests check.
+type ruleFile struct {
+	Groups []struct {
+		Name  string `json:"name"`
+		Rules []rule `json:"rules"`
+	} `json:"groups"`
+}
+
+type rule struct {
+	Alert       string            `json:"alert"`
+	Expr        string            `json:"expr"`
+	For         string            `json:"for"`
+	Labels      map[string]string `json:"labels"`
+	Annotations map[string]string `json:"annotations"`
+}
+
+// wantRule describes what one alert rule must look like.
+type wantRule struct {
+	alert    string
+	severity string
+	pieces   []string // what expr must contain, without spaces
+	ending   string   // what expr must end with, without spaces
+}
+
+// checkRule reads the rule file and checks its rule named want.alert.
+func checkRule(t *testing.T, file string, want wantRule) {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rf ruleFile
+	if err := yaml.Unmarshal(data, &rf); err != nil {
+		t.Fatalf("%s is not valid YAML: %v", file, err)
+	}
+	var r rule
+	found := false
+	for _, g := range rf.Groups {
+		for _, candidate := range g.Rules {
+			if candidate.Alert == want.alert {
+				r, found = candidate, true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("%s has no rule with alert: %s", file, want.alert)
+	}
+
+	expr := strings.Join(strings.Fields(r.Expr), "")
+	for _, piece := range want.pieces {
+		if !strings.Contains(expr, piece) {
+			t.Errorf("%s: %s expr is %q, want it to contain %s", file, want.alert, r.Expr, piece)
+		}
+	}
+	if strings.Count(expr, "sum") < strings.Count(expr, "rate(") {
+		t.Errorf("%s: %s expr is %q, want every rate(...) inside a sum", file, want.alert, r.Expr)
+	}
+	if !strings.HasSuffix(expr, want.ending) {
+		t.Errorf("%s: %s expr is %q, want it to end with %s", file, want.alert, r.Expr, want.ending)
+	}
+	if r.For != "10m" {
+		t.Errorf("%s: %s has for: %q, want 10m", file, want.alert, r.For)
+	}
+	if got := r.Labels["severity"]; got != want.severity {
+		t.Errorf("%s: %s has labels.severity %q, want %q", file, want.alert, got, want.severity)
+	}
+	if r.Annotations["summary"] == "" {
+		t.Errorf("%s: %s has no annotations.summary, want a one-line description", file, want.alert)
+	}
+	if url := r.Annotations["runbook_url"]; !strings.HasPrefix(url, "https://") {
+		t.Errorf("%s: %s has annotations.runbook_url %q, want a link starting with https://", file, want.alert, url)
+	}
+}
+
+func TestErrorRatioAlert(t *testing.T) {
+	checkRule(t, "1_error_ratio.yml", wantRule{
+		alert:    "HighErrorRatio",
+		severity: "page",
+		pieces:   []string{`rate(http_requests_total{status=~"5.."}[5m])`, `rate(http_requests_total[5m])`, `/`},
+		ending:   `>0.05`,
+	})
+}
+
+func TestSlowRequestsAlert(t *testing.T) {
+	checkRule(t, "2_slow_requests.yml", wantRule{
+		alert:    "SlowRequests",
+		severity: "ticket",
+		pieces:   []string{`histogram_quantile(0.99,`, `by(le)`, `rate(http_request_duration_seconds_bucket[5m])`},
+		ending:   `>0.5`,
+	})
+}
+
+func TestFailedTraceIDs(t *testing.T) {
+	tests := []struct {
+		name string
+		logs string
+		want []string
+	}{
+		{
+			name: "500 and 503 fail, 200 and 404 don't",
+			logs: `{"msg":"request","status":200,"trace_id":"t-ok"}
+{"msg":"request","status":500,"trace_id":"t-500"}
+{"msg":"request","status":404,"trace_id":"t-404"}
+{"msg":"request","status":503,"trace_id":"t-503"}
+`,
+			want: []string{"t-500", "t-503"},
+		},
+		{
+			name: "each trace once, in first-seen order",
+			logs: `{"msg":"request","status":502,"trace_id":"t-b"}
+{"msg":"request","status":503,"trace_id":"t-a"}
+{"msg":"request","status":500,"trace_id":"t-b"}
+`,
+			want: []string{"t-b", "t-a"},
+		},
+		{
+			name: "only request lines count",
+			logs: `{"msg":"registry push failed","status":500,"trace_id":"t-other"}
+{"msg":"request","status":599,"trace_id":"t-req"}
+`,
+			want: []string{"t-req"},
+		},
+		{
+			name: "no failures",
+			logs: `{"msg":"request","status":201,"trace_id":"t-1"}
+`,
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FailedTraceIDs(strings.NewReader(tt.logs))
+			if err != nil || !slices.Equal(got, tt.want) {
+				t.Errorf("FailedTraceIDs(logs below) = %q, %v; want %q, nil\n%s", got, err, tt.want, tt.logs)
+			}
+		})
+	}
+
+	t.Run("testdata/app.log", func(t *testing.T) {
+		f, err := os.Open("testdata/app.log")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		want := []string{"4bf92f3577b34da6a3ce929d0e0e4736", "a3ce929d0e0e47364bf92f3577b34da6"}
+		if got, err := FailedTraceIDs(f); err != nil || !slices.Equal(got, want) {
+			t.Errorf("FailedTraceIDs(testdata/app.log) = %q, %v; want %q, nil", got, err, want)
+		}
+	})
+
+	t.Run("broken JSON", func(t *testing.T) {
+		if _, err := FailedTraceIDs(strings.NewReader(`{"msg":"request",`)); err == nil {
+			t.Errorf("FailedTraceIDs(cut-off JSON) returned no error, want the decode error")
+		}
+	})
+}
+
+func TestSlowestHop(t *testing.T) {
+	// One trace: api (1000ms) calls deployer (900ms), which calls registry
+	// (200ms) and kubernetes (100ms). Own time: api 100, deployer 600,
+	// registry 200, kubernetes 100. Another trace is mixed in.
+	spans := []Span{
+		{TraceID: "t1", SpanID: "a", ParentID: "", Service: "deploy-api", Name: "POST /deploys", DurationMS: 1000},
+		{TraceID: "t1", SpanID: "b", ParentID: "a", Service: "deployer", Name: "POST /deploy", DurationMS: 900},
+		{TraceID: "t2", SpanID: "x", ParentID: "", Service: "deploy-api", Name: "GET /deploys", DurationMS: 5000},
+		{TraceID: "t1", SpanID: "c", ParentID: "b", Service: "registry", Name: "push manifest", DurationMS: 200},
+		{TraceID: "t1", SpanID: "d", ParentID: "b", Service: "kubernetes", Name: "apply deployment", DurationMS: 100},
+		{TraceID: "t3", SpanID: "p", ParentID: "", Service: "deploy-api", Name: "GET /healthz", DurationMS: 30},
+		{TraceID: "t3", SpanID: "q", ParentID: "p", Service: "deployer", Name: "GET /healthz", DurationMS: 25},
+		{TraceID: "t4", SpanID: "m", ParentID: "", Service: "deploy-api", Name: "GET /deploys/d-1", DurationMS: 10},
+		{TraceID: "t4", SpanID: "n", ParentID: "m", Service: "registry", Name: "get tag", DurationMS: 5},
+	}
+	tests := []struct {
+		traceID  string
+		wantSpan string // SpanID of the slowest hop; "" when ok must be false
+	}{
+		{"t1", "b"}, // deployer: 900 - 200 - 100 = 600 of its own
+		{"t2", "x"}, // the only span of t2
+		{"t3", "q"}, // api 5 of its own, deployer 25
+		{"t4", "m"}, // a tie (5 and 5): the first one wins
+		{"t9", ""},  // no such trace
+	}
+	for _, tt := range tests {
+		t.Run(tt.traceID, func(t *testing.T) {
+			got, ok := SlowestHop(spans, tt.traceID)
+			if tt.wantSpan == "" {
+				if ok {
+					t.Errorf("SlowestHop(spans, %q) = %+v, true; want ok false: no span has that trace", tt.traceID, got)
+				}
+				return
+			}
+			if !ok || got.SpanID != tt.wantSpan || got.TraceID != tt.traceID {
+				t.Errorf("SlowestHop(spans, %q) = span %q (%s %s), %v; want span %q, true", tt.traceID, got.SpanID, got.Service, got.Name, ok, tt.wantSpan)
+			}
+		})
+	}
+
+	t.Run("the incident in testdata", func(t *testing.T) {
+		got, err := Investigate("testdata/app.log", "testdata/spans.json")
+		want := []string{
+			"4bf92f3577b34da6a3ce929d0e0e4736: registry push manifest",
+			"a3ce929d0e0e47364bf92f3577b34da6: deployer render manifests",
+		}
+		if err != nil || !slices.Equal(got, want) {
+			t.Errorf("Investigate(testdata/app.log, testdata/spans.json) = %q, %v; want %q, nil", got, err, want)
+		}
+	})
+}

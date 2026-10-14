@@ -1,0 +1,11 @@
+# Task 2: settings for notes. testdata/incident.txt, part 2, shows what
+# went wrong.
+#
+# TODO(2): Fix it so the Deployment finds what it asks for.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notes-config
+  namespace: notes
+data:
+  log-level: info

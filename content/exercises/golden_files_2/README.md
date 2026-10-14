@@ -5,7 +5,7 @@ writes a file instead of returning a string. Config generators like this one
 sit behind many load balancers, and one stray character in their output can
 take a service offline.
 
-**New here:** input fixtures, `strings.Fields`, `t.TempDir` for output files, writing your own `-update` flag.
+**New here:** input fixtures, `t.TempDir` for output files, writing your own `-update` flag.
 
 ## Learn
 
@@ -22,8 +22,9 @@ As in *Test fixtures and golden files*:
 ### Input fixtures and `strings.Fields`
 
 `testdata/` can hold *input* too. Here `backends.txt` lists the backends to
-feed the function, one per line. `strings.Fields` splits text on every run of
-spaces and newlines, and ignores the final newline:
+feed the function, one per line. As in *The strings package: fix the
+bootstrap parser*, `strings.Fields` splits text on every run of spaces and
+newlines, and ignores the final newline:
 
 ```go
 strings.Fields("alpha beta\ngamma\n")

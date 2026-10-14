@@ -10,12 +10,13 @@ import (
 	"testing"
 )
 
-// The helpers readWorkflow, runsOn, needs, pinned, findStep, findRun and
+// The helpers readWorkflow, runsOn, needs, checkPins, findStep, findRun and
 // stepNames are in workflow_test.go.
 
 func TestMatrix(t *testing.T) {
 	const file = "1_matrix.yml"
 	test := findJob(t, file, readWorkflow(t, file), "test")
+	checkPins(t, file)
 	matrix := test.Strategy.Matrix
 	if len(matrix) == 0 {
 		t.Errorf("%s: job test has no strategy.matrix, want one with the variables go and os", file)
@@ -58,6 +59,7 @@ func TestMatrix(t *testing.T) {
 func TestCache(t *testing.T) {
 	const file = "2_cache.yml"
 	test := findJob(t, file, readWorkflow(t, file), "test")
+	checkPins(t, file)
 	checkout := findStep(test.Steps, "actions/checkout")
 	setup := findStep(test.Steps, "actions/setup-go")
 	cache := findStep(test.Steps, "actions/cache")
@@ -79,7 +81,6 @@ func TestCache(t *testing.T) {
 	}
 
 	c := test.Steps[cache]
-	checkPinned(t, file, "test", c)
 	paths := lines(c.With["path"])
 	for _, want := range []string{"~/go/pkg/mod", "~/.cache/go-build"} {
 		if !slices.Contains(paths, want) {
@@ -107,6 +108,7 @@ func TestCache(t *testing.T) {
 func TestArtifacts(t *testing.T) {
 	const file = "3_artifacts.yml"
 	wf := readWorkflow(t, file)
+	checkPins(t, file)
 
 	build := findJob(t, file, wf, "build")
 	gobuild := findRun(build.Steps, "go build -o bin/statusd .")
@@ -117,7 +119,6 @@ func TestArtifacts(t *testing.T) {
 	}
 	if upload >= 0 {
 		up := build.Steps[upload]
-		checkPinned(t, file, "build", up)
 		if up.With["name"] != "statusd" {
 			t.Errorf("%s: upload-artifact has name: %v, want statusd", file, up.With["name"])
 		}
@@ -138,7 +139,6 @@ func TestArtifacts(t *testing.T) {
 		t.Fatalf("%s: job smoke has the steps %q, want actions/download-artifact first", file, stepNames(smoke.Steps))
 	}
 	down := smoke.Steps[download]
-	checkPinned(t, file, "smoke", down)
 	if down.With["name"] != "statusd" {
 		t.Errorf("%s: download-artifact has name: %v, want statusd", file, down.With["name"])
 	}
@@ -168,14 +168,6 @@ func findJob(t *testing.T, file string, wf workflow, id string) job {
 		t.Fatalf("%s has the jobs %q, want a job with the id %q", file, slices.Sorted(maps.Keys(wf.Jobs)), id)
 	}
 	return j
-}
-
-// checkPinned checks that a step's action names a fixed version.
-func checkPinned(t *testing.T, file, id string, s step) {
-	t.Helper()
-	if !pinned.MatchString(s.Uses) {
-		t.Errorf("%s: job %s uses %s, want @ and a version tag (such as @v6) or a full commit SHA, never a branch", file, id, s.Uses)
-	}
 }
 
 // checkList checks that the matrix variable name lists the strings want, in

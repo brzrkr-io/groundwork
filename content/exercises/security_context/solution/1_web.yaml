@@ -1,0 +1,26 @@
+# Task 1: the image's user is a name, so Kubernetes needed its UID.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: shop
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100 # the image's user "app", as a number Kubernetes can check
+        runAsGroup: 101
+      containers:
+        - name: web
+          image: ghcr.io/stefanprodan/podinfo:6.9.2
+          ports:
+            - name: http
+              containerPort: 9898

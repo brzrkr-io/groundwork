@@ -1,0 +1,273 @@
+package review
+
+import (
+	"encoding/json"
+	"slices"
+	"testing"
+	"time"
+)
+
+func TestOpenAdminPorts(t *testing.T) {
+	tests := []struct {
+		name   string
+		groups []SecurityGroup
+		want   []Finding
+	}{
+		{
+			name: "ssh open to the internet",
+			groups: []SecurityGroup{{ID: "sg-01", Name: "bastion", Inbound: []Rule{
+				{Protocol: "tcp", FromPort: 22, ToPort: 22, CIDR: "0.0.0.0/0"},
+			}}},
+			want: []Finding{{"high", "sg-01 (bastion)", "port 22 open to 0.0.0.0/0"}},
+		},
+		{
+			name: "ipv6 and a port range that covers rdp",
+			groups: []SecurityGroup{{ID: "sg-02", Name: "win", Inbound: []Rule{
+				{Protocol: "tcp", FromPort: 22, ToPort: 22, CIDR: "::/0"},
+				{Protocol: "tcp", FromPort: 3000, ToPort: 4000, CIDR: "0.0.0.0/0"},
+			}}},
+			want: []Finding{
+				{"high", "sg-02 (win)", "port 22 open to ::/0"},
+				{"high", "sg-02 (win)", "port 3389 open to 0.0.0.0/0"},
+			},
+		},
+		{
+			name: "all traffic opens both ports",
+			groups: []SecurityGroup{{ID: "sg-03", Name: "debug", Inbound: []Rule{
+				{Protocol: "-1", FromPort: -1, ToPort: -1, CIDR: "0.0.0.0/0"},
+			}}},
+			want: []Finding{
+				{"high", "sg-03 (debug)", "port 22 open to 0.0.0.0/0"},
+				{"high", "sg-03 (debug)", "port 3389 open to 0.0.0.0/0"},
+			},
+		},
+		{
+			name: "narrow ranges, other ports and udp are fine",
+			groups: []SecurityGroup{
+				{ID: "sg-04", Name: "web", Inbound: []Rule{
+					{Protocol: "tcp", FromPort: 443, ToPort: 443, CIDR: "0.0.0.0/0"},
+					{Protocol: "tcp", FromPort: 22, ToPort: 22, CIDR: "203.0.113.0/24"},
+					{Protocol: "udp", FromPort: 3389, ToPort: 3389, CIDR: "0.0.0.0/0"},
+					{Protocol: "-1", FromPort: -1, ToPort: -1, CIDR: "10.0.0.0/16"},
+				}},
+			},
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := OpenAdminPorts(tt.groups)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("OpenAdminPorts(%+v)\n got  %q\n want %q", tt.groups, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBroadPolicies(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  string
+		want []Finding
+	}{
+		{
+			name: "every action on everything",
+			doc:  `{"Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}]}`,
+			want: []Finding{{"high", "policy p", "allows every action on every resource"}},
+		},
+		{
+			name: "service wildcards, one finding each",
+			doc:  `{"Statement": [{"Effect": "Allow", "Action": ["s3:GetObject", "s3:*", "ec2:*"], "Resource": ["arn:aws:s3:::x", "*"]}]}`,
+			want: []Finding{
+				{"medium", "policy p", "allows s3:* on every resource"},
+				{"medium", "policy p", "allows ec2:* on every resource"},
+			},
+		},
+		{
+			name: "scoped resources, partial wildcards and denies are fine",
+			doc: `{"Statement": [
+				{"Effect": "Allow", "Action": "s3:*", "Resource": "arn:aws:s3:::acme-logs/*"},
+				{"Effect": "Allow", "Action": ["ec2:Describe*", "s3:List*"], "Resource": "*"},
+				{"Effect": "Deny", "Action": "*", "Resource": "*"}
+			]}`,
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var doc Policy
+			if err := json.Unmarshal([]byte(tt.doc), &doc); err != nil {
+				t.Fatal(err)
+			}
+			policies := []NamedPolicy{{Name: "p", Document: doc}}
+			got := BroadPolicies(policies)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("BroadPolicies(%s)\n got  %q\n want %q", tt.doc, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPublicBuckets(t *testing.T) {
+	tests := []struct {
+		name  string
+		block bool
+		doc   string
+		want  []Finding
+	}{
+		{
+			name: `principal "*"`,
+			doc:  `{"Statement": [{"Effect": "Allow", "Principal": "*", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::b/*"}]}`,
+			want: []Finding{{"high", "bucket b", "anyone can s3:GetObject"}},
+		},
+		{
+			name: `principal {"AWS": "*"} with two actions`,
+			doc:  `{"Statement": [{"Effect": "Allow", "Principal": {"AWS": "*"}, "Action": ["s3:GetObject", "s3:ListBucket"], "Resource": "*"}]}`,
+			want: []Finding{{"high", "bucket b", "anyone can s3:GetObject, s3:ListBucket"}},
+		},
+		{
+			name:  "block public access is on",
+			block: true,
+			doc:   `{"Statement": [{"Effect": "Allow", "Principal": "*", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::b/*"}]}`,
+			want:  nil,
+		},
+		{
+			name: "one account, a condition, or a deny is not public",
+			doc: `{"Statement": [
+				{"Effect": "Allow", "Principal": {"AWS": "arn:aws:iam::444455556666:root"}, "Action": "s3:PutObject", "Resource": "arn:aws:s3:::b/*"},
+				{"Effect": "Allow", "Principal": "*", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::b/*",
+				 "Condition": {"IpAddress": {"aws:SourceIp": "203.0.113.0/24"}}},
+				{"Effect": "Deny", "Principal": "*", "Action": "s3:*", "Resource": "arn:aws:s3:::b/*",
+				 "Condition": {"Bool": {"aws:SecureTransport": "false"}}}
+			]}`,
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var doc Policy
+			if err := json.Unmarshal([]byte(tt.doc), &doc); err != nil {
+				t.Fatal(err)
+			}
+			buckets := []Bucket{{Name: "b", BlockPublicAccess: tt.block, Policy: doc}}
+			got := PublicBuckets(buckets)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("PublicBuckets(block=%v, %s)\n got  %q\n want %q", tt.block, tt.doc, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStaleKeys(t *testing.T) {
+	now := time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC)
+	used := now.Add(-time.Hour)
+	tests := []struct {
+		name string
+		key  AccessKey
+		want []Finding
+	}{
+		{
+			name: "fresh and used",
+			key:  AccessKey{User: "alice", ID: "AKIA1", Status: "Active", Created: now.AddDate(0, 0, -30), LastUsed: used},
+			want: nil,
+		},
+		{
+			name: "exactly 90 days is still fine",
+			key:  AccessKey{User: "alice", ID: "AKIA1", Status: "Active", Created: now.AddDate(0, 0, -90), LastUsed: used},
+			want: nil,
+		},
+		{
+			name: "91 days old",
+			key:  AccessKey{User: "ci", ID: "AKIA2", Status: "Active", Created: now.AddDate(0, 0, -91), LastUsed: used},
+			want: []Finding{{"medium", "user ci", "access key AKIA2 is 91 days old"}},
+		},
+		{
+			name: "days are rounded down",
+			key:  AccessKey{User: "ci", ID: "AKIA2", Status: "Active", Created: now.Add(-(200*24 + 23) * time.Hour), LastUsed: used},
+			want: []Finding{{"medium", "user ci", "access key AKIA2 is 200 days old"}},
+		},
+		{
+			name: "never used",
+			key:  AccessKey{User: "bot", ID: "AKIA3", Status: "Active", Created: now.AddDate(0, 0, -5)},
+			want: []Finding{{"low", "user bot", "access key AKIA3 has never been used"}},
+		},
+		{
+			name: "old and never used",
+			key:  AccessKey{User: "jenkins", ID: "AKIA4", Status: "Active", Created: now.AddDate(-1, 0, 0)},
+			want: []Finding{
+				{"medium", "user jenkins", "access key AKIA4 is 365 days old"},
+				{"low", "user jenkins", "access key AKIA4 has never been used"},
+			},
+		},
+		{
+			name: "inactive keys are skipped",
+			key:  AccessKey{User: "bob", ID: "AKIA5", Status: "Inactive", Created: now.AddDate(-2, 0, 0)},
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := StaleKeys([]AccessKey{tt.key}, now)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("StaleKeys(%+v)\n got  %q\n want %q", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReport(t *testing.T) {
+	t.Run("sorted, with counts", func(t *testing.T) {
+		findings := []Finding{
+			{"low", "user b", "z"},
+			{"high", "sg-2 (x)", "port 22 open to 0.0.0.0/0"},
+			{"medium", "policy p", "allows s3:* on every resource"},
+			{"high", "bucket a", "anyone can s3:GetObject"},
+			{"high", "sg-2 (x)", "port 22 open to ::/0"},
+		}
+		before := slices.Clone(findings)
+		want := "[high] bucket a: anyone can s3:GetObject\n" +
+			"[high] sg-2 (x): port 22 open to 0.0.0.0/0\n" +
+			"[high] sg-2 (x): port 22 open to ::/0\n" +
+			"[medium] policy p: allows s3:* on every resource\n" +
+			"[low] user b: z\n" +
+			"3 high, 1 medium, 1 low\n"
+		if got := Report(findings); got != want {
+			t.Errorf("Report(...) =\n%s\nwant\n%s", got, want)
+		}
+		if !slices.Equal(findings, before) {
+			t.Errorf("Report reordered the caller's slice to %q; sort a copy", findings)
+		}
+	})
+	t.Run("nothing found", func(t *testing.T) {
+		if got, want := Report(nil), "0 high, 0 medium, 0 low\n"; got != want {
+			t.Errorf("Report(nil) = %q, want %q", got, want)
+		}
+	})
+	t.Run("the whole account", func(t *testing.T) {
+		now := time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC)
+		got, err := Review("testdata/account.json", now)
+		if err != nil {
+			t.Fatalf("Review returned error %v", err)
+		}
+		want := `[high] bucket acme-old-assets: anyone can s3:GetObject, s3:ListBucket
+[high] bucket acme-website: anyone can s3:GetObject
+[high] policy legacy-admin: allows every action on every resource
+[high] sg-0a1b2c3d4e5f60002 (bastion): port 22 open to 0.0.0.0/0
+[high] sg-0a1b2c3d4e5f60002 (bastion): port 22 open to ::/0
+[high] sg-0a1b2c3d4e5f60003 (windows-build): port 3389 open to 0.0.0.0/0
+[high] sg-0a1b2c3d4e5f60004 (debug-temp): port 22 open to 0.0.0.0/0
+[high] sg-0a1b2c3d4e5f60004 (debug-temp): port 3389 open to 0.0.0.0/0
+[medium] policy ci-deploy: allows ecs:* on every resource
+[medium] policy data-team: allows athena:* on every resource
+[medium] policy data-team: allows s3:* on every resource
+[medium] user ci-deployer: access key AKIACIDEPLOY0EXAMPLE is 589 days old
+[medium] user old-jenkins: access key AKIAOLDJENKINSEXAMPL is 706 days old
+[low] user old-jenkins: access key AKIAOLDJENKINSEXAMPL has never been used
+[low] user reports-bot: access key AKIAREPORTSBOTEXAMPL has never been used
+8 high, 5 medium, 2 low
+`
+		if got != want {
+			t.Errorf("Review(testdata/account.json) =\n%s\nwant\n%s", got, want)
+		}
+	})
+}

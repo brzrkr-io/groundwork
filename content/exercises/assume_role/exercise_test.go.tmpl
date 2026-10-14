@@ -1,0 +1,195 @@
+package trust
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+	"time"
+)
+
+// statement loads testdata/<file> and returns its first statement.
+func statement(t *testing.T, file string) TrustStatement {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p TrustPolicy
+	if err := json.Unmarshal(data, &p); err != nil {
+		t.Fatalf("testdata/%s: %v", file, err)
+	}
+	if len(p.Statement) == 0 {
+		t.Fatalf("testdata/%s has no statements", file)
+	}
+	return p.Statement[0]
+}
+
+const token = "IQoJb3JpZ2luX2VjEXAMPLETOKEN"
+
+func TestIsTemporary(t *testing.T) {
+	tests := []struct {
+		name string
+		c    Credentials
+		want bool
+	}{
+		{"from AssumeRole", Credentials{AccessKeyID: "ASIAIOSFODNN7EXAMPLE", SessionToken: token}, true},
+		{"another temporary key", Credentials{AccessKeyID: "ASIAY34FZKBOKEXAMPLE", SessionToken: "FwoGZXIvEXAMPLE"}, true},
+		{"long-term user key", Credentials{AccessKeyID: "AKIAIOSFODNN7EXAMPLE"}, false},
+		{"long-term key with a token", Credentials{AccessKeyID: "AKIAIOSFODNN7EXAMPLE", SessionToken: token}, false},
+		{"ASIA key without its token", Credentials{AccessKeyID: "ASIAIOSFODNN7EXAMPLE"}, false},
+		{"lowercase prefix", Credentials{AccessKeyID: "asiaiosfodnn7example", SessionToken: token}, false},
+		{"empty", Credentials{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsTemporary(tt.c); got != tt.want {
+				t.Errorf("IsTemporary({AccessKeyID: %q, SessionToken: %q}) = %v, want %v",
+					tt.c.AccessKeyID, tt.c.SessionToken, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNeedsRefresh(t *testing.T) {
+	now := time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		left time.Duration
+		want bool
+	}{
+		{"an hour left", time.Hour, false},
+		{"5m1s left", 5*time.Minute + time.Second, false},
+		{"exactly 5m left", 5 * time.Minute, false},
+		{"4m59s left", 5*time.Minute - time.Second, true},
+		{"30s left", 30 * time.Second, true},
+		{"expires right now", 0, true},
+		{"expired a minute ago", -time.Minute, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := Credentials{AccessKeyID: "ASIAIOSFODNN7EXAMPLE", SessionToken: token, Expiration: now.Add(tt.left)}
+			if got := NeedsRefresh(c, now); got != tt.want {
+				t.Errorf("NeedsRefresh(Expiration %s, now %s) = %v, want %v",
+					c.Expiration.Format(time.RFC3339), now.Format(time.RFC3339), got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTrustsCaller(t *testing.T) {
+	ec2 := statement(t, "ec2_instance.json")
+	crossAccount := statement(t, "cross_account.json")
+	ciRunner := statement(t, "ci_runner.json")
+	anyone := statement(t, "anyone.json")
+	github := statement(t, "github_main.json")
+
+	denyEC2 := TrustStatement{Effect: "Deny", Principal: Principal{Service: StringList{"ec2.amazonaws.com"}}, Action: StringList{"sts:AssumeRole"}}
+	upperCase := TrustStatement{Effect: "Allow", Principal: Principal{Service: StringList{"ec2.amazonaws.com"}}, Action: StringList{"STS:assumerole"}}
+	tagOnly := TrustStatement{Effect: "Allow", Principal: Principal{Service: StringList{"ec2.amazonaws.com"}}, Action: StringList{"sts:TagSession"}}
+
+	tests := []struct {
+		name   string
+		s      TrustStatement
+		caller string
+		want   bool
+	}{
+		{"ec2_instance.json", ec2, "ec2.amazonaws.com", true},
+		{"ec2_instance.json", ec2, "lambda.amazonaws.com", false},
+		{"ec2_instance.json", ec2, "arn:aws:iam::111122223333:role/web", false},
+		{"cross_account.json", crossAccount, "arn:aws:iam::444455556666:role/auditor", true},
+		{"cross_account.json", crossAccount, "arn:aws:iam::444455556666:user/bob", true},
+		{"cross_account.json", crossAccount, "arn:aws:iam::123456789012:role/auditor", false},
+		{"cross_account.json", crossAccount, "ec2.amazonaws.com", false},
+		{"ci_runner.json", ciRunner, "arn:aws:iam::111122223333:role/ci-runner", true},
+		{"ci_runner.json", ciRunner, "arn:aws:iam::111122223333:user/alice", true},
+		{"ci_runner.json", ciRunner, "arn:aws:iam::111122223333:user/bob", false},
+		{"ci_runner.json", ciRunner, "arn:aws:iam::111122223333:role/ci-runner-old", false},
+		{"anyone.json", anyone, "arn:aws:iam::123456789012:user/mallory", true},
+		{"anyone.json", anyone, "arn:aws:iam::444455556666:role/whoever", true},
+		{"github_main.json", github, "arn:aws:iam::111122223333:role/ci-runner", false},
+		{"Effect Deny", denyEC2, "ec2.amazonaws.com", false},
+		{"Action STS:assumerole", upperCase, "ec2.amazonaws.com", true},
+		{"Action sts:TagSession only", tagOnly, "ec2.amazonaws.com", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+" "+tt.caller, func(t *testing.T) {
+			if got := TrustsCaller(tt.s, tt.caller); got != tt.want {
+				t.Errorf("TrustsCaller(%s, %q) = %v, want %v", tt.name, tt.caller, got, tt.want)
+			}
+		})
+	}
+}
+
+const (
+	provider = "arn:aws:iam::111122223333:oidc-provider/token.actions.githubusercontent.com"
+	audKey   = "token.actions.githubusercontent.com:aud"
+	subKey   = "token.actions.githubusercontent.com:sub"
+)
+
+// claims builds a GitHub Actions token's claims, keyed by condition key.
+func claims(aud, sub string) map[string]string {
+	return map[string]string{audKey: aud, subKey: sub}
+}
+
+func TestTrustsWorkflow(t *testing.T) {
+	mainOnly := statement(t, "github_main.json")
+	anyRef := statement(t, "github_any_ref.json")
+	noSub := statement(t, "github_no_sub.json")
+	ec2 := statement(t, "ec2_instance.json")
+
+	denyMain := mainOnly
+	denyMain.Effect = "Deny"
+	unknownOperator := TrustStatement{
+		Effect:    "Allow",
+		Principal: Principal{Federated: StringList{provider}},
+		Action:    StringList{"sts:AssumeRoleWithWebIdentity"},
+		Condition: map[string]map[string]StringList{"StringNotEquals": {subKey: {"repo:evil/deploy:ref:refs/heads/main"}}},
+	}
+	wrongAction := TrustStatement{
+		Effect:    "Allow",
+		Principal: Principal{Federated: StringList{provider}},
+		Action:    StringList{"sts:AssumeRole"},
+	}
+
+	const (
+		onMain   = "repo:acme/deploy:ref:refs/heads/main"
+		onPR     = "repo:acme/deploy:pull_request"
+		onTag    = "repo:acme/deploy:ref:refs/tags/v1.2.0"
+		evilMain = "repo:evil/deploy:ref:refs/heads/main"
+	)
+	tests := []struct {
+		name     string
+		s        TrustStatement
+		provider string
+		claims   map[string]string
+		want     bool
+	}{
+		{"github_main.json", mainOnly, provider, claims("sts.amazonaws.com", onMain), true},
+		{"github_main.json", mainOnly, provider, claims("sts.amazonaws.com", onPR), false},
+		{"github_main.json", mainOnly, provider, claims("sts.amazonaws.com", evilMain), false},
+		{"github_main.json", mainOnly, provider, claims("sts.amazonaws.com", "repo:Acme/deploy:ref:refs/heads/main"), false},
+		{"github_main.json", mainOnly, provider, claims("https://github.com/acme", onMain), false},
+		{"github_main.json", mainOnly, provider, map[string]string{subKey: onMain}, false},
+		{"github_main.json", mainOnly, provider, nil, false},
+		{"github_main.json", mainOnly, "arn:aws:iam::111122223333:oidc-provider/gitlab.com", claims("sts.amazonaws.com", onMain), false},
+		{"github_any_ref.json", anyRef, provider, claims("sts.amazonaws.com", onMain), true},
+		{"github_any_ref.json", anyRef, provider, claims("sts.amazonaws.com", onTag), true},
+		{"github_any_ref.json", anyRef, provider, claims("sts.amazonaws.com", onPR), true},
+		{"github_any_ref.json", anyRef, provider, claims("sts.amazonaws.com", evilMain), false},
+		{"github_any_ref.json", anyRef, provider, claims("sts.amazonaws.com", "repo:acme/deploy-tools:ref:refs/heads/main"), false},
+		{"github_any_ref.json", anyRef, provider, claims("https://github.com/acme", onMain), false},
+		{"github_no_sub.json", noSub, provider, claims("sts.amazonaws.com", evilMain), true},
+		{"github_no_sub.json", noSub, provider, nil, true},
+		{"ec2_instance.json", ec2, provider, claims("sts.amazonaws.com", onMain), false},
+		{"Effect Deny", denyMain, provider, claims("sts.amazonaws.com", onMain), false},
+		{"operator StringNotEquals", unknownOperator, provider, claims("sts.amazonaws.com", onMain), false},
+		{"Action sts:AssumeRole", wrongAction, provider, claims("sts.amazonaws.com", onMain), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := TrustsWorkflow(tt.s, tt.provider, tt.claims); got != tt.want {
+				t.Errorf("TrustsWorkflow(%s, %q, %q) = %v, want %v", tt.name, tt.provider, tt.claims, got, tt.want)
+			}
+		})
+	}
+}
