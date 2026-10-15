@@ -138,7 +138,7 @@ func Guide(text string) string {
 	if err != nil {
 		return text
 	}
-	out, err := r.Render(sectionRules(body))
+	out, err := renderMarkdown(r, sectionRules(body))
 	if err != nil {
 		return text
 	}

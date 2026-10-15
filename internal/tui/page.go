@@ -250,3 +250,133 @@ func sideSection(title string, lines ...string) []string {
 func wrapSide(text string, w int) []string {
 	return strings.Split(ansi.Wrap(text, w, " "), "\n")
 }
+
+// Links render as their text, underlined and clickable (an OSC 8
+// hyperlink, which Ghostty, kitty, iTerm2, WezTerm and recent tmux
+// understand), instead of the text followed by its URL: a long URL wraps
+// across lines, and a wrapped URL can't be clicked.
+const (
+	linkOpen  = '\ue000' // marks where a link's text starts, before rendering
+	linkClose = '\ue001'
+)
+
+// markLinks replaces [text](url) outside code with marked text and returns
+// the URLs in order. Glamour then wraps the text like any other words.
+func markLinks(md string) (string, []string) {
+	var urls []string
+	var out strings.Builder
+	fence := false
+	for i, line := range strings.Split(md, "\n") {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			fence = !fence
+		}
+		if fence {
+			out.WriteString(line)
+			continue
+		}
+		code := false
+		for j := 0; j < len(line); j++ {
+			c := line[j]
+			if c == '`' {
+				code = !code
+			}
+			if c != '[' || code {
+				out.WriteByte(c)
+				continue
+			}
+			text, url, n := parseLink(line[j:])
+			if n == 0 {
+				out.WriteByte(c)
+				continue
+			}
+			urls = append(urls, url)
+			out.WriteRune(linkOpen)
+			out.WriteString(text)
+			out.WriteRune(linkClose)
+			j += n - 1
+		}
+	}
+	return out.String(), urls
+}
+
+// parseLink reads "[text](url)" at the start of s, allowing balanced
+// parentheses in the URL (Wikipedia titles). n is 0 when s isn't a link.
+func parseLink(s string) (text, url string, n int) {
+	end := strings.Index(s, "](")
+	if end < 1 || strings.ContainsAny(s[1:end], "[]") {
+		return "", "", 0
+	}
+	depth := 0
+	for k := end + 2; k < len(s); k++ {
+		switch s[k] {
+		case '(':
+			depth++
+		case ')':
+			if depth == 0 {
+				url = s[end+2 : k]
+				if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+					return "", "", 0
+				}
+				return s[1:end], url, k + 1
+			}
+			depth--
+		case ' ':
+			return "", "", 0
+		}
+	}
+	return "", "", 0
+}
+
+// applyLinks turns the markers in rendered text into hyperlinks. Each line
+// is complete on its own (a link wrapped onto two lines is two links to the
+// same URL), because the frame and the scrolling cut text into lines.
+func applyLinks(rendered string, urls []string) string {
+	if len(urls) == 0 {
+		return rendered
+	}
+	const style, unstyle = "\x1b[4;96m", "\x1b[24;39m"
+	open := func(u string) string { return "\x1b]8;;" + u + "\x1b\\" + style }
+	closeLink := unstyle + "\x1b]8;;\x1b\\"
+	var out strings.Builder
+	next, current := 0, ""
+	for i, line := range strings.Split(rendered, "\n") {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		if current != "" {
+			out.WriteString(open(current))
+		}
+		for _, r := range line {
+			switch r {
+			case linkOpen:
+				if next < len(urls) {
+					current = urls[next]
+					next++
+				}
+				out.WriteString(open(current))
+			case linkClose:
+				out.WriteString(closeLink)
+				current = ""
+			default:
+				out.WriteRune(r)
+			}
+		}
+		if current != "" {
+			out.WriteString(closeLink)
+		}
+	}
+	return out.String()
+}
+
+// renderMarkdown renders src with r, links as hyperlinks.
+func renderMarkdown(r interface{ Render(string) (string, error) }, src string) (string, error) {
+	marked, urls := markLinks(src)
+	out, err := r.Render(marked)
+	if err != nil {
+		return "", err
+	}
+	return applyLinks(out, urls), nil
+}

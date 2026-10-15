@@ -671,7 +671,7 @@ func (m *Model) markdown(src string, width int) string {
 		}
 		m.md, m.mdWidth = r, width
 	}
-	out, err := m.md.Render(src)
+	out, err := renderMarkdown(m.md, src)
 	if err != nil {
 		return src
 	}
