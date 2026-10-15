@@ -18,7 +18,8 @@ type Ring struct {
 	owners   map[uint32]string // point -> the node that sits there
 }
 
-// New returns an empty Ring that places every node at replicas points.
+// New returns an empty Ring that places each node at the given number of
+// points.
 func New(replicas int) *Ring {
 	return &Ring{replicas: replicas, owners: make(map[uint32]string)}
 }

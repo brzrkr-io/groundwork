@@ -67,7 +67,7 @@ The rule already exists in one place. You only need to call it for one more fiel
 
 ### Closer
 
-Copy the three-line `if err := checkPort(...)` for the admin port, and change the name and the field.
+Copy the three-line `if err := checkPort(...)` block for the admin port, and change the name and the field.
 
 ### Answer
 

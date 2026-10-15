@@ -13,8 +13,8 @@ matters more than covering every corner of a topic.
 Every pack and guide follows these (see ../LEARNING.md for the research):
 
 1. **Worked example first, then fade.** The README's Learn section fully
-   demonstrates each construct with a different example from the task;
-   tasks then need more and more independence.
+   demonstrates each construct with an example different from the task's;
+   later tasks then ask for more and more independence.
 2. **One new idea at a time, quick first win.** Task 1 takes minutes. No
    term or tool the learner hasn't met, judging by the course order.
 3. **No hidden requirements.** Everything a test checks is in the task,
@@ -63,8 +63,9 @@ packs/variables/
 ## README.md
 
 The learner is new to programming. A README must be easy to scan, and every
-task should read like a short checklist. They also want to understand **why** Go code looks the way it
-does: what Go requires, what is convention, and what is their own choice.
+task should read like a short checklist. Learners also want to understand
+**why** Go code looks the way it does: what Go requires, what is convention,
+and what is their own choice.
 Teach that reasoning. Don't give away the answer.
 
 ```markdown
@@ -339,13 +340,13 @@ minutes; probing them concurrently takes about as long as the slowest one.
 ## Go deeper           (2–5 links, each with one line on why it's worth it)
 ```
 
-- **Short pieces.** Paragraphs of 1–4 sentences, one
-  idea per section, a bold lead-in where a skim reader needs one. Tables and
-  `text` diagrams beat long prose. 1,500–3,000 words.
+- **Short pieces.** Paragraphs of 1–4 sentences, one idea per section, and a
+  bold lead-in where a skimming reader needs one. Tables and `text` diagrams
+  beat long prose. Aim for 1,500–3,000 words.
 - **Concrete first.** Start each idea from an example the learner can picture
   (a deploy queue, a log file, a Kubernetes pod), then name it. Introduce a
   new term in *italics* with a plain definition, and list it in Key terms.
-- **Show, then trace.** Code examples are small and complete, and compile.
+- **Show, then trace.** Code examples are small, complete and compilable.
   After an example, say what happens step by step.
 - **Questions stand alone.** Every *Check yourself* question and *Key
   terms* row also becomes a flashcard (`groundwork cards`), read on a

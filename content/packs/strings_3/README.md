@@ -42,7 +42,7 @@ The first line creates `key` with `:=`; the next changes it with `=`.
 
 > **Why is it written like this?** **Your choice:** nest everything in one
 > line or use steps. Steps are easier to read and to check one at a time.
-> **Go requires** `:=` only on the first line, because `key` exists after.
+> **Go requires** `:=` only on the first line; after that, `key` exists.
 
 ## Your task
 

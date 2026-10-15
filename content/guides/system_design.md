@@ -1,6 +1,6 @@
 # System design fundamentals
 
-**In one sentence:** system design is deciding, before you build, which pieces a service is made of, how they talk to each other, how much load each must carry and what happens when one breaks, and writing down why you chose that way.
+**In one sentence:** system design is deciding, before you build, which pieces a service is made of, how they talk to each other, how much load each must carry and what happens when one breaks, and then writing down why you made those choices.
 
 **Why it matters:** most outages aren't caused by a wrong `if` statement. They come from design: one database everything depends on, a queue nobody sized, a "fast" call that crosses an ocean. Platform engineers review designs, size infrastructure and set reliability targets every week. This guide gives you the questions to ask and the arithmetic to answer them.
 
@@ -406,7 +406,7 @@ Same features, three orders of magnitude more load. Now you'd add a shared cache
 - [Latency Numbers Programmer Should Know: Crash Course System Design #1](https://www.youtube.com/watch?v=FqR5vESuKe0) · ByteByteGo · 6 min: the latency ladder from CPU cache to cross-continent round trips, animated.
 - [SLIs, SLOs, SLAs, oh my! (class SRE implements DevOps)](https://www.youtube.com/watch?v=tEylFyxbDLE) · Google Cloud Tech · 8 min: Google's SREs explain the three terms and how they relate.
 - [The Art of SLOs (Service Level Objectives)](https://www.youtube.com/watch?v=E3ReKuJ8ewA) · Google Cloud Tech · 4 min: a short introduction to Google's SLO workshop: measure what users feel, then spend the error budget on purpose.
-- [System Design Interview: A Step-By-Step Guide](https://www.youtube.com/watch?v=i7twT3x5yv8) · ByteByteGo · 10 min: the requirements, estimate, design, deep-dive order this guide follows, as interviewers expect it.
+- [System Design Interview: A Step-By-Step Guide](https://www.youtube.com/watch?v=i7twT3x5yv8) · ByteByteGo · 10 min: the order this guide follows (requirements, estimates, design, deep dive), as interviewers expect it.
 
 ## Go deeper
 

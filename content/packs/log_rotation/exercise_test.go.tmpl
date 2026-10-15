@@ -88,7 +88,7 @@ func TestExtractFunctions(t *testing.T) {
 	}
 	plan := src.fn("Plan")
 	if plan == nil {
-		t.Fatal("exercise.go has no function named Plan; keep it, the rotator calls it")
+		t.Fatal("exercise.go has no function named Plan; keep it, because the rotator calls it")
 	}
 	if n := src.codeLines(plan); n > maxPlanLines {
 		t.Errorf("Plan has %d lines of code (blank lines and comments don't count), want %d or fewer: it should loop over the files and hand each decision to a helper", n, maxPlanLines)
@@ -105,7 +105,7 @@ func TestGuardClauses(t *testing.T) {
 				f.Name.Name, deepest, line, deepest)
 		}
 		if len(elseLines) > 0 {
-			t.Errorf("%s still uses else, on exercise.go lines %v; when the if above it returns (or continues), the code after the if already is the else",
+			t.Errorf("%s still uses else, on exercise.go lines %v; when the if above it returns (or continues), the code after the if is already the else",
 				f.Name.Name, elseLines)
 		}
 	}

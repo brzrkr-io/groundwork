@@ -84,10 +84,10 @@ t.Cleanup(func() { srv.Stop() })
 arguments and stops the test. In a helper it's the usual way to give up when
 setup (like writing a file) fails.
 
-> **Why is it written like this?** A helper that returns a value (here, a
-> path) can't also return an error the caller must check every time.
-> Failing the test inside the helper keeps each subtest short; that's a
-> common Go convention for test setup helpers.
+> **Why is it written like this?** The helper could also return an error,
+> but then every caller would have to check it. Failing the test inside the
+> helper keeps each subtest short. That's a common Go convention for setup
+> helpers.
 
 ## Your task
 

@@ -1,15 +1,14 @@
 ## Task 1: Name the release
 
 First clean up the service name: remove the spaces at both ends, then make
-it lower case. Then add a space and the version. Remember to add
+it lowercase. Then add a space and the version. Remember to add
 `import "strings"`.
 
 ### Closer
 
 `strings.TrimSpace(service)` removes the spaces, and `strings.ToLower(...)`
-lower-cases whatever you give it, so you can put one call inside the other.
-Join with `+`: the space is fixed text, so it goes in quotes (`" "`);
-`version` is a parameter, so it doesn't.
+lowercases, so put one call inside the other. Join with `+`: the space is
+fixed text in quotes (`" "`); `version` is a parameter, so it has none.
 
 ### Answer
 

@@ -77,8 +77,8 @@ func (s source) numberLines(f *ast.FuncDecl) []int {
 	return lines
 }
 
-// stringLines returns the lines of exercise.go where the string text is
-// written, as a whole string literal such as "staging".
+// stringLines returns the lines of exercise.go that hold a string literal
+// equal to text, such as "staging".
 func (s source) stringLines(text string) []int {
 	var lines []int
 	ast.Inspect(s.file, func(n ast.Node) bool {

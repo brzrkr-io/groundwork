@@ -26,6 +26,6 @@ func MatchingPodNames(pods []corev1.Pod, sel labels.Selector) []string {
 // not a valid selector.
 func SelectPods(pods []corev1.Pod, expr string) ([]string, error) {
 	// TODO(3): Parse expr with labels.Parse. Return a wrapped error if it is
-	// invalid, otherwise reuse MatchingPodNames. You will need to import "fmt".
+	// invalid; otherwise reuse MatchingPodNames. Add "fmt" to the imports.
 	return nil, nil
 }

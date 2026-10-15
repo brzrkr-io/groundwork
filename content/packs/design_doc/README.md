@@ -16,7 +16,7 @@ decision with a rollback plan.
 Talking through a change in a meeting feels faster, but:
 
 - people who weren't there never hear the reasons;
-- in six months nobody remembers why the team chose this way;
+- in six months nobody remembers why the team chose this approach;
 - writing exposes gaps. "We'll ship logs somewhere" becomes "which
   bucket, who pays, what if the shipper dies?".
 
@@ -36,7 +36,7 @@ and reviewed like code.
 never agree on the solution. Numbers make the problem real.
 
 **Always more than one option.** A doc with one option is an
-announcement, not a design. "Do nothing" or "the cheap quick fix" are fine
+announcement, not a design. "Do nothing" and "the cheap quick fix" are fine
 options, and they make the trade-off visible.
 
 **Every option has a cost.** If you can't name a downside, you haven't

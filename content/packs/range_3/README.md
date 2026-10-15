@@ -23,7 +23,7 @@ is. Each number comes from a `range` loop.
 ### Percentages with integers
 
 Dividing two `int`s throws away the remainder: `200 / 3` is `66`. So multiply
-before you divide, or the result collapses to 0:
+by 100 first; dividing first turns any fraction below 1 into 0:
 
 ```go
 used, disk := 3, 4

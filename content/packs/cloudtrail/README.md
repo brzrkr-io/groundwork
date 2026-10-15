@@ -62,12 +62,13 @@ Events arrive in batches, so a file is **not** sorted by time.
 
 ### Responding to a leaked key
 
-1. **Deactivate** the key (`UpdateAccessKey` to `Inactive`). Not delete:
-   you can switch it back on if you picked the wrong one.
+1. **Deactivate** the key (`UpdateAccessKey` to `Inactive`). Don't delete
+   it: you can reactivate it if you picked the wrong one.
 2. **Trace** it: every event with that `accessKeyId`, oldest first. Which
    IPs? Which regions? (Attackers like regions you never use.)
 3. **Look for persistence:** `CreateUser`, `CreateAccessKey`,
-   `AttachUserPolicy`. A new key works after you deactivate the old one.
+   `AttachUserPolicy`. A key the attacker created keeps working after you
+   deactivate the leaked one.
 4. **Clean up** what they made, then fix how the key leaked. (The fix that
    lasts: no long-term keys in CI at all, as in
    *Assume role: trust policies and temporary credentials*.)
@@ -224,7 +225,7 @@ Summarize([]Event{
   how did you get its keys out sorted in earlier exercises? (Add `"maps"`
   and `"strings"` to the imports.)
 - What should `First` and `Last` start as, so the first event always
-  replaces them? Starting from the zero time is a trap for `First`.
+  replaces them? Starting `First` at the zero time fails: no event is earlier.
 
 When all tests pass, run `Summarize` on the leaked key's events in your head
 or in a scratch test: which regions did CI never use, and what did

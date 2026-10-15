@@ -93,8 +93,8 @@ secrets are removed.
 **Goal:** fix the `alertWord` pattern so `IsAlert` reports whether a line
 contains `ERROR` or `FATAL` as a whole word.
 
-Uppercase only. Right now it never returns `true`. `IsAlert` itself is fine;
-change only the pattern.
+Match uppercase only. Right now it never returns `true`. `IsAlert` itself is
+fine; change only the pattern.
 
 ```go
 IsAlert("09:14:03 ERROR disk full on /var") // => true
@@ -167,7 +167,7 @@ Two places change: the `secretPair` pattern and the replacement text in
 
 **Think it through:**
 - `secretPair` stops at the `=`. Which table row in *Regular expressions:
-  release tags and log lines* means "one non-space character"?
+  release tags and log lines* means "one character that is not whitespace"?
 - In the replacement, `${1}` puts the key back. What fixed text comes after
   it?
 

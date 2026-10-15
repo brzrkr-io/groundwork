@@ -99,8 +99,8 @@ Write the capacity helpers for your team's planning dashboard.
 
 ### 1. Total the memory
 
-**Goal:** make `TotalMemoryMiB` return the memory `replicas` replicas need
-when each needs `perReplicaMiB` mebibytes (MiB).
+**Goal:** make `TotalMemoryMiB` return the total memory needed to run
+`replicas` copies when each needs `perReplicaMiB` mebibytes (MiB).
 
 ```go
 TotalMemoryMiB(3, 256) // => 768

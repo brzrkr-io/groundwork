@@ -8,8 +8,8 @@ set -euo pipefail
 # Example: bash 1_backup_exists.sh testdata/backups/db_2026-10-12.tar.gz
 #          backup found: testdata/backups/db_2026-10-12.tar.gz
 
-# TODO(1): this always says "no backup", with "command not found" on the
-# line above. Fix the test.
+# TODO(1): this always says "no backup", after "[[-f: command not found".
+# Fix the test.
 if [[-f "$1"]]; then
 	echo "backup found: $1"
 else

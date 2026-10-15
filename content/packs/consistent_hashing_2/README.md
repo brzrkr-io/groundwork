@@ -102,7 +102,7 @@ of `db-2`'s. Print a few labels and you'll see which.
 
 Fix the ring so that every node gets its fair share, every key gets a
 node, and the answers don't depend on how many `Add` calls built the ring.
-Fix them in order: the examples in task 2 and 3 assume the earlier fixes.
+Fix them in order: the examples in tasks 2 and 3 assume the earlier fixes.
 
 ### 1. Fix the labels
 

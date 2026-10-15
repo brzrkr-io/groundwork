@@ -1,8 +1,8 @@
 # Errors are values
 
-*Practice: service registry* closed *Interfaces and generics*: you can model
-things with your own types. You've been returning `error` values since
-*Multiple return values*; this module shows how to design, wrap and inspect
+*Practice: service registry* finished *Interfaces and generics*, so you can
+now model things with your own types. You've returned `error` values since
+*Multiple return values*. This module shows how to design, wrap and inspect
 them the way production code does.
 
 Things go wrong all the time in ops work: a config has a typo, a port is not a
@@ -39,9 +39,9 @@ if err != nil {
 
 Read `if err != nil` as "if something went wrong".
 
-> **Why is it written like this?** Go requires nothing special here: `error`
-> last is a *convention*, but every Go programmer expects it. The name `err`
-> is also convention. `if err != nil` is just a normal `if`.
+> **Why is it written like this?** Go doesn't enforce any of this. Putting
+> `error` last is a *convention*, but every Go programmer expects it. The name
+> `err` is also convention. `if err != nil` is just a normal `if`.
 
 ### Making your own errors
 
@@ -71,10 +71,10 @@ size, err := ParseSize(text)
 if err != nil {
 	return fmt.Errorf("volume %q: %v", name, err)
 }
-// "volume \"logs\": size \"big\" is not a number"
+// volume "logs": size "big" is not a number
 ```
 
-The caller's message goes first, then `: `, then the original error.
+Your context goes first, then `: `, then the original error.
 
 ### Return early, with zero values
 
@@ -203,7 +203,7 @@ ParseEndpoint("db")      // => "", 0, error `endpoint "db" has no port`
 **Think it through:**
 - Which of the three values from `strings.Cut` tells you there was no `:`?
 - Don't re-check the port yourself: call your `ParsePort` with the text after the `:`.
-- When `ParsePort` fails, the message is the *whole* input `s` in quotes, then `: `, then its error. See "Adding context".
+- When `ParsePort` fails, add context: `endpoint`, the *whole* input `s` in quotes, `: `, then its error. See "Adding context".
 
 ## Learn more
 

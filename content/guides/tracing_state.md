@@ -220,7 +220,7 @@ deploying to server 2
 deploying to server 3
 ```
 
-Four deploys for three servers. Trace the checks and you'll see why: `i` takes 0, 1, 2 **and** 3 before `3 <= 3` finally turns into `4 <= 3`. Starting at 0 *and* using `<=` adds one pass.
+Four deploys for three servers. Trace the checks and you'll see why: `i` takes 0, 1, 2 **and** 3, and the loop stops only when the check becomes `4 <= 3`. Starting at 0 *and* using `<=` adds one pass.
 
 Two correct versions:
 
@@ -341,7 +341,7 @@ It prints:
 failed checks: 2
 ```
 
-So `failed++` runs only when a check fails. An invariant for this loop: "at the top of each pass, `failed` counts the failed checks before `attempt`".
+`failed++` runs only when a check fails. An invariant for this loop: "at the top of each pass, `failed` counts the failed checks before `attempt`".
 
 ## Common mistakes
 

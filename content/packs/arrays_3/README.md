@@ -115,8 +115,8 @@ WeekSummary([7]int{3, 0, 0, 0, 0, 0, 0}, [7]int{0, 0, 0, 0, 3, 0, 0})
 ```
 
 The last example has the same total both weeks, but the days differ, so it
-is not "same as last week". Two empty weeks give `"same as last week: 0
-pages"`.
+is not "same as last week". Two empty weeks give
+`"same as last week: 0 pages"`.
 
 **Think it through:**
 - Which three values fill the slots: one total, one difference, one day name?

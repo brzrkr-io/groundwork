@@ -46,7 +46,7 @@ line 4, where `TODO(1)` says.
 ### 1. Name the release
 
 **Goal:** make `Release` trim the whitespace from both ends of `service`,
-lower-case it, then add a space and `version` (unchanged).
+lowercase it, then add a space and `version` (unchanged).
 
 ```go
 Release(" API ", "v1.4.2")   // => "api v1.4.2"

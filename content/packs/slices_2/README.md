@@ -52,15 +52,15 @@ prints a message plus a *stack trace* (the functions that were running).
 panic: runtime error: index out of range [-1] [recovered, repanicked]
 ...
 ...LastHost(...)
-	.../exercise.go:21
+	.../exercise.go:22
 ```
 
 Read the first line for **what** went wrong. Then look for the line naming
 your function and `exercise.go`: that is **where** it happened.
 
-> **Why is it written like this?** Go requires every index to be checked at
-> run time; a bad one panics instead of reading random memory. Guarding with
-> an `if` before indexing is your choice of fix, and the usual one.
+> **Why is it written like this?** Go checks every index at run time; a bad
+> one panics instead of reading random memory. Guarding with an `if` before
+> indexing is your choice of fix, and the usual one.
 
 ## Your task
 

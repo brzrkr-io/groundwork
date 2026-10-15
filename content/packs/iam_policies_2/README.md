@@ -45,8 +45,8 @@ have **different ARNs**, and each S3 action works on one or the other:
 
 `arn:aws:s3:::acme-app-logs/*` matches every object but **not** the bucket
 itself. That's why a policy that lists and reads usually has two statements,
-one per kind of ARN. And a pattern like `arn:aws:s3:::acme-app-logs*` (no
-slash) also matches someone's bucket `acme-app-logs-archive`.
+one per kind of ARN. Also, a pattern like `arn:aws:s3:::acme-app-logs*` (no
+slash) matches someone else's bucket `acme-app-logs-archive` too.
 
 ### Conditions
 
@@ -69,7 +69,7 @@ caller logged in with MFA (a second factor, like a phone code). The rules:
 - A key the request doesn't carry makes its condition fail (`NotIpAddress`
   is the exception: a missing address counts as "not in the range").
 
-The operators these tests know:
+The operators these tests support:
 
 | Operator | Holds when the request's value... | Example value |
 |---|---|---|
@@ -98,9 +98,9 @@ attach to a bucket, coming in *S3 bucket policies: is this bucket public?*).
 Your policies attach to users and roles, so **delete the `Id` line** once the
 task is done. The tests check that it's gone.
 
-In a real repository these files would live next to the Terraform or
-CloudFormation that creates the role, and you would paste them into the
-console or `aws iam create-policy --policy-document file://...`.
+In a real repository these files live next to the Terraform or
+CloudFormation that creates the role. You can also paste them into the
+console or pass them to `aws iam create-policy --policy-document file://...`.
 
 ### How the tests read your policy
 
@@ -137,8 +137,8 @@ aws iam simulate-custom-policy --policy-input-list file://3_deploy_bot.json \
                                                        # AWS's evaluator, for a policy that isn't attached anywhere
 ```
 
-Both only read. Remove the `Id` line first, or `validate-policy` reports it
-too.
+Both commands only read. Remove the `Id` line first, or `validate-policy`
+reports it too.
 
 ## Your task
 

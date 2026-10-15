@@ -39,8 +39,9 @@ func NewStore() *Store {
 }
 
 // Start looks key up. For a new key it marks the key as running and returns
-// KeyNew; the caller must later call Finish or Forget. For a finished key it
-// returns KeyDone and the saved response.
+// KeyNew; the caller must later call Finish or Forget. For a running key it
+// returns KeyBusy. For a finished key it returns KeyDone and the saved
+// response.
 func (st *Store) Start(key string) (Response, State) {
 	st.mu.Lock()
 	defer st.mu.Unlock()

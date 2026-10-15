@@ -27,7 +27,7 @@ The *kernel*: the core of the operating system, always running, with full contro
 
 Each process gets its own memory that no other process can read. When memory runs out, the kernel's *OOM killer* (out of memory) picks a process and kills it.
 
-**Containers are not small virtual machines.** A container is ordinary processes with kernel-enforced limits: *namespaces* control what they can see (their own PIDs, their own filesystem), and *cgroups* control how much they can use (CPU, memory). A Kubernetes memory limit is a cgroup limit, and hitting it triggers the OOM killer.
+**Containers are not small virtual machines.** A container is a group of ordinary processes with kernel-enforced limits: *namespaces* control what they can see (their own PIDs, their own filesystem), and *cgroups* control how much they can use (CPU, memory). A Kubernetes memory limit is a cgroup limit, and hitting it triggers the OOM killer.
 
 ## System calls: the kernel's API
 
@@ -59,7 +59,7 @@ close(3)                                = 0
 4. The next `read` returns 0 bytes: end of file.
 5. `close(3)` gives the ticket back.
 
-Those ticket numbers are file descriptors, coming up below. When a tool hangs or fails with a vague error, `strace` shows you exactly which request the kernel refused.
+These ticket numbers are called *file descriptors*; more on them below. When a tool hangs or fails with a vague error, `strace` shows you exactly which request the kernel refused.
 
 ## Processes
 
@@ -96,7 +96,7 @@ Unix has a famous design rule: **everything is a file**. Regular files, director
 - A *relative path* starts from the process's *working directory*: `logs/app.log` means "`logs/app.log` inside wherever I was started".
 - `.` means the working directory itself, `..` its parent, and `~` (expanded by the shell) your home directory.
 
-A classic ops bug: a script works when you run it by hand, then fails under cron or systemd. They start it in a different working directory, so its relative paths point somewhere else. Use absolute paths in jobs. You'll move around with both kinds in *Files and folders: paths, mkdir, cp, mv and rm*, and fix a cron job with this bug in *Processes and permissions: an incident on the box*.
+A classic ops bug: a script works when you run it by hand, then fails under cron or systemd. Those start it in a different working directory, so its relative paths point somewhere else. Use absolute paths in jobs. You'll move around with both kinds in *Files and folders: paths, mkdir, cp, mv and rm*, and fix a cron job with this bug in *Processes and permissions: an incident on the box*.
 
 ### Permissions
 
@@ -304,7 +304,7 @@ A *signal* is a small numbered notice the kernel delivers to a process, interrup
 | SIGKILL | 9 | `kill -9`, the OOM killer | **no**: the kernel ends it |
 | SIGHUP | 1 | terminal closed; by convention "reload config" | yes |
 
-A program can *catch* a signal it's allowed to: run its own code instead of dying at once. Catching SIGTERM is how a service shuts down cleanly: stop taking new work, finish what's in flight, flush logs, exit 0.
+A program can *catch* most signals: it runs its own code instead of dying at once. Catching SIGTERM is how a service shuts down cleanly: stop taking new work, finish what's in flight, flush logs, exit 0.
 
 Picture a worker that processes one job at a time, and what `kill -TERM <pid>` does to it:
 

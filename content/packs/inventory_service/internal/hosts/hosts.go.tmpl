@@ -97,7 +97,7 @@ func (s *Store) Get(id string) (Host, error) {
 
 // Update replaces the host with the given ID. It returns ErrNotFound if the
 // ID is unknown, then the Validate error if h is invalid. The stored host
-// keeps the ID from the URL, whatever h.ID says.
+// takes its ID from the id argument, whatever h.ID says.
 func (s *Store) Update(id string, h Host) (Host, error) {
 	// TODO(2): Check the ID exists, validate h, set h.ID = id, store it and
 	// return it.

@@ -258,5 +258,5 @@ Then `bash setup.sh` brings the deleted files back.
 
 ## Learn more
 
-- [GNU findutils manual](https://www.gnu.org/software/findutils/manual/html_mono/find.html)
+- [GNU findutils manual](https://www.gnu.org/software/findutils/manual/find.html)
 - [The Missing Semester: Shell Tools and Scripting](https://missing.csail.mit.edu/2020/shell-tools/)

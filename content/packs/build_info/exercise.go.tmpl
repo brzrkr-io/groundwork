@@ -13,7 +13,7 @@ import (
 var version string
 
 func main() {
-	// ok is false when the binary has no build info. info is then nil.
+	// The ok result is ignored: with no build info, info is nil.
 	info, _ := debug.ReadBuildInfo()
 	fmt.Println(VersionLine("deployctl", version, info))
 }

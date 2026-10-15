@@ -49,7 +49,7 @@ pages are the source of truth.
 
 ### Where surprise bills come from
 
-- **NAT gateways.** One per availability zone, as *VPC planning: subnets per availability zone* suggests, is about $99 a month for three before a byte flows.
+- **NAT gateways.** One per availability zone, as *VPC planning: subnets per availability zone* suggests, costs about $99 a month for three zones before a byte flows.
 - **Data transfer out.** Serving 10 TB of downloads is about $900.
 - **Forgotten resources.** A test `c5.xlarge` left running is $124 a month;
   its disk keeps costing after the instance stops.
@@ -91,8 +91,8 @@ Rounding once at the end keeps the errors small. Real billing systems
 avoid floats altogether and count whole cents in an integer.
 
 > **Why is it written like this?** `math.Round` only rounds to whole
-> numbers, so you shift the point, round, and shift back. Go requires the
-> `"math"` import; multiplying by a power of ten is the usual idiom.
+> numbers, so you shift the decimal point, round, and shift back.
+> Multiplying and dividing by a power of ten is the usual idiom.
 
 ### Try it (optional)
 
@@ -167,9 +167,10 @@ Estimate([]Item{
 // => Bill{Total: 95.47, ByService: {ec2: 37.96, ebs: 4.8, s3: 2.76, nat: 36.45, transfer: 13.5}}
 ```
 
-Rounding once at the end matters: one `t3.micro` hour ($0.0104), 1 GB in S3
-($0.023) and 0.05 GB out ($0.0045) is a total of `0.04`, with `ec2: 0.01`,
-`s3: 0.02` and `transfer: 0`.
+Rounding once at the end matters. One `t3.micro` hour ($0.0104), 1 GB in S3
+($0.023) and 0.05 GB out ($0.0045) total `0.04`, with `ec2: 0.01`,
+`s3: 0.02` and `transfer: 0`. Rounding each line first would give a total
+of `0.03`.
 
 **Think it through:**
 - What does `ByService` have to be before you can add to it?

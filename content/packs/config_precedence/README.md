@@ -42,10 +42,10 @@ backed by a map. You call it the same way: `lookup("SOME_NAME")`.
 Environment values are always strings. `strconv.Atoi` turns `"42"` into `42`,
 or returns an error.
 
-> **Why is it written like this?** `if v, ok := lookup("X"); ok { … }` is one
-> line in two parts. Before the `;` you create `v` and `ok`; after it is the
-> condition. Go allows this short statement (Go requires the `;`). The names
-> `v` and `ok` are convention, not rules.
+> **Why is it written like this?** `if v, ok := lookup("X"); ok { … }` puts a
+> short statement before the condition. Before the `;` you create `v` and
+> `ok`; after it comes the condition. Go requires the `;`. The names `v` and
+> `ok` are convention, not rules.
 
 ### JSON: pointer fields
 

@@ -24,9 +24,9 @@ func ScaleDeployment(ctx context.Context, cs kubernetes.Interface, namespace, na
 	return err
 }
 
-// ApplyConfigMap makes sure the ConfigMap namespace/name exists and holds
-// data. It creates the ConfigMap if it is missing and updates it otherwise,
-// and returns the ConfigMap as the API server stored it.
+// ApplyConfigMap makes the ConfigMap namespace/name hold data, creating it if
+// it is missing and updating it otherwise. It returns the ConfigMap as the
+// API server stored it.
 func ApplyConfigMap(ctx context.Context, cs kubernetes.Interface, namespace, name string, data map[string]string) (*corev1.ConfigMap, error) {
 	desired := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},

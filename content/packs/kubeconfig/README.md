@@ -15,8 +15,8 @@ Everything you do in a cluster goes through its API server (as in
 address and something that proves who you are.
 
 Ops engineers often reach several clusters: staging, production EU,
-production US. A *kubeconfig* is a YAML file listing all of them, with three
-lists and one pointer:
+production US. A *kubeconfig* is a YAML file that lists all of them. It has
+three lists and one field that picks the default:
 
 | Section | What each entry holds |
 |---|---|
@@ -89,7 +89,7 @@ tells you whether a name exists:
 ```go
 user, ok := cfg.AuthInfos["deploy-bot"]
 if !ok {
-	// no user with that name
+	return errors.New("no user called deploy-bot")
 }
 fmt.Println(user.Token)
 ```

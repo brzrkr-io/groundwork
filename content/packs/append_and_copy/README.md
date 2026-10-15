@@ -42,14 +42,14 @@ Read `us...` as "all the elements of `us`". Without the dots, Go would try to
 add the whole slice as one element, which does not compile. (You'll see where
 `...` comes from in *Variadic functions*.)
 
-> **Why is it written like this?** Go requires the three dots, with no space,
-> after the slice.
+> **Why is it written like this?** Go requires the three dots after the
+> slice. Writing them with no space before them is the gofmt convention.
 
 ### len and cap
 
 `len(s)` is how many elements a slice holds. `cap(s)`, the *capacity*, is how
 much room it has before it needs more memory. When `append` runs out of room,
-it moves the elements to a bigger block and returns a slice pointing there.
+it copies the elements to a bigger block and returns a slice pointing there.
 That is another reason to always use the returned slice.
 
 ### Building a result in a loop

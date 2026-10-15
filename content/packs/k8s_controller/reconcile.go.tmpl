@@ -32,10 +32,10 @@ func (c *Controller) Reconcile(ctx context.Context, key string) error {
 	}
 
 	if Exposed(d) {
-		// TODO(3): Write a method ensureService(ctx, d) that creates the
-		// Service if it is missing, returns an error wrapping ErrNotOwned if d
-		// does not own it, updates it if it has drifted, and leaves it alone
-		// if it is in sync. Return its result here. You will need to import
+		// TODO(3): Write a method ensureService(ctx, d) and return its result.
+		// It creates the Service if it is missing, returns an error wrapping
+		// ErrNotOwned if d does not own it, updates it if it has drifted, and
+		// leaves it alone if it is in sync. Import
 		// "fmt", appsv1 "k8s.io/api/apps/v1" and
 		// metav1 "k8s.io/apimachinery/pkg/apis/meta/v1".
 		return nil

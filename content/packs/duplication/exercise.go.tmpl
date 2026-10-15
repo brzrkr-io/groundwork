@@ -46,8 +46,8 @@ func Validate(c Config) []string {
 	return problems
 }
 
-// AlertChannel returns the chat channel for alerts from env: "#alerts-" and
-// the environment for a known environment, "#alerts-unknown" otherwise.
+// AlertChannel returns the chat channel for alerts from env: "#alerts-"
+// followed by env if env is known, "#alerts-unknown" otherwise.
 func AlertChannel(env string) string {
 	switch env {
 	case "development", "staging", "production":

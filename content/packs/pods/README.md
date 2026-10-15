@@ -85,7 +85,7 @@ Every object has those four top-level keys. Kubernetes adds a fifth,
 `command` and `args` follow the Dockerfile rules from *Dockerfiles*.
 Check the image before you use them: `docker inspect IMAGE` shows its
 `Entrypoint` and `Cmd`. podinfo, the image in this module, has no
-`ENTRYPOINT` and `CMD ["./podinfo"]`. So `args: ["--level=debug"]` alone
+`ENTRYPOINT`, and its `CMD` is `["./podinfo"]`. So `args: ["--level=debug"]` alone
 would replace `./podinfo` itself, and the Pod fails to start with:
 
 ```text

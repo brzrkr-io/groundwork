@@ -72,7 +72,7 @@ func TestOneStepAptInstall(t *testing.T) {
 
 	update := strings.Index(install.Rest, "apt-get update")
 	if update < 0 || update > strings.Index(install.Rest, "apt-get install") {
-		t.Errorf("%s line %d: %s, want apt-get update && first, in the same RUN as apt-get install", file, install.Line, show(*install))
+		t.Errorf("%s line %d: %s, want apt-get update first, joined with && to apt-get install in the same RUN as apt-get install", file, install.Line, show(*install))
 	}
 	var words []string // the RUN's words, without a trailing ; after them
 	for _, word := range install.Args {
@@ -92,8 +92,8 @@ func TestOneStepAptInstall(t *testing.T) {
 }
 
 // stopsOnError reports whether a shell command starts with "set -e" (or
-// -eux and friends), the other common way to stop at the first failure:
-// commands are then separated with ";" instead of "&&".
+// -eux and similar). That is the other common way to stop at the first
+// failure; the commands are then separated with ";" instead of "&&".
 func stopsOnError(words []string) bool {
 	return len(words) >= 2 && words[0] == "set" && strings.HasPrefix(words[1], "-") && strings.Contains(words[1], "e")
 }
@@ -154,8 +154,8 @@ func sources(in instruction) []string {
 	return in.Args[:len(in.Args)-1]
 }
 
-// checkRun checks there is a RUN with exactly the command want, and returns
-// it, or nil.
+// checkRun checks that there is a RUN with exactly the command want. It
+// returns that RUN, or nil.
 func checkRun(t *testing.T, file string, instructions []instruction, want string) *instruction {
 	t.Helper()
 	for _, in := range find(instructions, "RUN") {

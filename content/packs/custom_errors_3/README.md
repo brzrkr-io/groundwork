@@ -68,7 +68,7 @@ create it from a status code, and decide what to retry.
 
 **Goal:** `(*HTTPError).Error` returns `GET <URL>: status <StatusCode>`.
 
-The fixed text is `GET ` (with a space), `: status ` (colon, space, `status`, space).
+The fixed text is `GET ` (with a space) and `: status ` (colon, space, `status`, space).
 
 ```go
 (&HTTPError{URL: "http://api:8080/healthz", StatusCode: 503}).Error()

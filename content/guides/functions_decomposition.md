@@ -14,7 +14,7 @@
 
 ## A function is a named step
 
-Think of a runbook. One page says "Check disk usage: divide used space by total space, times 100". Other pages just say "check disk usage on web-1". Nobody rewrites the steps each time; they refer to them by name.
+Think of a runbook. One page says "Check disk usage: divide used space by total space and multiply by 100". Other pages just say "check disk usage on web-1". Nobody rewrites the steps each time; they refer to them by name.
 
 A function is that page. You write the steps once, give them a name, and then use the name wherever you need the result.
 
@@ -179,7 +179,7 @@ Picture the blocks as nested boxes. Code can see names in its own box and in eve
 └───────────────────────────────────────────────────────┘
 ```
 
-**Scope is a feature.** Two functions can both have a variable called `total` and never clash. To move a value from one function to another, don't reach into it: **return** it from one and **pass** it as an argument to the other. `main` already does that right: `fmt.Println(sumDisks())`.
+**Scope is a feature.** Two functions can both have a variable called `total` and never clash. To move a value from one function to another, don't reach into it: **return** it from one and **pass** it as an argument to the other. `main` already does this correctly: `fmt.Println(sumDisks())`.
 
 ## The call stack
 

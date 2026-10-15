@@ -12,8 +12,8 @@ from *Basics* and *Control flow and functions*.)
 
 ### The everyday tools
 
-You met `Contains`, `HasPrefix` and `ToUpper` in *Strings*. All of these
-return a **new** value; Go strings never change in place.
+You met `Contains`, `HasPrefix` and `ToUpper` in *Strings*. Every function
+below returns a **new** value; Go strings never change in place.
 
 | Function | What it does | Example | Result |
 |---|---|---|---|
@@ -162,8 +162,8 @@ contains the double quotes, not the backticks.
 
 **Think it through:**
 - The loop already writes `arg`. What must be written before it, every time?
-- When quoting, which three pieces make the new argument: fixed text,
-  the variable, fixed text?
+- When quoting, join three pieces with `+`: a quote, `arg`, a quote. How do
+  you write a `"` inside a string? (See *Quotes inside a string*.)
 
 ## Learn more
 

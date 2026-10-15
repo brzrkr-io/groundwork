@@ -1,6 +1,6 @@
 # Formatting: fix the bot messages
 
-The scaling bot's messages are broken: one won't even build, one is missing,
+The scaling bot's messages are broken: one fails `go vet`, one is missing,
 and incident tickets need properly padded IDs.
 
 **New here:** vet errors, zero padding (`%05d`).

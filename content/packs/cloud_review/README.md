@@ -5,7 +5,7 @@ live?" You write a small review tool that reads an exported snapshot of the
 account and lists what's dangerous, most urgent first. Real tools (AWS
 Security Hub, Prowler, ScoutSuite) run hundreds of checks like these.
 
-**New here:** `time.Time.IsZero`; the rest is practice of everything in *Cloud fundamentals*.
+**New here:** `time.Time.IsZero`; everything else comes from *Cloud fundamentals*.
 
 ## Learn
 
@@ -24,7 +24,7 @@ Security Hub, Prowler, ScoutSuite) run hundreds of checks like these.
 ### The zero time
 
 A `time.Time` field that JSON leaves out keeps its *zero value*: January 1,
-year 1. Don't compare it with a date you make up; ask it:
+year 1. Don't compare it with a made-up date; call `IsZero`:
 
 ```go
 var deployed time.Time // never set
@@ -87,8 +87,8 @@ port that an inbound rule opens to the whole internet.
 - A rule opens a port when its `Protocol` is `"tcp"` and the port is between
   `FromPort` and `ToPort` (both included), or when its `Protocol` is `"-1"`
   (all traffic, whatever the ports say). `"udp"` rules never count.
-- `Resource` is the group's ID, a space and its name in brackets;
-  `Problem` is `port <port> open to <cidr>`.
+- `Resource` is the group's ID, a space and its name in parentheses
+  (`sg-02 (win)`); `Problem` is `port <port> open to <cidr>`.
 
 ```go
 OpenAdminPorts([]SecurityGroup{{ID: "sg-02", Name: "win", Inbound: []Rule{

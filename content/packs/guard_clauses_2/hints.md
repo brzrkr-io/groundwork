@@ -1,6 +1,6 @@
 ## Task 1: Fix the disk alert boundaries
 
-The original said `< 80` means "ok". The guard asks the opposite: "is it 80 or more?". With `>`, the value 80 itself slips through to "ok".
+The original said `< 80` means "ok". The guard should ask the opposite: "is it 80 or more?" With `>`, the value 80 itself slips through to "ok".
 
 ### Closer
 

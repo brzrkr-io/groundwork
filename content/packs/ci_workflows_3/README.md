@@ -111,11 +111,11 @@ nothing: a cache, once saved, is never overwritten.
 `actions/checkout`, there is no lock file and the hash is empty.
 
 > **Why is it written like this?**
-> - **Author's choice:** `actions/setup-go` already caches both folders,
->   keyed on `go.mod` (or `cache-dependency-path`), and on by default. Write
->   your own `actions/cache` step when you want to choose the key yourself.
->   Then switch the built-in one off with `cache: false`, or both would
->   restore and save the same folders.
+> - **Author's choice:** `actions/setup-go` already caches both folders by
+>   default, keyed on `go.mod` (or `cache-dependency-path`). Write your own
+>   `actions/cache` step when you want to choose the key yourself. Then turn
+>   the built-in cache off with `cache: false`, or both would restore and
+>   save the same folders.
 > - **Convention:** the cache step goes right after setup-go, before
 >   anything that downloads or builds.
 

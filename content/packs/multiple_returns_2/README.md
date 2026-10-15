@@ -63,7 +63,7 @@ if rest, found := strings.CutSuffix(d, "s"); found {
 }
 ```
 
-This keeps tries like "is it seconds? is it minutes?" from clashing names.
+That lets you try "is it seconds?" then "is it minutes?" without the names clashing.
 
 ## Your task
 

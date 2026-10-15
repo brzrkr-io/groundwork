@@ -60,8 +60,8 @@ err := cmd.Run()
 // result.String() == "a\nb\n"
 ```
 
-> **Why is it written like this?** `&result` (with `&`) is required: a
-> buffer only works as a writer through a pointer, so it can grow. `var x
+> **Why is it written like this?** `&result` (with `&`) is required: `Write`
+> is defined on `*bytes.Buffer`, so only a pointer is an `io.Writer`. `var x
 > bytes.Buffer` is fine because its zero value is an empty buffer, ready to use.
 
 ### Is the tool installed?

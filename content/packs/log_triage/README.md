@@ -79,7 +79,7 @@ LOG is `$1` exactly as given; N is the number of lines.
 
 **Think it through:**
 - Which two checks come first, and in which order?
-- How did you count lines and print only the number?
+- How do you count the lines and print only the number?
 
 ### 2. Count each level
 
@@ -104,7 +104,7 @@ level column only: in `testdata/rollout.log`, which the tests also use, one
 so the counts there are `ERROR: 4`, `WARN: 1`, `INFO: 3`.
 
 **Think it through:**
-- A loop over three fixed words, with one count per word.
+- How do you loop over three fixed words and count each one?
 - How do you match the level column only, not the same word inside a
   message? (Look at what's on each side of it.)
 - What does `grep -c` do on `quiet.log` when there are no errors?
@@ -126,7 +126,7 @@ bash 3_failing_services.sh testdata/rollout.log
 ```
 
 A log without errors (`quiet.log`) prints nothing and exits 0. The tests
-compare exact text, so there are no spaces at the start of the lines.
+compare exact text, so the lines must not start with spaces.
 
 **Think it through:**
 - Which tool gives you column 3 of only the `ERROR` lines, and still

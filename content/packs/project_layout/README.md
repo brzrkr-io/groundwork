@@ -62,10 +62,10 @@ tested.
 
 ```go
 func main() {
-	os.Exit(serve(os.Args[1:], os.Stdout))
+	os.Exit(run(os.Args[1:], os.Stdout))
 }
 
-func serve(args []string, out io.Writer) int {
+func run(args []string, out io.Writer) int {
 	// all the work, writing to out, returning an exit code
 }
 ```
@@ -206,7 +206,7 @@ run([]string{"web-1=72", "web-2=91"}, stdout, stderr)
 Then make `main` thin: its whole body becomes one line that calls `run` with
 the real arguments (without the program name), `os.Stdout` and `os.Stderr`,
 and passes the result to `os.Exit`. Delete the imports it no longer needs.
-Nothing tests `main`; keeping it this small means nothing in it can break.
+Nothing tests `main`, so keep it too small to hide a bug.
 
 **Think it through:**
 - Write to the `stdout` parameter, not `os.Stdout`. Which one can the test

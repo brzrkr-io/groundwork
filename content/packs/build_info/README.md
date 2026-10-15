@@ -99,8 +99,8 @@ nil pointer crashes the program, so check for `nil` *before* you read a field.
 
 ### Slicing a string
 
-`s[:n]` is the first `n` bytes of `s`. If `s` is shorter than `n`, it
-crashes, so check `len(s)` first:
+`s[:n]` is the first `n` bytes of `s`. If `s` is shorter than `n`, the
+program crashes, so check `len(s)` first:
 
 ```go
 id := "a81c5f"
@@ -190,10 +190,10 @@ go run -ldflags "-X main.version=1.4.2" .
 go run .
 ```
 
-The first prints `deployctl 1.4.2 (commit unknown)`. The second has no
-stamped version, so it prints `dev`, unless the folder is inside a tagged git
-repository. The commit is `unknown` unless the folder is inside a git
-repository.
+Outside a git repository, the first prints `deployctl 1.4.2 (commit unknown)`.
+The second has no stamped version, so it prints `dev`, unless the folder is
+inside a tagged git repository. Inside a git repository, the commit shows the
+real hash instead of `unknown`.
 
 ## Learn more
 

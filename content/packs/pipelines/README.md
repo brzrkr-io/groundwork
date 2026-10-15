@@ -35,8 +35,8 @@ Read it in three steps:
 3. Return the channel **immediately**. Don't wait for the goroutine.
 
 > **Why is it written like this?**
-> - **Go requires** `defer close(out)` *or* some close, if receivers use
->   `range`: a `range` over a channel only ends when it is closed.
+> - **Go requires** that `out` gets closed (here by `defer close(out)`) if
+>   receivers use `range`: a `range` over a channel only ends when it is closed.
 > - **Convention:** the stage that makes `out` is the only one that sends on
 >   it and closes it. The return type `<-chan string` (receive only) lets the
 >   compiler stop callers from sending or closing.
@@ -80,8 +80,8 @@ before, after, found = strings.Cut("novalue", "=")
 ```
 
 > **Why is it written like this?** Go requires you to accept all three
-> results or skip one with `_`. Using `strings` requires adding `"strings"`
-> to the `import` list at the top of the file.
+> results or skip one with `_`. To use `strings`, add `"strings"` to the
+> `import` list at the top of the file.
 
 ## Your task
 

@@ -9,8 +9,8 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
-// RESTConfig builds the connection settings for the context contextName in
-// cfg. It does not contact the cluster.
+// RESTConfig builds the connection settings for the named context in cfg.
+// It does not contact the cluster.
 func RESTConfig(cfg *clientcmdapi.Config, contextName string) (*rest.Config, error) {
 	clientConfig := clientcmd.NewNonInteractiveClientConfig(*cfg, contextName, &clientcmd.ConfigOverrides{}, nil)
 	return clientConfig.ClientConfig()
@@ -25,8 +25,8 @@ func Tune(c *rest.Config, userAgent string) {
 	c.UserAgent = userAgent
 }
 
-// Namespace returns the default namespace of the context contextName in cfg,
-// or "default" when the context doesn't set one.
+// Namespace returns the namespace set by the named context in cfg, or
+// "default" when the context sets none.
 func Namespace(cfg *clientcmdapi.Config, contextName string) (string, error) {
 	clientConfig := clientcmd.NewNonInteractiveClientConfig(*cfg, contextName, &clientcmd.ConfigOverrides{}, nil)
 	ns, _, err := clientConfig.Namespace()

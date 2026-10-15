@@ -35,12 +35,12 @@ git commit --amend --no-edit                         # add a file, keep the mess
 
 Without `-m` or `--no-edit`, Git opens an editor for the message.
 
-> **Why is it written like this?** **Git requires** `--amend` to make a
-> *new* commit with a new hash: commits never change once made. The old one
-> is simply no longer on the branch. So the golden rule from rebase applies:
-> only amend commits nobody else has. Once you've shared a commit with
-> teammates (by *pushing* it to a shared copy of the repo, coming up in
-> *Remotes: clone, push and fetch*), they may already have the old one.
+> **Why is it written like this?** **Git's rule:** commits never change once
+> made, so `--amend` makes a *new* commit with a new hash. The old one is
+> simply no longer on the branch. So the golden rule from rebase applies:
+> only amend commits nobody else has. Once you've shared a commit (by
+> *pushing* it to a shared copy of the repo, coming up in *Remotes: clone,
+> push and fetch*), teammates may already have the old one.
 
 ### Naming older commits
 
@@ -87,8 +87,8 @@ That turns three commits into one, which is called *squashing*.
 
 You fixed the health check in a hurry. The newest commit has a typo-ridden
 message and is missing its config file, and it really belongs with the
-commit before it. Run `bash setup.sh` and look: `git log --oneline` and
-`git status` in `sandbox/`.
+commit before it. Run `bash setup.sh`, then `cd sandbox` and look at
+`git log --oneline` and `git status`.
 
 ### 1. Reword the last commit
 

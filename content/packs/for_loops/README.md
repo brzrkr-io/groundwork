@@ -107,7 +107,7 @@ learn how that works in *Methods*; for now, copy this pattern.
 ## Your task
 
 Your deploy tool retries failed requests with *exponential backoff*: it waits
-`base` seconds before the first retry, then twice as long before each next
+`base` seconds before the first retry, then twice as long before each later
 one (`base`, `2*base`, `4*base`, ...). It also prints a progress bar. Each
 starter function returns a placeholder; replace it.
 
@@ -115,7 +115,7 @@ starter function returns a placeholder; replace it.
 
 **Goal:** make `TotalBackoff(attempts, baseSeconds)` return the sum of the first `attempts` delays.
 
-The first delay is `baseSeconds`; each next delay is double the one before.
+The first delay is `baseSeconds`; each later delay is double the one before.
 Zero attempts means `0`.
 
 ```go

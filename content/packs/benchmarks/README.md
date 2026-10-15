@@ -113,7 +113,7 @@ FormatTags([]Tag{
 ```
 
 Each tag becomes `key=value`, tags are joined with commas in the order
-given, and no tags give `""`. It works, but builds the text with `+=`.
+given, and an empty list gives `""`. It works, but builds the text with `+=`.
 Measure it, then make it allocate less.
 
 ### 1. Write BenchmarkFormatTags

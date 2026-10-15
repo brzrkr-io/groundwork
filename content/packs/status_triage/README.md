@@ -28,9 +28,9 @@ each, and `Triage` combines them:
                     Triage joins these into one line
 ```
 
-> **Why is it written like this?** Small functions that each do one thing is
-> a Go convention: each is easy to test on its own. Splitting it into these
-> four is the author's choice.
+> **Why is it written like this?** Small functions that each do one job are
+> a Go convention: each is easy to test on its own. Splitting the work into
+> these four is the author's choice.
 
 ### Recap
 

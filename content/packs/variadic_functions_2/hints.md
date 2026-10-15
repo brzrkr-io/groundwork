@@ -43,7 +43,7 @@ With `nil`, `Alert` gets no hosts and returns `"critical: no hosts"` on its own.
 
 ## Task 3: Put the canary first
 
-You can't mix one single value and a spread slice in the same call, so `Alert("warning", canary, others...)` won't compile. Build one slice first.
+You can't mix single values and a spread slice in one call, so `Alert("warning", canary, others...)` won't compile. Build one slice first.
 
 ### Closer
 

@@ -66,7 +66,7 @@ func TestWorkflow(t *testing.T) {
 	}
 }
 
-// checkJob checks that the workflow has the job id, running on
+// checkJob checks that the workflow has a job with the given id, running on
 // ubuntu-latest, and returns it.
 func checkJob(t *testing.T, file string, wf workflow, id string) job {
 	t.Helper()
@@ -103,7 +103,7 @@ func checkSetupSteps(t *testing.T, file, id string, steps []step) {
 }
 
 // findLine returns the index of the first step with a command line that
-// contains every one of pieces, or -1.
+// contains every one of the given pieces, or -1.
 func findLine(steps []step, pieces ...string) int {
 	for i, s := range steps {
 		for line := range strings.Lines(s.Run) {

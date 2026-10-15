@@ -204,7 +204,7 @@ $ git -C origin.git log --oneline -2 main
 The newest hash will differ.
 
 **Think it through:**
-- `main` already has an upstream. What does plain `git push` need then?
+- `main` already has an upstream. Does `git push` need any arguments?
 - From inside `web`, what's the relative path to `alex`?
 
 ## Learn more

@@ -63,7 +63,7 @@ func SlowestHop(spans []Span, traceID string) (hop Span, ok bool) {
 		if s.TraceID != traceID {
 			continue
 		}
-		// The first span always wins; later ones only with strictly more.
+		// Take the first matching span; a later one replaces it only with strictly more own time.
 		if own := s.DurationMS - childTime[s.SpanID]; !ok || own > most {
 			hop, most, ok = s, own, true
 		}

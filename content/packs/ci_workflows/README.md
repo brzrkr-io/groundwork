@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest      # a fresh virtual machine for this job
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: shellcheck scripts/*.sh      # step 2: a shell command
+      - run: shellcheck scripts/*.sh      # a shell command
 ```
 
 | Key | Meaning |
@@ -125,10 +125,10 @@ git ls-remote --tags https://github.com/actions/cache 'v6.1.0*'
 # 55cc8345863c7cc4c66a329aec7e433d2d1c52a9	refs/tags/v6.1.0
 ```
 
-Copy the first column. The quotes and `*` matter for *annotated* tags
-(tags with their own message): Git then prints a second line ending in
-`^{}`, and **that** line holds the commit. GitHub's release page links the
-same commit. The SHAs for this exercise:
+Copy the first column. The `*` also catches *annotated* tags (tags with
+their own message). For those, Git prints a second line ending in `^{}`,
+and **that** line holds the commit. GitHub's release page links the same
+commit. The SHAs for this exercise:
 
 | Action | Release | Commit |
 |---|---|---|
@@ -140,8 +140,8 @@ same commit. The SHAs for this exercise:
 >   the full 40 characters.
 > - **Convention:** `# vX.Y.Z` after a SHA, one space before the `#`.
 > - **Author's choice:** SHAs for *every* action, GitHub's own included, so
->   there is one rule to remember. Many teams only require them for
->   third-party actions; tags are still movable for both.
+>   there is one rule to remember. Many teams require them only for
+>   third-party actions, but GitHub's own tags can be moved too.
 
 `actions/setup-go` installs Go. Tell it which version through `with`:
 

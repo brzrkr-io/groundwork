@@ -119,7 +119,7 @@ func TestPromote(t *testing.T) {
 	}
 }
 
-// checkJob checks that the workflow has the job id, running on
+// checkJob checks that the workflow has a job with the given id, running on
 // ubuntu-latest, and returns it.
 func checkJob(t *testing.T, file string, wf workflow, id string) job {
 	t.Helper()
@@ -190,7 +190,7 @@ func input(s step, key string) string {
 	return expr(strings.TrimSpace(fmt.Sprint(v)))
 }
 
-// checkInput checks that the step's input key is want.
+// checkInput checks that the step's input named key equals want.
 func checkInput(t *testing.T, file string, s step, key, want string) {
 	t.Helper()
 	if got := input(s, key); got != want {
@@ -198,8 +198,8 @@ func checkInput(t *testing.T, file string, s step, key, want string) {
 	}
 }
 
-// checkListInput checks that the step's input key, a list with one item per
-// line (or separated by commas), has want as one of its items.
+// checkListInput checks that the step's input named key, a list with one
+// item per line (or separated by commas), includes want.
 func checkListInput(t *testing.T, file string, s step, key, want string) {
 	t.Helper()
 	items := strings.FieldsFunc(input(s, key), func(r rune) bool { return r == '\n' || r == ',' })

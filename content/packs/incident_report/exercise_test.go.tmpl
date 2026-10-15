@@ -136,7 +136,7 @@ func runFile(t *testing.T, db *sql.DB, file string) result {
 	return res
 }
 
-// query runs a query of the test's own and returns the result.
+// query runs one of the test's own queries and returns the result.
 func query(t *testing.T, db *sql.DB, text string) result {
 	t.Helper()
 	rows, err := db.Query(text)

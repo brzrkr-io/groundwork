@@ -1,8 +1,8 @@
 ## Task 1: Render a template
 
-This is the "Parse, then execute" example from the README. There are two
-steps, and each can fail, so check the error after both. `Summary` further
-down the file does the same job.
+Follow *Step 1: Parse* and *Step 2: Execute into a writer* from the README.
+Each step can fail, so check the error after both. `Summary`, further down
+the file, does the same job.
 
 ### Closer
 
@@ -34,7 +34,7 @@ around each action end up.
 
 Inside `{{range .Servers}}`, `{{.}}` is the address and `{{$.Port}}` is the
 port (`$` is the top-level data). Put `{{- range .Servers}}` and `{{- end}}`
-each on their own line, so the dash eats the newline in front of them.
+each on its own line, so the dash eats the newline in front of it.
 
 ### Answer
 
@@ -47,8 +47,8 @@ const upstreamTmpl = `upstream {{.Name}} {
 `
 ```
 
-Each trimmed action removes its own line's newline, so only the `server` lines
-and the closing `}` remain.
+Each `{{-` removes the newline just before its action, so no blank lines are
+left: only the `server` lines and the closing `}`.
 
 ## Task 3: Write a one-line summary
 

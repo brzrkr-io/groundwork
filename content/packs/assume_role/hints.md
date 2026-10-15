@@ -38,8 +38,9 @@ account, so the root check needs the caller split on `:`.
 ### Closer
 
 For the action, loop over `s.Action` and test
-`Match(strings.ToLower(a), "sts:assumerole")`. For the principal,
-`slices.Contains(s.Principal.AWS, caller)` and friends. For the account,
+`Match(strings.ToLower(a), "sts:assumerole")`. For the principal, use
+`slices.Contains` on `s.Principal.AWS` and `s.Principal.Service`. For the
+account,
 `parts := strings.SplitN(caller, ":", 6)`: a full ARN gives 6 parts and the
 account is `parts[4]`.
 
@@ -126,4 +127,4 @@ func anyValueMatches(operator string, values StringList, claim string) bool {
 }
 ```
 
-An unknown operator falls through the `switch`, so the helper returns `false`.
+An unknown operator matches no `case`, so the helper returns `false`.

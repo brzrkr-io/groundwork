@@ -81,7 +81,7 @@ four checks. Each check is one expression.
 
 `s.Condition["Bool"]["aws:SecureTransport"]` is a `StringList` (empty when
 missing), so `slices.Contains(..., "false")` works on it. Join the four
-checks with `&&`; wrap the two action checks in brackets with `||`.
+checks with `&&`. Join the two action checks with `||`, in parentheses.
 
 ### Answer
 

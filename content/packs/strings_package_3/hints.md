@@ -54,7 +54,7 @@ the empty line after the last newline.
 
 ## Task 3: Write the summary
 
-You already wrote the hard part: call `NotReadyPods` and decide what to say
+`NotReadyPods` already does the hard part. Call it and decide what to say
 based on how many names come back.
 
 ### Closer

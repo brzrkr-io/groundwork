@@ -138,7 +138,7 @@ Summary(map[string]int{})
 - Order by count, highest first. Same count → alphabetical by message.
 - Return at most `n` entries. If `n` is 0 or nothing matches, return
   `[]string{}`, not `nil`.
-- Each entry is `<count>x <message>`: the number, a lowercase `x`, one space,
+- Each entry is `<count>x <message>`: the number, a lower-case `x`, one space,
   the message.
 
 ```go

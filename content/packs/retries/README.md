@@ -94,8 +94,8 @@ restarts. Build the retry helper in `exercise.go`.
 
 ### 1. Compute the backoff
 
-**Goal:** make `Backoff(attempt, base, limit)` return `base` doubled
-`attempt` times, but never more than `limit`.
+**Goal:** make `Backoff(attempt, base, limit)` return `base` doubled once per
+attempt, but never more than `limit`.
 
 Attempt `0` returns `base`.
 

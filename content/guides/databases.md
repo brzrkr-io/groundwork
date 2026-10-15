@@ -283,7 +283,7 @@ Never build a query by gluing in input:
 query := "SELECT version FROM deploys WHERE service = '" + service + "'"
 ```
 
-If `service` is `x' OR '1'='1`, the quote ends your string and the rest becomes SQL: `WHERE service = 'x' OR '1'='1'` matches every row. With `'; DELETE FROM deploys; --`, the input adds its own statement. That's *SQL injection*: input changing the meaning of a query. It's one case of a general problem, data crossing into code, which you'll meet again in the *Security basics for automation* guide with *CLI tools and the OS*.
+If `service` is `x' OR '1'='1`, the quote ends your string and the rest becomes SQL: `WHERE service = 'x' OR '1'='1'` matches every row. With `'; DELETE FROM deploys; --`, the input adds its own statement. That's *SQL injection*: input changing the meaning of a query. It's one case of a general problem, data crossing into code. You'll meet it again in the *Security basics for automation* guide and in *CLI tools and the OS*.
 
 ### Placeholders keep them apart
 
@@ -294,7 +294,7 @@ rows, err := db.Query(
 )
 ```
 
-The SQL text is fixed, and `service` is sent separately as a *parameter* (a *parameterized query*). The database never parses it as SQL, so whatever it contains, it's only ever compared with `service`. SQLite and MySQL write placeholders as `?`; Postgres as `$1`, `$2`.
+The SQL text is fixed, and `service` is sent separately as a *parameter* (a *parameterized query*). The database never parses it as SQL: whatever it contains is only a value to compare with the `service` column. SQLite and MySQL write placeholders as `?`; Postgres as `$1`, `$2`.
 
 Rules that hold everywhere: every value from outside (web forms, URLs, CLI flags, Slack commands, file contents) goes in a placeholder; numbers too; and table or column names never come from input at all (pick them from a fixed list in code).
 

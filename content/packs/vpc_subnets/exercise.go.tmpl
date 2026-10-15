@@ -53,7 +53,7 @@ func Plan(vpc string, zones []string, bits int) ([]Subnet, error) {
 // Check returns one message for each problem in a subnet plan, or nothing
 // when the plan is fine.
 func Check(vpc string, subnets []Subnet) []string {
-	// TODO(3): Report subnets that are too small, outside the VPC, or
-	// overlap another subnet.
+	// TODO(3): Report subnets that are too small, lie outside the VPC, or
+	// overlap a later subnet.
 	return nil
 }

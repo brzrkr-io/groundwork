@@ -199,8 +199,8 @@ Lookup(lookupEnv, "TEAM", "platform")     // => "platform"
 ```
 
 **Think it through:**
-- Your `Lookup` already handles the default and the spaces. What should it
-  return for `PORT`, so `strconv.Atoi` turns it into `8080`?
+- Your `Lookup` already handles the default and the spaces. Which fallback
+  makes `strconv.Atoi` return `8080` for an unset `PORT`?
 - Which `fmt.Errorf` verb puts double quotes around a string?
 
 ### 3. Load the whole config
@@ -245,7 +245,7 @@ cfg, err = Load(lookupEnv)
 line, with the database password hidden.
 
 - The format is `port=<Port> env=<Env> log=<LogLevel> db=<DatabaseURL>`,
-  one space between each pair.
+  separated by single spaces.
 - Show `DatabaseURL` through `url.Parse` and `Redacted`, so a password
   becomes `xxxxx` and a URL without one stays as it was.
 - If `url.Parse` fails, write `db=invalid` instead of the URL.

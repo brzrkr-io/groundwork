@@ -18,8 +18,7 @@ commands:
 `
 
 // Run is the whole shipctl program. args is os.Args[1:], so args[0] is the
-// command name. Run returns the exit code: 0 for success, 1 for a runtime
-// failure and 2 for a usage error.
+// command name. Run returns the exit code: 0 for success, 2 for a usage error.
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, usage)

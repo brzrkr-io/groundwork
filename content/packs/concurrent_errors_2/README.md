@@ -47,8 +47,8 @@ The `Group` struct is already written for you:
 | `err` | the first error |
 
 - **Only the first error.** After the first failure, the others usually
-  fail with `context.Canceled`. That's noise, so `once.Do` saves only the
-  first, safely, even if several fail together.
+  fail with `context.Canceled`. That's noise, so `once.Do` keeps only the
+  first error. It stays safe even if several tasks fail at the same time.
 - **Cancel on failure.** The same `once.Do` also calls `g.cancel()`.
 - **Cancel in Wait too.** When everything is done the context is no longer
   needed, so `Wait` cancels it to release it (like `defer cancel()`).

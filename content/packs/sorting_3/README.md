@@ -26,7 +26,7 @@ seen["disk"]++
 ### Sorting with your own rule
 
 `slices.Sorted(maps.Keys(m))` gives the keys in alphabetical order.
-`slices.SortFunc(s, func(a, b T) int {...})` reorders them with your rule:
+`slices.SortFunc(s, func(a, b T) int {...})` reorders `s` by your rule:
 return a negative number if `a` comes first, positive if `b` does, `0` if
 it's a tie. `cmp.Compare(x, y)` produces that number for you.
 
@@ -78,7 +78,7 @@ CountAlerts([]string{"api", "db", "api", "api", "queue"})
 An empty slice gives an empty map (not `nil`).
 
 **Think it through:**
-- Where does the map get created, and what does the function return now?
+- The function returns `nil` now. Where do you create the map to return?
 - What does the loop variable hold on each pass through `firing`?
 
 ### 2. Report the top N

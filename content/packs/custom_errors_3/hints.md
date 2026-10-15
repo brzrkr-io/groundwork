@@ -4,7 +4,7 @@
 
 ### Closer
 
-Use `%s` for `e.URL` and `%d` for `e.StatusCode`, with the fixed text `GET `, `: status ` around them.
+Use `%s` for `e.URL` and `%d` for `e.StatusCode`, with the fixed text `GET ` and `: status ` around them.
 
 ### Answer
 
@@ -31,7 +31,7 @@ return &HTTPError{URL: url, StatusCode: status}
 
 ## Task 3: Decide what to retry
 
-A type switch tells you which error type `err` holds. Timeouts are always worth retrying; HTTP errors only for some status codes; everything else, including `nil`, is not.
+A type switch tells you which error type `err` holds. Timeouts are always worth retrying. HTTP errors are worth it only for some status codes. Everything else, including `nil`, is not.
 
 ### Closer
 

@@ -24,7 +24,7 @@ goes first, zero means "equal".
 1. **Sorting someone else's slice.** A slice you were given shares its data
    with the caller. Sorting it in place reorders theirs too.
 2. **Backwards order.** `cmp.Compare(x, y)` sorts smallest first. Swapping
-   which value goes first and which goes second flips the order.
+   the two arguments flips the order.
 3. **No tie-break.** When the comparison returns `0`, `SortFunc` may put the
    two elements in any order. Add a second comparison for that case.
 
@@ -46,8 +46,8 @@ slices.SortFunc(words, func(a, b string) int {
 
 ## Your task
 
-Each function below has exactly one bug. Read the code, find the bug and fix
-it. You don't need to rewrite anything from scratch.
+Each function below has exactly one bug. Find it and fix it; there's no need
+to rewrite anything.
 
 ### 1. Stop reordering the caller's slice
 
@@ -91,7 +91,7 @@ FullestFirst(map[string]int{"node-a": 40, "node-b": 91, "node-c": 40})
 `LeastBusy(nodes, pods)` gets a slice of node names and a map from node name
 to the number of pods on it. It returns a sorted **copy** of the names:
 **fewest** pods first, ties alphabetical. The caller's slice is not changed.
-Right now tied nodes come out in whatever order they went in.
+Right now tied nodes can come out in any order.
 
 ```go
 LeastBusy(

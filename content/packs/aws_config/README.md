@@ -1,10 +1,10 @@
 # AWS SDK configuration: regions, profiles and credentials
 
 In *Cloud fundamentals*, ending with *Practice: review an AWS account*, you
-learned where AWS resources live and who may
-touch them. Now you call AWS from Go. Every such program starts the same way:
-work out *which region* to talk to and *which credentials* to sign requests
-with, and never print the secret while doing it.
+learned where AWS resources live and who may touch them. Now you call AWS
+from Go. Every such program starts the same way: pick *which region* to talk
+to and *which credentials* to sign requests with, without ever printing the
+secret.
 
 **New here:** the AWS SDK for Go, `aws.Config`, `config.LoadDefaultConfig`, functional options, credentials providers, profiles and the shared config files.
 
@@ -147,8 +147,8 @@ if err != nil {
 log.Println("expires:", creds.Expires) // never log creds.SecretAccessKey
 ```
 
-You can slice a string like a slice: `s[:3]` is its first 3 bytes. Slicing
-past the end panics, so check `len(s)` first.
+Strings can be sliced too: `s[:3]` is the first 3 bytes of `s`. Slicing past
+the end panics, so check `len(s)` first.
 
 ## Your task
 

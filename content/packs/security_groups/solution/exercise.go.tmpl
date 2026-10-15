@@ -44,8 +44,8 @@ type NACL struct {
 	Outbound []NACLRule
 }
 
-// portMatches reports whether a rule for ruleProtocol and the ports from
-// to to covers traffic with protocol to port. Both rule types share it.
+// portMatches reports whether a rule with ruleProtocol and the port range
+// from..to covers traffic using protocol to port. Both rule types use it.
 func portMatches(ruleProtocol string, from, to int, protocol string, port int) bool {
 	if ruleProtocol == AllProtocols {
 		return true
@@ -63,9 +63,10 @@ func SGAllows(rules []SGRule, p Packet) bool {
 	return false
 }
 
-// NACLAllows reports whether a network ACL's rules let traffic through:
+// NACLAllows reports whether a network ACL's rules let traffic through.
 // remote is the address on the other side (the source for inbound rules,
-// the destination for outbound rules), port the port the traffic goes to.
+// the destination for outbound rules), and port is the port the traffic
+// goes to.
 func NACLAllows(rules []NACLRule, remote netip.Addr, protocol string, port int) bool {
 	sorted := slices.Clone(rules)
 	slices.SortFunc(sorted, func(a, b NACLRule) int {

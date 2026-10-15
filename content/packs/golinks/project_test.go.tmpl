@@ -530,8 +530,8 @@ func TestPortfolio(t *testing.T) {
 	checkBullets(t, "What I'd do next", doc.section(t, "What I'd do next"), 3, 4)
 }
 
-// checkBullets checks a section has at least min bullets ("- ...") of at
-// least words words each.
+// checkBullets checks that a section has at least min bullets ("- ..."),
+// each at least the given number of words long.
 func checkBullets(t *testing.T, name, text string, min, words int) {
 	t.Helper()
 	count := 0

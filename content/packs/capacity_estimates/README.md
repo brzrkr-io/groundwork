@@ -1,8 +1,8 @@
 # Capacity estimates: QPS, storage and bandwidth
 
 *Practice: containerize and ship a service* closed *Containers and CI/CD*:
-you can ship one service. This module adds thinking about whole systems:
-load, reliability, caching, sharding and queues.
+you can ship one service. This module moves on to whole systems: load,
+reliability, caching, sharding and queues.
 
 Before you build or buy anything, you ask: how busy will this be, how much
 disk will it fill, and how many servers does it need? You'll turn those
@@ -28,8 +28,8 @@ Traffic is usually quoted per day, but servers are sized per second. A day
 has 24 × 60 × 60 = **86,400** seconds. *QPS* (queries per second) means
 requests per second.
 
-In your head, round 86,400 up to **100,000**. Then "per day" ÷ 100,000 is
-roughly QPS, and slightly low, because the real divisor is smaller:
+In your head, round 86,400 up to **100,000**. Then "per day" ÷ 100,000 gives
+roughly the QPS. It comes out slightly low, because the real divisor is smaller:
 
 | Per day | Head maths (÷ 100,000) | Exact (÷ 86,400) |
 |---|---|---|
@@ -150,7 +150,7 @@ PeakQPS(43_200_000, 2.5)  // => 1250 (average 500)
 
 ### 2. Estimate storage
 
-**Goal:** make `StorageGB(itemsPerDay, bytesPerItem, days)` return how many decimal gigabytes the data fills after `days` days.
+**Goal:** make `StorageGB(itemsPerDay, bytesPerItem, days)` return how many decimal gigabytes the data fills after the given number of days.
 
 Bytes stored = items per day × bytes per item × days. Divide by
 `BytesPerGB` (1e9) to get gigabytes.

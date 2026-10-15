@@ -99,8 +99,8 @@ folder goes **inside** it, keeping its name. `cp -r nginx backup/` makes
 `cp -r nginx/* backup/nginx/` looks the same but isn't: `*` skips hidden
 files, so `.htpasswd` would be left behind.
 
-> **Why is it written like this?** **Linux requires** nothing to undo a
-> delete, because there is nothing: `rm` has no trash can. **Convention:**
+> **Why is it written like this?** **Linux requires** nothing here, and
+> offers no undo: `rm` has no trash can. **Convention:**
 > run `ls` on what you're about to delete first, and never put `rm -r` on a
 > path you haven't checked. `mv` replaces an existing file silently, so
 > look before moving onto a name, too.

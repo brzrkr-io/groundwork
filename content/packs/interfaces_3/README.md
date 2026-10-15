@@ -82,9 +82,9 @@ type Store interface {
 | `MemoryStore` | a `map[string]string` | the tests |
 | `Layered` | other `Store`s, asked in order | both |
 
-`EnvStore` is already written. `os.LookupEnv(key)` already returns a value
-and whether it was set. `EnvStore` is an *empty struct*, `struct{}`: it holds
-no data and exists only to carry its method.
+`EnvStore` is already written: `os.LookupEnv(key)` returns a value and
+whether it was set. `EnvStore` is an *empty struct*, `struct{}`: it holds no
+data and exists only to carry its method.
 
 ### Writing a method from scratch
 

@@ -41,9 +41,8 @@ two = append(two, 22)       // no room: copies to a new array
 ```
 
 > **Why is it written like this?** The colons and their order (`low:high:max`)
-> are **Go required**. You may leave out `low` (it means 0), but with three
-> parts `high` and `max` must both be written. Which values you pass is your
-> choice.
+> are required by Go. You may leave out `low` (it means 0), but with three
+> parts `high` and `max` must both be written. The values are your choice.
 
 ## Your task
 

@@ -7,8 +7,8 @@ import (
 )
 
 // The Dockerfile helpers (readDockerfile, stages, find, keyValues, show) are
-// in dockerfile_test.go, the .dockerignore ones (readIgnoreFile, excludedBy)
-// in dockerignore_test.go.
+// in dockerfile_test.go. The .dockerignore helpers (readIgnoreFile,
+// excludedBy) are in dockerignore_test.go.
 
 // approved lists the base images the security team approved: the tag people
 // read and the digest Docker pulls. The README has the same table.
@@ -195,7 +195,7 @@ func TestKeepSecretsOutOfContext(t *testing.T) {
 			t.Fatalf("testdata/context.txt no longer lists %s; restore the file", keep)
 		}
 		if p := excludedBy(patterns, keep); p != nil {
-			t.Errorf("%s line %d: %q excludes %s, but go build needs it, want it kept", file, p.Line, p.Text, keep)
+			t.Errorf("%s line %d: %q excludes %s, but the build needs it; keep it", file, p.Line, p.Text, keep)
 		}
 	}
 }

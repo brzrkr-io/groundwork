@@ -9,7 +9,7 @@ happened.
 
 ## Learn
 
-### Three ways a lookup fails
+### How a lookup fails
 
 Your program asks a *resolver* for a name's records: an *A* record holds an
 IPv4 address, an *AAAA* record an IPv6 one. Go reports every failure as a

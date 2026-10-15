@@ -73,9 +73,9 @@ if errors.As(err, &pe) && errors.Is(pe.Err, csv.ErrBareQuote) {
 }
 ```
 
-> **Why is it written like this?** `errors.As` needs a pointer to your
-> variable so it can fill it in, so Go requires `&pe`. The `&&` means the
-> second check only runs if the first one found a `ParseError`.
+> **Why is it written like this?** `errors.As` fills in your variable, so Go
+> requires a pointer to it: `&pe`. The `&&` means the second check only runs
+> if the first one found a `ParseError`.
 
 A wrong field count is the one error you can keep going after: the next
 `Read` carries on with the following line. Other errors, like a stray quote,

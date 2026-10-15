@@ -88,7 +88,7 @@ for name, count := range replicas {
 }
 ```
 
-The order is **random**, and changes from run to run. Never rely on it.
+The order is **not fixed** and can change from run to run. Never rely on it.
 (*Sorting* shows how to visit keys in order.)
 
 ### Maps are shared, nil maps are read-only

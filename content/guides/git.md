@@ -258,7 +258,7 @@ The payments provider now takes up to 20s under load, so the 10s
 timeout failed about 2% of checkouts on Monday (INC-4821).
 ```
 
-A short subject (about 50 characters) in the *imperative* ("Raise", not "Raised": "this commit will raise..."), a blank line, then a body explaining **why**. The diff already shows what.
+A short subject (about 50 characters) in the *imperative* ("Raise", not "Raised"; read it as "this commit will raise..."), a blank line, then a body explaining **why**. The diff already shows what.
 
 ### `.gitignore`
 
@@ -355,7 +355,7 @@ Small commits, clear messages and revert over reset become how you operate produ
 | bisect | binary search through history to find the first bad commit |
 | `.gitignore` | a committed file of patterns for files Git should leave untracked |
 | pull request | a request, on GitHub or GitLab, to merge a branch, with review and CI |
-| GitOps | running infrastructure from a Git repo that agents keep the system matching |
+| GitOps | running infrastructure from a Git repo, with agents keeping the live system matching it |
 
 ## Watch
 

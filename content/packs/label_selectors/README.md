@@ -138,9 +138,9 @@ MatchingPodNames(pods, labels.SelectorFromSet(labels.Set{"team": "shop"}))
 
 **Goal:** make `SelectPods` parse `expr` with `labels.Parse` and return the names of the matching Pods.
 
-- If parsing fails, return `nil` and an error in this form. `expr` goes inside
-  the quotes (use `%q`), and the parse error follows, wrapped with `%w`. Add
-  `"fmt"` to the imports.
+- If parsing fails, return `nil` and an error like the one below: `expr` in
+  quotes (use `%q`), then the parse error wrapped with `%w`. Add `"fmt"` to
+  the imports.
 
   ```text
   invalid selector "tier in web": unable to parse requirement: found 'web' expected: '('

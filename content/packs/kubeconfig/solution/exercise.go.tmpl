@@ -26,8 +26,8 @@ func ContextNames(cfg *clientcmdapi.Config) []string {
 	return slices.Sorted(maps.Keys(cfg.Contexts))
 }
 
-// ServerFor returns the API server URL that the context contextName points
-// at. It follows the context to its cluster and returns the cluster's server.
+// ServerFor follows the named context to its cluster and returns that
+// cluster's API server URL.
 func ServerFor(cfg *clientcmdapi.Config, contextName string) (string, error) {
 	ctx, ok := cfg.Contexts[contextName]
 	if !ok {

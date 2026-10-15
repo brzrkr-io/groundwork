@@ -31,7 +31,7 @@ func (s *DeployStats) Failed() int64 { return s.failed.Load() }
 
 ### Closer
 
-Drop the first `defer`. Lock, read `id, ok := c.ids[region]`, then `c.mu.Unlock()`. If `ok`, return. Otherwise call `lookup` with no lock held, then lock again to store.
+Drop the `defer`. Lock, read `id, ok := c.ids[region]`, then `c.mu.Unlock()`. If `ok`, return. Otherwise call `lookup` with no lock held, then lock again to store.
 
 ### Answer
 

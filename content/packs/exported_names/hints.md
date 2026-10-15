@@ -27,7 +27,7 @@ A lower-case first letter makes the field private to the `creds` package. Renami
 
 ### Closer
 
-`Token` appears in three places in `creds.go`: the struct, the struct literal in `NewCredential` (`Token: token`), and `c.Token` in `Header` and `Masked`. All of them become `token`.
+`Token` appears in four places in `creds.go`: the struct, the struct literal in `NewCredential` (`Token: token`), and `c.Token` in both `Header` and `Masked`. All of them become `token`.
 
 ### Answer
 

@@ -361,7 +361,7 @@ Two services that must always be deployed together are tightly coupled, however 
 1. Package `helpers` contains `RetryHTTP`, `ParseCron`, `FormatBytes` and `SlackEscape`. What's wrong, and what would you do?
 2. Your `report` package reads `aws.Fetcher.rawPages` directly. Why is this a problem, and what should `report` take instead?
 3. You're designing an `inventory` package. You can't decide whether to export the helper `splitFields`. Which choice is safer, and why?
-4. `alerts` imports `oncall` to find who to page, and `oncall` imports `alerts` to read `alerts.Severity`. What happens when you build, and give two ways to fix it.
+4. `alerts` imports `oncall` to find who to page, and `oncall` imports `alerts` to read `alerts.Severity`. What happens when you build? Give two ways to fix it.
 5. A library goes from `v1.8.3` to `v1.9.0`. What does semantic versioning promise? What about `v2.0.0`?
 6. You need to check whether a string is a valid Kubernetes object name (a DNS label). A popular library does it, plus 200 other validations, and pulls in 14 dependencies. What would you do?
 

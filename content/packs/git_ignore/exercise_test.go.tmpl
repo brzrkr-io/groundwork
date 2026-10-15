@@ -81,7 +81,7 @@ func checkNewestCommitChanges(t *testing.T, repo, want string) {
 func checkNeverCommitted(t *testing.T, repo, path string) {
 	t.Helper()
 	if got := git(t, repo, "rev-list", "--count", "--all", "--", path); got != "0" {
-		t.Errorf("%s (a production password) is in %s commit(s), want it never committed: git add . stages every file that isn't ignored yet, so stage only the files the task names", path, got)
+		t.Errorf("%s (a production password) is in %s commit(s), want it never committed. git add . stages every file not yet ignored; stage only the files the task names", path, got)
 	}
 }
 

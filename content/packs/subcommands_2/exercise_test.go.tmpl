@@ -20,7 +20,7 @@ func check(t *testing.T, tc testCase) {
 	var stdout, stderr strings.Builder
 	code := Run(tc.args, &stdout, &stderr)
 	if code != tc.wantCode {
-		t.Errorf("Run(%q) = %d, want %d", tc.args, code, tc.wantCode)
+		t.Errorf("Run(%q) exit code = %d, want %d", tc.args, code, tc.wantCode)
 	}
 	if got := stdout.String(); got != tc.wantStdout {
 		t.Errorf("Run(%q) stdout = %q, want %q", tc.args, got, tc.wantStdout)

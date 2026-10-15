@@ -64,8 +64,8 @@ the shard with that number.
 
 ### 2. Fix the error rate
 
-**Goal:** make `ErrorRatePercent` return the failed percentage as a whole
-number, rounded down, using only `int` arithmetic.
+**Goal:** make `ErrorRatePercent` return the percentage of requests that
+failed as a whole number, rounded down, using only `int` arithmetic.
 
 ```go
 ErrorRatePercent(5, 200)  // => 2   (2.5% rounded down)

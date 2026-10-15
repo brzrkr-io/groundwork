@@ -28,8 +28,8 @@ return int(total.Load())
 
 ## Task 2: Fix the results map
 
-Many goroutines write `results` at once. A map needs a `sync.Mutex`, declared
-next to it, and only the write should happen while holding the lock.
+Many goroutines write `results` at once. Guard the map with a `sync.Mutex`
+declared next to it, and hold the lock only for the write.
 
 ### Closer
 

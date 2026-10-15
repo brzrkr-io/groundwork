@@ -68,8 +68,8 @@ if len(backups) < MaxBackups {
 ```
 
 > **Why is it written like this?** Go requires the `if` condition to be a
-> `bool`, with no parentheses needed. An exported `MaxRetries` constant
-> (capital letter) is the author's choice, so tests and callers can read it.
+> `bool`, and needs no parentheses around it. Exporting `MaxRetries` (capital
+> letter) is the author's choice, so tests and callers can read it.
 
 ## Your task
 

@@ -38,7 +38,7 @@ func NewService(d *appsv1.Deployment, containerPort int32) *corev1.Service {
 }
 
 // CheckSelector returns an error if Deployment d has no selector, or if its
-// Pod template is missing a label that the selector asks for. It returns nil
+// Pod template lacks a label the selector asks for or has another value. It returns nil
 // when the selector matches the template.
 func CheckSelector(d *appsv1.Deployment) error {
 	// TODO(3): Check the selector against d.Spec.Template.Labels.

@@ -52,8 +52,8 @@ failure. Tell that error apart from the rest.
 
 ### Closer
 
-`errors.Is(err, flag.ErrHelp)` is true for `-h` and `--help`. Return `0` then,
-and `2` otherwise.
+`errors.Is(err, flag.ErrHelp)` is true for `-h` and `--help`. Return `0` in
+that case and `2` otherwise.
 
 ### Answer
 

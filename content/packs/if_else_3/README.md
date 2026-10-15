@@ -27,8 +27,8 @@ func CanRestart(healthy bool, users int) string {
 
 The order of the guards decides which reason the user sees first.
 
-> **Why is it written like this?** Each `if` needs `{ }` braces, even for
-> one line (Go requires). Early returns instead of nested `else` blocks are
+> **Why is it written like this?** Go requires `{ }` braces around each `if`
+> body, even for one line. Early returns instead of nested `else` blocks are
 > convention. Which check goes first is the author's choice; here the README
 > decides it for you.
 
@@ -57,8 +57,8 @@ quotes:
 fmt.Sprintf("%d pods restarting", restarts) // restarts=3 => "3 pods restarting"
 ```
 
-> **Why is it written like this?** You must `import "fmt"` below the
-> `package` line before using it (Go requires: no import, no `fmt`).
+> **Why is it written like this?** Go requires `import "fmt"` below the
+> `package` line before you can use `fmt`.
 
 ## Your task
 

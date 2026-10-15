@@ -6,7 +6,7 @@ package arns
 type ARN struct {
 	Partition string // "aws" for most accounts
 	Service   string // "ec2", "s3", "iam", ...
-	Region    string // "eu-west-1", or "" for global services
+	Region    string // "eu-west-1", or "" (IAM, S3)
 	Account   string // "111122223333", or "" (S3 buckets)
 	Resource  string // everything after the fifth colon
 }

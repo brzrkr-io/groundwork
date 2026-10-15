@@ -35,8 +35,8 @@ func (l *ErrorLog) Record(err error) {
 
 // PanicError turns a value recovered from a panic into an error.
 func PanicError(v any) error {
-	// TODO(1): Use a type switch: wrap errors with %w, add "panic: " to
-	// strings, and describe any other value with %v and %T. Add the fmt import.
+	// TODO(1): Use a type switch. Every message starts with "panic: ". Wrap
+	// errors with %w; describe non-strings with %v and %T. Add the fmt import.
 	return nil
 }
 

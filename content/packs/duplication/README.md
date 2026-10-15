@@ -105,8 +105,8 @@ The behaviour checks run first.
 | each port | 1024 or above | `<name> <port> needs root; use 1024 or above` |
 
 The port names in messages are `http_port`, `metrics_port`, `admin_port`
-and `grpc_port`. Problems come in the order of the table and the fields;
-a port gets at most one message (out of range wins).
+and `grpc_port`. Problems come in field order: environment first, then the
+ports. A port gets at most one message; out of range wins.
 
 ### 1. Write the port rule once
 
@@ -115,7 +115,8 @@ a port gets at most one message (out of range wins).
 
 `checkPort` returns the problem as an error, or `nil`. `Validate` adds the
 error's text to `problems`. When you're done, `Validate` has no numbers in
-it. The admin port's messages are fixed on the way:
+it. This also fixes the admin port's messages, which wrongly say
+`metrics_port`:
 
 ```go
 checkPort("admin_port", 443)

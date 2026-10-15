@@ -64,6 +64,6 @@ func FieldNames(err error) []string {
 // FieldsWith returns the Field of every *FieldError in err whose error
 // matches kind according to errors.Is.
 func FieldsWith(err error, kind error) []string {
-	// TODO(5): Like FieldNames, but keep only the fields whose error is kind.
+	// TODO(5): Like FieldNames, but keep only fields whose error matches kind.
 	return nil
 }

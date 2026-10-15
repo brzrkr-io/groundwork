@@ -41,7 +41,7 @@ func IsRetryable(err error) bool {
 	return errors.As(err, &r) && r.Retryable()
 }
 
-// Backoff returns base doubled attempt times, but never more than limit.
+// Backoff returns base, doubled once per attempt, but never more than limit.
 func Backoff(attempt int, base, limit time.Duration) time.Duration {
 	d := base
 	for range attempt {

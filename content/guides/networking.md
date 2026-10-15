@@ -741,7 +741,7 @@ broken" isn't.
 - [How the Internet Works in 5 Minutes](https://www.youtube.com/watch?v=7_LPdttKXPc) · Aaron · 5 min: packets, IP addresses, routers and DNS in one quick pass, a good first picture of the whole stack.
 - [The Internet: IP Addresses & DNS](https://www.youtube.com/watch?v=5o8CwafCxnU) · CodeAI · 7 min: Vint Cerf, a co-inventor of the internet, explains addresses and how DNS turns names into them.
 - [SSL, TLS, HTTPS Explained](https://www.youtube.com/watch?v=j9QmMEWmcfo) · ByteByteGo · 6 min: an animated TLS handshake showing how certificates prove identity and keys make the connection private.
-- [CS50x - Lecture 8 - HTML, CSS, JavaScript](https://www.youtube.com/watch?v=yYst7puZXjw) · CS50 · 142 min: watch only the first 42 minutes, Harvard's lively tour of TCP/IP, ports, DNS, DHCP, HTTP and status codes; the rest is web pages.
+- [CS50x - Lecture 8 - HTML, CSS, JavaScript](https://www.youtube.com/watch?v=yYst7puZXjw) · CS50 · 142 min: Harvard's lively tour of TCP/IP, ports, DNS, DHCP, HTTP and status codes. Watch only the first 42 minutes; the rest is about web pages.
 
 ## Go deeper
 

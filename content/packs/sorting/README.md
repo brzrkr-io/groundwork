@@ -79,8 +79,8 @@ To **reverse** the order (dearest first), swap the arguments you give
 ### Breaking ties
 
 `kiwi` and `plum` both cost 4, so the comparison returns `0` for them.
-`SortFunc` may then put them in either order, and your output changes from
-run to run. Fix it with a *tie-break*: when the first comparison says
+`SortFunc` may then put them in either order, so your output isn't
+predictable. Fix it with a *tie-break*: when the first comparison says
 "equal", compare something else.
 
 The pattern uses an `if` with a short statement in front:
@@ -101,11 +101,11 @@ As you saw in *Maps*, ranging over a map visits keys in random order.
 Two functions together give you sorted keys:
 
 - `maps.Keys(m)` hands out the keys of `m` one at a time (it is not a slice).
-- `slices.Sorted(x)` collects those values into a brand new slice, sorts it
-  and returns it.
+- `slices.Sorted(x)` collects those keys into a new slice, sorts it and
+  returns it.
 
-So you pass the result of one straight into the other, reading from the
-inside out. The map isn't changed. An empty map gives an empty slice.
+Pass the result of one straight into the other; the inner call runs first.
+The map isn't changed. An empty map gives an empty slice.
 
 ## Your task
 

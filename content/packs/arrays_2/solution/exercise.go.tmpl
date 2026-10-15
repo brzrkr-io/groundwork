@@ -15,7 +15,7 @@ func TotalRequests(hours [24]int) int {
 func PeakHour(hours [24]int) int {
 	best := 0
 	for i := range len(hours) {
-		// Strictly greater, so a later hour never replaces an earlier tie.
+		// Strictly greater, so a later hour with the same count never wins.
 		if hours[i] > hours[best] {
 			best = i
 		}

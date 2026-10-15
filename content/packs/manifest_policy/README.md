@@ -697,7 +697,7 @@ kubectl kustomize ../*_golinks/deploy/overlays/dev | bin/kubepolicy -
 ```
 
 Expect findings: that project left out a CPU limit on purpose, and its
-labels aren't the ones your rules want. A good trade-off for your
+labels aren't the ones your rules want. A good question for your
 portfolio: is your rule wrong, or that manifest?
 
 **4. Build the image** and run it with the manifests on stdin (`-i`):

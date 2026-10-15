@@ -26,9 +26,10 @@ for i, f := range files {
 wg.Wait() // after this, every slot is filled
 ```
 
-> **Why is it written like this?** Go requires a length in `make` to assign
-> `s[i]`. One slot per goroutine is convention: two goroutines writing the
-> *same* variable is a data race, but separate slots are safe.
+> **Why is it written like this?** Go requires the slice to have a length
+> (from `make`) before you assign `s[i]`. One slot per goroutine is
+> convention: two goroutines writing the *same* variable is a data race, but
+> separate slots are safe.
 
 ### Joining them
 
@@ -65,8 +66,8 @@ slot 2:  task 1 ███  task 3 ███
 ```
 
 > **Why is it written like this?** `struct{}{}` is the empty struct value:
-> it holds nothing and uses no memory. That's convention for "just a
-> signal". `defer func() { <-sem }()` is required syntax to defer a
+> it holds nothing and uses no memory. Using it as "just a signal" is
+> convention. `defer func() { <-sem }()` is required syntax to defer a
 > *receive*: `defer` needs a function call, so you wrap the receive in an
 > anonymous function and call it with `()`.
 
@@ -132,10 +133,9 @@ RunLimited(fiveTasks, 2) // never more than 2 running; takes 3s
 
 **Goal:** `CheckHosts(hosts, limit, check)` calls `check(host)` for every host, at most `limit` at once, and returns every failure joined.
 
-Reuse `RunLimited`; don't write the concurrency again. Each failure is
-wrapped as `"<host>: <error>"`: the host name, then fixed text `": "`, then
-the error, wrapped with `%w`. Healthy hosts add nothing. Add `"fmt"` to the
-imports.
+Reuse `RunLimited`; don't write the concurrency again. Wrap each failure
+with `%w` as `"<host>: <error>"`: the host name, then `": "`, then the
+error. Healthy hosts add nothing. Add `"fmt"` to the imports.
 
 ```go
 // check fails for web-2 with "connection refused"

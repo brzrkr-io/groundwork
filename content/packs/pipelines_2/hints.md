@@ -27,7 +27,7 @@ for _, line := range lines {
 
 Follow the fan-in sketch in the README: one forwarding goroutine per input, a
 WaitGroup to track them, and one more goroutine that closes the output when
-they are all done. Each forward should watch `ctx.Done()` like task 1.
+they are all done. Each forwarder's send should watch `ctx.Done()`, as in task 1.
 
 ### Closer
 

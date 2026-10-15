@@ -31,7 +31,8 @@ func CreateConfigMap(ctx context.Context, cs kubernetes.Interface, namespace, na
 // whether something was deleted. A Deployment that does not exist is not an
 // error.
 func DeleteDeploymentIfExists(ctx context.Context, cs kubernetes.Interface, namespace, name string) (bool, error) {
-	// TODO(3): Delete the Deployment. Treat NotFound as success with false.
-	// Add apierrors "k8s.io/apimachinery/pkg/api/errors" to the imports.
+	// TODO(3): Delete the Deployment. If it is already gone (NotFound),
+	// return false, nil. Add apierrors "k8s.io/apimachinery/pkg/api/errors"
+	// to the imports.
 	return false, nil
 }

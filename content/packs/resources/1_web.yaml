@@ -17,5 +17,5 @@ spec:
       containers:
         - name: web
           image: ghcr.io/stefanprodan/podinfo:6.9.2
-          # TODO(1): Request and limit 250m CPU and 128Mi of memory, so the
+          # TODO(1): Request and limit 250m of CPU and 128Mi of memory, so the
           # Pods get the Guaranteed QoS class.

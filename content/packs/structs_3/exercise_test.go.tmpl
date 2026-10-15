@@ -150,11 +150,11 @@ func TestSummarize(t *testing.T) {
 			if got.Total != tt.want.Total {
 				t.Errorf("Summarize(%+v).Total = %d, want %d", tt.hosts, got.Total, tt.want.Total)
 			}
+			// maps.Equal reports whether two maps hold the same keys and
+			// values, in any order.
 			if got.ByRegion == nil {
 				t.Errorf("Summarize(%+v).ByRegion = nil, want %v", tt.hosts, tt.want.ByRegion)
 			} else if !maps.Equal(got.ByRegion, tt.want.ByRegion) {
-				// maps.Equal reports whether two maps hold the same keys
-				// and values, in any order.
 				t.Errorf("Summarize(%+v).ByRegion = %v, want %v", tt.hosts, got.ByRegion, tt.want.ByRegion)
 			}
 		})

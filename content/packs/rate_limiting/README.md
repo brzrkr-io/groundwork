@@ -48,9 +48,11 @@ smaller := min(10.0, 3.5)           // 3.5: the built-in min
 Tokens are `float64`, so half a second at `rate: 1` leaves half a token. It
 isn't enough for a request, but it counts towards the next one.
 
-> **Why is it written like this?** `min` is built into Go (1.21+), no import
-> needed; its arguments must be the same type. Storing tokens as `float64` is
-> the author's choice, so partial tokens add up.
+> **Why is it written like this?**
+> - **Go requires** both arguments of the built-in `min` (Go 1.21+, no
+>   import) to have the same type.
+> - **Author's choice:** storing tokens as `float64`, so partial tokens add
+>   up.
 
 The clock is a `now func() time.Time` field. Production passes `time.Now`;
 the tests pass a fake clock that only moves when the test says so. The
@@ -81,9 +83,11 @@ w.Header().Set("Cache-Control", "no-store")
 http.Error(w, "not found", http.StatusNotFound) // body: "not found\n"
 ```
 
-> **Why is it written like this?** Go requires the headers first: once the
-> status is written, later `Header().Set` calls are ignored. Named constants
-> like `http.StatusTooManyRequests` instead of `429` are convention.
+> **Why is it written like this?**
+> - **Go requires** nothing about the order, but HTTP does: once the status
+>   is written, later `Header().Set` calls are ignored.
+> - **Convention:** use named constants like `http.StatusTooManyRequests`
+>   instead of `429`.
 
 ### One bucket per client
 

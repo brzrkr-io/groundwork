@@ -113,7 +113,7 @@ func TestRetryAfter(t *testing.T) {
 		})
 	}
 
-	// Each request moves the clock forward, then sends one request.
+	// Each step moves the clock forward, then sends one request.
 	type request struct {
 		advance   time.Duration
 		wantCode  int

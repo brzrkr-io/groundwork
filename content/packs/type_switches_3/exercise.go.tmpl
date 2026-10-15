@@ -3,8 +3,8 @@ package typeswitches3
 
 import "fmt"
 
-// Scalar converts a single config value to text. It supports strings, ints,
-// float64s, bools and fmt.Stringers, and returns "", false for anything else.
+// Scalar converts a single config value to text. It supports string, int,
+// float64, bool and fmt.Stringer values, and returns "", false for anything else.
 func Scalar(v any) (string, bool) {
 	// TODO(1): Use a type switch to convert each supported type.
 	return "", false
@@ -19,8 +19,8 @@ func Flatten(cfg map[string]any) (map[string]string, error) {
 	return out, nil
 }
 
-// flattenInto stores every value in m into out, with prefix and a dot in
-// front of each key.
+// flattenInto stores every plain value in m into out under its dotted key:
+// prefix, a dot, then the key (just the key when prefix is empty).
 func flattenInto(out map[string]string, prefix string, m map[string]any) error {
 	for key, value := range m {
 		fullKey := key

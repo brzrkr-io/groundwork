@@ -243,8 +243,8 @@ LOG_LEVEL= bash 4_run_check.sh production
 # LOG_LEVEL=debug
 ```
 
-The tests run all three. They never pass on your own terminal's
-`DEPLOY_ENV` or `LOG_LEVEL`.
+The tests run all three cases and ignore any `DEPLOY_ENV` or `LOG_LEVEL`
+set in your own terminal.
 
 **Think it through:**
 - `<unset>` in the output means the child didn't get the variable. What

@@ -2,7 +2,7 @@
 
 **In one sentence:** in a declarative system you write down what you want, and a control loop keeps comparing that with what really exists and nudges reality until they match.
 
-**Why it matters:** Kubernetes, Terraform, Argo CD and Flux all work this way, and the controllers you'll write with client-go in the next module must too; once you think in loops, "why did my pod come back after I deleted it?" stops being a mystery.
+**Why it matters:** Kubernetes, Terraform, Argo CD and Flux all work this way, and so must the controllers you'll write with client-go in the next module. Once you think in loops, "why did my pod come back after I deleted it?" stops being a mystery.
 
 **You'll learn:**
 
@@ -286,7 +286,7 @@ Reconcile reads from the cache but writes to the API server. Three fields in eve
 | `ownerReferences` | Says "this object belongs to that one" | Sets it on objects it creates, so they're deleted with their owner |
 | `finalizers` | Names that must all be removed before a delete completes | Cleans up outside things, then removes its own name |
 
-**Conflicts.** Your controller and a teammate both read `web` while its `resourceVersion` is 41. The teammate saves first, making it 42. Your update still says 41, so the API server rejects it with a *Conflict* error (HTTP 409) rather than silently overwrite their change. That's *optimistic concurrency*: no locks, just "refuse writes based on stale reads". The level-triggered fix is simple: return the error, let the work queue retry, and the next reconcile reads fresh state.
+**Conflicts.** Your controller and a teammate both read `web` while its `resourceVersion` is 41. The teammate saves first, making it 42. Your update still says 41, so the API server rejects it with a *Conflict* error (HTTP 409) rather than silently overwriting their change. That's *optimistic concurrency*: no locks, just "refuse writes based on stale reads". The level-triggered fix is simple: return the error, let the work queue retry, and the next reconcile reads fresh state.
 
 **Owners.** Each Pod has an *owner reference* to its ReplicaSet, and each ReplicaSet one to its Deployment. Delete the Deployment and the *garbage collector* (another controller) deletes everything that pointed at it. Set owner references on what your controller creates and you need no delete code; you'll do it in *Project: Kubernetes controller*.
 
@@ -342,7 +342,7 @@ The catch is the same as any controller: a manual fix during an incident will be
 4. It isn't idempotent. Reconcile runs many times for one real change (resyncs, retries, other updates), so the number climbs on its own. Set values computed from current state instead of adding to them.
 5. The plan shows a difference: your files want one policy, the real bucket has another, and applying would change it back. A continuous controller would notice on its own and undo the change, without anyone running a command.
 6. Dedup means a burst of events for one object becomes one reconcile, not fifty, and no two workers handle the same key at once. Requeue with backoff means a failed reconcile is tried again later, without hammering the API server.
-7. Someone else wrote the object after your controller read it, so your copy's `resourceVersion` is stale. The API server refuses rather than overwrite their change (optimistic concurrency). Return the error so the work queue retries; the next reconcile reads the current object and works out the change again.
+7. Someone else wrote the object after your controller read it, so your copy's `resourceVersion` is stale. The API server refuses the write rather than overwriting their change (optimistic concurrency). Return the error so the work queue retries; the next reconcile reads the current object and works out the change again.
 8. A finalizer is still on it. Deletion waits until every finalizer is removed, and the controller meant to clean up and remove it is failing or not running. Fix that controller; removing the finalizer by hand skips its cleanup, such as deleting a cloud load balancer.
 
 ## Key terms

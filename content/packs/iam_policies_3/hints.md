@@ -67,7 +67,7 @@ guardrail names something else.
 
 ### Closer
 
-Change only the guardrail's `Resource`, to an object ARN that covers
+Change only the guardrail's `Resource` to an object ARN that covers
 everything under `daily/` but nothing under `tmp/`. `arn:aws:s3:::acme-db-backups/*`
 would be too much: the job could no longer clean up.
 

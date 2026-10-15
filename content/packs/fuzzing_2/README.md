@@ -92,7 +92,7 @@ int(2)
 
 ```go
 Truncate("disk 92% full on db-1", 10) // => "disk 92% f"
-Truncate("héllo", 2)                  // => "h" (é doesn't fit, so drop it)
+Truncate("héllo", 2)                  // => "h" (é doesn't fit, so it is dropped)
 Truncate("disk full", -1)             // => ""
 ```
 

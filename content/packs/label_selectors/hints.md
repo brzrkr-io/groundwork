@@ -22,8 +22,8 @@ ignored.
 
 ## Task 2: List the names of matching Pods
 
-Loop over `pods` in order and keep the name of each Pod that `sel` matches.
-Looping over the slice in order keeps the names in order.
+Loop over `pods` and keep the name of each Pod that `sel` matches. A `range`
+loop visits the Pods in order, so the names stay in order.
 
 ### Closer
 

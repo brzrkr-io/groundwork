@@ -1,7 +1,7 @@
 # Kubernetes objects: building a Deployment
 
-In *Kubernetes fundamentals*, ending with *Practice: deploy and debug a
-service*, you wrote objects as YAML and sent them with
+In the *Kubernetes fundamentals* exercises, up to *Practice: deploy and
+debug a service*, you wrote objects as YAML and applied them with
 `kubectl`. Deploy bots, operators and platform CLIs build the same objects
 in Go, and so does every controller. Here you build a Deployment with the
 real Kubernetes Go types.

@@ -10,7 +10,7 @@ server must keep serving everyone else. You build that safety net here.
 
 ### Recap from the earlier *panic and recover* exercises
 
-- `recover()` stops a panic when called inside a deferred function.
+- `recover()` stops a panic when called directly inside a deferred function.
 - A deferred closure can set a named result.
 
 ### Middleware: a function that returns a function
@@ -32,6 +32,9 @@ func Branded(h Handler) Handler {
 
 The `defer` belongs to the **inner** function, so it runs once per request,
 not once when `Branded` is called.
+
+Real Go servers work this way: `net/http` recovers a panic in a handler so
+the rest of the server keeps running.
 
 > **Why is it written like this?** `Handler` is a function type, so Go
 > requires the returned literal to have exactly its shape:
@@ -59,21 +62,18 @@ default:
 Go's own panics, such as an index out of range, are `error` values whose
 message starts with `runtime error:`.
 
-> **Why is it written like this?** `v.(type)` is only allowed in a `switch`;
-> Go requires that. Reusing the same name (`switch v := v.(type)`) is a common
+> **Why is it written like this?** Go allows `v.(type)` only in a `switch`.
+> Reusing the same name (`switch v := v.(type)`) is a common
 > convention; a new name like `x` works the same.
 
 ### Printing a value's type with %T
 
-The `%T` verb prints a value's type, `%v` prints the value:
+The `%T` verb prints a value's type; `%v` prints the value:
 
 ```go
 fmt.Sprintf("%v is a %T", 3.5, 3.5)        // => "3.5 is a float64"
 fmt.Sprintf("%v is a %T", true, true)      // => "true is a bool"
 ```
-
-Real Go servers work this way: `net/http` recovers a panic in a handler so
-the rest of the server keeps running.
 
 ## Your task
 

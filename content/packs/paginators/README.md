@@ -91,7 +91,7 @@ you skip is an API call you don't pay for.
 for _, line := range lines {
 	found = append(found, line)
 	if len(found) == 10 {
-		return found // leaves the loops and the function at once
+		return found // leaves the loop and the function at once
 	}
 }
 ```

@@ -5,7 +5,7 @@ are special: one is dropped when empty, one is never encoded.
 
 ### Closer
 
-A tag goes in backquotes after the type, with no spaces inside:
+A tag goes in backticks after the type, with no spaces inside:
 ``Service string `json:"service"` ``. Add `,omitempty` after the key for
 `Error`, and use `json:"-"` for `AuthToken`.
 

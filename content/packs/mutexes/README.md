@@ -44,8 +44,8 @@ func (inv *Inventory) Remove(name string) {
 ```
 
 > **Why is it written like this?**
-> - **Go requires** pointer receivers (`*Inventory`) here: a copied mutex is
->   a separate lock, and `go vet` warns about it.
+> - **Use pointer receivers** (`*Inventory`): a value receiver copies the
+>   mutex, and a copied mutex is a separate lock. `go vet` warns about it.
 > - **Convention:** the mutex sits just above the data it protects, with a
 >   `// protects …` comment. `defer …Unlock()` goes on the line right after
 >   `Lock`, so no `return` can skip it.

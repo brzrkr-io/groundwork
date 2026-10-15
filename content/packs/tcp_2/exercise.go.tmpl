@@ -47,6 +47,6 @@ func ReadBanner(addr string, timeout time.Duration) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// TODO(3): Trim the trailing "\r\n". Add the strings import.
+	// TODO(3): Trim the trailing "\r\n" or "\n". Add the strings import.
 	return line, nil
 }

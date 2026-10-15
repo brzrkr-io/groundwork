@@ -5,7 +5,7 @@ or a guardrail that should stop something doesn't. Each file here has one of
 those bugs, found in a review or an incident. Read the evidence, find the
 statement, fix only that.
 
-**New here:** IAM last accessed information; otherwise practice of diagnosing policy bugs.
+**New here:** IAM last accessed information; otherwise practice in diagnosing policy bugs.
 
 ## Learn
 
@@ -62,7 +62,7 @@ To narrow an over-broad policy, you need the calls the role really makes.
 Two places record them:
 
 - *IAM last accessed information*: which services the role used, and when,
-  over at least 400 days. For S3, EC2, IAM and Lambda it also lists the
+  over the last 400 days. For S3, EC2, IAM and Lambda it also lists the
   *management actions* (changes to settings, such as `s3:PutBucketPolicy`).
 - *CloudTrail*: one record per API call, with the resource. Object reads and
   writes (`s3:GetObject`, `s3:PutObject`) are *data events*, recorded only
@@ -93,17 +93,22 @@ aws iam simulate-custom-policy --policy-input-list file://2_report_reader.json \
   --action-names s3:ListBucket --resource-arns arn:aws:s3:::acme-reports   # check your fix the way AWS does
 ```
 
-None of them changes anything. Use a role from your own account.
+None of these commands changes anything. Use a role from your own account.
 
 ## Your task
 
 Three policies, three bugs. Each starter's `"Id"` holds the symptom. Fix the
-statements and delete the `Id` line. The tests check the same rules as in
-*IAM policies: write least-privilege policies*: valid JSON with only the
-known fields, `Version` `"2012-10-17"`, no `Id` left, every statement with
-`Effect` `"Allow"` or `"Deny"` plus an `Action` and a `Resource`, no `Allow`
-of `"*"` or `"<service>:*"`, and every request below decided as shown.
-"Denied" means either kind of deny. `policy_test.go` holds the evaluator.
+statements and delete the `Id` line. `policy_test.go` holds the evaluator.
+The tests check the same rules as in *IAM policies: write least-privilege
+policies*:
+
+- The file is valid JSON with only the known fields.
+- `Version` is `"2012-10-17"`, and no `Id` is left.
+- Every statement has an `Effect` of `"Allow"` or `"Deny"`, an `Action` and
+  a `Resource`.
+- No `Allow` has the action `"*"` or `"<service>:*"`.
+- Every request below gets the answer shown. "Denied" means either kind of
+  deny.
 
 ### 1. Narrow the CI policy
 
@@ -111,8 +116,8 @@ of `"*"` or `"<service>:*"`, and every request below decided as shown.
 
 The CI role's policy allows every S3 action on every bucket. The evidence
 from the last 90 days: IAM last accessed information shows S3 is the only
-service the role used, and no S3 management action at all. CloudTrail's data
-events for the role:
+service the role used, and it made no S3 management actions. CloudTrail's
+data events for the role:
 
 | Action | Calls | Resources |
 |---|---|---|
@@ -192,8 +197,8 @@ Denied:
 
 The backup job uploads to `tmp/`, copies the file into `daily/`, and deletes
 the temp file. The team's rule: **nobody deletes anything under `daily/`**,
-which `NeverDeleteDailyBackups` was written to enforce. Last night this ran
-with the job's role, and succeeded:
+which `NeverDeleteDailyBackups` was written to enforce. Last night this
+command ran with the job's role and succeeded:
 
 ```text
 $ aws s3 rm s3://acme-db-backups/daily/2026-10-01.sql.gz

@@ -2,8 +2,8 @@ package uptime
 
 import "time"
 
-// Summarize counts the up and down results, works out the average and
-// slowest latency of the up targets, and picks the overall Status.
+// Summarize counts the up and down results, works out the average latency
+// of the up targets and which one is slowest, and picks the overall Status.
 func Summarize(results []Result) Summary {
 	var s Summary
 	var total, slowest time.Duration

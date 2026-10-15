@@ -88,10 +88,10 @@ if name != "-" {
 lines, err := countLines(src) // works on both
 ```
 
-> **Why is it written like this?** `var src io.Reader = stdin` names the
-> interface type on purpose: `src := stdin` would also work here, because
-> `stdin` already is an `io.Reader`. The `-` convention comes from POSIX, not
-> from Go. Never close stdin: only close what you opened.
+> **Why is it written like this?** `var src io.Reader = stdin` spells out the
+> interface type for clarity; `src := stdin` works too, because `stdin` is
+> already an `io.Reader`. The `-` convention comes from POSIX, not from Go.
+> Never close stdin: only close what you opened.
 
 ## Your task
 

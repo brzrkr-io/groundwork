@@ -15,7 +15,7 @@ type Record struct {
 	TTL  int // seconds, as DNS sends it and dig prints it
 }
 
-// ExpiresAt returns when a copy of r fetched at fetched must be thrown away.
+// ExpiresAt returns when a copy of r, fetched at the given time, must be thrown away.
 func ExpiresAt(r Record, fetched time.Time) time.Time {
 	return fetched.Add(time.Duration(r.TTL) * time.Second)
 }

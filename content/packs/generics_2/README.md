@@ -117,7 +117,7 @@ Sum([]int{})                 // => 0
 **Goal:** finish `SortedKeys` so it returns every key of `m`, sorted smallest first.
 
 Map order is random, but a report must look the same every time. For an empty
-map, return an empty slice (the `keys` slice that is already made). Sort with
+map, return the empty `keys` slice the starter already makes. Sort with
 `slices.Sort`, and add `"slices"` to the imports.
 
 ```go

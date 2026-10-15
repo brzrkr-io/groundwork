@@ -33,7 +33,7 @@ Two questions, always in this order:
 - *Authentication* (authn): **who are you?** Proved with a password, SSH key, certificate or token.
 - *Authorization* (authz): **what may you do?** Is that identity allowed this action on this thing?
 
-You've met both on Linux. Logging in as `deploy` is authentication; the kernel checking `deploy` against a file's permission bits on every `open` is authorization (see the *The operating system for programmers* guide).
+You've met both on Linux. Logging in as `deploy` is authentication; the kernel checking `deploy` against a file's permission bits on every `open` is authorization (see the guide *The operating system for programmers*).
 
 HTTP keeps them apart too: `401 Unauthorized` really means "I don't know who you are"; `403 Forbidden` means "I know who you are, and no".
 
@@ -151,7 +151,7 @@ CI systems also mask known secrets in logs, but only exact matches; a base64-enc
 
 ## Secrets on disk: file permissions
 
-Secrets often end up in files: an SSH key, `~/.aws/credentials`, a kubeconfig, a `.env` file. The permission bits from the *The operating system for programmers* guide decide who else on the machine can read them.
+Secrets often end up in files: an SSH key, `~/.aws/credentials`, a kubeconfig, a `.env` file. The permission bits from the guide *The operating system for programmers* decide who else on the machine can read them.
 
 | Mode | Who can read it | Use for |
 |---|---|---|
@@ -404,7 +404,7 @@ Good audit logs are append-only, stored where the actor can't edit them, and nev
 
 - [7 Security risks you should never take as a developer](https://www.youtube.com/watch?v=4YOpILi9Oxs) · Fireship · 9 min: a fast tour of vulnerable packages, injection, leaked credentials and least privilege, most of this guide in one sitting.
 - [Hacking Websites with SQL Injection - Computerphile](https://www.youtube.com/watch?v=_jKylhJtPmI) · Computerphile · 9 min: Tom Scott shows on screen how data glued into a command becomes code, the idea behind the Injection section.
-- [Hashing Algorithms and Security - Computerphile](https://www.youtube.com/watch?v=b4b8ktEV4Bg) · Computerphile · 8 min: what a hash is, why it can't be reversed, and why that makes it right for passwords and file checks.
+- [Hashing Algorithms and Security - Computerphile](https://www.youtube.com/watch?v=b4b8ktEV4Bg) · Computerphile · 8 min: what a hash is, why it can't be reversed, and why passwords need a slow, salted one.
 - [XZ Exploit - Computerphile](https://www.youtube.com/watch?v=LY8_35a_DEA) · Computerphile · 15 min: the near-miss backdoor slipped into xz, a compression library on most Linux systems, by a helpful-seeming contributor: a real supply chain attack.
 
 ## Go deeper

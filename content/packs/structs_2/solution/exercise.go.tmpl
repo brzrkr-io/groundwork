@@ -37,7 +37,7 @@ func ResetAll(hosts []Host) {
 	}
 }
 
-// reset returns h with its failures cleared and marked healthy.
+// reset returns h with its failures cleared, marked healthy.
 func reset(h Host) Host {
 	h.Failures = 0
 	h.Healthy = true

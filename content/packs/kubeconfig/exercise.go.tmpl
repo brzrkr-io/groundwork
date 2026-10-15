@@ -22,11 +22,11 @@ func ContextNames(cfg *clientcmdapi.Config) []string {
 	return nil
 }
 
-// ServerFor returns the API server URL that the context contextName points
-// at. It follows the context to its cluster and returns the cluster's server.
+// ServerFor follows the named context to its cluster and returns that
+// cluster's API server URL.
 func ServerFor(cfg *clientcmdapi.Config, contextName string) (string, error) {
 	// TODO(3): Look up the context, then its cluster, and return the
-	// cluster's Server. Return the errors described in the README when
-	// either lookup fails.
+	// cluster's Server. If either lookup fails, return the error the README
+	// gives for it.
 	return "", fmt.Errorf("context %q not found", contextName)
 }

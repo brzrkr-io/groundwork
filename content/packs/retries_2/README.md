@@ -44,11 +44,14 @@ if errors.As(err, &t) {
 `errors.As` returns `true` only if it *found* one. It doesn't call the
 method for you; you still have to ask it.
 
-> **Why is it written like this?** Go requires the `&`: `errors.As` needs a
-> pointer so it can fill the variable in. Interfaces with one method named
-> after what it does (`Retryable`, `Timeout`) are convention. Checking for
-> the interface, not one concrete type, is the author's choice: errors from
-> your HTTP client, DNS resolver or cloud SDK can all join in.
+> **Why is it written like this?**
+> - **Go requires** the `&`: `errors.As` needs a pointer so it can fill the
+>   variable in.
+> - **Convention:** a one-method interface is named after what it does
+>   (`Retryable`, `Timeout`).
+> - **Author's choice:** checking for the interface, not one concrete type,
+>   so errors from your HTTP client, DNS resolver or cloud SDK can all join
+>   in.
 
 ### Which HTTP statuses to retry
 
@@ -88,9 +91,10 @@ case <-quit:
 `ctx.Done()` returns a channel that closes when the context is cancelled or
 times out, and then `ctx.Err()` says why.
 
-> **Why is it written like this?** `<-ch` in a `case` is Go syntax for
-> "receive from this channel". The order of the cases is the author's
-> choice; it doesn't change which one wins.
+> **Why is it written like this?**
+> - **Go requires** `<-ch` in a `case` to receive from a channel.
+> - **Author's choice:** the order of the cases. It doesn't change which one
+>   wins.
 
 ### Testing real waits with testing/synctest
 

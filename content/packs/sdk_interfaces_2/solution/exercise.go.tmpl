@@ -41,7 +41,7 @@ func (r *RecordingStopper) StopInstances(ctx context.Context, params *ec2.StopIn
 }
 
 // TagValue returns the value of the tag with the given key, or "" if there
-// is no such tag.
+// is no such tag or its value is nil.
 func TagValue(tags []ec2types.Tag, key string) string {
 	for _, t := range tags {
 		if aws.ToString(t.Key) == key {

@@ -72,8 +72,8 @@ already sitting in the call's fields.
 
 > **Why is it written like this?** `<-ch` on its own line (ignoring the
 > value) is plain Go: a receive is an expression you may discard. Using
-> `close` as a broadcast is a Go convention. `chan struct{}` is convention
-> for "signal only, no data".
+> `close` as a broadcast is a Go convention, and so is `chan struct{}` for
+> "signal only, no data".
 
 ### Reading the tests
 

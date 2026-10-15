@@ -41,7 +41,7 @@ func TestNewStatusRequest(t *testing.T) {
 				t.Fatalf("%s returned error %v, want nil", call, err)
 			}
 			if req == nil {
-				t.Fatalf("%s returned a nil request", call)
+				t.Fatalf("%s = nil, want a request", call)
 			}
 			if req.Method != http.MethodGet {
 				t.Errorf("%s method = %q, want %q", call, req.Method, http.MethodGet)

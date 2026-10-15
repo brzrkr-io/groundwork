@@ -46,10 +46,10 @@ go func() {
 }()
 ```
 
-> **Why is it written like this?** Calling `wg.Wait()` directly, without the
-> extra `go func`, deadlocks: nobody is receiving yet, so the workers block
-> on their sends and `Wait` never returns. That's required, not style.
-> `for range 4` (no loop variable) is fine because each worker is the same.
+> **Why is it written like this?** The extra `go func` is required, not
+> style. Calling `wg.Wait()` directly deadlocks: nobody is receiving yet, so
+> the workers block on their sends and `Wait` never returns. `for range 4`
+> (no loop variable) is fine because every worker is the same.
 
 ### Who closes what
 
@@ -113,8 +113,8 @@ nothing closes `results`, so `collect` waits forever. Track the workers with
 a `sync.WaitGroup` (start them with `wg.Go`), and add one more goroutine that
 closes `results`. Import `"sync"`.
 
-With 3 workers at most 3 checks run at once, and with 3 hosts all 3 run at
-the same time.
+With 3 workers, at most 3 checks run at once. With 3 workers and 3 hosts,
+all 3 checks run at the same time.
 
 **Think it through:**
 - What replaces the plain `go` that starts each worker?

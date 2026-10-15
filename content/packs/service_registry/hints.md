@@ -82,7 +82,7 @@ return true
 
 ## Task 4: Find services by tag
 
-Range over all services, keep the ones whose tags include `tag`, then sort what you kept by name, because map order is random.
+Range over all services and keep the ones whose tags include `tag`. Then sort what you kept by name, because map order is random.
 
 ### Closer
 

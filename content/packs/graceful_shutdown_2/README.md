@@ -38,7 +38,7 @@ if errors.Is(err, os.ErrNotExist) {
 
 `context.Background()` has no deadline. Passing it to `Shutdown` means "wait
 as long as it takes". One stuck request and the process never exits;
-Kubernetes `SIGKILL`s it and your clean-up never runs. Wrap it with
+Kubernetes `SIGKILL`s it and your cleanup never runs. Wrap it with
 `context.WithTimeout` (and `defer cancel()`) to get a deadline.
 
 ### Stopping in the right order

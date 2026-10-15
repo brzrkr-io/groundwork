@@ -114,7 +114,7 @@ type Overrides struct {
 **Goal:** make `WithReplicas(spec DeploymentSpec, n int)` return `spec` with its `Replicas` field pointing at a new `int` holding `n`.
 
 - `Name` stays as it was.
-- Every call makes a **new** pointer, even for the same `n` (so two calls never return the same address).
+- Every call makes a **new** pointer, even for the same `n`.
 - Any `n` works, including `0` and negatives.
 
 ```go

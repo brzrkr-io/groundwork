@@ -364,7 +364,7 @@ func writeFile(t *testing.T, path, text string, mode fs.FileMode) {
 	}
 }
 
-// copyFile copies the exercise file from to path, with the given mode.
+// copyFile copies the exercise file at from to path, with the given mode.
 func copyFile(t *testing.T, from, path string, mode fs.FileMode) {
 	t.Helper()
 	text, err := os.ReadFile(from)

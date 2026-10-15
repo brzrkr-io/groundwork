@@ -1,7 +1,7 @@
 -- Task 3: Fix the deployer labels
 --
 -- Return every deploy's id and a label: 'deployed by ' followed by
--- deployed_by, or by 'automation' when deployed_by is empty, by id.
+-- deployed_by, or by 'automation' when deployed_by is NULL, by id.
 -- This gives NULL labels for the pipeline's deploys.
 --
 -- TODO(3): Fix the label for deploys with no deployed_by.

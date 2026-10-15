@@ -53,7 +53,7 @@ first, then look for `ErrUnreachable` anywhere in the error.
 ### Closer
 
 `errors.Is(err, ErrUnreachable)` searches inside joined and wrapped errors.
-A `switch { case err == nil: ... }` or a few `if`s both work.
+A `switch { case err == nil: ... }` and a few `if`s both work.
 
 ### Answer
 

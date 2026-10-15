@@ -2,7 +2,7 @@
 
 **In one sentence:** a distributed system is several programs on different machines that must cooperate over a network that can be slow, lossy or down, so every call can fail in ways a single program never sees.
 
-**Why it matters:** your deploy tool, your CI pipeline and every service you run on call already are distributed systems; the outages you will be paged for are mostly about timeouts, retries, stale caches and one slow dependency dragging everything else down.
+**Why it matters:** your deploy tool, your CI pipeline and every service you run on call are already distributed systems. Most outages you'll be paged for come down to timeouts, retries, stale caches, or one slow dependency dragging everything else down.
 
 **You'll learn:**
 
@@ -89,7 +89,7 @@ import (
 	"time"
 )
 
-// ceiling doubles base once per attempt, but never goes above limit.
+// ceiling returns base doubled once per attempt, capped at limit.
 func ceiling(attempt int, base, limit time.Duration) time.Duration {
 	c := base
 	for i := 0; i < attempt && c < limit; i++ {

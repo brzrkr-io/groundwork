@@ -10,25 +10,22 @@ var standardLevels = []string{"ERROR", "WARN", "INFO", "DEBUG"}
 // into its level ("ERROR") and message ("db timeout"). ok is false when the
 // line has fewer than three fields.
 func ParseLine(line string) (level, message string, ok bool) {
-	// TODO(1): Split the line with strings.Fields, check there are at least
-	// three fields, and return the upper-cased level and the remaining fields
-	// joined with single spaces.
+	// TODO(1): Split with strings.Fields and require at least three fields.
+	// Return the upper-cased level and the remaining fields joined by spaces.
 	return "", "", false
 }
 
 // CountLevels counts how many valid lines there are for each level.
 func CountLevels(lines []string) map[string]int {
-	// TODO(2): Make a map, call ParseLine for every line, skip bad lines and
-	// count the rest by level.
+	// TODO(2): Count valid lines by level, using ParseLine. Skip bad lines.
 	return nil
 }
 
 // Summary formats counts as "ERROR=2 WARN=1 INFO=5 DEBUG=0", followed by any
 // other levels in alphabetical order.
 func Summary(counts map[string]int) string {
-	// TODO(3): This only lists the standard level names. Write each standard
-	// level as LEVEL=count, then every other level from counts, separated by
-	// spaces.
+	// TODO(3): This only joins the level names. Write each standard level as
+	// LEVEL=count, then the other levels from counts, separated by spaces.
 	return strings.Join(standardLevels, " ")
 }
 

@@ -35,8 +35,8 @@ for _, s := range secrets.Items { // secrets is a *corev1.SecretList
 
 > **Why is it written like this?** `.Items` is required: `List` returns a
 > list *object* (with metadata of its own), and the objects are in its `Items`
-> slice. `LabelSelector:` names the field in the struct literal; that is
-> convention, and fields you don't name stay empty.
+> slice. Naming the field (`LabelSelector:`) in the struct literal is
+> convention. Fields you don't name stay empty.
 
 The API server returns lists sorted by namespace, then name. The fake does
 the same and honours `LabelSelector` too.
@@ -53,7 +53,7 @@ namespace. It is just `""`, but the name says what you mean.
 | `svc.Spec.Selector` (`spec.selector`) | the Pods it sends traffic to |
 
 They often look alike, so they are easy to mix up. A Service with no selector
-sends traffic to **no** Pods (someone wires it up by hand).
+sends traffic to **no** Pods; someone must wire up its endpoints by hand.
 
 `len` works on a `nil` map and returns `0`.
 

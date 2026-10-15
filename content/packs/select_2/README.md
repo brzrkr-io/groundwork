@@ -14,7 +14,8 @@ timer once, outside a loop.
 - `select` waits on several channel operations and runs the first one that
   is ready.
 - `time.After(d)` returns a channel that receives one value after `d`.
-- Closing a `chan struct{}` wakes every receiver, and stays "ready" forever.
+- Closing a `chan struct{}` wakes every receiver. A closed channel stays
+  ready forever.
 
 The tests use `testing/synctest`: a fake clock, so a 10-second wait finishes
 instantly but still counts as 10 seconds.
@@ -43,7 +44,7 @@ the channel it returns in a variable, and receive from that variable in the
 `case`. A channel is a value like any other, so you can keep it in a variable.
 
 > **Why is it written like this?** Go requires `case <-ch:` to name a
-> channel; it can be any expression that gives one, a function call or a
+> channel, but any expression that gives one works: a function call or a
 > variable. Where you create the timer is *your* choice, and it decides
 > what the timeout means.
 
@@ -73,10 +74,10 @@ quit:                            closed → return
 ```
 
 > **Why is it written like this?** `time.NewTicker` and the field name `C`
-> come from the `time` package (Go requires them as named). `defer
-> ticker.Stop()` straight after creating it is convention: it releases the
-> ticker however the function returns. The `for { select { … } }` shape is
-> the standard Go loop for "wait for whichever happens first, forever".
+> are fixed by the `time` package. Calling `defer ticker.Stop()` straight
+> after creating it is convention: it releases the ticker however the
+> function returns. The `for { select { … } }` shape is the standard Go loop
+> for "wait for whichever happens first, forever".
 
 ## Your task
 

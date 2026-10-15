@@ -67,8 +67,8 @@ case "Mon":
 }
 ```
 
-> **Why is it written like this?** Go requires the comma list for "any of
-> these"; there is no automatic fall-through into the next `case` as in C.
+> **Why is it written like this?** Go needs the comma list for "any of
+> these" because, unlike C, a `case` never falls through into the next one.
 > Values that match no `case` simply do nothing.
 
 ### Why raw watches are fragile

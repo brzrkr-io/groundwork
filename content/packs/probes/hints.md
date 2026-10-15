@@ -26,8 +26,8 @@ problem.
 
 ### Closer
 
-The liveness probe calls `/health`. The last command in the fixture shows
-which path podinfo really serves for liveness.
+The liveness probe calls `/health`. The last command in
+`testdata/cart_describe.txt` shows which path podinfo serves for liveness.
 
 ### Answer
 

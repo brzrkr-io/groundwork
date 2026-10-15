@@ -101,7 +101,7 @@ Use a type switch:
 | anything with a `String() string` method (`fmt.Stringer`) | the result of its `String()` method |
 | anything else (including `nil`, `int64`, slices and maps) | `""`, and `false` |
 
-Every supported value also returns `true`.
+Supported values also return `true`.
 
 ```go
 Scalar("eu-west-1")             // => "eu-west-1", true

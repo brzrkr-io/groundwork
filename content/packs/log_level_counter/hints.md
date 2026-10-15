@@ -1,7 +1,7 @@
 ## Task 1: Parse one line
 
 `strings.Fields(line)` gives you a slice of words. Check how many words there
-are before you index into it, then think about which index holds the level and
+are before you index into it. Then work out which index holds the level and
 which words make up the message.
 
 ### Closer

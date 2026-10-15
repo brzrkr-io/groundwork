@@ -100,9 +100,9 @@ tail -n +2 services.csv | awk -F, '$2 > 9000 {print $1}'
 ```
 
 `==` checks the **whole** field: `"billing"` doesn't match `billing-v2`,
-unlike `grep billing`. The number example skips the header first: compared
-with a number, a word like `port` is compared as text, `port > 9000` comes
-out true, and the header line would sneak into the output.
+unlike `grep billing`. The number example skips the header first. awk
+compares a word like `port` with a number as text, so `port > 9000` is
+true and the header line would sneak into the output.
 
 ### Totals: variables and END
 

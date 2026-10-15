@@ -5,11 +5,8 @@ an error. Keep both, and turn the bytes into a trimmed string.
 
 ### Closer
 
-Convert with `string(out)` and trim with `strings.TrimSpace`:
-
-```go
-out, err := cmd.Output()
-```
+Keep both results with `out, err := cmd.Output()`. Then convert with
+`string(out)` and trim with `strings.TrimSpace`.
 
 ### Answer
 

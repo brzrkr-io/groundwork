@@ -8,7 +8,8 @@ the newlines come from: the line with the `range` action and the line with
 
 Add `{{end}}` on its own line after `After={{.}}`. Then put a dash in
 `{{- range .After}}` and `{{- end}}` so each action eats the newline in front
-of it, like the upstream block in *Text templates*.
+of it, like the upstream block in *Text templates: render an nginx upstream
+block*.
 
 ### Answer
 

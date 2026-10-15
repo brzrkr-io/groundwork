@@ -4,8 +4,8 @@ Before one service can call another, it has to find it. A *service registry*
 answers "where is `billing-api` running, and is it healthy?" Consul, etcd and
 Kubernetes Services all do this job. Here you build a small one.
 
-**New here:** nothing; practice of *Types and methods* and the interfaces
-from *Interfaces and generics*.
+**New here:** nothing; this is practice for *Types and methods* and the
+interfaces from *Interfaces and generics*.
 
 ## Learn
 
@@ -73,19 +73,19 @@ slices.SortFunc(jobs, func(a, b Job) int {
 ### Other helpers
 
 - `slices.Contains(list, x)` reports whether `x` is in the slice `list`.
-- `delete(m, key)` removes an entry from a map. It's built in, no import.
+- `delete(m, key)` removes an entry from a map. It's built in, so it needs no import.
 - `v, ok := m[key]` (*comma-ok*) tells you whether `key` was there.
 
 > **Why is it written like this?** The `import` block with one package per
 > line in `( ... )` is gofmt convention; Go rejects unused imports, so add
 > each one only when you use it. You'll need `errors` and `fmt` (tasks 1–2)
-> and `cmp` and `slices` (task 4). Receiver name `r` is the author's choice.
+> and `cmp` and `slices` (task 4). The receiver name `r` is the author's choice.
 
 ## Your task
 
 Your platform team wants a registry so services stop hard-coding each other's
-IP addresses. Fill in the method bodies in `exercise.go`. Tests for tasks 3–5
-fill the registry directly, so any order works, but 1 to 5 is easiest.
+IP addresses. Fill in the method bodies in `exercise.go`. The tests for tasks
+3–5 fill the registry directly, so any order works, but 1 to 5 is easiest.
 
 ### 1. Name the statuses
 

@@ -39,9 +39,9 @@ wg.Wait()
 // now read pings
 ```
 
-> **Why is it written like this?** Go requires the slice to have its full
-> length (`make([]T, n)`) before goroutines write `pings[i]`; `append` would
-> share the slice again. Reading only after `Wait` is required, not style.
+> **Why is it written like this?** Writing `pings[i]` needs the slice at full
+> length (`make([]T, n)`) before the goroutines start; `append` would share
+> the slice again. Reading only after `Wait` is required, not style.
 
 ### sync.Once
 
@@ -122,7 +122,7 @@ c.Token() // => "tok-123", fetch is not called again
 ```
 
 **Think it through:**
-- Which lines does the `if` do that `c.once.Do` can do instead?
+- What job does the `if` do that `c.once.Do` can do instead?
 - After `Do` returns, what do you return?
 
 ## Learn more

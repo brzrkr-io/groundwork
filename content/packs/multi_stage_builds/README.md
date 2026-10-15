@@ -95,8 +95,8 @@ holds one program, `ENTRYPOINT` is the usual choice.
 > - **Docker requires:** no `RUN` in a scratch or distroless stage. A
 >   shell-form `RUN` needs `/bin/sh`, and there are no other programs to run.
 > - **Convention:** most Dockerfiles call the build stage `build` (the
->   example says `compile` only to keep your task fresh), and put the binary
->   at a simple absolute path such as `/out/app`.
+>   example uses `compile` so it doesn't give your task away), and put the
+>   binary at a simple absolute path such as `/out/app`.
 > - **Author's choice:** `static-debian13` without a tag here. The
 >   `:nonroot` tag runs as an unprivileged user; you'll use it later.
 
@@ -119,7 +119,7 @@ the given build stage.
 
 **Think it through:**
 - Which stage has the binary, and what is it called?
-- Why can't the final stage run `go` or anything else?
+- Why can't the final stage `RUN` anything, not even `go`?
 
 ### 2. Build a static binary
 

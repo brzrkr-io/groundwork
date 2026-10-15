@@ -24,7 +24,7 @@ type instruction struct {
 	Exec  bool     // true when the rest is a JSON list: ["app", "-v"]
 }
 
-// readDockerfile parses the Dockerfile name in the exercise folder. It
+// readDockerfile parses the Dockerfile called name in the exercise folder. It
 // handles what Docker handles: case-insensitive instructions, comment lines,
 // blank lines and lines continued with a trailing backslash.
 func readDockerfile(t *testing.T, name string) []instruction {

@@ -111,7 +111,7 @@ With a 24-hour TTL:
 After expiry the middleware runs the handler again and saves the new response.
 
 **Think it through:**
-- `e.Saved` holds when it was saved; `s.now()` gives the current time. Which one goes first in `Sub`?
+- `e.Saved` is when the entry was saved; `s.now()` is the current time. Which one goes first in `Sub`?
 - Exactly 24h counts as expired: `>` or `>=`?
 
 ### 3. Reject a key reused with a different body
@@ -139,7 +139,7 @@ Then, in `Middleware`, for requests that have a key:
   without replaying.
 - Save the fingerprint in the `Entry` you `Put`.
 
-Add `bytes`, `crypto/sha256`, `encoding/hex` and `io` to the imports if they aren't there.
+Add `crypto/sha256`, `encoding/hex` and `io` to the imports (`bytes` is already there).
 
 ```text
 key abc  body {"name":"web-1"}  => 201 vm-1 created from {"name":"web-1"}

@@ -12,7 +12,7 @@ func ArchiveName(host string, at time.Time) string {
 // MaxRetryDelay is the longest RetryDelay will ever wait.
 const MaxRetryDelay = 5 * time.Minute
 
-// RetryDelay returns how long to wait before retry number attempt:
+// RetryDelay returns how long to wait before the given retry attempt:
 // 30 seconds per attempt, capped at MaxRetryDelay.
 func RetryDelay(attempt int) time.Duration {
 	delay := time.Duration(attempt) * 30 * time.Second
@@ -22,7 +22,8 @@ func RetryDelay(attempt int) time.Duration {
 	return delay
 }
 
-// NextRun returns the first multiple of every that is strictly after now.
+// NextRun returns the first time strictly after now that is a whole multiple
+// of the interval every.
 func NextRun(now time.Time, every time.Duration) time.Time {
 	return now.Truncate(every).Add(every)
 }

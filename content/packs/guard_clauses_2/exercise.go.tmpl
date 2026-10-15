@@ -5,7 +5,7 @@ package guard2
 // DiskAlert returns "critical" when a disk is 95% full or more, "warning" when
 // it is 80% full or more, and "ok" below that.
 func DiskAlert(usedPercent int) string {
-	// TODO(1): Fix the two guards. They flipped < the wrong way.
+	// TODO(1): Fix the two guards. Each turned < into the wrong operator.
 	if usedPercent > 95 {
 		return "critical"
 	}

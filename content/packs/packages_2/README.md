@@ -53,8 +53,8 @@ func Save(name string) {
 > - **Go requires** the alias before the path, with a space and no `=`.
 >   After that, the file must use the alias. The original name `record`
 >   stops working in that file.
-> - **Go requires** nothing else to change. The alias only exists in this one
->   file. The package itself still says `package record`.
+> - **Go requires** nothing else to change. The alias exists only in this
+>   file; the package itself still says `package record`.
 > - **Convention:** aliases are lower case, with no underscores. They usually
 >   join the parent folder and the package name, like `dnsrecord`.
 > - **Convention:** only alias when you must. Here you must, because of the

@@ -38,8 +38,8 @@ func (s *Service) Get(name string) (string, error) {
 	if value, ok := s.cache.Get(name); ok {
 		return value, nil
 	}
-	// TODO(1): Fix the bug: a failed or not-found read is cached as "", so
-	// the flag looks like it exists with an empty value.
+	// TODO(1): Fix the bug: a failed read is cached as "", so the flag
+	// looks empty until it is evicted.
 	value, err := s.store.Get(name)
 	s.cache.Put(name, value)
 	if err != nil {
@@ -52,9 +52,8 @@ func (s *Service) Get(name string) (string, error) {
 // next Get reads the new value from the store. If the write fails, Set
 // returns the store's error and leaves the cache alone.
 func (s *Service) Set(name, value string) error {
-	// TODO(2): Fix the bug: the cache is updated before the store is
-	// written, so a failed write leaves a value in the cache that the store
-	// never saved.
+	// TODO(2): Fix the bug: the cache is written before the store, so a
+	// failed write leaves a value the store never saved.
 	s.cache.Put(name, value)
 	return s.store.Set(name, value)
 }

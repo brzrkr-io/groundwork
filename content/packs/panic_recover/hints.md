@@ -24,9 +24,9 @@ return port
 
 ## Task 2: Turn a panic into an error
 
-`recover()` only stops a panic when it is called inside a function that you
-`defer`. `err` is already a named result, so a deferred function can still
-change it after the panic.
+`recover()` only stops a panic when it is called directly inside a deferred
+function. `err` is a named result, so that deferred function can still change
+it after the panic.
 
 ### Closer
 

@@ -11,8 +11,8 @@ type Credential struct {
 
 // newCredential returns a Credential for user with the given secret token.
 //
-// TODO(1): Export this function so other packages can call it. A doc comment
-// starts with the name it describes, so rename it in the comment too.
+// TODO(1): Export this function so other packages can call it. Rename it in
+// the doc comment too.
 func newCredential(user, token string) Credential {
 	return Credential{User: user, Token: token}
 }
@@ -25,7 +25,7 @@ func (c Credential) Header() string {
 // masked returns the credential in a form that is safe to print in logs,
 // such as "deploy-bot:s3****".
 //
-// TODO(1): Export this method, and rename it in the comment too.
+// TODO(1): Export this method. Rename it in the doc comment too.
 func (c Credential) masked() string {
 	return c.User + ":" + mask(c.Token)
 }

@@ -15,8 +15,8 @@ return cmd.run(args[1:], stdout, stderr)
 
 ## Task 2: Add the uncordon command
 
-`runUncordon` is `runCordon` with three words changed. Then add a line to the
-`commands` map literal shaped like the `"cordon"` line.
+`runUncordon` is `runCordon` with `cordon` changed to `uncordon`. Then add a
+line to the `commands` map literal shaped like the `"cordon"` line.
 
 ### Closer
 

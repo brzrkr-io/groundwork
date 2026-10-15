@@ -5,8 +5,8 @@ index holds HOST, and which holds PORT?
 
 ### Closer
 
-HOST is `args[1]`, PORT is `args[2]`, and TIMEOUT_SECONDS is `args[3]`. Don't
-forget the `args[1]` inside the port error message too.
+HOST is `args[1]`, PORT is `args[2]`, and TIMEOUT_SECONDS is `args[3]`. Fix
+the `args[1]` inside the port error message too.
 
 ### Answer
 

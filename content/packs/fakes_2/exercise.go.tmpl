@@ -24,14 +24,14 @@ func (RealSleeper) Sleep(d time.Duration) {
 // returns nil as soon as fn returns nil. Between attempts it sleeps through
 // s: 1s after the first failure, then 2s, then 4s, doubling each time. It
 // does not sleep after the last attempt. If every attempt fails, it returns
-// fn's last error wrapped as "gave up after 3 attempts: <last error>".
+// fn's last error wrapped as "gave up after <attempts> attempts: <last error>".
 //
 // This code is correct. Your job in this exercise is to write tests for it.
 func Retry(s Sleeper, attempts int, fn func() error) error {
 	return retry(s, attempts, fn)
 }
 
-// retry points at the real implementation. Groundwork' grader swaps in
+// retry points at the real implementation. Groundwork's grader swaps in
 // broken versions to check that your tests catch them.
 var retry = realRetry
 

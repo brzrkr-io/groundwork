@@ -222,9 +222,9 @@ patterns must:
   as its `--help` text, as in *Embedding files*),
   `internal/parser/parser.go` and `internal/store/store.go`.
 
-Every other file is your call. The test decides like Docker does (its rules
-are in `dockerignore_test.go`) and names each file that is wrongly kept or
-wrongly left out.
+Every other file is your call. The test applies Docker's rules (see
+`dockerignore_test.go`) and names each file that is wrongly kept or wrongly
+left out.
 
 ```text
 --- FAIL: TestKeepSecretsOutOfContext

@@ -32,8 +32,8 @@ type Node struct {
 	Healthy bool
 }
 
-// TODO(2): Rename filterHealthy to say what it really returns, then fix
-// ServingCount, which trusted the old name.
+// TODO(2): Rename filterHealthy to unhealthyNodes and rewrite its comment to
+// say what it returns. Then fix ServingCount, which trusted the old name.
 
 // filterHealthy goes through the nodes' health checks.
 func filterHealthy(nodes []Node) []string {

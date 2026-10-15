@@ -60,7 +60,7 @@ const (
 	certs      = "/etc/ssl/certs/ca-certificates.crt"
 )
 
-// checkStages checks the Dockerfile has exactly two stages and returns them.
+// checkStages checks that the Dockerfile has exactly two stages and returns them.
 func checkStages(t *testing.T, file string, instructions []instruction) []stage {
 	t.Helper()
 	all := stages(instructions)
@@ -70,8 +70,8 @@ func checkStages(t *testing.T, file string, instructions []instruction) []stage 
 	return all
 }
 
-// checkBuildStage checks s is named build, starts from golang:1.26 and
-// builds pkg to out with cgo off.
+// checkBuildStage checks that s is named build, starts from golang:1.26
+// and builds pkg to out with cgo off.
 func checkBuildStage(t *testing.T, file string, s stage, out, pkg string) {
 	t.Helper()
 	if s.Base != "golang:1.26" || s.Name != "build" {
@@ -102,8 +102,9 @@ func buildsTo(args []string, out string) bool {
 	return false
 }
 
-// checkCacheOrder checks s copies go.mod and go.sum, downloads the modules,
-// then copies the code, as in the first task of the slow builds pack.
+// checkCacheOrder checks that s copies go.mod and go.sum, downloads the
+// modules, then copies the code, as in task 1 of Dockerfiles: fix the slow
+// builds.
 func checkCacheOrder(t *testing.T, file string, s stage) {
 	t.Helper()
 	var modCopy, download, copyAll *instruction
@@ -139,9 +140,9 @@ func goBuild(s stage) *instruction {
 	return nil
 }
 
-// checkRuntime checks the final stage only copies files out of other stages:
-// distroless and scratch have no shell to RUN anything, and the source code
-// has no place in the image you ship.
+// checkRuntime checks that the final stage only copies files out of other
+// stages. Distroless and scratch have no shell to RUN anything, and the
+// source code doesn't belong in the image you ship.
 func checkRuntime(t *testing.T, file string, s stage) {
 	t.Helper()
 	for _, in := range s.Instructions {
@@ -157,7 +158,7 @@ func checkRuntime(t *testing.T, file string, s stage) {
 // isFrom reports whether flag is a --from= flag.
 func isFrom(flag string) bool { return strings.HasPrefix(flag, "--from=") }
 
-// checkCopy checks the stage has a COPY --from=from of src, and returns
+// checkCopy checks that the stage has a COPY --from=from of src, and returns
 // where the file lands in the image, or "".
 func checkCopy(t *testing.T, file string, s stage, from, src string) string {
 	t.Helper()
@@ -179,7 +180,7 @@ func checkCopy(t *testing.T, file string, s stage, from, src string) string {
 	return ""
 }
 
-// checkEntrypoint checks the stage's ENTRYPOINT is in exec form and runs
+// checkEntrypoint checks that the stage's ENTRYPOINT is in exec form and runs
 // the program at want. It does nothing when want is "".
 func checkEntrypoint(t *testing.T, file string, want string, s stage) {
 	t.Helper()

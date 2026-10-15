@@ -52,11 +52,12 @@ func (q *Queue) Enqueue(ctx context.Context, j Job) error {
 	return nil
 }
 
-// Start launches workers goroutines. Each one takes jobs from the queue and
-// calls handle with them, one at a time, until the queue is closed and empty.
+// Start launches the given number of worker goroutines. Each one takes jobs
+// from the queue and calls handle with them, one at a time, until the queue
+// is closed and empty.
 func (q *Queue) Start(workers int, handle func(Job)) {
-	// TODO(3): Start workers goroutines, tracked by q.wg, that each call
-	// handle for every job they take from q.jobs.
+	// TODO(3): Start that many goroutines, tracked by q.wg. Each one calls
+	// handle for every job it takes from q.jobs.
 }
 
 // Close stops the queue and waits until the workers have handled every

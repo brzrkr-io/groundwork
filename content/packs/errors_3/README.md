@@ -54,7 +54,9 @@ As an error travels up through your functions, each layer adds what it knows:
 
 ```text
 line 2: check "api x /healthz": port "x" is not a number
-└ParseAll┘└──── ParseCheck ────┘ └───── the problem ─────┘
+│       │                       └ the problem
+│       └ added by ParseCheck
+└ added by ParseAll
 ```
 
 ### Skipping and counting in a loop

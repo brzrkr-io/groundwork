@@ -22,8 +22,8 @@ type pulled struct {
 	result Result
 }
 
-// PullAll pulls every image using a pool of workers goroutines and returns
-// one Result per image, in the same order as images.
+// PullAll pulls every image using a pool of `workers` goroutines and
+// returns one Result per image, in the same order as images.
 func PullAll(images []string, workers int, pull func(image string) error) []Result {
 	jobs := make(chan job)
 	go func() {

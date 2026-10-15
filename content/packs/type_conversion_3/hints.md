@@ -6,8 +6,7 @@ first.
 
 ### Closer
 
-`float64(mib)` gives you the same number as a `float64`. Divide that by
-`1024` and return the result.
+Divide `float64(mib)` by `1024` and return the result.
 
 ### Answer
 
@@ -25,8 +24,7 @@ one decimal place. Don't forget to add `import "strconv"` at the top.
 ### Closer
 
 `strconv.FormatFloat(f, 'f', 1, 64)` turns a `float64` into text with one
-decimal. Then add the fixed text `" GiB"` with `+`. Fixed text goes inside
-quotes; the function call doesn't.
+decimal. Then add the fixed text `" GiB"` with `+`.
 
 ### Answer
 
@@ -48,9 +46,8 @@ it into text with `strconv.Itoa`:
 pct := float64(usedMiB) / float64(totalMiB) * 100
 ```
 
-Then join the pieces with `+`. Fixed text goes inside quotes (`": "`,
-`" of "`, `" used ("`, `"%)"`); parameters and function calls don't
-(`mount`, `GiBString(usedMiB)`).
+Then join the pieces with `+`. The fixed text (`": "`, `" of "`,
+`" used ("`, `"%)"`) goes in quotes.
 
 ### Answer
 

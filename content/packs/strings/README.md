@@ -2,7 +2,7 @@
 
 Host names typed by people come with stray spaces and random capitals. Image
 names need checking before you trust them. Go's `strings` package has a tool
-for each job, and here you learn to use it.
+for each job.
 
 **New here:** `import`, the `strings` package, `len`, `bool`, `\n`.
 

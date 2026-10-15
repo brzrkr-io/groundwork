@@ -8,7 +8,7 @@ Real tools are split into packages: one for the inventory, one for planning
 deploys, one for the command line. This exercise shows how Go finds your
 packages and how one package calls another.
 
-**New here:** packages, import paths, calling another package; modules and `go.mod` properly, after a first look in *database/sql: query deploys from Go*.
+**New here:** packages, import paths, calling another package, and a proper look at modules and `go.mod` (first seen in *database/sql: query deploys from Go*).
 
 ## Learn
 

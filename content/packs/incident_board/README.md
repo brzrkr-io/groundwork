@@ -4,7 +4,7 @@ When things break, on-call needs one shared list: what's wrong, how bad, and
 who's on it. You'll build that board from your own types, with no new syntax:
 just the pieces from this module working together.
 
-**New here:** nothing; practice of *Types and methods*.
+**New here:** nothing; practice for *Types and methods*.
 
 ## Learn
 
@@ -29,7 +29,7 @@ Board ──holds──▶ []Incident ──each──▶ Incident{ID, Title, Se
 | File | What's in it | Do you edit it? |
 |---|---|---|
 | `exercise.go` | The types and every method signature, with `TODO(n)` markers | Yes: the method bodies and an `import` block |
-| `exercise_test.go` | The tests | No, read it if you're curious |
+| `exercise_test.go` | The tests | No; read it if you're curious |
 
 ### Pieces you'll reuse
 

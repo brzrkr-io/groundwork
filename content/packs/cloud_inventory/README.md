@@ -223,8 +223,9 @@ First write the helper
 Then in `Gather`, run `regionItems` for each region in its own goroutine, with
 `ec2For(region)` as the EC2 client and the shared `s3api`:
 
-- **Limit:** at most `maxParallel` regions in progress at once (always ≥ 1). A
-  buffered channel of that size works: send before the work, receive after.
+- **Limit:** at most `maxParallel` regions in progress at once (`maxParallel`
+  is always at least 1). A buffered channel of that size works: send before
+  the work, receive after.
 - **Collect:** append each region's items to one slice, guarded by a `sync.Mutex`.
 - **Fail fast:** keep only the first error, wrapped as `region <name>: <error>`
   (`%w`), and cancel a context made with `context.WithCancel(ctx)` so other
@@ -233,7 +234,7 @@ Then in `Gather`, run `regionItems` for each region in its own goroutine, with
 
 ```go
 Gather(ctx, []string{"us-east-1", "eu-west-1"}, s3api, ec2For, 2)
-// => buckets first (eu-west-1 before us-east-1), then instances, each sorted by region, then ID.
+// => buckets first, then instances; within each kind, sorted by region, then ID.
 
 // If eu-west-1's DescribeInstances fails with "boom":
 // => nil, "region eu-west-1: describe instances: boom"

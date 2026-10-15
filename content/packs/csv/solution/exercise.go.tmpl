@@ -54,7 +54,8 @@ func WriteHosts(w io.Writer, hosts []Host) error {
 		cw.Write([]string{h.Name, h.Region, h.Owner})
 	}
 
-	// Write only buffers; Error reports any failure from Write or Flush.
+	// Write only buffers: Flush sends the output, and Error reports any
+	// failure from Write or Flush.
 	cw.Flush()
 	return cw.Error()
 }

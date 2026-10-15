@@ -10,7 +10,7 @@ type Tag struct {
 }
 
 // FormatTags joins tags into the "key=value,key=value" text that the deploy
-// tool passes to the cloud CLI. Tags keep their order. No tags give "".
+// tool passes to the cloud CLI. Tags keep their order. An empty list gives "".
 //
 //	FormatTags([]Tag{{Key: "env", Value: "prod"}, {Key: "team", Value: "sre"}})
 //	// => "env=prod,team=sre"
@@ -18,7 +18,7 @@ func FormatTags(tags []Tag) string {
 	return formatTags(tags)
 }
 
-// formatTags points at the real implementation. Groundwork' grader swaps in
+// formatTags points at the real implementation. Groundwork's grader swaps in
 // broken versions to check that your benchmark catches them.
 var formatTags = realFormatTags
 

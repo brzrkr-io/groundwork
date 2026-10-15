@@ -56,8 +56,8 @@ func (c TCPCheck) Target() string {
 	return ""
 }
 
-// DueNow returns "<name> -> <target>" for every check that is due elapsed
-// seconds after the agent started, in the order of checks.
+// DueNow returns "<name> -> <target>" for every check that is due when
+// elapsed seconds have passed since the agent started, in the order of checks.
 func DueNow(checks []Check, elapsed int) []string {
 	// TODO(3): Collect a line for each check whose Interval divides elapsed.
 	return nil

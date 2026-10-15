@@ -44,7 +44,7 @@ func TestStore(t *testing.T) {
 		}
 	})
 
-	// Run with -race, this case catches a Store without locking.
+	// Under -race, this case catches a Store without locking.
 	t.Run("safe for concurrent use", func(t *testing.T) {
 		s := NewStore()
 		var wg sync.WaitGroup

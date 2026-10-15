@@ -15,7 +15,8 @@ func BackupAgeLabel(ageHours int) string {
 
 // CertStatus labels a TLS certificate by the days left until it expires.
 func CertStatus(daysLeft int) string {
-	// TODO(2): Reorder the checks so "expired" and "renew now" can happen.
+	// TODO(2): Reorder the checks, most urgent first, so "expired" and
+	// "renew now" can be returned.
 	if daysLeft < 30 {
 		return "renew soon"
 	} else if daysLeft < 7 {

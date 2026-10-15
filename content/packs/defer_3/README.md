@@ -53,10 +53,9 @@ func (f *TempFile) Discard() {
 }
 ```
 
-> **Why is it written like this?** A bare `return` in a function with no
-> results is allowed by Go and simply ends the function early. Checking the
-> flag at the top (an *early return*) is convention: it keeps the main work
-> unindented.
+> **Why is it written like this?** In a function with no results, a bare
+> `return` ends the function early. Checking the flag at the top (an *early
+> return*) is convention: it keeps the main work unindented.
 
 ## Your task
 

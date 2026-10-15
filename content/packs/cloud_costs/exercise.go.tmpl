@@ -63,13 +63,14 @@ func LineCost(item Item, p Prices) (float64, error) {
 
 // Estimate adds up the cost of items, in total and per service.
 func Estimate(items []Item, p Prices) (Bill, error) {
-	// TODO(2): Sum the line costs, then round the total and every service
-	// to cents. Add "math" to the imports.
+	// TODO(2): Sum the line costs, then round the total and each service's
+	// sum to cents. Add "math" to the imports.
 	return Bill{}, nil
 }
 
-// BudgetAlerts returns the AWS Budgets-style alerts for a monthly budget
-// after spending spent in the first day days of a days-long month.
+// BudgetAlerts returns the AWS Budgets-style alerts for a monthly budget.
+// spent is the amount spent so far, day is how many days have passed, and
+// days is the length of the month.
 func BudgetAlerts(budget, spent float64, day, days int, thresholds []int) []string {
 	// TODO(3): Build one ACTUAL or FORECASTED alert per threshold that is
 	// reached.

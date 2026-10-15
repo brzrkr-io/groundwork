@@ -55,8 +55,8 @@ for _, name := range files {
 }
 ```
 
-> **Why is it written like this?** Splitting the body into a helper is the
-> author's choice of fix, and the common Go idiom.
+> **Why is it written like this?** Moving the loop body into a helper is the
+> common Go idiom; other fixes exist, but this one is the clearest.
 
 ## Your task
 

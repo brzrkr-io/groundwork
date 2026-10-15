@@ -178,8 +178,8 @@ image: registry.example.com/api:stable
 ```
 
 The starter already stores `$1` in `service` and `$2` in `replicas`. The
-service name appears twice: on the first line and inside the image. Writing
-it again replaces the whole file, and the script prints nothing.
+service name appears twice: on the first line and inside the image. A
+second run replaces the whole file. The script prints nothing.
 
 **Think it through:**
 - Which command sends its input into a file, and which redirection

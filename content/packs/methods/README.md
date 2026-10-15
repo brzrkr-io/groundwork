@@ -79,7 +79,7 @@ func (d Disk) Summary() string {
 }
 ```
 
-Notice: `d.Size()` with brackets **calls** the method and gives you its string.
+`d.Size()` with brackets **calls** the method and gives you its string.
 `d.SizeGB` without brackets reads a field.
 
 ### A value receiver works on a copy

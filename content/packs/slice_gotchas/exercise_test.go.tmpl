@@ -50,7 +50,7 @@ func TestWithExtra(t *testing.T) {
 			a := WithExtra(tt.base, tt.first)
 			b := WithExtra(tt.base, tt.second)
 			if !slices.Equal(a, wantA) {
-				t.Errorf("first call WithExtra(%q, %q) = %q after a second call, want %q", before, tt.first, a, wantA)
+				t.Errorf("after a second call, the first WithExtra(%q, %q) result is %q, want %q", before, tt.first, a, wantA)
 			}
 			if !slices.Equal(b, wantB) {
 				t.Errorf("WithExtra(%q, %q) = %q, want %q", before, tt.second, b, wantB)

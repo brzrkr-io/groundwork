@@ -7,9 +7,8 @@ import (
 	"testing"
 )
 
-// This file reads a .dockerignore file and decides, the way Docker does,
-// which files of the build context it leaves out. You don't need to change
-// it.
+// This file reads a .dockerignore file and decides, as Docker does, which
+// files it leaves out of the build context. You don't need to change it.
 
 // ignorePattern is one pattern line of a .dockerignore file.
 type ignorePattern struct {
@@ -19,7 +18,7 @@ type ignorePattern struct {
 	Segments  []string // the pattern split at "/": "deploy/*.key" is ["deploy", "*.key"]
 }
 
-// readIgnoreFile parses the ignore file name in the exercise folder. Like
+// readIgnoreFile parses the named ignore file in the exercise folder. Like
 // Docker, it skips lines starting with "#" (comments) and blank lines, trims
 // spaces, and ignores leading and trailing slashes, so "/bin/", "bin/" and
 // "bin" are the same pattern.

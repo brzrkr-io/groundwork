@@ -27,8 +27,8 @@ in *Functions as values* and *Functions as values: state that sticks*.
 | `bool` (after the `)`) | result | did any attempt work? |
 
 > **Why is it written like this?** `attempts, baseSeconds int` is Go's
-> shorthand for two parameters of the same type. Putting it all on one line
-> is gofmt's choice; Go doesn't let you leave out any of these parts.
+> shorthand for two parameters of the same type. Go requires every part;
+> keeping it on one line is the author's style, which gofmt leaves alone.
 
 ### Passing in the "sleep"
 

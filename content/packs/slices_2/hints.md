@@ -62,5 +62,5 @@ if len(hosts) == 0 {
 return hosts[len(hosts)-1]
 ```
 
-`len(nil)` is `0` too, so this one check covers both the empty and the `nil`
-inventory.
+A `nil` slice has length `0` too, so this one check covers both the empty and
+the `nil` inventory.

@@ -215,8 +215,8 @@ Both change the list and the map, so two at the same time can corrupt them.
 Start `Get` and `Put` the way `Len` starts: lock `c.mu`, then defer the
 unlock.
 
-The test runs 20 goroutines that each `Put`, `Get` and `Len` 5 different
-tags in a cache that holds 10. Afterwards:
+The test runs 20 goroutines. Each one calls `Put` and `Get` on 5 different
+tags, and calls `Len`, in a cache that holds 10. Afterwards:
 
 ```go
 c.Len()       // => 10

@@ -17,9 +17,8 @@ so this exercise uses a *third-party* package, `modernc.org/sqlite`. Its
 import path starts with the address where its code is published.
 
 Each exercise folder is a Go *module*: a folder of code described by a
-`go.mod` file. Most exercises get a two-line `go.mod`. The SQL exercises in
-this module have a longer one, because their tests run SQLite. Open this
-one:
+`go.mod` file. Most exercises get a two-line `go.mod`. The SQL exercises
+have a longer one, because their tests run SQLite. Open this one:
 
 ```text
 module groundwork.local/database_sql   ← this module's own name

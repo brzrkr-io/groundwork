@@ -304,7 +304,7 @@ and the cluster IP. Import `"fmt"`, `appsv1 "k8s.io/api/apps/v1"` and
 
 **Think it through:**
 - Which variable is the live Service and which is the desired one? Keep them apart.
-- Steps 2–6 are a chain of `if`s, each ending in a `return`.
+- Steps 2–6 run in order, and each one ends in a `return`.
 
 ### 4. Remove the Service when the label goes
 

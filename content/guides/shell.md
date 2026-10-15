@@ -277,7 +277,7 @@ while IFS= read -r line; do
 done < hosts.txt
 ```
 
-`< hosts.txt` feeds the file to the loop. `read -r line` reads one line into `line`; `-r` keeps backslashes, and `IFS=` keeps leading and trailing spaces. Learn the line as one unit. Practise in *Shell loops*.
+`< hosts.txt` feeds the file to the loop. `read -r line` reads one line into `line`; `-r` keeps backslashes, and `IFS=` keeps leading and trailing spaces. Memorise the whole line as one idiom. Practise in *Shell loops*.
 
 ## Functions
 

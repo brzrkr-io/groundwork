@@ -22,13 +22,13 @@ func StaticConfig(ctx context.Context, region, keyID, secret string) (aws.Config
 // Settings says where to load AWS settings from.
 type Settings struct {
 	Profile         string // profile name, e.g. "staging"
-	Region          string // region override; "" means use the profile's region
+	Region          string // region override; "" means no override
 	ConfigFile      string // path to the shared config file
 	CredentialsFile string // path to the shared credentials file
 }
 
 // Load returns the AWS config for s.Profile, read from s.ConfigFile and
-// s.CredentialsFile. A non-empty s.Region overrides the profile's region.
+// s.CredentialsFile. A non-empty s.Region overrides AWS_REGION and the profile.
 func Load(ctx context.Context, s Settings) (aws.Config, error) {
 	opts := []func(*config.LoadOptions) error{
 		config.WithSharedConfigProfile(s.Profile),

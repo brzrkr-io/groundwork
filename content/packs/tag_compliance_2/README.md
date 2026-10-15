@@ -66,7 +66,7 @@ The `buckettags` package audits S3 bucket tags. `RequiredTags` and
 
 **Goal:** `BucketTags` returns an empty map and `nil` for a bucket with no tags.
 
-Today it fails for every untagged bucket, so the audit crashes on exactly the
+Today it fails on every untagged bucket, so the audit stops on exactly the
 buckets it should report.
 
 - An API error with code `"NoSuchTagSet"`: return an empty (non-`nil`) map

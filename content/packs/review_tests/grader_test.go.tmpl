@@ -1,6 +1,6 @@
 package retention
 
-// This file is how Groundwork grades the test you write. You don't need to
+// This file is how Groundwork grades the tests you write. You don't need to
 // change it, but you are welcome to read it.
 //
 // TestGrader re-runs your tests against the real code, where they must pass,
@@ -18,8 +18,8 @@ import (
 // learnerTests selects the tests you write in exercise_test.go.
 const learnerTests = "^TestExpired$"
 
-// mutate installs a version of Expired that answers bug(b, age) when it
-// returns true, and the real answer otherwise.
+// mutate returns an installer for a version of Expired that gives bug's
+// answer when bug reports buggy, and the real answer otherwise.
 func mutate(bug func(b Backup, age time.Duration) (answer, buggy bool)) func() {
 	return func() {
 		expired = func(b Backup, now time.Time) bool {

@@ -107,7 +107,7 @@ CertStatus(8)  // => "warning"
 
 **Think it through:**
 - How many places use `7`? How many use `30`? Which numbers mean the same thing?
-- Which word in the README table goes with 7, and which with 30?
+- Which word in the table above goes with 7, and which with 30?
 
 ### 2. Name the check intervals
 

@@ -98,7 +98,7 @@ The `unicode` package has `unicode.IsLetter(r)` and `unicode.IsDigit(r)`. They
 accept letters and digits from **every** language: `é`, `ж`, and `٣`
 (Arabic-Indic three). That's wrong when a system only accepts ASCII.
 
-Then compare ranges yourself. Runes are numbers, and `'a'` to `'z'` sit next
+In that case, compare ranges yourself. Runes are numbers, and `'a'` to `'z'` sit next
 to each other in order:
 
 ```go

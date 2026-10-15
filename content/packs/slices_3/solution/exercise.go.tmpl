@@ -1,20 +1,21 @@
 // Package rollout is the Groundwork exercise "Slices: rolling-deploy batches".
 package rollout
 
-// BatchCount returns how many batches of size hosts it takes to cover hosts.
+// BatchCount returns how many batches it takes to cover hosts when each batch
+// holds at most size hosts.
 func BatchCount(hosts []string, size int) int {
 	return (len(hosts) + size - 1) / size
 }
 
 // Batch returns batch number n (counting from 0) when hosts is split into
-// batches of size hosts. The last batch may be shorter.
+// batches of at most size hosts. The last batch may be shorter.
 func Batch(hosts []string, size, n int) []string {
 	start := min(n*size, len(hosts))
 	end := min(start+size, len(hosts))
 	return hosts[start:end]
 }
 
-// Plan splits hosts into batches of size hosts, in order.
+// Plan splits hosts, in order, into batches of at most size hosts.
 func Plan(hosts []string, size int) [][]string {
 	plan := make([][]string, BatchCount(hosts, size))
 	for n := range len(plan) {

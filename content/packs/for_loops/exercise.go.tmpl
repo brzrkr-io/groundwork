@@ -1,14 +1,15 @@
 // Package loops is the Groundwork exercise "For loops: backoff and progress bars".
 package loops
 
-// TotalBackoff returns the total seconds waited over attempts retries, where
-// the delay starts at baseSeconds and doubles after each retry.
+// TotalBackoff returns the total seconds waited over the given number of
+// retries, where the delay starts at baseSeconds and doubles after each retry.
 func TotalBackoff(attempts, baseSeconds int) int {
-	// TODO(1): Add up the first attempts delays with a loop.
+	// TODO(1): Use a loop to add up one delay per attempt.
 	return 0
 }
 
-// ProgressBar draws a bar like "[##---]" with done '#' and total-done '-'.
+// ProgressBar draws a bar like "[##---]": done '#' characters followed by
+// total-done '-' characters.
 func ProgressBar(done, total int) string {
 	// TODO(2): Build the bar with loops and a strings.Builder. Add
 	// import "strings" below the package line.

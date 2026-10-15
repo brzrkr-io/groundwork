@@ -181,8 +181,8 @@ Kinds()
 
 The names come back sorted, because `ReadDir` sorts them. If reading the
 folder fails, `Kinds` returns the error (the starter already does this).
-Until the directive is in place, `templates` is empty, so that's what you'll
-see.
+Until the directive is in place, `templates` is empty, so `ReadDir` fails and
+the tests show that error.
 
 **Think it through:**
 - This time the directive names a folder, not a file. Which variable has the

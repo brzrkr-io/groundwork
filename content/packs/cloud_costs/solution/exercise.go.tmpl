@@ -88,7 +88,7 @@ func Estimate(items []Item, p Prices) (Bill, error) {
 		bill.Total += cost
 		bill.ByService[item.Service] += cost
 	}
-	// Round once at the end: rounding every line would add up small errors.
+	// Round once at the end: rounding every line would add up rounding errors.
 	bill.Total = cents(bill.Total)
 	for service, cost := range bill.ByService {
 		bill.ByService[service] = cents(cost)
@@ -101,8 +101,9 @@ func cents(dollars float64) float64 {
 	return math.Round(dollars*100) / 100
 }
 
-// BudgetAlerts returns the AWS Budgets-style alerts for a monthly budget
-// after spending spent in the first day days of a days-long month.
+// BudgetAlerts returns the AWS Budgets-style alerts for a monthly budget.
+// spent is the amount spent so far, day is how many days have passed, and
+// days is the length of the month.
 func BudgetAlerts(budget, spent float64, day, days int, thresholds []int) []string {
 	forecast := spent / float64(day) * float64(days)
 	var alerts []string

@@ -167,8 +167,8 @@ in.
 - If `Replicas` is `0`, set it to `1`.
 - If `Limits.MemoryMB` is `0`, set it to `128`.
 
-Every other field, including `Limits.CPUMillis`, stays exactly as it was.
-Values that are already set are kept.
+Values already set stay as they are, and so does every other field,
+including `Limits.CPUMillis`.
 
 ```go
 ApplyDefaults(Deployment{Name: "worker"})

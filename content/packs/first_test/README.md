@@ -145,8 +145,8 @@ The deploy tool reads service ports from config files with `ParsePort`. The
 code in `exercise.go` is already correct. Write `TestParsePort` in
 `exercise_test.go` so a broken `ParsePort` can never sneak back in.
 
-`ParsePort` takes text, and returns a whole number from 1 to 65535 and a nil
-error. Anything else gives an error.
+`ParsePort` takes text. For a whole number from 1 to 65535 it returns that
+number and a nil error. Anything else gives an error.
 
 ```go
 ParsePort("8080")  // => 8080, nil

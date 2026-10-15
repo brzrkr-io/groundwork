@@ -1,7 +1,7 @@
 # Reading compiler errors
 
 The Go compiler checks your code before anything runs. When it finds a
-problem it stops, and tells you exactly where it is and what's wrong. Once you
+problem, it stops and tells you exactly where it is and what's wrong. Once you
 can read these messages, most of them take seconds to fix. Here you practise
 on the four you'll meet most.
 

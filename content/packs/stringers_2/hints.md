@@ -18,7 +18,7 @@ var phaseNames = []string{"Pending", "Running", "Succeeded", "Failed", "Unknown"
 ## Task 2: Fix the status line
 
 `%d` prints a `Phase` as its raw number. Which verbs make `fmt` call `String`?
-Look at the recap in this README.
+See the Recap in the README.
 
 ### Closer
 

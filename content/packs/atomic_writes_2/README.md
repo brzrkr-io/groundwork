@@ -92,8 +92,7 @@ Your deploy tool changes settings in `/etc/default/*`-style env files with
 
 **Goal:** `setLine(lines, key, value)` replaces the line belonging to `key` with `KEY=value`, or appends `KEY=value` if there is none.
 
-- `KEY=value` is built from the `key` parameter, fixed text `"="`, and the
-  `value` parameter.
+- The new line is `key`, then `=`, then `value`.
 - All other lines stay as they are, in order.
 - `lines` may be empty or `nil`.
 - Right now it always appends, so a file ends up with two `LOG_LEVEL=` lines.
@@ -152,4 +151,4 @@ path that is an existing, non-empty directory.
 
 - [os.ReadFile](https://pkg.go.dev/os#ReadFile)
 - [strings.HasPrefix](https://pkg.go.dev/strings#HasPrefix)
-- [systemd EnvironmentFile](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#EnvironmentFile=)
+- [systemd EnvironmentFile](https://man7.org/linux/man-pages/man5/systemd.exec.5.html)

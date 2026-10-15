@@ -181,7 +181,7 @@ A popular entry expires, and in the next millisecond 500 requests miss together 
 
 ## Queues and async work
 
-Some work doesn't need to happen while the user waits: building an image, sending a notification, resizing a log archive. Put it on a *queue* and let *workers* do it at their own pace.
+Some work doesn't need to happen while the user waits: building an image, sending a notification, compressing a log archive. Put it on a *queue* and let *workers* do it at their own pace.
 
 ```text
 API (producer) --> [ queue: job job job ... ] --> worker 1

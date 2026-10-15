@@ -6,9 +6,9 @@ found any certificates.
 
 ### Closer
 
-`pool := x509.NewCertPool()`, then `pool.AppendCertsFromPEM(caPEM)` returns
-`false` when it found none; return `nil` and an `errors.New(...)` then. Set
-`RootCAs: pool` in the `tls.Config`.
+`pool := x509.NewCertPool()`, then call `pool.AppendCertsFromPEM(caPEM)`. If
+it returns `false`, return `nil` and an `errors.New(...)`. Set `RootCAs: pool`
+in the `tls.Config`.
 
 ### Answer
 

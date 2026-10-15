@@ -18,7 +18,7 @@ Real controllers only put a note in a queue and return:
 | Handlers must be fast, or events pile up. | `Add` is instant; a worker does the slow work later. |
 | One object can change ten times in a second. | Ten events for one object collapse into one queued key (*deduplication*). |
 | Two workers on the same object fight each other. | A key being processed is never handed to a second worker. |
-| The API server can fail half way through. | A failed key can be retried later. |
+| The API server can fail partway through. | A failed key can be retried later. |
 
 ### Keys: `namespace/name`
 
@@ -168,8 +168,8 @@ q.ShutDown()
 ProcessNextItem(q, handle) // queue is empty and shut down: returns false
 ```
 
-The tests also check that each key can be added again afterwards (so you
-called `Done`), and that `RunWorker` handles every key and returns after
+The tests also check that each key can be added again afterwards (proof that
+you called `Done`), and that `RunWorker` handles every key and returns after
 `ShutDown`.
 
 **Think it through:**

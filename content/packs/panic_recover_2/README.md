@@ -56,7 +56,7 @@ deferred function sets the result itself and the caller gets `-1`.
 ### Writing to a nil map panics
 
 `var m map[string]int` declares a map but creates nothing: `m` is `nil`.
-Reading from it is fine, writing to it panics. `make` creates a real, empty
+Reading from it is fine; writing to it panics. `make` creates a real, empty
 map you can write to.
 
 ```go

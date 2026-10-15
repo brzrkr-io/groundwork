@@ -48,7 +48,7 @@ checks := NewRing[bool](10)    // a ring of bools, up to 10
 
 Inside a generic function you don't know what `T` is, so you can't write
 `""` or `0`. `var zero T` makes the zero value of whatever `T` is: `""` for
-strings, `0` for numbers, an empty struct for `Deploy`.
+strings, `0` for numbers, a `Deploy` with empty fields for `Deploy`.
 
 ### Ends of a slice
 
@@ -98,7 +98,7 @@ r.Latest() // => "deploy finished", true
 
 **Think it through:**
 - Where in `r.items` does the newest item live: start or end?
-- Handle the empty ring first. The two lines already there do exactly that case.
+- Handle the empty ring first. The starter's two lines already handle that case.
 
 ### 2. Forget the oldest item
 

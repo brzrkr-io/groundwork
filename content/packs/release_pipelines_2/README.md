@@ -78,9 +78,9 @@ context tells them apart:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/2.1'
 ```
 
-`==` and `!=` compare (ignoring upper and lower case), `&&` means "and",
-`||` means "or", as in Go. Text goes in single quotes. A job without an
-`if:` runs for every event the workflow has.
+`==` and `!=` compare text, ignoring upper and lower case. `&&` means
+"and" and `||` means "or", as in Go. Text goes in single quotes. A job
+without an `if:` runs for every event the workflow has.
 
 ### Pull requests and secrets
 

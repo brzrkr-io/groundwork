@@ -91,8 +91,8 @@ one problem can ask for it.
 
 The deploy pipeline runs a preflight on every host before a rollout. The
 three checks already exist in `exercise.go`. Each returns `nil` when the host
-is fine, or an error wrapping one of the sentinels `ErrUnreachable`,
-`ErrLowDisk`, `ErrLowMemory`:
+is fine, or an error built on one of the sentinels `ErrUnreachable`,
+`ErrLowDisk` or `ErrLowMemory`:
 
 | Check | Fails when | Message |
 |---|---|---|

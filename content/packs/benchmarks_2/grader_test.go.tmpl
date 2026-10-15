@@ -53,7 +53,7 @@ func TestGrader(t *testing.T) {
 	for _, mu := range mutants {
 		t.Run(mu.name, func(t *testing.T) {
 			if _, err := runLearnerBenchmark(mu.name); err == nil {
-				t.Errorf("your benchmark didn't notice when %s, so it never calls Ports inside its b.Loop loops", mu.bug)
+				t.Errorf("your benchmark didn't notice when %s, so it never calls Ports inside its for b.Loop() loops", mu.bug)
 			}
 		})
 	}

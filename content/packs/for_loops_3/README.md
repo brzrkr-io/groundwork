@@ -3,7 +3,7 @@
 Rolling out to a whole fleet at once is risky, so deploy tools update hosts in
 batches and retry failures with capped backoff. You'll write both plans.
 
-**New here:** counting in steps (`i += step`), the built-in `min`; practice.
+**New here:** counting in steps (`i += step`) and the built-in `min`.
 
 ## Learn
 
@@ -59,9 +59,8 @@ import (
 
 ## Your task
 
-The starter functions return a placeholder; replace each one. Both need
-`strconv` and `strings`, so add those two packages to the imports below the
-`package` line.
+Each starter function returns a placeholder; replace it. Both functions need
+`strconv` and `strings`, so add them to the imports.
 
 ### 1. Plan the rollout batches
 
@@ -89,8 +88,8 @@ RolloutPlan(0, 3)  // => ""
 
 **Goal:** make `RetrySchedule(attempts, baseSeconds, maxSeconds)` list `attempts` delays like `"1s 2s 4s 8s 8s"`.
 
-- The first delay is `baseSeconds`; each next delay doubles.
-- No delay written is ever larger than `maxSeconds`.
+- The first delay is `baseSeconds`; each later delay is double the one before.
+- No delay in the output is larger than `maxSeconds`.
 - Each delay is the number followed by the fixed text `s`.
 - Delays are separated by single spaces, no space at the end.
 - Zero attempts gives `""`.

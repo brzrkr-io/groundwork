@@ -24,7 +24,7 @@ func FetchIP(client *http.Client, baseURL, host string) (string, error) {
 	return fetchIP(client, baseURL, host)
 }
 
-// newHandler and fetchIP point at the real implementations. Groundwork'
+// newHandler and fetchIP point at the real implementations. Groundwork's
 // grader swaps in broken versions to check that your tests catch them.
 var (
 	newHandler = realNewHandler

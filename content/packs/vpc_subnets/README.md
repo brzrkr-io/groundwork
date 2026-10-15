@@ -102,8 +102,8 @@ netip.PrefixFrom(netip.MustParseAddr("192.0.2.64"), 26) // 192.0.2.64/26
 
 ### Blocks inside a prefix
 
-Cutting a prefix into equal blocks of a longer length works like this
-example with `192.168.0.0/24` cut into `/26` blocks:
+To cut a prefix into equal blocks of a longer length, use these rules. The
+example cuts `192.168.0.0/24` into `/26` blocks:
 
 | Question | Rule | For `/24` into `/26` |
 |---|---|---|
@@ -141,7 +141,7 @@ Return an error when:
 - `bits` is shorter than the VPC (`bits < vpc.Bits()`) or longer than `/28`;
 - `index` is below 0 or not below the number of blocks.
 
-The starter already starts from `vpc.Masked()`, so leftover bits such as
+The starter already uses `vpc.Masked()`, so leftover bits such as
 `10.0.7.9/16` count as `10.0.0.0/16`. Any error text is fine; `fmt` is
 already imported for `fmt.Errorf`.
 
@@ -191,7 +191,7 @@ Plan("10.0.0.0/16", []string{"eu-west-1a", "eu-west-1b", "eu-west-1c"}, 17)
 
 **Think it through:**
 - Which index does the private subnet for `zones[i]` get?
-- The public and private loops differ only in the name prefix, the index offset and `Public`. One loop inside another over `"public"` and `"private"` saves writing it twice.
+- The public and private loops differ only in the name prefix, the index offset and `Public`. An outer loop over `"public"` and `"private"` saves writing the zone loop twice.
 
 ### 3. Check a hand-written plan
 
@@ -209,8 +209,8 @@ messages in this order:
 
 A subnet is *inside* the VPC when the VPC contains the subnet's first
 address **and** the subnet is at least as long as the VPC: `10.0.0.0/15`
-is not inside `10.0.0.0/16`, because it is twice as big. Only looking at
-later subnets reports each overlapping pair once.
+is not inside `10.0.0.0/16`, because it is twice as big. Comparing each
+subnet only with later ones reports every overlapping pair once.
 
 ```go
 Check("10.0.0.0/16", []Subnet{

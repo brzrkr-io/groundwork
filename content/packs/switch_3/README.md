@@ -33,11 +33,10 @@ default:
 }
 ```
 
-> **Why is it written like this?** Go requires the case values in an
-> expression switch to be compared with `==`, so a range like "below 1024"
-> can't be a case value there. You can put that check inside the case body,
-> or use a tagless switch. Which one you choose is your choice; both are
-> normal Go.
+> **Why is it written like this?** Go compares an expression switch's value
+> with each case value using `==`, so a range like "below 1024" can't be a
+> case value. Put that check inside a case body, or use a tagless switch.
+> Both are normal Go; the choice is yours.
 
 ### Order matters
 

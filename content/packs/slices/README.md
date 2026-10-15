@@ -140,7 +140,7 @@ FirstN(nil, 3)
 original order.
 
 Same rules as task 1: too big an `n` means all hosts, `n` is never negative,
-`n` of `0` or `nil` gives an empty result.
+and an `n` of `0` or a `nil` `hosts` gives an empty result.
 
 ```go
 LastN([]string{"web-1", "web-2", "web-3"}, 2)

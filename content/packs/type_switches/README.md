@@ -24,9 +24,9 @@ The catch: while the value sits in an `any`, Go only knows it as
 "something". You can't write `box.Name`, because `any` has no fields. You
 first have to get the real value back out.
 
-> **Why is it written like this?** `any` is a built-in name Go provides
-> (Go requires it to mean "any type"). Older code writes `interface{}`; it
-> means exactly the same. Using `any` is the modern convention.
+> **Why is it written like this?** `any` is a built-in name Go provides for
+> "any type". Older code writes `interface{}`, which means exactly the same.
+> Using `any` is the modern convention.
 
 ### Type assertions: `x.(T)`
 
@@ -77,7 +77,7 @@ default:
 }
 ```
 
-- `x.(type)` only works inside a `switch`. The word `type` is typed literally.
+- `x.(type)` only works inside a `switch`. You write the word `type` itself, not a type name.
 - In each `case`, `v` has that case's type, so you can use its fields.
 - `default` catches every type you did not list, including `nil`.
 

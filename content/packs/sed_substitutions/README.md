@@ -73,7 +73,7 @@ special meaning:
 
 - `+` means "one or more of the thing before it": `[0-9]+` is a number.
 - `(FAILED|ERROR)` means `FAILED` or `ERROR`.
-- Brackets `( )` make a *group*: sed remembers what that part matched.
+- Parentheses `( )` make a *group*: sed remembers what that part matched.
 - In the new text, `\1` is what group 1 matched, `\2` group 2, and so on.
 
 ```bash

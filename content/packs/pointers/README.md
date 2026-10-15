@@ -151,8 +151,8 @@ Scale(nil, 3)
 
 **Think it through:**
 - What must you check *first*, before touching any field?
-- Where does the replica count come from: the parameter `replicas`, fixed
-  up when it's below zero.
+- The new count is `replicas`. What should it become when it's below
+  zero?
 
 ### 3. Find a deployment
 

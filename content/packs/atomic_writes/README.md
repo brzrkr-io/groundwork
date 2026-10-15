@@ -54,10 +54,9 @@ f, err := os.CreateTemp(dir, "upload-*.part") // e.g. /var/backups/upload-8812.p
 The temp file **must be in the same directory** as the target. Rename is only
 atomic within one filesystem, and `/tmp` is often a different one.
 
-> **Why is it written like this?** Go requires the `*` to be inside the
-> pattern string (it's text, so it goes in quotes). Starting the pattern with
-> the target's name plus a suffix like `.tmp-*` is the author's choice: it
-> makes leftovers easy to spot.
+> **Why is it written like this?** Naming the temp file after the target plus
+> a suffix like `.tmp-*` is the author's choice: it makes leftovers easy to
+> spot.
 
 ### Clean up on failure with a deferred function
 

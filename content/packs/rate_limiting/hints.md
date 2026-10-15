@@ -6,9 +6,9 @@ token to take.
 
 ### Closer
 
-In the struct literal add `tokens: float64(burst)` and `last: now()`. The
-refill code is in the README: `b.tokens = min(b.burst, b.tokens+elapsed*b.rate)`,
-then `b.last = now`. After that, check `b.tokens < 1`.
+In the struct literal add `tokens: float64(burst)` and `last: now()`. To
+refill, use `b.tokens = min(b.burst, b.tokens+elapsed*b.rate)`, then
+`b.last = now`. After that, check `b.tokens < 1`.
 
 ### Answer
 

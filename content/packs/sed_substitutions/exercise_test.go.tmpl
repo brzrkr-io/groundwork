@@ -129,8 +129,8 @@ func expect(t *testing.T, want, script string, args ...string) {
 	}
 }
 
-// fixtures are the files in testdata/, each with lines it had when the
-// exercise was set up.
+// fixtures are the files in testdata/. originalLines lists lines from each
+// that must still be there, unchanged since the exercise was set up.
 var fixtures = []string{"testdata/deploy.yaml", "testdata/app.env", "testdata/worker.env"}
 
 var originalLines = map[string][]string{

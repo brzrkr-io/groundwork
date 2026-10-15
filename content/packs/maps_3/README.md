@@ -16,7 +16,7 @@ reorg, using maps from end to end.
 | know if a key is there | `v, ok := m[k]` | `ok` is `true` or `false` |
 | create a map | `make(map[string]int)` | a `var` map is `nil`; writing to it panics |
 | add one to a count | `m[k]++` | a missing key starts at `0` |
-| visit every entry | `for k, v := range m` | order is random every run |
+| visit every entry | `for k, v := range m` | order can change every run |
 
 Reading a `nil` map is fine: it behaves like an empty one, and a `range` over
 it runs zero times.
@@ -129,7 +129,7 @@ Unowned([]string{"checkout"}, owners)
 
 - `added`: services in `after` that aren't in `before`.
 - `removed`: services in `before` that aren't in `after`.
-- `changed`: services in both, whose team is different.
+- `changed`: services in both whose team differs.
 
 Either catalog may be `nil`.
 

@@ -1,7 +1,7 @@
 # Booleans: fix the alert rules
 
 The alerting rules for your team's pager were written in a hurry. Each rule
-has one small bug in its boolean expression, so people get woken up for
+has a small bug in its boolean expression, so people get woken up for
 nothing (or not at all).
 
 **New here:** nothing; practice reading and fixing boolean expressions.
@@ -40,8 +40,8 @@ Use this table to turn words into operators:
 
 ### Fixing, not rewriting
 
-Each bug here is one operator or one missing `!`. Change only that part of the
-`return` line and leave the rest as it is.
+Each bug here is a wrong operator, a missing `!`, or both. Change only those
+parts of the `return` line and leave the rest as it is.
 
 ## Your task
 

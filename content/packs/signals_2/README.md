@@ -80,7 +80,7 @@ ExitCodeFor(syscall.SIGHUP)  // => 1
 Add `"syscall"` to the imports.
 
 **Think it through:**
-- Which value are you comparing: the parameter `sig`.
+- Which value goes after `switch`?
 - Which `switch` part covers "any other signal"?
 
 ### 2. Reload on SIGHUP instead of quitting

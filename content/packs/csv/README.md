@@ -167,9 +167,8 @@ With no hosts, only the header line is written.
 
 ### 3. Filter by region
 
-**Goal:** `FilterCSV(r, w, region)` reads an inventory from `r` and writes
-only the hosts whose `Region` equals the `region` parameter to `w`, in the
-task 2 format.
+**Goal:** `FilterCSV(r, w, region)` reads an inventory from `r` and writes to
+`w` only the hosts whose `Region` equals `region`, in the task 2 format.
 
 Reuse `ReadHosts` and `WriteHosts`. If reading fails, return that error and
 write nothing.

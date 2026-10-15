@@ -118,7 +118,7 @@ SwapPorts(&live, &standby)
 
 **Think it through:**
 - In the existing line, is it changing the addresses or the ints?
-- Which symbol turns "a pointer" into "the value it points at"? Where must it appear, left side, right side, or both?
+- Which symbol turns "a pointer" into "the value it points at"? Must it appear on the left side, the right side, or both?
 
 ### 2. Fix CloneHost
 

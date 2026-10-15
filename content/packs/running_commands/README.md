@@ -63,8 +63,8 @@ cmd.Env = append(os.Environ(), "LANG=C", "TZ=UTC")   // ours plus two more
 `cmd.Env` as `nil` and the program inherits everything. Set it **without**
 `os.Environ()` and the program loses `PATH`, `HOME` and the rest.
 
-> **Why is it written like this?** `append(list, a, b)` returns a new list,
-> so you must store the result (Go requires using it). To append a whole
+> **Why is it written like this?** `append(list, a, b)` returns the new list,
+> and Go requires you to use it, so store the result. To append a whole
 > slice, put `...` after it: `append(list, more...)`.
 
 ### Timeouts with a context

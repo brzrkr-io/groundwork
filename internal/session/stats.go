@@ -31,7 +31,8 @@ type Stats struct {
 // active reports whether anything was practised that day.
 func active(d progress.Day) bool { return d.Checks+d.Passed+d.Reviews+d.Guides > 0 }
 
-// Stats computes the stats, with Days covering the last days days.
+// Stats computes the stats, with Days holding the given number of most
+// recent days.
 func (s *Session) Stats(days int) Stats {
 	today := s.now().In(time.Local)
 	day := func(back int) progress.Day {

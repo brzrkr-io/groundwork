@@ -5,10 +5,10 @@ log. Here you build a small analyser for nginx-style logs: it parses each
 line, notes broken lines, and reports status codes, busy paths and latency
 percentiles as text (for humans) and JSON (for dashboards).
 
-**New here:** the nearest-rank percentile, `io.WriteString`, `enc.SetIndent`,
-`Duration.Milliseconds`. Everything else
-is a project combining reading lines, regular expressions, time, JSON,
-errors, sorting and a golden-file test (see "Tools you already have").
+**New here:** the nearest-rank percentile, `io.WriteString`, `enc.SetIndent`
+and `Duration.Milliseconds`. Everything else combines tools you already know:
+reading lines, regular expressions, time, JSON, errors, sorting and golden-file
+tests (see "Tools you already have").
 
 ## Learn
 
@@ -105,8 +105,8 @@ pages := (items + 9) / 10 // 10 per page: 21 items => 3 pages
 
 ### Percentiles
 
-The *p95 latency* is the time 95% of requests beat. This project uses the
-*nearest-rank* method:
+The *p95 latency* is the time within which 95% of requests finish. This
+project uses the *nearest-rank* method:
 
 1. Sort the durations, fastest first.
 2. `rank` = `p / 100 × n`, **rounded up** (`n` = how many durations).
@@ -163,7 +163,7 @@ The starter already matches the line, defines a `group` helper
   `malformed line: ` followed by the line in double quotes.
 - **Bad time** (for example day `32`): return an error. Any message works.
 - Convert `status` and `bytes` to `int`, and `duration` (seconds) to a
-  `time.Duration`. Return any error.
+  `time.Duration`. Return any conversion error.
 - `Path`: everything from the first `?` is cut off.
 
 ```go
@@ -196,7 +196,7 @@ bad lines in `Problems`, and keeps going.
   `Entries` in file order.
 - A bad line does **not** stop the read. Add an error to `Problems` that
   wraps the `ParseLine` error (with `%w`) and prints as `line N: <error>`.
-- Reading itself fails (`sc.Err()`): return `Log{}` and that error.
+- If reading itself fails (`sc.Err()`), return `Log{}` and that error.
 
 For `testdata/access.log`: 16 entries (first path `/api/orders`, last
 `/metrics`) and 2 problems:
@@ -302,13 +302,12 @@ latency: p50 16ms, p95 2.5s
 - Fixed labels; the numbers come from the `Report` fields.
 - Indented lines start with 2 spaces.
 - Status classes sorted by name; top paths keep their order.
-- Durations printed with `%v` (16ms prints `16ms`, 2.5 s prints `2.5s`).
+- Durations printed with `%v` (16ms prints as `16ms`, 2.5 seconds as `2.5s`).
 
-**`WriteJSON`** fills the provided `jsonReport` struct from `r` (all six
-fields; `P50Ms` and `P95Ms` from `r.P50.Milliseconds()` and
-`r.P95.Milliseconds()`) and encodes it indented by two spaces. The starter
-encodes, but copies only `Requests` and doesn't indent. Output ends with a
-newline:
+**`WriteJSON`** fills the provided `jsonReport` struct with all six fields
+from `r`. `P50Ms` and `P95Ms` come from `r.P50.Milliseconds()` and
+`r.P95.Milliseconds()`. Encode it indented by two spaces. The starter copies
+only `Requests` and doesn't indent. The output ends with a newline:
 
 ```json
 {
@@ -365,9 +364,9 @@ pieces fit together, the way the on-call team will run them:
 
 `report.golden` holds the same report as the `WriteText` example in task 6.
 
-`TestGrader` grades your test, much like in the *Testing* module, but by
-changing the files instead of the code. Your test must pass on the real
-files, and fail in a scratch folder where `report.golden` says a different
+`TestGrader` grades your test, as in the *Testing* module, but it changes
+the data files instead of the code. Your test must pass on the real files.
+It must fail in a scratch folder where `report.golden` has a different
 number, where `report.golden` lost its last line, and where `access.log`
 lost its last request. Finish tasks 1 to 6 first: your test can only pass
 when the whole pipeline works.

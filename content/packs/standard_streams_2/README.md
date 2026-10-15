@@ -61,6 +61,8 @@ stdout it would land in `errors.txt` or in the next command of a pipe.
 
 `sc.Scan()` returns `false` both at the end of input **and** when reading
 fails. After the loop, `sc.Err()` tells you which: `nil` means "just the end".
+Check it with an `if` and a short statement, shown here with a different
+call:
 
 ```go
 if err := cfg.Validate(); err != nil {

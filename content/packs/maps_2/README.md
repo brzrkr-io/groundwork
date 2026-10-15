@@ -48,8 +48,8 @@ Create a real map first, with `make(map[KeyType]ValueType)` or a literal
 like `map[string]int{}`.
 
 > **Why is it written like this?** `var` only declares a name; it doesn't
-> build a map. `make` and literals are the two ways Go gives you to build one.
-> Which one you pick is your choice; `make` is common when you start empty.
+> build a map. `make` and literals both build one. Either works; `make` is
+> common when you start empty.
 
 ### Copying a map
 
@@ -148,9 +148,9 @@ Merge(nil, nil)
 ```
 
 Right now it crashes with `panic: assignment to entry in nil map`. A panic
-stops the test run and prints a list of lines it passed through. The panic
-happens inside `maps.Copy`, but the bug is in your code: look for
-`exercise.go` in that list.
+stops the test run and prints the chain of calls that led to it. The panic
+happens inside `maps.Copy`, but the bug is in your code: find the
+`exercise.go` line in that list.
 
 **Think it through:**
 - Which argument of `maps.Copy` gets written to? Check the table above.

@@ -10,8 +10,8 @@ func ServicesPerTeam(owners map[string]string) map[string]int {
 	return counts
 }
 
-// Unowned returns the services, in order, that have no owner or an empty team
-// in owners.
+// Unowned returns, in order, the services that are missing from owners or
+// have an empty team.
 func Unowned(services []string, owners map[string]string) []string {
 	var unowned []string
 	for _, s := range services {

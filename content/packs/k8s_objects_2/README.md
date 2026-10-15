@@ -13,7 +13,7 @@ check that catches a broken Deployment before you send it to the cluster.
 Kubernetes objects have `metadata` (name, namespace, labels) and a `spec`
 (what you want). In Go they are nested structs, such as `appsv1.Deployment`.
 
-A Deployment has two sets of labels that matter here:
+A Deployment has three sets of labels:
 
 | Go path | What it is |
 |---|---|

@@ -44,7 +44,7 @@ Converting back to `float64` and comparing reveals any fractional part that `int
 
 ## Task 3: Finish GetStrings
 
-Add a `case []any:` that builds a new `[]string`. Each element is an `any`, so you have to check every one of them is a string.
+Add a `case []any:` that builds a new `[]string`. Each element is an `any`, so you have to check that each one is a string.
 
 ### Closer
 

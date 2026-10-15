@@ -25,12 +25,12 @@ type testCase struct {
 	wantStderr string
 }
 
-// check runs one testCase against fn, which the messages call fnName.
+// check runs tc against fn and reports failures under the name fnName.
 func check(t *testing.T, fnName string, fn handler, tc testCase) {
 	t.Helper()
 	code, stdout, stderr := call(fn, tc.args)
 	if code != tc.wantCode {
-		t.Errorf("%s(%q) = %d, want %d", fnName, tc.args, code, tc.wantCode)
+		t.Errorf("%s(%q) exit code = %d, want %d", fnName, tc.args, code, tc.wantCode)
 	}
 	if stdout != tc.wantStdout {
 		t.Errorf("%s(%q) stdout = %q, want %q", fnName, tc.args, stdout, tc.wantStdout)
@@ -46,7 +46,7 @@ func checkFlagError(t *testing.T, fnName string, fn handler, args []string) {
 	t.Helper()
 	code, stdout, stderr := call(fn, args)
 	if code != 2 {
-		t.Errorf("%s(%q) = %d, want 2", fnName, args, code)
+		t.Errorf("%s(%q) exit code = %d, want 2", fnName, args, code)
 	}
 	if stdout != "" {
 		t.Errorf("%s(%q) stdout = %q, want nothing", fnName, args, stdout)
@@ -134,7 +134,7 @@ func TestDeploy(t *testing.T) {
 
 	t.Run("-h", func(t *testing.T) {
 		if code, _, _ := call(runDeploy, []string{"-h"}); code != 0 {
-			t.Errorf("runDeploy([\"-h\"]) = %d, want 0", code)
+			t.Errorf("runDeploy([\"-h\"]) exit code = %d, want 0", code)
 		}
 	})
 }
@@ -171,7 +171,7 @@ func TestRollback(t *testing.T) {
 
 	t.Run("-h", func(t *testing.T) {
 		if code, _, _ := call(runRollback, []string{"-h"}); code != 0 {
-			t.Errorf("runRollback([\"-h\"]) = %d, want 0", code)
+			t.Errorf("runRollback([\"-h\"]) exit code = %d, want 0", code)
 		}
 	})
 }

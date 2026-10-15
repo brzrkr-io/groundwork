@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// The answers are float64 values. We print them with one decimal place (%.1f)
-// and accept any answer within 0.05 of the one we want.
+// Float results can be slightly off, so each check accepts any answer within
+// 0.05 of the expected value and prints it with one decimal place (%.1f).
 
 func TestAllowedDowntimeMinutes(t *testing.T) {
 	if got := AllowedDowntimeMinutes(99.9, 30); math.Abs(got-43.2) >= 0.05 {

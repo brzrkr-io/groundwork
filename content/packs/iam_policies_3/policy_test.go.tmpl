@@ -75,8 +75,8 @@ const (
 	implicitDeny = "ImplicitDeny"
 )
 
-// readPolicy parses the policy file name in the exercise folder. Fields these
-// tests don't know (often a typo such as "Actions") are an error.
+// readPolicy parses the policy file called name in the exercise folder.
+// Unknown fields (often a typo such as "Actions") are an error.
 func readPolicy(t *testing.T, name string) policy {
 	t.Helper()
 	raw, err := os.ReadFile(name)
@@ -96,7 +96,7 @@ func readPolicy(t *testing.T, name string) policy {
 	return p
 }
 
-// operators lists the condition operators these tests know.
+// operators lists the condition operators these tests support.
 var operators = []string{"StringEquals", "StringLike", "IpAddress", "NotIpAddress", "Bool"}
 
 // checkRules reports everything in policy p (read from file) that IAM
@@ -133,7 +133,7 @@ func checkRules(t *testing.T, file string, p policy) {
 		}
 		for op, keys := range s.Condition {
 			if !slices.Contains(operators, op) {
-				t.Errorf("%s uses the condition operator %q; these tests know %s", where, op, strings.Join(operators, ", "))
+				t.Errorf("%s uses the condition operator %q; these tests support %s", where, op, strings.Join(operators, ", "))
 			}
 			for key, values := range keys {
 				if len(values) == 0 {
@@ -245,8 +245,8 @@ func lookup(ctx map[string]string, key string) (string, bool) {
 	return "", false
 }
 
-// holds reports whether the request's value got satisfies operator op with
-// one of values. NotIpAddress holds when got is in none of the ranges.
+// holds reports whether got, the request's value, satisfies operator op for
+// at least one of values. NotIpAddress holds when got is in none of the ranges.
 func holds(op, got string, values []string) bool {
 	switch op {
 	case "NotIpAddress":

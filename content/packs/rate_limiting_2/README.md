@@ -41,8 +41,9 @@ A `time.Duration` is a count of nanoseconds. To turn seconds held in a
 time.Duration(0.25 * float64(time.Minute)) // 15s
 ```
 
-> **Why is it written like this?** Go requires the conversions: it never
-> mixes `float64` and `time.Duration` in one expression by itself.
+> **Why is it written like this?**
+> - **Go requires** the conversions: it never mixes `float64` and
+>   `time.Duration` in one expression by itself.
 
 ### Whole seconds, rounded up
 
@@ -73,7 +74,7 @@ for name, size := range files {
 ```
 
 A real service calls `Cleanup` every minute from a goroutine while requests
-are served, so it must hold `l.mu`.
+are being served, so `Cleanup` must hold `l.mu`.
 
 ## Your task
 

@@ -63,7 +63,7 @@ lock → check map → unlock → slow call (no lock) → lock → store → unl
 
 Without `defer`, you write `Unlock()` yourself and must make sure every path
 calls it. Two goroutines missing the same key at once may both call the slow
-function; for a cache that's fine, the last store wins.
+function. For a cache that's fine: the last store wins.
 
 ## Your task
 

@@ -115,7 +115,7 @@ func backend(t *testing.T) (*httptest.Server, *atomic.Int32) {
 	return srv, &hits
 }
 
-// get sends GET srv.URL+path and returns the status code (0 on error).
+// get sends GET url and returns the status code (0 on error).
 func get(client *http.Client, url string) (int, error) {
 	resp, err := client.Get(url)
 	if err != nil {

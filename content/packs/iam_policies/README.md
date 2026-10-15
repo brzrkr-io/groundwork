@@ -124,7 +124,7 @@ func (l *StringList) UnmarshalJSON(data []byte) error {
 }
 ```
 
-As `fmt` calls `String` on *Stringers*, `encoding/json` looks for an
+Just as `fmt` calls `String` on a *Stringer*, `encoding/json` looks for an
 `UnmarshalJSON([]byte) error` method (the `json.Unmarshaler` interface). When
 a type has one, json hands it the raw JSON of that value, here
 `"s3:GetObject"` with its quotes, and lets it decide:

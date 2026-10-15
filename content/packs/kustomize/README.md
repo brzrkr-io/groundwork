@@ -51,7 +51,7 @@ An overlay lists the base as a resource, then says what to change:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ../../base                     # a folder: its own kustomization.yaml
+  - ../../base                     # a folder with its own kustomization.yaml
 namespace: wiki-dev                # set on every object
 images:
   - name: registry.example.com/wiki/docs   # the image as the base writes it, without the tag

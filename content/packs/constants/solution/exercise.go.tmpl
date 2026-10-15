@@ -26,8 +26,8 @@ func DNSName(clusterDomain string) string {
 	return ServiceName + "." + Namespace + ".svc." + clusterDomain
 }
 
-// SpareReplicas returns how many more replicas may start when running are
-// already up.
+// SpareReplicas returns how many more replicas may start when running
+// replicas are already up.
 func SpareReplicas(running int) int {
 	return MaxReplicas - running
 }

@@ -48,7 +48,7 @@ type Decision string
 const (
 	Allow        Decision = "Allow"        // a statement allows it, and none denies it
 	ExplicitDeny Decision = "ExplicitDeny" // a statement denies it
-	ImplicitDeny Decision = "ImplicitDeny" // no statement mentions it
+	ImplicitDeny Decision = "ImplicitDeny" // no statement allows it
 )
 
 // Match reports whether value matches pattern, where * in pattern stands

@@ -73,16 +73,15 @@ change on every commit:
 | on every commit | `COPY . .`, `go build` | last |
 
 `go mod download` reads only `go.mod` and `go.sum`, so it can run before
-the code is there. Copy just those two files first:
+the code is there, so copy just those two files first. Here is the same
+trick in a Node.js project; the slow install stays cached until the
+dependency files change:
 
 ```dockerfile
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 ```
-
-That's the same trick for a Node.js project: the slow install stays cached
-until the dependency files change.
 
 > **Why is it written like this?**
 > - **Docker requires:** a `COPY` is cached by the *contents* of the files
@@ -189,7 +188,7 @@ reliably and without leftovers.
 
 **Think it through:**
 - Does `go install tool@version` read anything from your project?
-- Where does it go relative to `WORKDIR`? (Either place works.)
+- Does it matter whether it goes above or below `WORKDIR`? (It doesn't.)
 
 ## Learn more
 

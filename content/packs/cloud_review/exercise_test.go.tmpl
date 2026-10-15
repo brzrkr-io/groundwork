@@ -247,7 +247,7 @@ func TestReport(t *testing.T) {
 		now := time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC)
 		got, err := Review("testdata/account.json", now)
 		if err != nil {
-			t.Fatalf("Review returned error %v", err)
+			t.Fatalf("Review(testdata/account.json) returned error %v, want nil", err)
 		}
 		want := `[high] bucket acme-old-assets: anyone can s3:GetObject, s3:ListBucket
 [high] bucket acme-website: anyone can s3:GetObject

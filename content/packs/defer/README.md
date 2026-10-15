@@ -30,8 +30,7 @@ func Report(log *Log) {
 
 ### It runs on every return path
 
-The deferred call runs no matter which `return` ends the function. That is
-the whole point.
+The deferred call runs no matter which `return` ends the function.
 
 ```go
 func Check(log *Log) error {
@@ -143,7 +142,7 @@ events still end with `close <host>`.
 **Think it through:**
 - Which line does the setup, and which line is the cleanup?
 - Where should the cleanup move to, so no `return` can skip it? Does the old line still belong at the bottom?
-- Which value names the host: the parameter `host`, not a fixed `"web-1"`.
+- Use the `host` parameter, not a fixed `"web-1"`.
 
 ### 2. Lock, connect and clean up in order in Migrate
 

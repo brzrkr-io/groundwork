@@ -138,7 +138,7 @@ Kubernetes names services inside a cluster.
 ### 3. Count the spare replicas
 
 **Goal:** make `SpareReplicas` return how many more replicas fit under
-`MaxReplicas` (10) when `running` are already up.
+`MaxReplicas` (10) when `running` replicas are already up.
 
 ```go
 SpareReplicas(3)  // => 7

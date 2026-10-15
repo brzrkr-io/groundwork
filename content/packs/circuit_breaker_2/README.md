@@ -34,10 +34,9 @@ b.OnStateChange = func(from, to breaker.State) {
 Every transition goes through one method, `setState`, so the hook is called
 in one place.
 
-> **Why is it written like this?** Go requires care here: a function field
-> is `nil` until someone sets it, and calling a `nil` function panics. So
-> check `!= nil` first. Calling the field looks like calling a method:
-> `b.OnStateChange(x, y)`.
+> **Why is it written like this?** A function field is `nil` until someone
+> sets it, and calling a `nil` function panics. So check `!= nil` first.
+> Calling the field looks like calling a method: `b.OnStateChange(x, y)`.
 
 ### http.RoundTripper
 

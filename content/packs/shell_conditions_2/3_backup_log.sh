@@ -8,8 +8,8 @@ set -euo pipefail
 # Example: bash 3_backup_log.sh testdata/backup_failed.log
 #          testdata/backup_failed.log: INCOMPLETE
 
-# TODO(3): bash won't even start this script ("conditional binary operator
-# expected"). Fix the condition.
+# TODO(3): bash stops at this line with a syntax error ("conditional binary
+# operator expected"). Fix the condition.
 if [[ grep -q 'backup complete' "$1" ]]; then
 	echo "$1: complete"
 else

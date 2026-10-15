@@ -167,7 +167,7 @@ Line formats are flat. Real configuration has nesting: a Deployment has containe
 | YAML | `replicas: 3` | Kubernetes manifests, CI pipelines, Ansible |
 | TOML / INI | `region = "eu-west-1"` | `~/.aws/config`, systemd units, containerd |
 
-### CSV: simpler than it is
+### CSV: not as simple as it looks
 
 CSV means *comma-separated values*: one row per line, one comma between fields, often a header row first.
 
@@ -383,7 +383,7 @@ Is the first one 10 November or 11 October? Which time zone? If clocks went back
 
 The fix is two habits:
 
-1. **Use RFC 3339** (a profile of ISO 8601): `2026-10-11T01:31:00Z`. Biggest unit first, so timestamps written in the same zone even sort correctly as plain text.
+1. **Use RFC 3339** (a profile of ISO 8601): `2026-10-11T01:31:00Z`. The biggest unit comes first, so timestamps in the same zone sort correctly even as plain text.
 2. **Log in UTC.** The `Z` at the end means UTC. Convert to local time only when showing it to a human.
 
 Go parses a time with a *layout*: the reference moment `Mon Jan 2 15:04:05 MST 2006`, written the way your input writes it.
@@ -421,7 +421,7 @@ It prints:
 ```
 
 1. The layout tells `time.Parse` where the day, month, year and offset sit in nginx's format.
-2. The same instant prints with its `+02:00` offset, then converted to UTC: 11:15 in a `+02:00` zone is 09:15 UTC.
+2. The instant prints first with its `+02:00` offset, then in UTC: 11:15 in a `+02:00` zone is 09:15 UTC.
 3. Subtracting two times gives a duration. Go compares instants, not wall-clock text, so the different zones don't matter.
 
 You'll handle cert expiry and maintenance windows in *Time and durations*.

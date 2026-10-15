@@ -229,9 +229,9 @@ Save this as `main.go` in a folder with a `go.mod` file (make one with
 deploying api to production
 ```
 
-Step by step: the OS starts the process, Go sets itself up, and then calls
-`main`. `main` calls `fmt.Println`, which writes the text plus a newline to
-the screen. When `main` reaches its closing `}`, the program ends.
+Step by step: the OS starts the process, and Go's setup code calls `main`.
+`main` calls `fmt.Println`, which writes the text plus a newline to the
+screen. When `main` reaches its closing `}`, the program ends.
 
 ## go run, go build and go test
 
@@ -250,13 +250,12 @@ go build      # makes ./hello
 
 `go run` is for trying things out. `go build` is what a pipeline does,
 because the binary is the thing you ship. `go test` is what Groundwork runs
-every time you save an exercise. It also runs a few of `go vet`'s checks,
-which look for code that compiles but is almost certainly wrong.
+every time you save an exercise. It also runs some `go vet` checks, which
+catch code that compiles but is almost certainly wrong.
 
 Even this tiny program's binary is about 2 MB. Every Go binary carries the
-Go *runtime*: code that cleans up memory you've stopped using and juggles
-the program's tasks for you. That's also
-why it runs on a machine with no Go installed.
+Go *runtime*: code that frees memory you've stopped using and schedules the
+program's tasks. That's also why it runs on a machine with no Go installed.
 
 ## Talking to the world: stdin, stdout and stderr
 

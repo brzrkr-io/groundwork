@@ -101,7 +101,7 @@ c.Check(Endpoint{Name: "api", URL: url, Expect: 200})
 
 **Think it through:**
 - Which two conditions must both be true before you retry?
-- Where do the two `c.Now()` calls go so the retry is inside them?
+- Where do the two `c.Now()` calls go so the retry falls between them?
 
 ### 4. Render the report
 
@@ -109,8 +109,8 @@ c.Check(Endpoint{Name: "api", URL: url, Expect: 200})
 after the header.
 
 Write each row with `fmt.Fprintf(&b, rowFormat, name, status, latency,
-result)`. `rowFormat` uses `%s` for every column, so `status` must be a
-string.
+result)`. `rowFormat` uses `%s` for every column, so convert the status code
+to a string.
 
 | Column | Value |
 |---|---|
@@ -129,7 +129,7 @@ search     -       2s       error: connection refused
 1 of 3 endpoints ok
 ```
 
-Every line, the last too, ends with `\n`. With no results, the report is the
+Every line, including the last, ends with `\n`. With no results, the report is the
 header plus `0 of 0 endpoints ok`. Add the `"strconv"` import if you use
 `strconv.Itoa` for the status column.
 
@@ -147,7 +147,7 @@ Check each endpoint in order with `c.Check`, then write `Report(results)` to
 if any is not. An empty list returns `0`.
 
 **Think it through:**
-- What does the code start as, and when does it change?
+- What does the exit code start as, and when does it change?
 
 ## Learn more
 

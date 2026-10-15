@@ -75,7 +75,7 @@ Read it top to bottom:
 
 The message format `Call(args) = got, want want` is a Go convention. It answers the three questions you always ask: what was called, what came back, what should have come back.
 
-Now debug. `got` is 0, so trace the code by hand with `failed = 3` and `total = 200`. `failed/total` divides two `int`s, and integer division throws away the remainder: 3 / 200 is 0. Converting 0 to `float64` is too late.
+Now debug. `got` is 0, so trace the code by hand with `failed = 3` and `total = 200`. `failed/total` divides two `int`s, and integer division throws away the remainder: 3 / 200 is 0. The conversion to `float64` comes too late; the fraction is already gone.
 
 The fix converts first, then divides:
 
@@ -372,7 +372,7 @@ Working this way is called *test-driven development* (TDD). You don't have to us
 | integration test | a test of your code together with a real dependency |
 | end-to-end test | a test of the whole system from the outside |
 | smoke test | a quick "is it alive?" check, often right after a deploy |
-| flaky test | a test that passes or fails without any code change |
+| flaky test | a test that sometimes passes and sometimes fails with no code change |
 | fake | a simple stand-in for a real dependency, used in tests |
 | regression test | a test that stops a fixed bug from coming back |
 | TDD | test-driven development: the red, green, refactor loop |

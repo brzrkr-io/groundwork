@@ -12,7 +12,7 @@ import (
 var ErrTemporary = errors.New("temporary failure")
 
 // Backoff returns how long to wait after the given attempt (counting from 0):
-// base doubled attempt times, but never more than limit.
+// base, doubled once per attempt, but never more than limit.
 func Backoff(attempt int, base, limit time.Duration) time.Duration {
 	d := base
 	for range attempt {

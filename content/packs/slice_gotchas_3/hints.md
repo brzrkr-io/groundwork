@@ -1,7 +1,7 @@
 ## Task 1: Drain a host
 
 Don't remove anything from `pool` itself. Start a new, empty slice and add
-only the hosts you want to keep; a new slice gets its own backing array, so
+only the hosts you want to keep. The new slice gets its own backing array, so
 nothing you do to it can reach `pool`.
 
 ### Closer

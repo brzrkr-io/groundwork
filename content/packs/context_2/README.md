@@ -33,9 +33,9 @@ server does, maybe forever.
 On the server side, `r.Context()` is cancelled when the client goes away. The
 test servers use that to wait for you to cancel.
 
-> **Why is it written like this?** Go requires the arguments in the order the
-> function declares them: context, method, URL, body. Putting `ctx` first is
-> a Go-wide convention. `nil` means "no body", normal for GET.
+> **Why is it written like this?** Putting `ctx` first is a Go-wide
+> convention; the other three arguments match `http.NewRequest`. `nil` means
+> "no body", normal for GET.
 
 ### Pass the context all the way down
 

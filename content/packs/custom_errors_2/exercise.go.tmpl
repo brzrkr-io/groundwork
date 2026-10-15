@@ -15,9 +15,9 @@ func (e *PortInUseError) Error() string {
 	return fmt.Sprintf("port %d in use", e.Port)
 }
 
-// Reserve gives port to service. used maps each taken port to the service
-// that owns it. A taken port returns a *PortInUseError; a free port is
-// added to used and returns nil.
+// Reserve gives port to service. The used map holds each taken port and
+// the service that owns it. A taken port returns a *PortInUseError. A free
+// port is added to used and returns nil.
 func Reserve(used map[int]string, port int, service string) error {
 	// TODO(2): Fix the bug: free ports report an error.
 	var err *PortInUseError

@@ -63,7 +63,7 @@ b := []int{2, 3}
 a = append(a, b...)   // [1 2 3]
 ```
 
-> **Why is it written like this?** The `...` is **Go required**: `append`
+> **Why is it written like this?** Go requires the `...`: `append`
 > takes single items, and `...` spreads a slice into them. The `"slices"`
 > import is required whenever you call `slices.Something`.
 

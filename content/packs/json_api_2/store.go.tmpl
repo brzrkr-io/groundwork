@@ -27,8 +27,8 @@ func (a Alert) Validate() error {
 // ErrExists means an alert with that name is already stored.
 var ErrExists = errors.New("alert already exists")
 
-// Store keeps alerts in memory. The mutex keeps concurrent requests from
-// corrupting the map; Mutexes are covered in the Concurrency module.
+// Store keeps alerts in memory. The mutex stops concurrent requests from
+// corrupting the map. Mutexes are covered in the Concurrency module.
 type Store struct {
 	mu     sync.Mutex
 	alerts map[string]Alert

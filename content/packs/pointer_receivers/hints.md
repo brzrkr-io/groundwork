@@ -27,8 +27,8 @@ handle the draining case before counting anything.
 
 ### Closer
 
-Check `if s.Draining { return false }` first. After that `if`, add one with
-`s.Connections++` and return `true`.
+Check `if s.Draining { return false }` first. After that `if`, increment
+with `s.Connections++` and return `true`.
 
 ### Answer
 

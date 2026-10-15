@@ -35,7 +35,7 @@ the function you use `T` like any other type name: `[]T`, `func(T) bool`,
 `var x T`.
 
 > **Why is it written like this?** The square brackets and their position are
-> required by Go. The name `T` is convention (short, capital); `T, U` for a
+> required by Go. The name `T` is a convention (short, capital), with `U` for a
 > second one. You could write `[Item any]` and it would still compile.
 
 ### Calling a generic function
@@ -113,8 +113,8 @@ func (s Stack[T]) Size() int {
 
 `Stack[string]` holds strings and `Stack[int]` holds ints.
 
-A map value refers to shared data, so a method with a value receiver on a map
-type can still add keys, just like a function you pass a map to.
+A map value refers to shared data, so a value-receiver method on a map type
+can still add keys, just like a function you pass a map to.
 
 > **Why is it written like this?** Go requires `[T]` in the receiver
 > (`Stack[T]`), but not the constraint; that's already on the type.

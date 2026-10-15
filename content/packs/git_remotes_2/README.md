@@ -152,7 +152,7 @@ someone else pushed to the branch.
 
 Afterwards origin's `feature/retries` starts from the newest `main` and
 holds the two rebased commits, `Add retry helper` and
-`Retry failed deploys`, and it's the same commit as yours.
+`Retry failed deploys`. Your `feature/retries` is the same commit.
 
 **Think it through:**
 - Why would a plain `git push` be rejected after the rebase?

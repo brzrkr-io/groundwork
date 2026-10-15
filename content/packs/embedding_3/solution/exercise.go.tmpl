@@ -57,8 +57,8 @@ func (c TCPCheck) Target() string {
 	return fmt.Sprintf("%s:%d", c.Host, c.Port)
 }
 
-// DueNow returns "<name> -> <target>" for every check that is due elapsed
-// seconds after the agent started, in the order of checks.
+// DueNow returns "<name> -> <target>" for every check that is due when
+// elapsed seconds have passed since the agent started, in the order of checks.
 func DueNow(checks []Check, elapsed int) []string {
 	due := []string{}
 	for _, c := range checks {

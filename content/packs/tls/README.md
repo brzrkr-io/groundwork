@@ -150,7 +150,7 @@ signed by another CA must fail. Add the `"crypto/tls"` import.
 
 **Think it through:**
 - Build inside out: pool, then config, then transport, then client.
-- Which name holds the CA: the parameter `ca`, used inside the function.
+- Which `tls.Config` field holds the pool?
 
 ### 3. Fetch the server's certificate
 

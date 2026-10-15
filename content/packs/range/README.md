@@ -147,7 +147,7 @@ Slowest(nil, nil)
 ```
 
 **Think it through:**
-- `slowest` and `worst` hold the best so far. When should they be replaced?
+- `slowest` and `worst` hold the slowest host so far. When should they be replaced?
 - Which comparison keeps the first host on a tie: "greater" or "greater or equal"?
 - With all zeros, nothing is greater than 0. How does the first host get picked?
 
@@ -156,7 +156,7 @@ Slowest(nil, nil)
 **Goal:** make `Unhealthy(hosts, healthy)` return the hosts whose check failed,
 in their original order.
 
-- A check failed when `healthy[i]` is `false`; that is host `hosts[i]`.
+- A check failed when `healthy[i]` is `false`; the host that failed is `hosts[i]`.
 - Both slices have the same length.
 - If every host is healthy, return a slice with no elements (`nil` is fine).
 

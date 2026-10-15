@@ -8,8 +8,8 @@ import (
 	"syscall"
 )
 
-// ExitCodeFor returns the exit code for a program stopped by sig,
-// following the 128 + signal number convention.
+// ExitCodeFor returns 128 + n for the stop signals SIGINT and SIGTERM
+// (n is the signal number), and 1 for any other signal.
 func ExitCodeFor(sig os.Signal) int {
 	switch sig {
 	case os.Interrupt:

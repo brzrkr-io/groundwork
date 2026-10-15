@@ -51,7 +51,7 @@ FROM deploys;
 ### ROUND
 
 `ROUND(x, 1)` rounds to one decimal place: `ROUND(87.6666, 1)` is `87.7`.
-Functions nest, the inner one runs first: on a table of host metrics,
+Functions nest, and the inner one runs first: on a table of host metrics,
 `ROUND(MAX(cpu_percent), 1)` rounds the highest value.
 
 ### GROUP BY: one result row per group

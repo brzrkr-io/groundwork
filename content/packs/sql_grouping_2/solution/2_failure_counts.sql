@@ -1,8 +1,8 @@
 -- Task 2: Fix the failure counts
 --
 -- Return every service with its number of deploys (deploys) and
--- its number of failed deploys (failures), A to Z. This drops api
--- and counts only failures in both columns.
+-- its number of failed deploys (failures), A to Z. The starter query
+-- dropped api and counted only failures in both columns.
 
 SELECT
     service,

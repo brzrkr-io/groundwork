@@ -15,7 +15,7 @@ type Quota struct {
 // NewQuota returns a Quota that allows limit deploys.
 //
 // TODO(1): Rename to New, so callers write quota.New(5). Rename it in the
-// comment too.
+// doc comment too.
 func NewQuota(limit int) *Quota {
 	return &Quota{Limit: limit}
 }

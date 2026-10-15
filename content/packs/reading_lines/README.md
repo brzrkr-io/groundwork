@@ -1,8 +1,8 @@
 # Reading input line by line: a hosts list
 
 *Practice: release day* closed *Git and version control* and the tooling
-detour. Back in Go, this module adds reading and writing the text and data
-formats ops tools live on.
+detour. Back in Go, this module covers reading and writing the text and data
+formats that ops tools rely on.
 
 Ops work is full of line-based text: host lists, log files, inventory exports,
 command output. Here you read a list of hosts one line at a time, skip the
@@ -61,8 +61,8 @@ A disk error looks exactly like "end of input" unless you check `sc.Err()`.
 Always check it after the loop.
 
 > **Why is it written like this?** `for sc.Scan() { ... }` is Go's
-> while-loop: a `for` with only a condition. Go requires `import "bufio"`.
-> The name `sc` is the author's choice; `scanner` works too.
+> while-loop: a `for` with only a condition. The scanner needs
+> `import "bufio"`. The name `sc` is the author's choice; `scanner` works too.
 
 ### Line numbers
 
@@ -84,8 +84,8 @@ what someone sees in their editor.
 
 `strings.TrimSpace` removes spaces and tabs from both ends.
 `strings.HasPrefix(s, p)` reports whether `s` starts with `p`. `continue`
-jumps straight to the next loop round. This loop skips lines starting with
-`//`:
+jumps straight to the next loop round. Inside the loop, this skips lines
+that start with `//`:
 
 ```go
 text := strings.TrimSpace(sc.Text())

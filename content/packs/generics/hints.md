@@ -22,7 +22,7 @@ If nothing matches, `kept` stays `nil`, which the task allows.
 
 ## Task 2: Find the largest item
 
-Handle the empty slice first. Then walk the slice remembering the largest item so far, but don't start that "largest so far" at `0`, or negative numbers break.
+Handle the empty slice first. Then walk the slice, remembering the largest item so far. Don't start "largest so far" at `0`, or negative numbers break.
 
 ### Closer
 

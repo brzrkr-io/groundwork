@@ -9,8 +9,8 @@ comply.
 ## The problem
 
 Most production incidents I read about started with a manifest that looked
-fine in review: a container with no memory limit that got the node
-OOM-killed, an image tagged `latest` that changed under a rollback, or a
+fine in review: a container with no memory limit that starved its node of
+memory, an image tagged `latest` that changed under a rollback, or a
 production Deployment with 1 replica that went down during a routine node
 drain. Reviewers miss these because they are absences, not mistakes you can
 see. kubepolicy turns the team's rules into a check that runs on every pull
@@ -27,8 +27,8 @@ files, dirs, stdin ─► manifest.Read ─► Split ─► Decode (typed k8s.io
 `manifest.Read` collects YAML from files, directories and stdin, and `Split`
 cuts each stream into documents at `---` lines. `Decode` reads each document
 into the real Kubernetes Go type for its kind (Deployment, StatefulSet,
-DaemonSet, Job or Pod), so a typo'd field type is caught instead of guessed
-at; other kinds are skipped with a note. The rules are a table of small
+DaemonSet, Job or Pod), so a field with the wrong type is an error instead
+of a guess; other kinds are skipped with a note. The rules are a table of small
 values: a name, a severity and a check function. `Evaluate` runs every rule
 over every object, so adding a rule is one function and one table entry, and
 `--ignore` works for every rule for free. The report prints an aligned table

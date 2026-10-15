@@ -51,7 +51,7 @@ func checkTable(t *testing.T, name, table string) {
 		}
 	}
 	if !foundFunc {
-		t.Errorf("exercise.go has no function named %s; keep its name, the alert router calls it", name)
+		t.Errorf("exercise.go has no function named %s; keep that name, because the alert router calls it", name)
 	}
 	if !foundTable {
 		t.Errorf("exercise.go has no package-level map named %s; declare it with var, outside any function, as var %s = map[...]...{...}",

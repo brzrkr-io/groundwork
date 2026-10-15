@@ -78,7 +78,7 @@ map[string]string{"b": "2", "a": "1"}  =>  "a is 1, b is 2, "
 ```
 
 Go maps have no order, but a template's `range` over a map **always visits
-keys in sorted order**. So the output is the same every run, which is what
+keys in sorted order**. The output is the same on every run, which is what
 you want in a config file.
 
 > **Why is it written like this?** The `$` and the `:=` are required
@@ -86,8 +86,8 @@ you want in a config file.
 
 ### Quotes inside a raw string
 
-The template constants use backquotes (a *raw string*). Inside one, `"` is
-just a character, so you can type it directly. No `\"` needed.
+The template constants use backquotes (a *raw string*). Inside one, `"` is an
+ordinary character: type it directly, with no `\"`.
 
 ## Your task
 
@@ -201,4 +201,4 @@ type a plain `"`.)
 
 - [text/template: actions](https://pkg.go.dev/text/template#hdr-Actions)
 - [text/template: variables](https://pkg.go.dev/text/template#hdr-Variables)
-- [systemd.service manual](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html)
+- [systemd.service manual](https://man7.org/linux/man-pages/man5/systemd.service.5.html)

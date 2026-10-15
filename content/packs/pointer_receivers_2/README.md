@@ -12,8 +12,8 @@ real limiter.
 
 A value receiver `(x T)` gives the method a copy, so field changes vanish
 when it returns. A pointer receiver `(x *T)` points at the original, so
-changes stick. Calling a pointer method on a variable, Go adds the `&` for
-you: `v.M()` becomes `(&v).M()`.
+changes stick. When you call a pointer method on a variable, Go adds the `&`
+for you: `v.M()` becomes `(&v).M()`.
 
 ### A pointer method called on a copy
 

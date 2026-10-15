@@ -1,6 +1,6 @@
 ## Task 1: Fix `GetVersion`
 
-Two lines are missing right after the `err` check for `client.Get`: one that
+Two things are missing right after the `err` check for `client.Get`: a line that
 closes the body whenever the function returns, and a status check before the
 body is read.
 

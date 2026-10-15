@@ -113,7 +113,7 @@ Your health handlers from *Health checks: liveness and readiness* are the other 
 
 ### Requests, limits and QoS
 
-Requests are for the scheduler; *limits* are ceilings enforced on the node. Above its CPU limit a container is slowed down; above its memory limit it is killed. From the two, each Pod gets a *QoS class*: Guaranteed (requests equal limits), Burstable (some set) or BestEffort (none). When a node runs short of memory, BestEffort Pods are evicted first. *Resources: requests, limits and QoS* goes through the arithmetic.
+Requests are for the scheduler; *limits* are ceilings enforced on the node. Above its CPU limit a container is slowed down; above its memory limit it is killed. From the two, each Pod gets a *QoS class*: Guaranteed (requests equal limits), Burstable (only some set) or BestEffort (none set). When a node runs short of memory, BestEffort Pods are evicted first. *Resources: requests, limits and QoS* goes through the arithmetic.
 
 ## Rollouts and rollbacks
 
@@ -165,7 +165,7 @@ kubectl apply -f deployment.yaml
 kind delete cluster --name demo        # everything gone
 ```
 
-Every exercise in this module has an optional *Run it for real* section built on it. On NixOS, kind needs Docker to log with `virtualisation.docker.logDriver = "json-file";`.
+Every exercise in this module has an optional *Run it for real* section built on it. On NixOS, kind needs Docker's log driver set to `json-file`: add `virtualisation.docker.logDriver = "json-file";` to your configuration.
 
 When the same app runs in several environments, *kustomize* (built into `kubectl`) keeps one *base* of plain manifests and a small *overlay* per environment with only the differences: `kubectl apply -k overlays/production`. *Kustomize: one base, many environments* sets one up.
 
@@ -199,7 +199,7 @@ When the same app runs in several environments, *kustomize* (built into `kubectl
 4. The Service's selector with the Pods' labels (`kubectl get pods --show-labels`). An empty endpoint list means no ready Pod has every label the selector asks for, usually a typo or a label from a different app.
 5. The ReplicaSet controller sees one Pod fewer than it wants and creates a replacement within seconds. The Deployment is a standing order; to really remove Pods, scale or delete the Deployment.
 6. Something the container needs from the cluster is missing, usually a ConfigMap, Secret or one of their keys (or a security setting Kubernetes can't satisfy). The `Failed` event in `kubectl describe pod` names exactly what.
-7. No. `maxUnavailable` 25% of 4 is 1, `maxSurge` is 1, so the rollout starts one new Pod and may remove one old one. The new Pods never get ready (`ImagePullBackOff`), so the rollout stalls and at least 3 old Pods keep serving. Fix the tag or `kubectl rollout undo`.
+7. No. With 4 replicas, the defaults allow 1 extra Pod (`maxSurge` 25%, rounded up) and 1 missing Pod (`maxUnavailable` 25%, rounded down). The new Pods never become ready (`ImagePullBackOff`), so the rollout stalls and at least 3 old Pods keep serving. Fix the tag or run `kubectl rollout undo`.
 8. The kubelet first sends `SIGTERM` (which would give 143). An app that doesn't stop within the grace period, or a shell script that ignores the signal, is then killed with `SIGKILL`: 128 + 9 = 137. An app that handles `SIGTERM` and exits cleanly shows 0 instead.
 
 ## Key terms

@@ -14,7 +14,7 @@ event isn't finished.
 - After `client.Do` succeeds: `defer resp.Body.Close()`, then check
   `resp.StatusCode` yourself. A `500` still comes back with `err == nil`.
 - Read bodies through `io.LimitReader`.
-- `client.Get(url)` is a shortcut: build a `GET` request and send it, no headers.
+- `client.Get(url)` is a shortcut: it builds a `GET` request with no extra headers and sends it.
 
 ### Sending JSON with POST
 

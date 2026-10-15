@@ -25,7 +25,8 @@ func Status(percent int) string {
 	}
 }
 
-// Parse turns "web-1=72" into Reading{Host: "web-1", Percent: 72}.
+// Parse turns "web-1=72" into Reading{Host: "web-1", Percent: 72}. It returns
+// an error for bad input.
 func Parse(arg string) (Reading, error) {
 	host, value, found := strings.Cut(arg, "=")
 	if !found || host == "" {

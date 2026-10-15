@@ -27,7 +27,7 @@ You call it as `inv.Count()`. Inside the method, `inv` is the value it was
 called on.
 
 > **Why is it written like this?** Go requires the receiver in brackets
-> before the name. Calling it a short name like `inv` (not `this` or `self`)
+> before the name. Giving it a short name like `inv` (not `this` or `self`)
 > is Go convention.
 
 ### Methods on a struct that holds a slice
@@ -104,7 +104,7 @@ inv := Inventory{Hosts: []Host{
 
 ### 1. Count healthy hosts
 
-**Goal:** `HealthyCount` returns how many hosts have `Healthy` set to `true`.
+**Goal:** make `HealthyCount()` return how many hosts have `Healthy` set to `true`.
 
 ```go
 inv.HealthyCount()
@@ -119,7 +119,7 @@ An empty inventory returns `0`.
 
 ### 2. Filter by region
 
-**Goal:** `InRegion(region)` returns the hosts whose `Region` equals the
+**Goal:** make `InRegion(region)` return the hosts whose `Region` equals the
 `region` parameter.
 
 - Compare exactly (case matters here).
@@ -144,7 +144,7 @@ inv.InRegion("ap-south-1")
 
 ### 3. Find a host by name
 
-**Goal:** `Find(name)` returns the first host whose `Name` matches `name`,
+**Goal:** make `Find(name)` return the first host whose `Name` matches `name`,
 ignoring case, plus `true`.
 
 - If no host matches, return the zero `Host{}` and `false`.

@@ -28,7 +28,7 @@ func PeakQPS(requestsPerDay int, peakFactor float64) float64 {
 }
 
 // StorageGB returns how many decimal gigabytes itemsPerDay items of
-// bytesPerItem bytes each fill after days days.
+// bytesPerItem bytes each fill over the given number of days.
 func StorageGB(itemsPerDay, bytesPerItem, days int) float64 {
 	// TODO(2): Work out the total bytes, then convert them to gigabytes.
 	return 0

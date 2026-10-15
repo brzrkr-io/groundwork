@@ -37,7 +37,7 @@ fmt.Println(string(b))
 
 `encoding/json` is another package, so it can only see *exported* fields:
 the ones that start with a capital letter. Lowercase fields are skipped
-silently. No error, they just don't appear.
+silently: no error, they just don't appear.
 
 ```go
 type Host struct {
@@ -50,7 +50,7 @@ type Host struct {
 ### Struct tags
 
 By default the JSON key is the Go field name (`"Name"`). To choose a
-different key, add a *struct tag*: a string in backquotes after the field's
+different key, add a *struct tag*: a string in backticks after the field's
 type.
 
 ```go
@@ -67,7 +67,7 @@ type User struct {
 | `json:"nickname,omitempty"` | Use `nickname`, but leave the field out when it holds its zero value (`""`, `0`, `false`, `nil`). |
 | `json:"-"` | Never encode this field. Good for secrets. |
 
-> **Why is it written like this?** Go requires the backquotes; the tag is
+> **Why is it written like this?** Go requires the backticks; the tag is
 > just text that the compiler stores. The `json:"…"` format is what the
 > `encoding/json` package expects, and it's strict: no spaces anywhere.
 > Lining the tags up in a column is gofmt's job, not yours. The key names
@@ -88,7 +88,7 @@ type User struct {
 | `time.Time` | RFC 3339 string: `"2026-10-11T09:30:00Z"` |
 
 That nil-slice row catches people out. Many dashboards choke on `null`
-where they expect a list. An empty slice (made with `{}`) encodes as `[]`.
+where they expect a list. An empty slice such as `[]string{}` encodes as `[]`.
 
 ### Pretty output with MarshalIndent
 

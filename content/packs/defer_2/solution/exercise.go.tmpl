@@ -34,7 +34,7 @@ func (r *Recorder) Close(host string) {
 	r.Events = append(r.Events, "close "+host)
 }
 
-// Record appends event to the log as it is.
+// Record appends event to the log unchanged.
 func (r *Recorder) Record(event string) {
 	r.Events = append(r.Events, event)
 }
@@ -42,7 +42,7 @@ func (r *Recorder) Record(event string) {
 // Maintenance rotates the logs on host and records whether it worked.
 func Maintenance(r *Recorder, host string) error {
 	status := "failed"
-	// A closure reads status when it runs, after the function has finished.
+	// The closure reads status when it runs, as the function returns.
 	defer func() {
 		r.Record("maintenance " + host + ": " + status)
 	}()

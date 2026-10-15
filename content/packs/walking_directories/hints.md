@@ -42,7 +42,7 @@ Copy the `fs.WalkDir` call from `ListFiles`, with its own `logs` slice. In the c
 
 ### Closer
 
-`path.Match("*.log", d.Name())` returns `(bool, error)`. For the size, `d.Info()` gives a `fs.FileInfo` with `.Size()`; keep the file when it is `>= minSize`. Sort with `slices.Sort(logs)` and add `"path"` to the imports.
+`path.Match("*.log", d.Name())` returns `(bool, error)`. For the size, `d.Info()` gives an `fs.FileInfo` with `.Size()`; keep the file when it is `>= minSize`. Sort with `slices.Sort(logs)` and add `"path"` to the imports.
 
 ### Answer
 

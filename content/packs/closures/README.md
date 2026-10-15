@@ -157,7 +157,7 @@ api() // => 3
 **Goal:** make `Retry` call `try` with attempt numbers 1, 2, 3 … up to `attempts`, and return the first attempt number that succeeds.
 
 - Stop as soon as `try` returns `true`. Don't call `try` again after that.
-- If no attempt succeeds, return `0`. Every attempt has been used by then.
+- If no attempt succeeds, return `0` after using every attempt.
 - If `attempts` is `0`, don't call `try` at all; return `0`.
 
 ```go

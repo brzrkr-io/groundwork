@@ -371,7 +371,7 @@ Same three parts as `ls`, just more layers. The name is `kubectl apply`. The pro
 
 ## Check yourself
 
-1. In `kubectl apply`, what is the interface, what is the promise, and name two hidden details.
+1. In `kubectl apply`, what is the interface and what is the promise? Name two hidden details.
 2. A teammate's script reads the third column of `kubectl get pods` to find the pod status. Why is this fragile, and what should it use?
 3. `func alert(n Notifier, host string)` calls `n.Notify(...)`, where `Notifier` is an interface with one method, `Notify(msg string)`. Why can `alert` work with a PagerDuty notifier that was written a year after `alert` itself?
 4. Your `sendReport` function has grown parameters `toSlack bool, toEmail bool, compact bool, isWeekly bool`. What has gone wrong, and what could you do?

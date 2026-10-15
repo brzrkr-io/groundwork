@@ -66,5 +66,5 @@ sc := bufio.NewScanner(r)
 sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 ```
 
-A 2 MiB line still fails, and your `sc.Err()` check from task 2 returns
+A 2 MiB line still fails, and the existing `sc.Err()` check returns
 `bufio.ErrTooLong`.

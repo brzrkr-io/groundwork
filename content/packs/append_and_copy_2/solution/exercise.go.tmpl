@@ -15,7 +15,7 @@ func Addresses(hosts []string, port int) []string {
 
 // Backup returns an independent copy of hosts.
 func Backup(hosts []string) []string {
-	// copy fills only len(backup) elements, so the length must match.
+	// copy fills at most len(backup) elements, so the length must match.
 	backup := make([]string, len(hosts))
 	copy(backup, hosts)
 	return backup

@@ -23,8 +23,8 @@ As in *Test fixtures and golden files*:
 
 `testdata/` can hold *input* too. Here `backends.txt` lists the backends to
 feed the function, one per line. As in *The strings package: fix the
-bootstrap parser*, `strings.Fields` splits text on every run of spaces and
-newlines, and ignores the final newline:
+bootstrap parser*, `strings.Fields` splits text at every run of spaces and
+newlines, so a final newline adds no empty item:
 
 ```go
 strings.Fields("alpha beta\ngamma\n")

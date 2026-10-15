@@ -20,8 +20,8 @@ costumes: not knowing whether you're holding a copy or a shared original.
 ## Memory is a row of numbered boxes
 
 Your computer's memory (RAM) is a very long row of tiny boxes. Each box holds
-one *byte*, and each has a number, its *address*. Nothing more magic than
-that: a street of houses, each with a house number.
+one *byte*, and each has a number, its *address*. Think of a street of
+houses, each with a house number.
 
 ```text
   address        contents
@@ -328,8 +328,8 @@ Two ops consequences:
   array alive. A map you keep adding to and never clear (a cache with no
   expiry, say) grows forever. In a container with a memory limit, that ends
   in an `OOMKilled` pod.
-- **Fewer heap values, less GC work.** That's why the "pointers are always
-  faster" myth is a myth. Measure before tuning.
+- **Fewer heap values, less GC work.** That's one reason pointers aren't
+  automatically faster. Measure before tuning.
 
 ## Methods: value or pointer receiver?
 
@@ -344,7 +344,8 @@ parameter, so the same copy rule applies:
 - A **pointer receiver** `(d *Deployment)` gets the address. Required for
   methods that change the value.
 
-Here's a rolling deploy helper that scales every deployment to zero:
+This code scales every deployment to zero, first the wrong way, then the
+right way:
 
 ```go
 package main

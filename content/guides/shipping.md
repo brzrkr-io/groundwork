@@ -1,6 +1,6 @@
 # Shipping it for real: clusters, registries and your portfolio
 
-**In one sentence:** shipping is the path from "the tests pass on my laptop" to "it runs on a cluster, from an image in a registry, and anyone can see how and why": a local cluster to try it on, a registry to hold the image, manifests that describe what should run, a pipeline that does it the same way every time, and a README that explains it.
+**In one sentence:** shipping is the path from "the tests pass on my laptop" to "it runs on a cluster, from an image in a registry, and anyone can see how and why"; it takes a local cluster to try it on, a registry for the image, manifests that describe what should run, a pipeline that deploys the same way every time, and a README that explains it.
 
 **Why it matters:** a service nobody can run is a draft. The skills in this guide are the daily work of a platform engineer: getting an image into a cluster, reading `kubectl describe` when a pod won't start, keeping data alive across restarts, and wiring CI so a tag becomes a release. They're also exactly what an interviewer probes when they open your GitHub.
 
@@ -139,7 +139,7 @@ When you create a PVC, the StorageClass's *provisioner* creates a matching PV an
 | `ReadOnlyMany` (ROX) | read-only, by many nodes | shared reference data |
 | `ReadWriteMany` (RWX) | read-write, by many nodes | a network filesystem such as NFS or EFS |
 
-A SQLite file on an RWO volume means one writer, so one replica. It also means the `Recreate` strategy: the default rolling update starts the new pod before stopping the old one, and on a real cloud disk the new pod waits forever for a volume the old pod still holds. The price is a few seconds of downtime per deploy, and no high availability. That's a fine trade for an internal tool, and a good one to write down; a service that must survive a node failure needs a database server with replicas instead.
+A SQLite file on an RWO volume means one writer, so one replica. It also needs the `Recreate` strategy. The default rolling update starts the new pod before stopping the old one, and on a real cloud disk the new pod waits forever for a volume the old pod still holds. `Recreate` costs a few seconds of downtime per deploy and gives up high availability. That's a fine trade for an internal tool, and worth writing down. A service that must survive a node failure needs a database server with replicas instead.
 
 **Volumes aren't backups.** The default *reclaim policy*, `Delete`, removes the PV with its PVC, and `kind delete cluster` deletes everything. Back up the data somewhere else, such as a nightly copy to S3.
 

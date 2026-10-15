@@ -1,8 +1,9 @@
 # Pipelines: fan-in and cancellation
 
-Two upgrades to the pipelines from *Pipelines*. *Fan-out* runs several copies
-of a slow stage at once, and *fan-in* merges their outputs into one channel.
-A `context` lets the consumer stop early without leaving goroutines stuck.
+This pack adds two upgrades to the pipelines from *Pipelines*. *Fan-out*
+runs several copies of a slow stage at once, and *fan-in* merges their
+outputs into one channel. A `context` lets the consumer stop early without
+leaving goroutines stuck.
 
 **New here:** goroutine leaks, `select` on a send, fan-out, fan-in (`Merge`).
 
@@ -17,8 +18,8 @@ that runs `defer close(out)`.
 
 A send `out <- v` waits until someone receives. If the consumer stops
 reading early, the stage's goroutine waits **forever**. That is a
-*goroutine leak*: memory that is never freed. One per request, and a service
-eventually runs out.
+*goroutine leak*: memory that is never freed. Leak one per request, and a
+service eventually runs out of memory.
 
 ### Sending with select
 
@@ -70,7 +71,7 @@ each value goes to exactly one of them.
 | a `sync.WaitGroup` | counts the forwarders |
 | one *closer* goroutine | `wg.Wait()`, then close the output |
 
-It's the same closer as the `results` channel in *Worker pools*. Merged
+It's the same closer that closed `results` in *Worker pools*. Merged
 values come out in whatever order they arrive.
 
 ### Passing a slice to a variadic parameter
@@ -135,8 +136,7 @@ Merge(ctx, a, b) // a carries "web-1", "web-2"; b carries "db-1"
 **Goal:** `FanOut(ctx, hosts, workers, check)` starts `workers` copies of `checkStage` and returns `Merge` of their outputs.
 
 Right now it runs one copy. All copies read from the same `hosts` channel.
-With 6 hosts, 3 workers and 1-second checks, every result arrives after 2
-seconds.
+With 6 hosts, 3 workers and 1-second checks, the whole run takes 2 seconds.
 
 ```go
 FanOut(ctx, hosts, 3, check) // hosts carries "web-1" ... "web-6"

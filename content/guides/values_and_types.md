@@ -84,8 +84,8 @@ Look at this byte again:
 0 1 0 0 0 0 0 1
 ```
 
-Is it the number 65, or the letter `A`? **Both.** In the text code computers
-use, `A` is stored as 65. The bits alone don't say which you meant.
+Is it the number 65, or the letter `A`? **Both.** In ASCII, the text code
+computers use, `A` is stored as 65. The bits alone don't say which you meant.
 
 It gets worse with more bytes. The two bytes `0x1F 0x90` are the number 8080.
 The four characters `"8080"` are four different bytes, one per digit:
@@ -374,9 +374,10 @@ func main() {
 
 It prints `3 5 4`.
 
-Go stores text as *UTF-8*, a standard code that gives every character in
-every language a number. Plain English letters, digits and punctuation take
-one byte each. `é` takes two bytes. An emoji takes four.
+Go stores text as *UTF-8*. *Unicode* gives every character in every language
+a number, and UTF-8 stores that number in 1 to 4 bytes. Plain English
+letters, digits and punctuation take one byte each. `é` takes two bytes. An
+emoji takes four.
 
 For hostnames, log levels and kubectl commands, one byte per character is
 what you'll see. Once you handle user names or log messages from around the

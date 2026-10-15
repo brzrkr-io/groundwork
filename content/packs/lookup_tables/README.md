@@ -92,15 +92,16 @@ work** (call different functions, check different conditions), keep the
 
 ### Maps don't keep an order
 
-Looping over a map visits the keys in a different order each run. If the
+Looping over a map visits the keys in an order that can change from run
+to run. If the
 result must be in order, collect it into a slice and sort it with
 `slices.Sort`, as in *Sorting*.
 
 ### How the tests check
 
 `structure_test.go` reads `exercise.go` with Go's `go/ast` package and
-checks that the function has no `switch` left and that the map is declared
-at package level. The behaviour checks run first.
+checks that `Route` and `ExitReason` have no `switch` left and that each
+map is declared at package level. The behaviour checks run first.
 
 ## Your task
 

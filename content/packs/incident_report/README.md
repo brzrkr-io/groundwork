@@ -85,7 +85,7 @@ The test prints `70.0` as `70`.
 **Think it through:**
 - `notifications` has no incidents. Which join keeps it, and which `COUNT`
   gives 0?
-- Do open incidents need excluding from the average, or does `AVG` handle
+- Must you exclude open incidents from the average, or does `AVG` skip
   their `NULL`s?
 
 ### 3. Find the missing postmortems

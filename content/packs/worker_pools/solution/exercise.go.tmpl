@@ -16,8 +16,8 @@ type Result struct {
 	Up    bool
 }
 
-// CheckAll checks every host using a pool of workers goroutines and returns
-// the results in the same order as hosts.
+// CheckAll checks every host using a pool of `workers` goroutines and
+// returns the results in the same order as hosts.
 func CheckAll(hosts []string, workers int, check func(host string) bool) []Result {
 	jobs := sendJobs(hosts)
 	results := startWorkers(workers, jobs, check)

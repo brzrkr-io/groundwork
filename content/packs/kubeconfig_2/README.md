@@ -33,7 +33,7 @@ context, then `ClientConfig()` on it:
 ```go
 cc := clientcmd.NewNonInteractiveClientConfig(
 	*loaded,                      // the config value, not the pointer
-	"ci-runner",                  // the context to use
+	"ci",                         // the context to use
 	&clientcmd.ConfigOverrides{}, // empty: no command-line overrides
 	nil,                          // only needed to write refreshed tokens back
 )
@@ -62,7 +62,7 @@ invalid configuration: [context was not found for specified context: staging, cl
 
 | Field | Type | Why |
 |---|---|---|
-| `QPS` | `float32` | client-go limits *itself* to this many requests per second, so one busy tool can't overload the shared API server. Default 5. |
+| `QPS` | `float32` | The client limits *itself* to this many requests per second, so one busy tool can't overload the shared API server. Default 5. |
 | `Burst` | `int` | Extra requests allowed in a short spike above `QPS`. Default 10. |
 | `UserAgent` | `string` | Shown in the API server's audit logs, so the platform team sees which tool made a request. |
 | `Timeout` | `time.Duration` | The longest one request may take. Zero means no limit. |

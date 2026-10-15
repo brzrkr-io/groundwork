@@ -83,8 +83,8 @@ func (g *Gate) State() string {
 	return "starting"
 }
 
-// Readyz returns the readiness handler. It answers 503 unless the gate is
-// ready, and otherwise reports the result of the checks.
+// Readyz returns the readiness handler. It answers 503 until the gate is
+// ready, then reports the results of the checks.
 func (g *Gate) Readyz(checks []Check, timeout time.Duration) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if state := g.State(); state != "ready" {

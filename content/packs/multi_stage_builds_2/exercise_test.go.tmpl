@@ -61,7 +61,7 @@ func TestEntrypointMatchesCopy(t *testing.T) {
 	checkEntrypoint(t, file, checkCopy(t, file, all[1], "/out/cron"), all[1])
 }
 
-// checkStages checks the Dockerfile still has its two stages and returns
+// checkStages checks that the Dockerfile still has its two stages and returns
 // them.
 func checkStages(t *testing.T, file string, instructions []instruction) []stage {
 	t.Helper()
@@ -82,7 +82,7 @@ func goBuild(s stage) *instruction {
 	return nil
 }
 
-// checkCopy checks the stage has a COPY of src, and returns where the file
+// checkCopy checks that the stage has a COPY of src, and returns where the file
 // lands in the image, or "".
 func checkCopy(t *testing.T, file string, s stage, src string) string {
 	t.Helper()
@@ -100,7 +100,7 @@ func checkCopy(t *testing.T, file string, s stage, src string) string {
 	return ""
 }
 
-// checkEntrypoint checks the stage's ENTRYPOINT is in exec form and runs
+// checkEntrypoint checks that the stage's ENTRYPOINT is in exec form and runs
 // the program at want. It does nothing when want is "".
 func checkEntrypoint(t *testing.T, file string, want string, s stage) {
 	t.Helper()

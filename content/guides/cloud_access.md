@@ -2,7 +2,7 @@
 
 **In one sentence:** AWS IAM and Kubernetes RBAC decide which identity may do which action on which resource, and the safest identities have only the permissions their job needs and credentials that expire on their own.
 
-**Why it matters:** many cloud incidents start with a leaked key or a too-broad permission, not clever hacking; a deploy role that can do `*` on `*` turns one leaked CI token into a lost account, while a narrow role turns it into a non-event.
+**Why it matters:** many cloud incidents start with a leaked key or a too-broad permission, not clever hacking. If a deploy role can do `*` on `*`, one leaked CI token costs you the account; if the role is narrow, the leak is a non-event.
 
 **You'll learn:**
 
@@ -244,7 +244,7 @@ All of these are read-only. You'll handle the dry-run answer in Go in *AWS API e
 
 ## Common mistakes
 
-- **`"Action": "*"` to get something working.** Grant the exact actions on the exact resources, then tighten after it works.
+- **`"Action": "*"` to get something working.** Grant the exact actions on the exact resources from the start.
 - **Using the root user day to day.** Lock it away with MFA; use roles.
 - **Long-lived access keys for programs.** Use roles: instance profiles, Pod Identity, OIDC for CI.
 - **An OIDC trust policy without a `sub` condition.** Any repository could assume the role.

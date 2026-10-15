@@ -1,8 +1,8 @@
 # Capstone: go links, built and shipped
 
-*Practice: cloud inventory report* closed *Cloud automation with the AWS SDK*
-and the last new topic. The capstones add nothing big and new: they combine
-the whole course into finished projects.
+*Practice: cloud inventory report* closed *Cloud automation with the AWS SDK*,
+the last new topic. The capstones add nothing big and new: they combine the
+whole course into finished projects.
 
 You'll build *go links*, the link shortener from the *System design
 fundamentals* guide, and take it all the way: a tested Go service with a
@@ -449,8 +449,8 @@ the old ones finish.
 The build stage:
 
 1. `FROM golang:1.26 AS build` (any stage name works).
-2. Copy `go.mod` and `go.sum`, `RUN go mod download`, then copy everything
-   with `COPY . .`, in that order. A `WORKDIR` such as `/src` first.
+2. Set a `WORKDIR` such as `/src`. Copy `go.mod` and `go.sum`, `RUN go mod
+   download`, then copy everything with `COPY . .`, in that order.
 3. `ARG VERSION=dev`, before the build.
 4. One `RUN` that builds `./cmd/golinks` with `CGO_ENABLED=0`, stamps the
    version with `-ldflags "-X main.version=${VERSION}"` (double quotes;
@@ -507,8 +507,8 @@ docker run --rm -p 8080:8080 -e GOLINKS_DB=/tmp/golinks.db golinks:dev
 
 `GOLINKS_SHUTDOWN_GRACE` must stay below the pod's
 `terminationGracePeriodSeconds` (30 by default): after that, Kubernetes
-kills the process mid-drain. The test also checks the Service selects your
-pods and reaches port 8080.
+kills the process mid-drain. The test also checks that the Service selects
+your pods and reaches port 8080.
 
 **Think it through:**
 - Three names tie four files together. Which file mentions which name?
@@ -693,7 +693,7 @@ docker rmi golinks:dev
    runs and pushes `ghcr.io/<you>/golinks:v0.1.0`. It appears under your
    profile's **Packages**; in its settings, set the visibility to public so
    any cluster can pull it.
-6. Check the badge at the top of your README is green, then pin the
+6. Check that the badge at the top of your README is green, then pin the
    repository on your GitHub profile (**Customize your pins**).
 
 ## Learn more

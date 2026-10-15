@@ -78,7 +78,7 @@ func checkRouting(t *testing.T, file string, svc *corev1.Service, deployFile str
 }
 
 // reaches reports whether target, a number or a port name, matches a port
-// of one of the containers. A Service with no targetPort uses its port.
+// of one of the containers. An unset targetPort matches nothing.
 func reaches(target intstr.IntOrString, containers []corev1.Container) bool {
 	for _, c := range containers {
 		for _, cp := range c.Ports {

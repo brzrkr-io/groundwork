@@ -29,8 +29,8 @@ func Group(keys []string, n int) [][]string {
 	return shards
 }
 
-// Plan returns a Move for every key whose shard changes when the number of
-// shards goes from from to to, in the order the keys appear in keys.
+// Plan returns a Move for every key whose shard changes when the shard
+// count changes from the first count to the second, in the order of keys.
 func Plan(keys []string, from, to int) []Move {
 	var moves []Move
 	for _, key := range keys {
@@ -43,7 +43,8 @@ func Plan(keys []string, from, to int) []Move {
 }
 
 // MovedFraction returns the share of keys, from 0 to 1, whose shard changes
-// when the number of shards goes from from to to. It returns 0 for no keys.
+// when the shard count changes from the first count to the second. It
+// returns 0 for no keys.
 func MovedFraction(keys []string, from, to int) float64 {
 	if len(keys) == 0 {
 		return 0

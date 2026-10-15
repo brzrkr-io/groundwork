@@ -110,8 +110,8 @@ equal.
 
 In `slices.SortFunc(top, func(a, b PathCount) int { ... })`, return
 `cmp.Compare(b.Count, a.Count)` when the counts differ (b first means biggest
-first), otherwise `cmp.Compare(a.Path, b.Path)`. Then cut to `top[:n]` if it's
-longer. Add `"cmp"` and `"slices"` to the imports.
+first), otherwise `cmp.Compare(a.Path, b.Path)`. Then cut to `top[:n]` if
+there are more than `n` paths. Add `"cmp"` and `"slices"` to the imports.
 
 ### Answer
 

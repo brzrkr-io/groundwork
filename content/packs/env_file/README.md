@@ -97,7 +97,8 @@ to bottom.
   return what's between them, unchanged.
 - Starts with a quote but doesn't end with the same one (including a lone
   `"`): return `""` and `ErrUnterminatedQuote` (not wrapped).
-- Anything else (including `""` empty and `it's`): return `value` unchanged.
+- Anything else (including an empty value and `it's`): return `value`
+  unchanged.
 
 ```go
 Unquote(`"Hello, ops team"`) // => "Hello, ops team", nil
@@ -121,8 +122,8 @@ Unquote(`'mixed"`)           // => "", ErrUnterminatedQuote
 **Goal:** `ParseLine(line)` returns the key and value of one `KEY=VALUE`
 line, or an error.
 
-The line is never blank or a comment; `Parse` filters those. The starter
-already has the `validKey` check; you fill in around it.
+The line is never blank or a comment; `Parse` filters those out. The starter
+already has the `validKey` check; you write the code around it.
 
 1. Trim spaces from `line`, then drop an `export ` prefix if present.
 2. Split at the first `=`. No `=`: return `ErrMissingEquals` (not wrapped).

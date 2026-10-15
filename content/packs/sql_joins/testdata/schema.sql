@@ -1,4 +1,4 @@
--- Teams own services. A service has one team (or none yet), a team can
+-- Teams own services. A service has one team (or none yet); a team can
 -- own many services.
 CREATE TABLE teams (
     id            INTEGER PRIMARY KEY,

@@ -87,9 +87,9 @@ You're cleaning up a teammate's log-shipping code.
 answer per host, in any order.
 
 Each goroutine sends its answer and waits for a receiver. But the main
-goroutine sits in `wg.Wait()` and only receives after that, so nobody can
-move. Make it so every send can complete without a receiver. The test sorts
-the answers.
+goroutine only receives after `wg.Wait()` returns, so nobody can move. Make
+every send complete without waiting for a receiver. The test sorts the
+answers.
 
 ```go
 CheckHosts([]string{"web-1", "web-2"}, check)

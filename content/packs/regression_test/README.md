@@ -137,7 +137,7 @@ name into `"development"`.
 - Which field marks a row that must fail, and which field can you leave out?
 
 The exercise is done when `TestNormalizeEnvironment` passes and `TestGrader`
-reports every mutant caught.
+reports that every mutant was caught.
 
 ## Learn more
 

@@ -187,7 +187,7 @@ wrap.
 
 **Think it through:**
 - Which check comes first: the "file missing" case or the wrap?
-- In the message, which parts are inside the quotes and which are `%s` filled by parameters?
+- In the message, which parts are fixed text and which are `%s` verbs filled from parameters?
 
 ## Learn more
 

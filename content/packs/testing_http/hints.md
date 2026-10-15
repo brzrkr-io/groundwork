@@ -52,7 +52,7 @@ if got := rec.Body.String(); got != tt.wantBody {
 
 Start with the fake server from Learn, then call `FetchIP` twice: once for a
 host the fake knows and once for one it doesn't. If `TestGrader` names a bug
-your tests missed, ask which check would fail if the code did that.
+your tests missed, ask which check would catch that bug.
 
 ### Closer
 

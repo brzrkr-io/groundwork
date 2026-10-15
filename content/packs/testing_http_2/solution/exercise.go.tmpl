@@ -29,7 +29,7 @@ func NewHandler() http.Handler {
 	return newHandler()
 }
 
-// newHandler points at the real implementation. Groundwork' grader swaps in
+// newHandler points at the real implementation. Groundwork's grader swaps in
 // broken versions to check that your tests catch them.
 var newHandler = realNewHandler
 

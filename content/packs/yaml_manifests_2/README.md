@@ -104,7 +104,7 @@ DecodeObject([]byte("metadata:\n  name: web\n"))
 
 ### 2. Fix ImageTag
 
-**Goal:** make `ImageTag(image)` return the text after the last `:`, but only if that `:` comes after the last `/`; else `""`.
+**Goal:** make `ImageTag(image)` return the text after the last `:`, but only if that `:` comes after the last `/`; otherwise return `""`.
 
 Right now it cuts at the **first** colon, so it mistakes a registry port for
 a tag.

@@ -76,8 +76,8 @@ Read it top to bottom:
 > this row. That's a convention you'll see everywhere in Go code.
 
 Why not skip `wantErr` and just compare `got` with `want`? A broken parser
-that returns `0, nil` for bad input would match `want: 0` and pass. Only
-checking the error catches it.
+that returns `0, nil` for bad input would match `want: 0` and pass. Only the
+error check catches it.
 
 ## Your task
 

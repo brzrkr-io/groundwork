@@ -108,7 +108,7 @@ func (b *Breaker) record(err error) {
 	}
 }
 
-// setState moves the breaker to the state to. The caller holds b.mu.
+// setState switches the breaker to the given state. The caller holds b.mu.
 func (b *Breaker) setState(to State) {
 	from := b.state
 	b.state = to

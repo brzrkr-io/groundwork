@@ -11,8 +11,8 @@ func withSpare(hosts ...string) []string {
 	return append(make([]string, 0, len(hosts)+4), hosts...)
 }
 
-// checkIndependent fails the test if pool changed, or if changing got changes
-// pool.
+// checkIndependent fails the test if pool changed, or if writing to got
+// changes pool.
 func checkIndependent(t *testing.T, call string, pool, before, got []string) {
 	t.Helper()
 	if !slices.Equal(pool, before) {

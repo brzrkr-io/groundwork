@@ -179,7 +179,7 @@ var (
 	releaseNote = regexp.MustCompile(`^v\d+\.\d+\.\d+\b`)
 )
 
-// checkPins checks every "uses:" line in the workflow file name. Each action
+// checkPins checks every "uses:" line in the named workflow file. Each action
 // must be pinned to a full 40-character commit SHA, with its release in a
 // comment after it:
 //
@@ -220,7 +220,7 @@ func checkPins(t *testing.T, name string) {
 	}
 }
 
-// pinExample shows how action looks when it is pinned.
+// pinExample shows how the given action looks when it is pinned.
 func pinExample(action string) string {
 	if r, ok := releases[action]; ok {
 		return action + "@" + r.commit + " # " + r.version

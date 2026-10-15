@@ -2,7 +2,7 @@
 
 **In one sentence:** every program that touches the real world will meet failure, and good code decides on purpose what to do about each one: handle it, pass it up with context, or stop.
 
-**Why it matters:** at 3am the on-call engineer sees one line from your tool. `error: failed` wakes up three more people; `deploy api: push image api:v42: dial tcp 10.0.3.7:443: i/o timeout` tells them exactly where to look.
+**Why it matters:** at 3 a.m. the on-call engineer sees one line from your tool. `error: failed` wakes up three more people; `deploy api: push image api:v42: dial tcp 10.0.3.7:443: i/o timeout` tells them exactly where to look.
 
 **You'll learn:**
 
@@ -133,7 +133,7 @@ Go style keeps each piece short and lowercase, with no "failed to" or "error:" p
 
 ### Fail fast: validate at startup
 
-Your backup tool reads a config with a typo: `retension: 7d`. If it only notices at 2am when the first backup runs, nobody is awake to see it. If it checks every field at startup and refuses to run, the person who just deployed it sees the problem immediately.
+Your backup tool reads a config with a typo: `retension: 7d`. If it only notices at 2 a.m. when the first backup runs, nobody is awake to see it. If it checks every field at startup and refuses to run, the person who just deployed it sees the problem immediately.
 
 *Failing fast* means stopping as soon as you know something is wrong, before you've done any damage. A program that refuses to start is far easier to fix than one that starts and does the wrong thing.
 
@@ -382,7 +382,7 @@ When a command-line tool fails, it should print the message to standard error an
 | Term | Meaning |
 |---|---|
 | bug | a mistake in the code; fixed by changing the code |
-| expected failure | a normal problem, such as bad input, the program should explain |
+| expected failure | a normal problem the program should explain, such as bad input |
 | environment failure | a failure from outside: network, disk, other services |
 | error value | in Go, an ordinary value describing a failure; `nil` means success |
 | exception | a failure that jumps up the call stack until caught (other languages) |

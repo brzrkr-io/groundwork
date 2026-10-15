@@ -46,8 +46,8 @@ type LocationGetter interface {
 }
 ```
 
-An interface method line is the method's line **without** `func`, without the
-receiver and without the body. Outside package `s3`, the type names need the
+An interface method line is the method's signature **without** `func`, the
+receiver or the body. Outside package `s3`, the type names need the
 `s3.` prefix.
 
 > **Why is it written like this?** Go requires the method name, parameter
@@ -150,9 +150,9 @@ needs it.
 **Goal:** `BucketNames(ctx, api)` returns the names of all buckets, sorted.
 
 Call `ListBuckets` with an empty `&s3.ListBucketsInput{}`. Read each name with
-`aws.ToString` and sort with `slices.Sort`. With no buckets, return `nil`
-(an empty, unset slice). If the call fails, return `nil` and the error wrapped
-with `%w` as `list buckets: <err>`.
+`aws.ToString` and sort with `slices.Sort`. With no buckets, return a `nil`
+slice. If the call fails, return `nil` and the error wrapped with `%w` as
+`list buckets: <err>`.
 
 ```go
 BucketNames(ctx, api) // AWS has "web-assets", "app-logs", "backups"
@@ -199,7 +199,7 @@ The method must match `*ec2.Client` exactly: it takes `ctx`,
 `*ec2.DescribeInstancesInput` and `...func(*ec2.Options)`, and returns
 `*ec2.DescribeInstancesOutput` and an `error`. The line
 `var _ InstanceDescriber = (*ec2.Client)(nil)` is already in the file; if it
-goes red, your line doesn't match.
+fails to compile, your line doesn't match.
 
 `RunningInstanceIDs` calls it with an empty `&ec2.DescribeInstancesInput{}`
 and goes through every reservation and every instance. Keep an instance only

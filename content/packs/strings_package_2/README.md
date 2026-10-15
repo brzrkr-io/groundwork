@@ -42,8 +42,8 @@ strings.HasPrefix(strings.ToLower(name), "web")
 ```
 
 > **Why is it written like this?** Go requires the inner call to return the
-> type the outer one expects (here a `string`). Nesting versus a temporary
-> variable is your choice.
+> type the outer one expects (here a `string`). Nesting the calls or using a
+> temporary variable is your choice.
 
 ## Your task
 

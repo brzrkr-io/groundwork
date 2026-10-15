@@ -59,8 +59,9 @@ ORDER BY s.name;
 
 ## Task 4: Fix the production deploy count
 
-The `WHERE` runs after the join. For `notifications`, `d.environment` is
-`NULL`, which isn't `'production'`, so its only row is thrown away.
+The `WHERE` runs after the join. For `notifications` and `reports`,
+`d.environment` is `NULL`, which isn't `'production'`, so each one's only
+row is thrown away.
 
 ### Closer
 

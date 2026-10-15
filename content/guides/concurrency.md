@@ -426,8 +426,8 @@ import (
 	"time"
 )
 
-// check pretends to probe a host that takes delay to answer.
-// It gives up as soon as ctx is cancelled or times out.
+// check pretends to probe a host that takes delay to answer. It gives
+// up early if ctx is cancelled or its deadline passes.
 func check(ctx context.Context, delay time.Duration) error {
 	select {
 	case <-time.After(delay):

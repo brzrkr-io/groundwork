@@ -111,10 +111,10 @@ One window alone has problems:
 | Only the long one (1h) | After you fix the bug, the bad hour keeps the alert firing for up to an hour. |
 | Only the short one (5m) | A 2-minute blip pages someone at 3 a.m. for nothing. |
 
-So check **both**, a *multi-window alert*: page only when the long window
-**and** the short window (5 minutes, 1/12 of the long one) both burn faster
-than the threshold. The long window proves it's serious, the short window
-proves it's still happening.
+So check **both**. A *multi-window alert* pages only when the long window
+**and** the short window (5 minutes, 1/12 of the long one) burn faster than
+the threshold. The long window proves it's serious; the short window proves
+it's still happening.
 
 > **Why is it written like this?** Writing targets as fractions is the
 > author's choice: it keeps every formula free of `/ 100`. Strictly "greater

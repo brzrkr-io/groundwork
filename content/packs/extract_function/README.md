@@ -2,7 +2,7 @@
 
 Long functions are where bugs hide: you can't hold 50 lines in your head,
 so you skim, and skimming misses things. *Extract function* is the most
-used refactoring there is: move a block of code into its own function with
+common refactoring: move a block of code into its own function with
 a name that says what it does. This exercise breaks a long deploy planner
 into steps you can read at a glance.
 
@@ -54,9 +54,9 @@ version turns them into extra flag variables that are harder to read.
 
 ### Returning an error from a helper
 
-Inside the old function, a failed check did `return nil, err` to leave
-`Plan` immediately. Inside a helper, `return err` only leaves the helper,
-so the caller must pass the error on:
+In `Plan`, a failed check returns `nil` and an error, which leaves `Plan`
+immediately. In a helper, `return err` leaves only the helper, so the caller
+must pass the error on:
 
 ```go
 if err := checkDisk(host); err != nil {
@@ -109,7 +109,7 @@ Plan(Request{Service: "api", Tag: "v2", Replicas: 5, MaxSurge: 2})
 ```
 
 Every task keeps this output exactly the same. Extract the three blocks the
-comments name, then `Plan` becomes a short list of calls.
+comments name, and `Plan` becomes a short list of calls.
 
 ### 1. Extract validate
 

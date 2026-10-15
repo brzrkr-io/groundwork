@@ -23,7 +23,7 @@ first page over and over and never reaches the end.
 
 > **Why is it written like this?** Go runs everything inside `for { ... }`
 > on every pass, including `:=` lines, so a value made there is brand new
-> each time. Where you put a line is your choice, and here it decides
+> each time. Where you put the line is up to you, but here it decides
 > whether the program works.
 
 ### Adding up across pages

@@ -40,10 +40,10 @@ security group has no inbound rules, so it lets nothing in.
 | `tcp` | 22–22 | `203.0.113.0/24` | SSH from the office only |
 | `-1` | (all) | `10.0.5.0/24` | everything from the monitoring subnet |
 
-The protocol `-1` means "all protocols"; its ports don't matter, a `-1` rule
-covers every port. In this exercise protocols are written `"tcp"` and
-`"udp"`, lowercase, as in AWS's security group API. Both port numbers of a
-range are included.
+The protocol `-1` means "all protocols", and a `-1` rule covers every port,
+so its port numbers don't matter. In this exercise protocols are written
+`"tcp"` and `"udp"`, lowercase, as in AWS's security group API. Both port
+numbers of a range are included.
 
 ### Network ACLs
 

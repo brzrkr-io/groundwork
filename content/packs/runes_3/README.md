@@ -18,7 +18,7 @@ with a `strings.Builder`, as in *The strings package*.
 ### Writing runes to a Builder
 
 `b.WriteString(s)` adds a string. `b.WriteRune(r)` adds one rune, no
-`string(r)` needed. `b.Len()` tells you how many bytes are written so far:
+`string(r)` needed. `b.Len()` tells you how many bytes have been written so far:
 
 ```go
 var b strings.Builder
@@ -61,8 +61,8 @@ for _, r := range "a,,b" {
 }
 ```
 
-> **Why is it written like this?** `:=` declaring the flag before the loop is
-> required so it survives between loop rounds. Its name is your choice.
+> **Why is it written like this?** The flag must be declared before the loop
+> so it keeps its value between rounds. Its name is your choice.
 
 ### Cutting ASCII is safe
 

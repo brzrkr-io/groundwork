@@ -8,7 +8,7 @@ open port from a closed one and from one hidden behind a firewall.
 
 ## Learn
 
-### Three answers to "is the port open?"
+### What a port check can tell you
 
 To check a port, you try to open a TCP connection to it, as in *TCP: a
 line-based control protocol*. What comes back tells you what's there:

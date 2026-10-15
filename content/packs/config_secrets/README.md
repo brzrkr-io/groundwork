@@ -36,7 +36,8 @@ data:
 ```
 
 Unquoted `20` is a number in YAML, and the API server rejects it: values
-in `data` must be strings. (So are `true`, `no` and `on`: quote them too.)
+in `data` must be strings. YAML also reads `true`, `no` and `on` as
+booleans, so quote them too.
 The `|` starts a multi-line string; every indented line after it belongs
 to the value. A line with just `---` separates two objects in one file.
 

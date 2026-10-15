@@ -18,8 +18,8 @@ an address.
 
 People often write a CIDR with leftover bits set, like `172.16.99.1/12`.
 `ParsePrefix` accepts it, and `String()` prints it back exactly as written.
-`Masked()` returns a *new* prefix with the free bits set to zero, the
-standard way to write it:
+`Masked()` returns a *new* prefix with the free bits set to zero. That is the
+standard way to write a CIDR:
 
 ```go
 rule, _ := netip.ParsePrefix("172.16.99.1/12")

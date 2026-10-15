@@ -37,9 +37,9 @@ expiry time**. With a 60s TTL and a `Set` at 09:00:00, a `Get` at
 09:00:59.999 is a hit, and a `Get` at exactly 09:01:00 is a miss.
 
 > **Why is it written like this?** `Before` is a method, so you call it on
-> one time and pass the other: Go requires that shape. Storing the expiry
-> time (instead of the time it was saved) is the author's choice: it makes
-> every check a single comparison.
+> one time and pass the other. Storing the expiry time (instead of the time
+> the entry was saved) is the author's choice: every check becomes a single
+> comparison.
 
 ### A generic cache
 
@@ -67,8 +67,8 @@ var empty T // "" if T is string, 0 if int, false if bool
 
 ### Expire on read, and clean up in the background
 
-Expired entries still use memory until someone deletes them. This cache does
-both of the common things:
+Expired entries still use memory until someone deletes them. This cache uses
+both common approaches:
 
 | Approach | How | Good at |
 |---|---|---|
@@ -154,7 +154,7 @@ c.Cleanup() // at 09:01:10 => 0
 
 **Think it through:**
 - You need a loop over the map and a counter that starts at 0.
-- Which entries get deleted: the same ones `Get` treats as expired.
+- Which entries get deleted? The same ones `Get` treats as expired.
 
 ## Learn more
 

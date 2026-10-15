@@ -73,8 +73,8 @@ refused.
 
 ### Names in cluster DNS
 
-Every Service gets DNS names. From a Pod in the same namespace, `docs`
-works. From anywhere in the cluster:
+Every Service gets DNS names. Which one to use depends on where the client
+runs:
 
 | Name | When to use it |
 |---|---|

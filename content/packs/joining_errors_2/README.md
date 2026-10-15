@@ -28,8 +28,8 @@ fmt.Println(err)        // audit users: %!w(<nil>)
 So before you add context to an error that might be `nil`, check it first.
 
 > **Why is it written like this?** This is how Go defines `fmt.Errorf`: it
-> builds a new error every time (Go requires nothing else of it). `%!w(<nil>)`
-> is `fmt`'s way of saying "this verb got a bad value".
+> always builds a new error, whatever its arguments. `%!w(<nil>)` is `fmt`'s
+> way of saying "this verb got a bad value".
 
 ## Your task
 
@@ -39,7 +39,7 @@ A rule can have these problems, each wrapping a sentinel error:
 | Problem | Condition | Message |
 |---|---|---|
 | `ErrBadPort` | `Port` is below 1 or above 65535 | `rule "ssh": bad port: 70000` |
-| `ErrBadProtocol` | `Protocol` is not `"tcp"` or `"udp"` | `rule "ssh": bad protocol: "icmp"` |
+| `ErrBadProtocol` | `Protocol` is neither `"tcp"` nor `"udp"` | `rule "ssh": bad protocol: "icmp"` |
 | `ErrOpenToWorld` | `Source` is `"0.0.0.0/0"` and `Port` is not 80 or 443 | `rule "ssh": open to the world: port 22` |
 
 The message formats in `exercise.go` are already correct. Only the control

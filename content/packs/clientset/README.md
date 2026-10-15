@@ -39,9 +39,9 @@ cs.CoreV1().Secrets("billing") // /api/v1/namespaces/billing/secrets
 | `apps/v1` | `AppsV1()` | Deployments, StatefulSets, DaemonSets |
 
 > **Why is it written like this?** The chain of calls is required by
-> client-go: each method returns the next client. The namespace is a normal
-> `string` argument, so pass a variable (a parameter), not text in quotes,
-> when your function receives the namespace.
+> client-go: each method returns the next client. The namespace is a plain
+> `string` argument. When your function receives the namespace as a
+> parameter, pass that parameter, not quoted text.
 
 ### Get, Create, Delete
 
@@ -77,8 +77,8 @@ Check `len(...)` first, because indexing an empty slice panics.
 ### Accept the interface, test with a fake
 
 A real program builds its clientset from the `*rest.Config` you made in
-*kubeconfig: building a rest.Config* (reading only; the exercise never does
-this):
+*kubeconfig: building a rest.Config*. The exercise never does this, but here
+is how:
 
 ```go
 cs, err := kubernetes.NewForConfig(restConfig) // cs is a *kubernetes.Clientset

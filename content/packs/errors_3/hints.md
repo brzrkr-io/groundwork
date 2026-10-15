@@ -4,7 +4,7 @@ Split the line into words with `strings.Fields`, then run the four checks from t
 
 ### Closer
 
-Every message starts with `check %q: ` and the whole `line`:
+Every message starts with `check %q: `, filled in with the whole `line`:
 
 ```go
 fields := strings.Fields(line)

@@ -23,11 +23,10 @@ err := json.Unmarshal([]byte(`{"host":"db-1","port":5432}`), &t)
 // t.Host == "db-1", t.Port == 5432
 ```
 
-> **Why is it written like this?** Go requires the `&` here in practice:
-> `Unmarshal` must change your variable, so it needs a *pointer* to it (see
-> *Pointers*). Without `&` you get an error instead of data. Declaring `var t`
-> first, then filling it, is how the API is designed. The name `t` is your
-> choice.
+> **Why is it written like this?** `Unmarshal` must change your variable, so
+> it needs a *pointer* to it (see *Pointers*): that is what the `&` gives it.
+> Without `&` you get an error instead of data. Declaring `var t` first, then
+> filling it, is how the API is designed. The name `t` is your choice.
 
 ### How keys find fields
 
@@ -77,10 +76,9 @@ err := d.Decode(&t)
 
 That catches typos that would otherwise leave a field silently at zero.
 
-> **Why is it written like this?** `DisallowUnknownFields` is a method call
-> with no return value: it changes the decoder's settings, so it must come
-> before `Decode`. That order is required by how the decoder works, not by
-> the compiler.
+> **Why is it written like this?** `DisallowUnknownFields` returns nothing:
+> it changes the decoder's settings, so call it before `Decode`. The compiler
+> won't enforce this order; the decoder's behaviour does.
 
 ### JSON of unknown shape
 

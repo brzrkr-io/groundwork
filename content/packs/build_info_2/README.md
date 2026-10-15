@@ -120,8 +120,8 @@ BuildTime(info) // => "2026-03-01 22:30 UTC"
 - Add `"time"` to the imports.
 
 **Think it through:**
-- The three steps in the *Build time* table, in order. Which of them can
-  fail?
+- Follow the three steps in the *Build time* table, in order. Which of them
+  can fail?
 - The word `UTC` at the end is fixed text. Does it belong in the layout or
   after it?
 

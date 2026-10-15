@@ -54,7 +54,7 @@ type step struct {
 	Env  map[string]any `json:"env"`
 }
 
-// readWorkflow parses the workflow file name in the exercise folder.
+// readWorkflow parses the named workflow file in the exercise folder.
 func readWorkflow(t *testing.T, name string) workflow {
 	t.Helper()
 	raw, err := os.ReadFile(name)
@@ -142,7 +142,7 @@ var (
 	releaseNote = regexp.MustCompile(`^v\d+\.\d+\.\d+\b`)
 )
 
-// checkPins checks every "uses:" line in the workflow file name. Each action
+// checkPins checks every "uses:" line in the named workflow file. Each action
 // must be pinned to a full 40-character commit SHA, with its release in a
 // comment after it:
 //

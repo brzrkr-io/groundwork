@@ -158,7 +158,7 @@ search   | 2
 **Goal:** `4_slow_production_services.sql` returns `service` and
 `avg_minutes` for each service whose **production** deploys take more than
 300 seconds **on average**. `avg_minutes` is that average in minutes,
-rounded to one decimal place. A to Z.
+rounded to one decimal place. Sort the rows A to Z.
 
 ```text
 service  | avg_minutes

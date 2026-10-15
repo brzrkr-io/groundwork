@@ -58,8 +58,9 @@ func (q *Queue) Enqueue(ctx context.Context, j Job) error {
 	}
 }
 
-// Start launches workers goroutines. Each one takes jobs from the queue and
-// calls handle with them, one at a time, until the queue is closed and empty.
+// Start launches the given number of worker goroutines. Each one takes jobs
+// from the queue and calls handle with them, one at a time, until the queue
+// is closed and empty.
 func (q *Queue) Start(workers int, handle func(Job)) {
 	for range workers {
 		q.wg.Go(func() {

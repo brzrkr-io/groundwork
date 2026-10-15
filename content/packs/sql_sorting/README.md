@@ -153,7 +153,7 @@ search
 ```
 
 **Think it through:**
-- Without help, `api` appears three times. Which word removes the copies?
+- On its own, the query lists `checkout` three times. Which word removes the copies?
 - You still need `WHERE` and `ORDER BY`.
 
 ## Learn more

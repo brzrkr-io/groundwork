@@ -76,7 +76,7 @@ the error from `pull` (`Err`, `nil` on success). The tests fail if
 
 ### 1. Fix the hang
 
-**Goal:** make `PullAll` return, by closing `results` once every worker has finished.
+**Goal:** make `PullAll` return by closing `results` once every worker has finished.
 
 Right now every image is pulled, then `PullAll` hangs forever. Add the
 close where `TODO(1)` is, without blocking the collector loop below it.

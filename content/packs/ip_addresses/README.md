@@ -1,6 +1,6 @@
 # IP addresses: classify, allowlist, overlap
 
-*Project: ops inventory CLI* closed *Packages and project layout*: a
+*Project: ops inventory CLI* closed *Packages and project layout* with a
 multi-package tool that works on local data. This module adds the network:
 addresses, connections and HTTP.
 
@@ -165,5 +165,5 @@ Overlaps("10.0.0.0/16", "banana")      // => false, error
 ## Learn more
 
 - [net/netip package](https://pkg.go.dev/net/netip)
-- [Go blog: netip](https://go.dev/blog/netip)
+- [net/netip package docs](https://pkg.go.dev/net/netip)
 - [Amazon VPC: IP addressing](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-ip-addressing.html)

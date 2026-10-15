@@ -40,7 +40,7 @@ everywhere:
 
 ```go
 rel, err := filepath.Rel("/home", "/home/ana/notes.txt")
-// rel == "ana/notes.txt" (on Windows: `ana\notes.txt`)
+// rel == "ana/notes.txt" (on Windows: "ana\notes.txt")
 rel = filepath.ToSlash(rel) // always "ana/notes.txt"
 ```
 
@@ -125,7 +125,7 @@ StaleFiles(root, now, 7*24*time.Hour)
 **Think it through:**
 - The code already spots `pinned`. What does its `return` value tell the
   walk to do?
-- Which return value from the table in the recap means "don't go inside"?
+- Which return value in the recap means "don't go inside"?
 
 ### 3. Total the size of each folder
 

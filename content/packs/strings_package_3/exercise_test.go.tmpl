@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// Sample kubectl get pods output. The tests name them in failure messages,
-// for example NotReadyPods(mixed). mixed is the example from the README.
+// Sample kubectl get pods outputs. Failure messages refer to them by name,
+// as in NotReadyPods(mixed). mixed is the example from the README.
 const mixed = `NAME                     READY   STATUS             RESTARTS      AGE
 api-7d4b9c6f5-x2kqz      1/1     Running            0             5d
 web-5f6b8d7c9-k8s2m      0/1     CrashLoopBackOff   12 (3m ago)   2h

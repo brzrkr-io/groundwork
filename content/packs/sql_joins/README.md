@@ -74,7 +74,7 @@ WHERE s.tier = 'critical';
 
 ### Joining three tables
 
-Each extra table is one more `JOIN … ON` line. The order of the steps:
+Each extra table is one more `JOIN … ON` line. The clauses go in this order:
 `FROM`, all the `JOIN`s, then `WHERE`, `GROUP BY`, `ORDER BY` as before.
 
 ```sql

@@ -77,9 +77,9 @@ files in this exercise use plain kilobytes, so `-n` is right here.
 
 ### uniq: squeeze repeated lines, and count them
 
-`uniq` drops a line when it's the same as the line **right above it**. So it
-only finds every duplicate when equal lines sit next to each other, which is
-exactly what `sort` does. That's why you nearly always see `sort | uniq`.
+`uniq` drops a line when it's the same as the line **right above it**, so it
+only catches every duplicate when equal lines sit next to each other. `sort`
+puts them there. That's why you nearly always see `sort | uniq`.
 
 `uniq -c` *counts* each run of equal lines and puts the count in front:
 

@@ -1,8 +1,8 @@
 # Dockerfiles
 
 *Project: inventory service* closed *Production services* with a service
-that's ready to run. This module adds packaging it as a container and
-building and shipping it automatically with CI/CD.
+that's ready to run. This module packages it as a container, so CI/CD can
+build and ship it automatically.
 
 Almost everything you deploy as a platform engineer ships as a *container
 image*. A `Dockerfile` is the recipe for one: a short list of instructions

@@ -34,8 +34,8 @@ func Summarize(parsed Log) Report {
 
 // WriteText writes r as a plain-text report for humans.
 func WriteText(w io.Writer, r Report) error {
-	// TODO(6): Write the text report described in the README with
-	// fmt.Fprintf. You will need to import "fmt", "maps" and "slices".
+	// TODO(6): Write the text report shown in the README. You will need to
+	// import "fmt", "maps", "slices" and "strings".
 	return nil
 }
 
@@ -52,8 +52,8 @@ type jsonReport struct {
 
 // WriteJSON writes r as indented JSON for other tools.
 func WriteJSON(w io.Writer, r Report) error {
-	// TODO(6): Copy every field of r into the jsonReport, and indent the
-	// output by two spaces.
+	// TODO(6): Fill every jsonReport field from r and indent the output by
+	// two spaces.
 	return json.NewEncoder(w).Encode(jsonReport{
 		Requests: r.Requests,
 	})

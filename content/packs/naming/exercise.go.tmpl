@@ -40,8 +40,8 @@ func Pages(lines []string, limit int) []string {
 // prs returns the service named in a critical alert line, and false for any
 // other line.
 func prs(l string) (string, bool) {
-	// TODO(3): Give l, f, s and n real names, and give the level and the
-	// service their own variables, named level and service.
+	// TODO(3): Give l and f here, and s and n in fmtP, real names. Give the
+	// level and the service their own variables, named level and service.
 	f := strings.Fields(l)
 	if len(f) < 3 || f[1] != "critical" {
 		return "", false

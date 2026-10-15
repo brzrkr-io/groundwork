@@ -2,7 +2,7 @@
 
 A deploy tool reads passwords and tokens from a secrets vault. Its messages
 print correctly, but three checks silently give the wrong answer. Bugs like
-these hide until the bad day you need them.
+these stay hidden until the day you rely on those checks.
 
 **New here:** nothing; practice finding broken error chains.
 

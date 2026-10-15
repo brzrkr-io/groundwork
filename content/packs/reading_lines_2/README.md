@@ -55,7 +55,7 @@ sc.Buffer(make([]byte, 0, 4096), 4*1024*1024)
 | `make([]byte, 0, 4096)` | Starting buffer: empty, with room for 4,096 bytes. |
 | `4*1024*1024` | The *maximum* line size, in bytes. 1 KiB = 1024 bytes, 1 MiB = 1024 KiB. |
 
-The scanner grows only when a line needs it. A line over the maximum still
+The buffer grows only when a line needs it. A line over the maximum still
 fails with `bufio.ErrTooLong`, so a runaway file can't eat all your memory.
 
 > **Why is it written like this?** Go requires `sc.Buffer` to be called
@@ -98,7 +98,7 @@ No panics gives a `nil` slice and a `nil` error.
 - `<line number>` is 1-based; `<line>` is the line exactly as it is, no
   trimming.
 - The match is case-sensitive: `"error"` does not match `ERROR`.
-- Fixed text between them: a colon and one space.
+- Between the number and the line: a colon and one space.
 
 ```go
 log := "INFO ok\nERROR db timeout\nWARN slow\nERROR db timeout\n"

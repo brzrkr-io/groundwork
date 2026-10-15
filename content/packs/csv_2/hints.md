@@ -40,7 +40,7 @@ number, and the reader can carry on after it.
 
 ### Closer
 
-Use `_, err := cr.Read()`, stop on `io.EOF`. Before the usual `err != nil`
+Call `_, err := cr.Read()` and stop on `io.EOF`. Before the usual `err != nil`
 check, use `errors.As(err, &pe)` with `var pe *csv.ParseError`, and check
 `errors.Is(pe.Err, csv.ErrFieldCount)`. If so, append `pe.Line` and
 `continue`. Add `"errors"` to the imports.

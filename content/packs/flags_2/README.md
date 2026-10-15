@@ -30,7 +30,7 @@ fmt.Println(*color) // "red"
 ```
 
 > **Why is it written like this?** Go requires this behaviour: `*p` reads the
-> value once, it doesn't stay linked. Where you put the line is your choice,
+> value once; it doesn't stay linked. Where you put the line is your choice,
 > so put it after `Parse`.
 
 ### fs.Func: your own flag logic

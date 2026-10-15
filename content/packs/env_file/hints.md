@@ -23,8 +23,8 @@ if len(value) < 2 || value[len(value)-1] != quote {
 return value[1 : len(value)-1], nil
 ```
 
-The length check stops a lone `"` from counting as both opening and closing
-quote.
+The length check stops a lone `"` from counting as both the opening and the
+closing quote.
 
 ## Task 2: Parse one line
 

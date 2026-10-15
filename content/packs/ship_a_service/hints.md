@@ -7,35 +7,35 @@ whichever comes first: Serve failing, or `ctx` being cancelled.
 
 ### Closer
 
-Start `srv.Serve(ln)` in a goroutine that sends its error on a channel with
-room for one value, then `ready.Store(true)`. A `select` waits on that
-channel and on `ctx.Done()`. In the `ctx.Done()` case: `ready.Store(false)`,
-`log.Print("draining")`, then `srv.Shutdown` with a context from
-`context.WithTimeout(context.Background(), grace)`. If `Shutdown` fails,
-`srv.Close()` and wrap its error.
+Start `s.srv.Serve(ln)` in a goroutine that sends its error on a channel
+with room for one value, then `s.ready.Store(true)`. A `select` waits on
+that channel and on `ctx.Done()`. In the `ctx.Done()` case:
+`s.ready.Store(false)`, `log.Print("draining")`, then `s.srv.Shutdown` with a
+context from `context.WithTimeout(context.Background(), s.grace)`. If
+`Shutdown` fails, call `s.srv.Close()` and wrap the `Shutdown` error.
 
 ### Answer
 
 ```go
 	serveErr := make(chan error, 1)
 	go func() {
-		serveErr <- srv.Serve(ln)
+		serveErr <- s.srv.Serve(ln)
 	}()
-	ready.Store(true)
+	s.ready.Store(true)
 
 	select {
 	case err := <-serveErr:
-		ready.Store(false)
+		s.ready.Store(false)
 		return err
 	case <-ctx.Done():
 	}
 
-	ready.Store(false)
+	s.ready.Store(false)
 	log.Print("draining")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), grace)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.grace)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		srv.Close()
+	if err := s.srv.Shutdown(shutdownCtx); err != nil {
+		s.srv.Close()
 		return fmt.Errorf("forced shutdown: %w", err)
 	}
 	return nil

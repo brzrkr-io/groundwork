@@ -69,8 +69,8 @@ keys in sorted order.
 For the image, check `c.Image == ""`, then `else if` with
 `_, tag, found := strings.Cut(c.Image, ":"); !found || tag == ""`. In
 `ValidEnvName`, return `false` for an empty name, then range over the runes
-and test `r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_'`. Loop the
-env with `slices.Sorted(maps.Keys(c.Env))`.
+and test `r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_'`. Loop over
+the env keys with `slices.Sorted(maps.Keys(c.Env))`.
 
 ### Answer
 

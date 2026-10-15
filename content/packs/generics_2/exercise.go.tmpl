@@ -34,8 +34,8 @@ func SortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
 	return keys
 }
 
-// GroupBy groups items by the key that key returns for each of them. Items
-// keep their original order within a group.
+// GroupBy groups items by the result of calling key on each one. Items keep
+// their original order within a group.
 func GroupBy[T any, K comparable](items []T, key func(T) K) map[K][]T {
 	groups := make(map[K][]T)
 	for _, item := range items {

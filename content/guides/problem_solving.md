@@ -164,6 +164,7 @@ They don't match yet, and that's fine: you've only written the first piece.
 What matters is that `got` is exactly the start of `want`, so the first
 steps of the plan work. The `%q` verb puts quotes around each value, so a
 stray or missing space at either end would show.
+
 Now add the next piece. Your first try might be `+ " --replicas=" +
 replicas`, and the compiler stops you with a long message that ends in
 `(mismatched types string and int)`.
@@ -250,9 +251,9 @@ join: the mount, ": ", the percentage, "% used"
 return it
 ```
 
-Notice the first line multiplies before dividing. Writing a hand example
-(90 used, 200 total) makes you notice why. See the *Values and types*
-guide for what goes wrong otherwise.
+Notice the first line multiplies before dividing. A hand example (90 used,
+200 total) shows why. See the *Values and types* guide for what goes wrong
+otherwise.
 
 ## Working backwards from the expected output
 
@@ -334,12 +335,12 @@ nothing. Some habits that help:
   questions and *Key terms*. `groundwork cards` turns them into flashcards
   you can import into Anki on your phone. Answer them a few days apart, not
   all at once.
-- **Welcome the reviews.** Groundwork brings back practice exercises, and
-  any exercise whose solution you opened early, a few days later and again
-  weeks later. Spacing practice out like that is how it sticks.
+- **Welcome the reviews.** A few days later, and again weeks later,
+  Groundwork brings back practice exercises and any exercise whose solution
+  you opened early. Spacing practice out like this makes it stick.
 
 Reading a solution and thinking "yes, that makes sense" feels like learning,
-but it's recognition. Being able to write it from blank is the skill you
+but it's recognition. Being able to write it from a blank page is the skill you
 need on call.
 
 ## Common mistakes

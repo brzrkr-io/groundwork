@@ -39,19 +39,19 @@ if ok {
 
 > **Why is it written like this?** Go requires the signatures to match
 > exactly, or it won't compile. `v, ok := m[key]` is Go's built-in way to ask
-> "is it there?". Naming them `cmd`/`ok` is convention.
+> "is it there?". Calling the second value `ok` is convention.
 
 ### Help text from the table
 
 The table can also generate the help text, so help never forgets a command.
-The catch: **map order is random**, and changes between runs. As in
+The catch: **map order is random** and changes between runs. As in
 *Sorting*, loop over `slices.Sorted(maps.Keys(m))` to get keys in
 alphabetical order.
 
 ### Padding with %-9s
 
-To line text up in a column, give a verb a width. `9` is a minimum width;
-`-` puts the padding on the right:
+To line text up in a column, give a verb a width. The number is a minimum
+width; `-` puts the padding on the right:
 
 ```go
 fmt.Printf("[%-6s]\n", "cat") // [cat   ]
@@ -137,11 +137,11 @@ commands:
 `Run` already uses `writeUsage` for `help`, `-h`, `--help` (stdout, exit
 `0`), for no arguments (stderr, exit `2`), and after the
 `nodectl: unknown command "reboot"` line (stderr, exit `2`). The test runs
-each 20 times, so looping straight over the map gets caught. Add `"maps"` and
-`"slices"` to the imports.
+each case 20 times, so an unsorted loop over the map gets caught. Add
+`"maps"` and `"slices"` to the imports.
 
 **Think it through:**
-- Write `w` (the parameter), not `stdout`: who decides where help goes?
+- Write to `w` (the parameter), not `stdout`: who decides where help goes?
 - Loop over sorted names, then look up each summary by name.
 
 ## Learn more

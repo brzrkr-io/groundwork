@@ -14,8 +14,8 @@ func Labels(app, env string) map[string]string {
 	return nil
 }
 
-// NewDeployment builds a Deployment that runs replicas copies of image. The
-// Deployment is named after the app and lives in namespace ns.
+// NewDeployment builds a Deployment that runs the given number of copies
+// of image. The Deployment is named after the app and lives in namespace ns.
 func NewDeployment(app, ns, env, image string, replicas int32) *appsv1.Deployment {
 	labels := Labels(app, env)
 	return &appsv1.Deployment{

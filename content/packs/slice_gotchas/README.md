@@ -72,7 +72,7 @@ stays in memory.
 | Fix | What you get |
 |---|---|
 | `slices.Clone(s)` | A new array with the same elements. `cap` may be a bit bigger than `len`. |
-| `make([]T, n)` + `copy(dst, src)` | A new array with exactly `len` and `cap` `n`, then filled from `src`. |
+| `make([]T, n)` + `copy(dst, src)` | A new array with `len` and `cap` both exactly `n`, filled from `src`. |
 | `s[low:high:max]` | Same array, but `cap` is limited to `max - low`. |
 
 `copy(dst, src)` copies elements from `src` into `dst` (as many as fit) and
@@ -119,7 +119,7 @@ c[0] = "changed"
 ```
 
 **Think it through:**
-- The starter's result is the right elements, but whose array is it in?
+- The starter returns the right elements, but whose array are they in?
 - Which fix from the table gives a new array? Remember its import.
 
 ### 2. Add a step without overwriting

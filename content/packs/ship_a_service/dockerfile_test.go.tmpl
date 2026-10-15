@@ -137,7 +137,7 @@ func envVars(instructions []instruction) map[string]string {
 	return vars
 }
 
-// show prints an instruction the way it was written, for failure messages.
+// show returns an instruction as it was written, for failure messages.
 func show(in instruction) string {
 	parts := append([]string{in.Cmd}, in.Flags...)
 	return strings.TrimSpace(strings.Join(append(parts, in.Rest), " "))

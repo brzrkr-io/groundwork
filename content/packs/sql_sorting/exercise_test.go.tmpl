@@ -78,8 +78,8 @@ func TestProductionServices(t *testing.T) {
 type result struct {
 	columns []string
 	rows    [][]string
-	// unstable is true when a second run of the query returned the same rows
-	// in a different order.
+	// unstable is true when a second run of the query returned different
+	// rows, or the same rows in a different order.
 	unstable bool
 }
 

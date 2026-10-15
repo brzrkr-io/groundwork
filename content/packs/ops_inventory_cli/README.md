@@ -5,9 +5,9 @@ environment and region they're in, and what they run. You'll build
 `inventory`, a command-line tool that loads that list from JSON, checks it
 for mistakes, filters it, and prints a table for people or JSON for scripts.
 
-This project closes the *Practical Go* phase. The command line comes from
-*CLI tools and the OS*, the JSON from *Text and data*, and the
-`cmd/` + `internal/` layout from *Practice: lay out a tool*: now it's one
+This project closes the *Practical Go* phase. It combines the command line
+from *CLI tools and the OS*, the JSON from *Text and data*, and the
+`cmd/` + `internal/` layout from *Practice: lay out a tool* into one
 multi-package tool.
 
 **New here:** `text/tabwriter`, `netip.ParseAddr`. Everything else is practice from earlier modules.
@@ -77,10 +77,9 @@ the command line last.
 
 ### Rejecting unknown JSON keys
 
-As in *Decoding JSON: load a service config*: by default, JSON keys that
-match no struct field are silently ignored, so a typo like `"regoin"` would
-leave `Region` empty with no warning. `DisallowUnknownFields` makes it an
-error:
+As in *Decoding JSON: load a service config*, JSON keys that match no struct
+field are silently ignored by default. A typo like `"regoin"` would leave
+`Region` empty with no warning. `DisallowUnknownFields` makes it an error:
 
 ```go
 dec := json.NewDecoder(os.Stdin) // reads JSON from any io.Reader
@@ -153,7 +152,7 @@ fs.Func("port", "a `port` to open (repeatable)", func(p string) error {
 > **Why is it written like this?** The `&` is required: `StringVar` must
 > write into your variable, so it needs its address. `fs.Func` requires a
 > function with exactly the shape `func(string) error`; returning `nil`
-> means "this value is fine". Backquotes inside the help text mark the word
+> means "this value is fine". In the help text, backquotes mark the word that
 > `flag` shows as the value's name; that's a `flag` package convention.
 
 `fs.NArg()` is the number of arguments left after the flags; `fs.Arg(0)` is
@@ -372,7 +371,7 @@ host 3: name is required
 - `slices.SortFunc` needs a function that compares two hosts. Which field of each do you hand to `cmp.Compare`?
 - Which variable in `opts` tells you to print JSON?
 
-When all seven tests pass, try the real thing from the exercise folder:
+When all the tests pass, try the real thing from the exercise folder:
 
 ```console
 go run ./cmd/inventory -env prod

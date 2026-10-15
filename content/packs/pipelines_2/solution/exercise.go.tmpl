@@ -64,8 +64,8 @@ func checkStage(ctx context.Context, hosts <-chan string, check func(host string
 	return out
 }
 
-// FanOut checks hosts with workers copies of checkStage running at the same
-// time, and merges their results into one channel.
+// FanOut runs `workers` copies of checkStage at the same time on hosts and
+// merges their results into one channel.
 func FanOut(ctx context.Context, hosts <-chan string, workers int, check func(host string) string) <-chan string {
 	outputs := make([]<-chan string, workers)
 	for i := range outputs {

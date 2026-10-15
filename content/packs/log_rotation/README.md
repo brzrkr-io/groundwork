@@ -50,12 +50,12 @@ Each line of the result is the action, a space, and the file name, in the
 order of the files. With `now` at 03:00:
 
 ```text
-app.log       150 MiB   now           => "rotate app.log"
-cron.log      100 MiB-1 now           => "keep cron.log"
-app.log.2     80 MiB    24 hours ago  => "keep app.log.2"
-app.log.3     80 MiB    25 hours ago  => "compress app.log.3"
-app.log.5.gz  9 MiB     7 days ago    => "keep app.log.5.gz"
-app.log.6.gz  9 MiB     7 days 1 min  => "delete app.log.6.gz"
+app.log       150 MiB   now               => "rotate app.log"
+cron.log      100 MiB-1 now               => "keep cron.log"
+app.log.2     80 MiB    24 hours ago      => "keep app.log.2"
+app.log.3     80 MiB    25 hours ago      => "compress app.log.3"
+app.log.5.gz  9 MiB     7 days ago        => "keep app.log.5.gz"
+app.log.6.gz  9 MiB     7 days 1 min ago  => "delete app.log.6.gz"
 ```
 
 The tasks can be done in any order, but this order is the easiest.

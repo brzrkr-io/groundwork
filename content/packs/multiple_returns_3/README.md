@@ -36,7 +36,7 @@ base, ok := strings.CutSuffix("report.txt", ".txt")
 
 ### Named results
 
-Look at the `ParseImage` line in your file:
+Your `ParseImage` line names its results, like this example:
 
 ```go
 func SplitHost(addr string) (host, port string, err error)

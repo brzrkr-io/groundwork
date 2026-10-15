@@ -38,7 +38,7 @@ messages, like `motd` above.
 
 > **Why is it written like this?** `template.New(...).Parse(...)` is a
 > *method chain*: `New` returns a template, and you call `Parse` on it right
-> away. Go allows it; it's the usual style for this package. The name
+> away. Go allows this, and it's the usual style for this package. The name
 > `"motd"` is your choice.
 
 ### Step 2: Execute into a writer
@@ -134,10 +134,11 @@ gives `"users:\nuser ann\nuser bo"`.
 
 ### Functions: FuncMap
 
-Templates call functions by name, arguments after it, separated by spaces:
-`{{upper .Name}}`, or `{{printf "%05d" .ID}}` with two arguments. `len` and
-`printf` are built in. Your own functions go in a `template.FuncMap` (a map
-from name to Go function), registered with `Funcs` **before** `Parse`:
+Templates call a function by name, followed by its arguments separated by
+spaces: `{{upper .Name}}`, or `{{printf "%05d" .ID}}` with two arguments.
+`len` and `printf` are built in. Your own functions go in a
+`template.FuncMap` (a map from name to Go function), registered with `Funcs`
+**before** `Parse`:
 
 ```go
 funcs := template.FuncMap{"lower": strings.ToLower}
@@ -148,8 +149,8 @@ If the text uses a function the FuncMap doesn't have, `Parse` fails with
 `function "lower" not defined`.
 
 > **Why is it written like this?** No parentheses or commas around the
-> arguments: that's template syntax, not Go syntax. The template language
-> requires it.
+> arguments: the template language requires this syntax, which differs from
+> Go's.
 
 ### template.Must
 

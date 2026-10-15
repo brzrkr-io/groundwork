@@ -87,7 +87,7 @@ func checkFlat(t *testing.T, name string, maxDepth int) {
 	}
 	if len(elseLines) > 0 {
 		slices.Sort(elseLines)
-		t.Errorf("%s still uses else, on exercise.go lines %v; when the if above it returns (or continues), the code after the if already is the else",
+		t.Errorf("%s still uses else, on exercise.go lines %v; when the if above it returns (or continues), the code after the if is already the else",
 			name, elseLines)
 	}
 }

@@ -62,7 +62,7 @@ func TestWithZoneDown(t *testing.T) {
 			}
 			// The function got a copy, so the caller's array must not change.
 			if c.status != before {
-				t.Errorf("WithZoneDown changed the caller's array to %v, want it unchanged %v", c.status, before)
+				t.Errorf("WithZoneDown changed the caller's array to %v; it must stay %v", c.status, before)
 			}
 		})
 	}

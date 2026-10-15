@@ -20,7 +20,7 @@ pattern `ERROR` matches the text "ERROR". A few are special:
 | `.` | any single character |
 | `\d` | one digit, `0`–`9` |
 | `\w` | one letter, digit or `_` |
-| `\S` | one character that is not a space or tab |
+| `\S` | one character that is not whitespace (space, tab, newline) |
 | `[a-z]` | one character from the set. `[a-z0-9-]` adds digits and `-` |
 | `x+` | one or more `x` |
 | `x*` | zero or more `x` |
@@ -196,7 +196,7 @@ ParseLogLine("hello world")
 // => LogLine{}, error `not a log line: "hello world"`
 
 ParseLogLine("2026-10-11T09:14:03Z error [payments] connection refused")
-// => error: the level must be uppercase
+// => LogLine{}, error (the level must be uppercase)
 ```
 
 **Think it through:**

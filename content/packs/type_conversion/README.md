@@ -1,6 +1,6 @@
 # Type conversion
 
-Real numbers arrive in mixed types: pod counts are `int`s, percentages are
+Numbers arrive in mixed types: pod counts are `int`s, percentages are
 `float64`s, and ports end up inside strings like `0.0.0.0:8080`. Go never
 converts between types behind your back, so you learn to do it yourself.
 

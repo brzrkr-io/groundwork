@@ -69,7 +69,7 @@ newest lines, one per line. Its routes and `ServeLogs` have bugs.
 
 **Goal:** in `NewMux`, make `Index` answer only `GET /` and `ServeLogs` answer only `GET` on `/logs/{service}`.
 
-Now `"/"` answers every path, and the logs pattern accepts any method.
+Right now `"/"` answers every path, and the logs pattern accepts any method.
 
 | Request | Status |
 |---|---|

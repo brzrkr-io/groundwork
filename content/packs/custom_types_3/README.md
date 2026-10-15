@@ -103,7 +103,7 @@ import (
 
 ### 1. Print a size for humans
 
-**Goal:** make `Human` return `b` as text, using the largest unit that `b` is at least one of.
+**Goal:** make `Human` return `b` as text in the largest unit that fits, as in this table.
 
 | When `b` is | Format | Example |
 |---|---|---|

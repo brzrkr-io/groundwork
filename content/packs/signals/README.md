@@ -12,7 +12,7 @@ operating system.
 
 ### What signals are
 
-The *The operating system for programmers* guide introduced signals: tiny
+The guide *The operating system for programmers* introduced signals: tiny
 messages the operating system sends a running program.
 
 | Signal | Who sends it | Can you catch it? |
@@ -117,8 +117,8 @@ far and `ctx.Err()`:
 stopping: <N> hosts not drained
 ```
 
-`N` is the number of hosts not drained yet (a number, then fixed text, then a
-newline). The host in progress always finishes.
+`N` is the number of hosts not drained yet. The host in progress always
+finishes.
 
 ```go
 // ctx gets cancelled while web-2 is being drained

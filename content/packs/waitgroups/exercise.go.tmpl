@@ -37,9 +37,8 @@ func BackupAll(databases []string, backup func(db string)) {
 
 // startBackup runs backup(db) in a new goroutine that wg.Wait() waits for.
 func startBackup(wg *sync.WaitGroup, db string, backup func(db string)) {
-	// TODO(3): This counts the backup in wg but runs it right here, so the
-	// backups happen one after another. Run backup(db) in a new goroutine
-	// that wg.Wait() waits for.
+	// TODO(3): This counts the backup but runs it right here, so backups
+	// happen one after another. Start it in a goroutine that wg counts.
 	wg.Add(1)
 	backup(db)
 	wg.Done()

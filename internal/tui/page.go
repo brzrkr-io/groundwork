@@ -66,8 +66,8 @@ var (
 )
 
 // findOutline lists src's ## and ### headings (outside code fences) and the
-// lines of rendered they appear on, as the theme renders them: sections in
-// capitals, subsections after "› ".
+// line of rendered each appears on. It matches headings as the theme renders
+// them: sections in capitals, subsections after "› ".
 func findOutline(src, rendered string) []outlineItem {
 	lines := strings.Split(ansi.Strip(rendered), "\n")
 	for i := range lines {

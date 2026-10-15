@@ -1,6 +1,6 @@
 ## Task 1: Healthy percentage
 
-Dividing two ints throws away the fraction. Turn both into `float64` before you divide, then times 100.
+Dividing two ints throws away the fraction. Turn both into `float64` before you divide, then multiply by 100.
 
 ### Closer
 

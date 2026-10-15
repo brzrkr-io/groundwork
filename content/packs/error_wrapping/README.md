@@ -66,10 +66,10 @@ errors.Is(err, ErrExpired) // true: ErrExpired is in the chain
 
 ### errors.AsType: find an error by its type
 
-Custom error types carry fields, like `ParseError` here, which records the bad
-line number. A type assertion `err.(*ParseError)`, from *Custom error types*,
-also only looks at the outermost error. To search the whole chain, use
-`errors.AsType`:
+Custom error types carry fields. This exercise's `ParseError`, for example,
+records the bad line number. A type assertion such as `err.(*ParseError)`, from
+*Custom error types*, also only looks at the outermost error. To search the
+whole chain, use `errors.AsType`:
 
 ```go
 if terr, ok := errors.AsType[*TimeoutError](err); ok {

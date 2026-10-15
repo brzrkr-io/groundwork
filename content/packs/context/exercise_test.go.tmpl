@@ -144,7 +144,7 @@ func TestCheckWithTimeout(t *testing.T) {
 	tests := []struct {
 		name        string
 		timeout     time.Duration
-		result      error // what check returns; nil with waits=true means "wait for ctx"
+		result      error // what check returns when it doesn't wait
 		waits       bool  // does check wait for the context to end?
 		want        error
 		wantElapsed time.Duration

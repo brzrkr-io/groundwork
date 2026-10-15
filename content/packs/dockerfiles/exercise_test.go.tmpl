@@ -5,7 +5,8 @@ import (
 	"testing"
 )
 
-// The helpers readDockerfile, find and envVars are in dockerfile_test.go.
+// The helpers readDockerfile, find, envVars, show and execForm are in
+// dockerfile_test.go.
 
 func TestGoVersionImage(t *testing.T) {
 	const file = "1_go_version.Dockerfile"
@@ -88,8 +89,8 @@ func TestConfigureForProduction(t *testing.T) {
 	}
 }
 
-// checkFrom checks that the Dockerfile has exactly one FROM, first, with the
-// image want.
+// checkFrom checks that the Dockerfile has exactly one FROM, that it comes
+// first, and that it names the image want.
 func checkFrom(t *testing.T, file string, instructions []instruction, want string) {
 	t.Helper()
 	froms := find(instructions, "FROM")
@@ -104,7 +105,7 @@ func checkFrom(t *testing.T, file string, instructions []instruction, want strin
 	}
 }
 
-// checkCmd checks the last CMD (the one Docker uses) is in exec form and
+// checkCmd checks that the last CMD (the one Docker uses) is in exec form and
 // runs one of the wanted commands. It returns the CMD, or nil.
 func checkCmd(t *testing.T, file string, instructions []instruction, want ...[]string) *instruction {
 	t.Helper()

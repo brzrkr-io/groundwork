@@ -166,7 +166,7 @@ Version 1 is serving traffic; version 2 is in the registry. How do you swap them
 
 Blue/green needs double capacity; canary needs good metrics and traffic splitting: the error and latency numbers you exported in *Prometheus-style metrics: counters and /metrics*, compared between old and new. During rolling and canary deploys, **two versions run at once** against the same database.
 
-A rolling update only loses no requests if every instance does the two things from *Production services*: it answers readiness only once it can serve (*Health checks: liveness and readiness*), and on SIGTERM it fails readiness and drains before exiting (*Graceful shutdown: drain in-flight requests*). You'll wire both into a container in *Practice: containerize and ship a service*.
+A rolling update drops no requests only if every instance does the two things from *Production services*: it reports ready only once it can serve (*Health checks: liveness and readiness*), and on SIGTERM it fails readiness and drains before exiting (*Graceful shutdown: drain in-flight requests*). You'll wire both into a container in *Practice: containerize and ship a service*.
 
 ### Rollbacks
 
@@ -264,7 +264,7 @@ Your pipeline runs other people's code: actions, base images, Go modules.
 3. YAML reads unquoted `1.20` as the number 1.2. Write `'1.20'`.
 4. A cache only saves time, so without it the job is slower but correct. An artifact is an output a later job needs, so without it that job fails.
 5. A second build can pull a newer base image or dependencies, so production would run untested code. Promoting one digest ships exactly what passed staging.
-6. With a canary, only the small slice (say 5%) until traffic goes back; with blue/green, everyone, until you switch back.
+6. With a canary, only the small slice (say 5%), until you move that traffic back; with blue/green, everyone, until you switch back.
 7. A rollback runs the previous release against today's database, so if the migration dropped or renamed something it reads, the rollback crashes too.
 8. CI commits the new digest to Git, and an agent in the cluster (Argo CD, Flux) changes the cluster to match. Roll back with `git revert`.
 9. A leaked long-lived key works for years. OIDC credentials expire within about an hour and there's no stored key to steal.

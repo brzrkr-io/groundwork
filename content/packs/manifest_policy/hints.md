@@ -182,7 +182,7 @@ object once. Write one function per rule, then one table entry each.
 ### Closer
 
 For `runAsNonRoot`: `podNonRoot := false`, set it from
-`obj.Pod.SecurityContext.RunAsNonRoot` when both aren't `nil`, then let a
+`obj.Pod.SecurityContext.RunAsNonRoot` when neither is `nil`, then let a
 non-`nil` container `RunAsNonRoot` overwrite it. A `*bool` that must be
 `false` fails when `p == nil || *p`. For the tag:
 `colon := strings.LastIndex(image, ":")`; there's no tag when
@@ -382,7 +382,7 @@ func JSON(w io.Writer, rep Report) error {
 
 ## Task 8: Wire up flags and exit codes
 
-`fs.Func(name, usage, fn)` calls `fn` once per time the flag appears. One
+`fs.Func(name, usage, fn)` calls `fn` each time the flag appears. One
 helper can build the `fn` for both flags if it takes a pointer to the slice
 it should fill.
 

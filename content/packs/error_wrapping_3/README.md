@@ -1,8 +1,8 @@
 # Wrapping errors: triage a failed deploy
 
 A deploy pipeline runs build, test and rollout stages. When one fails, the
-on-call engineer needs two answers fast: which stage broke, and must the
-previous version be restored? You will build an error type that answers both.
+on-call engineer needs two answers fast: which stage broke, and does the
+previous version need restoring? You will build an error type that answers both.
 
 **New here:** the `Unwrap() error` method on your own error type.
 

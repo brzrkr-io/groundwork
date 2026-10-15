@@ -1,7 +1,7 @@
 ## Task 1: Fix the refill
 
-Compare `refill` with the refill code in the recap. One piece caps the total
-at `burst`, and the other remembers when this refill happened.
+`refill` is missing two things. One caps the total at `burst`; the other
+remembers when this refill happened.
 
 ### Closer
 

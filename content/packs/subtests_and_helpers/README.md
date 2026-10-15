@@ -151,8 +151,8 @@ the helper `assertHosts`.
   "got …, want …" message.
 
 Then the existing case catches a `ParseHosts` that drops the last host.
-Groundwork can't check that you called `t.Helper()`, since it only improves
-the messages, but do it anyway.
+Groundwork can't check for `t.Helper()`, because it only changes failure
+messages. Call it anyway.
 
 **Think it through:**
 - `slices.Equal` returns `true` when they match. When should the test fail?

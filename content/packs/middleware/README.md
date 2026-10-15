@@ -83,7 +83,7 @@ h := Recover(os.Stderr)(Logging(os.Stdout)(mux))
 
 ### Recovering from a panic
 
-One bad request shouldn't take down the whole service. As in *Panic and
+One bad request shouldn't take down the whole service. As in *panic and
 recover*, a deferred function can call `recover()`. It returns the panic
 value, or `nil` when nothing panicked:
 

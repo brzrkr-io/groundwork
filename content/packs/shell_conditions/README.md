@@ -59,7 +59,7 @@ fi
 And `!` turns a test around: `[[ ! -f "$path" ]]`.
 
 You'll also meet the older form, `[ ... ]`, a command also named `test`
-(`[ -d DIR ]` is the same as `test -d DIR`). It works on every shell, but it
+(`[ -d DIR ]` is the same as `test -d DIR`). It works in every shell, but it
 splits unquoted variables and has no `&&` inside. `[[ ]]` is the bash way,
 and the one used here; the tests accept either.
 
@@ -123,8 +123,8 @@ PATH is `$1` exactly as given. A directory doesn't count:
 
 **Think it through:**
 - Which test is true only for a regular file?
-- On the missing path, which two things happen, and where does the message
-  go?
+- When the file is missing, which two things happen, and where does the
+  message go?
 
 ### 2. Grade disk usage
 

@@ -24,7 +24,7 @@ keys are ignored; fields with a missing key keep their zero value.
 | tag `json:"host"` but the key is `"hostname"` | never filled, stays `""`, **no error** |
 
 The last two are sneaky: decoding "succeeds" and you just get empty strings.
-`go vet` warns about a json tag on an unexported field, one more reason to
+`go vet` warns about a json tag on an unexported field: one more reason to
 run it.
 
 > **Why is it written like this?** Go requires a capital first letter for a
@@ -58,14 +58,14 @@ for {
 ```
 
 > **Why is it written like this?** `for { … }` with no condition is Go's
-> loop-forever; you leave with `break` or `return`. Checking `io.EOF`
-> *before* the general `err != nil` is required by the logic: otherwise the
-> normal end would count as an error. Declaring `ev` **inside** the loop is
-> deliberate: each value starts from zero, so a field missing in one object
-> can't keep the previous object's value.
+> loop-forever; you leave with `break` or `return`. Check `io.EOF` *before*
+> the general `err != nil`; otherwise the normal end would count as an error.
+> Declaring `ev` **inside** the loop is deliberate: each value starts from
+> zero, so a field missing in one object can't keep the previous object's
+> value.
 
-If the input stops in the middle of an object, you get `io.ErrUnexpectedEOF`,
-a different error, so it is treated as a failure.
+If the input stops in the middle of an object, you get `io.ErrUnexpectedEOF`.
+That is a different error, and a real failure.
 
 ## Your task
 

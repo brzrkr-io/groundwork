@@ -29,7 +29,7 @@ var Reserved = []string{"api", "healthz", "readyz", "metrics"}
 // or nil if l is a valid new link. The rules, in order:
 //
 //	Name is not empty                          name is required
-//	Name is 1-64 of a-z, 0-9 and -             name must be at most 64 characters of a-z, 0-9 and -
+//	Name is 1-64 characters of a-z, 0-9 and -  name must be at most 64 characters of a-z, 0-9 and -
 //	Name is not in Reserved                    name is reserved
 //	URL is an absolute http or https URL       url must be an absolute http or https URL
 func Validate(l Link) error {

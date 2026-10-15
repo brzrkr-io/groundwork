@@ -142,6 +142,7 @@ func repo(t *testing.T, sandbox, name string) string {
 	return dir
 }
 
+// readFile returns the contents of the file name inside dir.
 func readFile(t *testing.T, dir, name string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(dir, name))

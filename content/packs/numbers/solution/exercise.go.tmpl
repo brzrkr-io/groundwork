@@ -1,8 +1,8 @@
 // Package numbers is the Groundwork exercise "Numbers and arithmetic".
 package numbers
 
-// TotalMemoryMiB returns the memory, in MiB, needed by replicas replicas
-// that each need perReplicaMiB.
+// TotalMemoryMiB returns the memory, in MiB, needed to run the given number
+// of replicas when each needs perReplicaMiB.
 func TotalMemoryMiB(replicas, perReplicaMiB int) int {
 	return replicas * perReplicaMiB
 }

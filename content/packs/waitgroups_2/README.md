@@ -50,8 +50,8 @@ is left.
 
 > **Why is it written like this?** Go *requires* that only one goroutine
 > touches a map while it is being written; breaking that is a bug, not a
-> style issue. Using a slice first and a map later is *your* choice; it is
-> just the simplest safe way.
+> style issue. Filling a slice first and building the map later is *your*
+> choice; it is the simplest safe way.
 
 ### Phases
 

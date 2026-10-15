@@ -47,8 +47,8 @@ func TestFitsOnANode(t *testing.T) {
 	checkQuantity(t, file, "limits", corev1.ResourceMemory, c.Resources.Limits, "==", "1Gi")
 }
 
-// readContainer reads the Deployment name from file and returns its one
-// container.
+// readContainer reads file, checks that it is the Deployment called name,
+// and returns its one container.
 func readContainer(t *testing.T, file, name string) *corev1.Container {
 	t.Helper()
 	var d appsv1.Deployment

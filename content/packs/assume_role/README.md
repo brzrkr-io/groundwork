@@ -215,7 +215,7 @@ name (`ec2.amazonaws.com`). All three must hold:
   `Match` on both lowercased. So `sts:AssumeRole`, `STS:assumerole`,
   `sts:*` and `*` count; `sts:AssumeRoleWithWebIdentity` and
   `sts:TagSession` don't.
-- The principal trusts the caller. That's true when **any** of these is:
+- The principal trusts the caller. That's the case when **any** of these holds:
   - `caller` is listed in `s.Principal.AWS` or `s.Principal.Service`
     (exact, case-sensitive);
   - `s.Principal.AWS` lists `"*"`;

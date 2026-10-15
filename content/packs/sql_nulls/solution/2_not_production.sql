@@ -2,7 +2,7 @@
 --
 -- Return the id, service and environment of every deploy that is not
 -- known to be a production deploy, including those whose environment
--- was never recorded, by id. This misses the unrecorded ones.
+-- was never recorded, by id.
 
 SELECT id, service, environment
 FROM deploys

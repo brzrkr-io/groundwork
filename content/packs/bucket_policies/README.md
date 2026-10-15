@@ -158,12 +158,12 @@ You're auditing your company's buckets. Their policies are in `testdata/`
 
 ### 1. Spot a public statement
 
-**Goal:** `PublicStatement(s)` returns `true` when `s` is `"Effect": "Allow"`, its `Principal.AWS` lists `"*"`, and no condition key restricts it.
+**Goal:** `PublicStatement(s)` returns `true` when `s` has `"Effect": "Allow"`, its `Principal.AWS` lists `"*"`, and no condition key restricts it.
 
 - A condition key restricts when it equals one of `RestrictingKeys`
   (`aws:SourceIp`, `aws:SourceVpce`, `aws:PrincipalOrgID`,
   `aws:PrincipalAccount`), ignoring case, under **any** operator.
-- Keys from other conditions don't help (`aws:SecureTransport`, `s3:prefix`).
+- Other condition keys don't restrict (`aws:SecureTransport`, `s3:prefix`).
 - `Deny` statements, and Allows for an account, role or service, are never
   public.
 
@@ -236,8 +236,8 @@ That statement must have all of:
 
 - `Effect` `"Deny"`;
 - `Principal.AWS` listing `"*"`;
-- `Action` listing `"s3:*"` or `"*"` (one action such as `s3:GetObject`
-  leaves uploads open over HTTP);
+- `Action` listing `"s3:*"` or `"*"` (denying only one action, such as
+  `s3:GetObject`, leaves uploads open over HTTP);
 - `Condition["Bool"]["aws:SecureTransport"]` listing `"false"`.
 
 This exercise doesn't check `Resource`. No such statement gives `false`.
@@ -251,8 +251,8 @@ RequiresTLS(/* Deny s3:* for one role only */)                                 /
 ```
 
 **Think it through:**
-- Which helper from `slices` tells whether a `StringList` holds a value?
-  (Add `"slices"` to the imports; you may have already for task 1.)
+- Which `slices` helper tells whether a `StringList` holds a value?
+  (Add `"slices"` to the imports if task 1 didn't already.)
 - How does the nested-map section let you read the condition value in one
   expression, even when a statement has no `Condition`?
 

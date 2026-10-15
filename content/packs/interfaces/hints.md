@@ -46,7 +46,7 @@ A type satisfies `Notifier` just by having a method with the same name, paramete
 
 ### Closer
 
-Write the method below the `PagerDuty` struct, with a doc comment:
+Write the method directly under the `// Notify ...` comment below the `PagerDuty` struct:
 
 ```go
 func (p PagerDuty) Notify(a Alert) string {

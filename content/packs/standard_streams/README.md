@@ -56,8 +56,8 @@ Tests pass fakes: `strings.NewReader("web-01\n")` for stdin and
 `strings.Builder`s for the outputs.
 
 > **Why is it written like this?** Passing streams as parameters is the
-> author's choice so tests can swap them. Go requires you to write to the
-> parameter (`stdout`), not `os.Stdout`, or the test never sees the output.
+> author's choice so tests can swap them. Write to the parameter
+> (`stdout`), not `os.Stdout`, or the test never sees the output.
 
 ### Reading stdin
 
