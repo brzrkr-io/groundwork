@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/brzrkr-io/groundwork/internal/course"
 )
 
 const guide = "# State\n\n**In one sentence:** state changes.\n\n" +

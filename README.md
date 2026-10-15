@@ -225,7 +225,7 @@ repository. To back it up too, remove `/course/` from `.gitignore`.
 Needs Go 1.26 or newer ([go.dev/dl](https://go.dev/dl/)) and git.
 
 ```bash
-git clone https://github.com/pjanderson/groundwork ~/code/golang/groundwork
+git clone https://github.com/brzrkr-io/groundwork ~/code/golang/groundwork
 cd ~/code/golang/groundwork
 go install .            # puts groundwork in $(go env GOBIN) or ~/go/bin
 groundwork init         # creates course/ (first time only)

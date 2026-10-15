@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjanderson/groundwork/content"
-	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/brzrkr-io/groundwork/content"
+	"github.com/brzrkr-io/groundwork/internal/course"
 )
 
 var update = flag.Bool("update", false, "rewrite the generated parts of LESSON_PLAN.md")

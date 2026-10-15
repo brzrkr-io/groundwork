@@ -19,12 +19,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
 
-	"github.com/pjanderson/groundwork/content"
-	"github.com/pjanderson/groundwork/internal/cards"
-	"github.com/pjanderson/groundwork/internal/course"
-	"github.com/pjanderson/groundwork/internal/session"
-	"github.com/pjanderson/groundwork/internal/tui"
-	"github.com/pjanderson/groundwork/internal/workspace"
+	"github.com/brzrkr-io/groundwork/content"
+	"github.com/brzrkr-io/groundwork/internal/cards"
+	"github.com/brzrkr-io/groundwork/internal/course"
+	"github.com/brzrkr-io/groundwork/internal/session"
+	"github.com/brzrkr-io/groundwork/internal/tui"
+	"github.com/brzrkr-io/groundwork/internal/workspace"
 )
 
 const usage = `groundwork: learn Go by fixing small programs until their tests pass.

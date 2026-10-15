@@ -116,3 +116,20 @@ func TestCheckPasses(t *testing.T) {
 		t.Fatalf("Status = %v, Tests = %+v; want one passing test", r.Status, r.Tests)
 	}
 }
+
+func TestLeftoverReturnIsANoteNotAFailure(t *testing.T) {
+	dir := writeModule(t, map[string]string{
+		"x.go":      "package x\n\nfunc One() int {\n\treturn 1\n\treturn 0\n}\n",
+		"x_test.go": "package x\n\nimport \"testing\"\n\nfunc TestOne(t *testing.T) {\n\tif One() != 1 {\n\t\tt.Fail()\n\t}\n}\n",
+	})
+	r, err := Check(context.Background(), dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != Passed {
+		t.Fatalf("Status = %v, problems %q; a placeholder return left below working code should not fail the exercise", r.Status, r.Problems)
+	}
+	if len(r.Notes) == 0 || !strings.Contains(r.Notes[0], "x.go:5") {
+		t.Errorf("Notes = %q, want one pointing at x.go:5", r.Notes)
+	}
+}

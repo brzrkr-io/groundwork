@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/pjanderson/groundwork/internal/progress"
+	"github.com/brzrkr-io/groundwork/internal/progress"
 )
 
 // Stats summarises the learner's activity for the progress screen.

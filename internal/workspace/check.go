@@ -106,8 +106,14 @@ func check(ctx context.Context, dir string, race bool) (*Result, error) {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			r.Status = Failed
-			r.Problems = append(r.Problems, "go vet found a problem:\n"+strings.TrimSpace(string(out)+errOut))
+			problems, unreachable := splitVet(string(out) + errOut)
+			for _, l := range unreachable {
+				r.Notes = append(r.Notes, "Code that can never run: "+l+". Delete it (often a leftover placeholder return below your new code).")
+			}
+			if len(problems) > 0 {
+				r.Status = Failed
+				r.Problems = append(r.Problems, "go vet found a problem:\n"+strings.Join(problems, "\n"))
+			}
 		}
 	}
 	if out, _, err := run(ctx, dir, "gofmt", "-l", "."); err == nil && len(bytes.TrimSpace(out)) > 0 {
@@ -115,6 +121,22 @@ func check(ctx context.Context, dir string, race bool) (*Result, error) {
 		r.Notes = append(r.Notes, "Not gofmt-formatted: "+strings.Join(files, ", ")+". Run gofmt -w . or turn on format-on-save.")
 	}
 	return r, nil
+}
+
+// splitVet separates vet's "unreachable code" reports, a harmless leftover
+// that gets a note instead of failing the exercise, from real problems.
+// It returns the location of each unreachable block.
+func splitVet(output string) (problems, unreachable []string) {
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		switch {
+		case line == "" || strings.HasPrefix(line, "# "):
+		case strings.HasSuffix(line, ": unreachable code"):
+			unreachable = append(unreachable, strings.TrimSuffix(strings.TrimPrefix(line, "./"), ": unreachable code"))
+		default:
+			problems = append(problems, line)
+		}
+	}
+	return problems, unreachable
 }
 
 func (r *Result) failed() bool {

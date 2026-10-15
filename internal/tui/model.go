@@ -20,9 +20,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/pjanderson/groundwork/internal/course"
-	"github.com/pjanderson/groundwork/internal/session"
-	"github.com/pjanderson/groundwork/internal/workspace"
+	"github.com/brzrkr-io/groundwork/internal/course"
+	"github.com/brzrkr-io/groundwork/internal/session"
+	"github.com/brzrkr-io/groundwork/internal/workspace"
 )
 
 type pane int

@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/pjanderson/groundwork/internal/workspace"
+	"github.com/brzrkr-io/groundwork/internal/workspace"
 )
 
 // RenderResult formats a check result: a headline, then a ✓/✗ checklist

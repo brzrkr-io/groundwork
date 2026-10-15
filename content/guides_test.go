@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pjanderson/groundwork/content"
-	"github.com/pjanderson/groundwork/internal/cards"
-	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/brzrkr-io/groundwork/content"
+	"github.com/brzrkr-io/groundwork/internal/cards"
+	"github.com/brzrkr-io/groundwork/internal/course"
 )
 
 // guideEnd are the closing sections every guide has, in this order, after

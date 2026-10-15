@@ -10,10 +10,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/pjanderson/groundwork/internal/course"
-	"github.com/pjanderson/groundwork/internal/progress"
-	"github.com/pjanderson/groundwork/internal/session"
-	"github.com/pjanderson/groundwork/internal/workspace"
+	"github.com/brzrkr-io/groundwork/internal/course"
+	"github.com/brzrkr-io/groundwork/internal/progress"
+	"github.com/brzrkr-io/groundwork/internal/session"
+	"github.com/brzrkr-io/groundwork/internal/workspace"
 )
 
 func newModel(t *testing.T) (*Model, *session.Session) {

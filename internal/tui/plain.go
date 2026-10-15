@@ -7,10 +7,10 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/pjanderson/groundwork/internal/course"
-	"github.com/pjanderson/groundwork/internal/progress"
-	"github.com/pjanderson/groundwork/internal/session"
-	"github.com/pjanderson/groundwork/internal/workspace"
+	"github.com/brzrkr-io/groundwork/internal/course"
+	"github.com/brzrkr-io/groundwork/internal/progress"
+	"github.com/brzrkr-io/groundwork/internal/session"
+	"github.com/brzrkr-io/groundwork/internal/workspace"
 )
 
 const plainWidth = 100

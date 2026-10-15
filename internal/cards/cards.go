@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/pjanderson/groundwork/internal/course"
+	"github.com/brzrkr-io/groundwork/internal/course"
 )
 
 // Card is one flashcard. Front and Back are Markdown.

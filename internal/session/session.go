@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pjanderson/groundwork/internal/course"
-	"github.com/pjanderson/groundwork/internal/progress"
-	"github.com/pjanderson/groundwork/internal/workspace"
+	"github.com/brzrkr-io/groundwork/internal/course"
+	"github.com/brzrkr-io/groundwork/internal/progress"
+	"github.com/brzrkr-io/groundwork/internal/workspace"
 )
 
 // ErrNoCourse means no course directory was found.

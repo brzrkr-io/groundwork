@@ -1,4 +1,4 @@
-module github.com/pjanderson/groundwork
+module github.com/brzrkr-io/groundwork
 
 go 1.24.2
 
