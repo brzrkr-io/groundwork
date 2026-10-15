@@ -107,7 +107,8 @@ Summarize([]Result{api up 10ms, billing down, search up 50ms})
 
 - Give this attempt its own timeout: a context from
   `context.WithTimeout(ctx, m.Timeout)` (and `defer cancel()`), and a request
-  built with `http.NewRequestWithContext`.
+  built with `http.NewRequestWithContext`. If building the request fails,
+  `Err` is that error.
 - `Target` is `target`; `Attempts` is `1`.
 - `Latency` is how long `m.Client.Do` took: `time.Now()` before it,
   `time.Since(start)` after it.

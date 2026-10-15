@@ -27,6 +27,7 @@ func TestAllDeploys(t *testing.T) {
 		{"search", "v3.1.1", "production"},
 		{"api", "v1.4.1-hotfix", "production"},
 		{"checkout", "v2.8.0", "production"},
+		{"api", "v1.5.0", "production"},
 	}
 	checkRowsAnyOrder(t, "1_all_deploys.sql", got, want)
 }

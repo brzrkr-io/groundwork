@@ -7,8 +7,8 @@ string with `+`.
 ### Closer
 
 `fmt.Sprintf` builds a string from a pattern: `%s` stands for a string and
-`%d` for an int, like `fmt.Sprintf("%s:%d", ...)`. Remember to add `"fmt"` and
-`"strings"` to the imports.
+`%d` for an int, like `fmt.Sprintf("%s:%d", ...)`. Remember to add
+`import "fmt"` under the `package` line.
 
 ### Answer
 
@@ -40,7 +40,8 @@ colon at all, the answer is `"latest"`.
 ### Closer
 
 `strings.Cut(d.Image, ":")` returns before, after and a `found` bool. You
-don't need the part before, so use `_` for it: `_, tag, found := ...`.
+don't need the part before, so use `_` for it: `_, tag, found := ...`. Add
+`"strings"` to the imports next to `"fmt"`.
 
 ### Answer
 

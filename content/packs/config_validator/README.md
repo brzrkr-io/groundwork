@@ -169,8 +169,8 @@ Validate(Config{Image: "redis", Port: -1, Replicas: 0, Env: map[string]string{"a
 `"nginx:"` (colon, empty tag) also has no tag.
 
 **Think it through:**
-- `strings.Cut` (from *Strings*) splits at the first `:` and tells you
-  whether it found one. What do you check in its results?
+- `strings.Cut` (from *The strings package*) splits at the first `:` and
+  tells you whether it found one. What do you check in its results?
 - In `ValidEnvName`, loop over the characters. When can you return `false`
   early?
 - Why must the keys be sorted before the loop, not after?

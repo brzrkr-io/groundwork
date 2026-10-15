@@ -165,5 +165,4 @@ Overlaps("10.0.0.0/16", "banana")      // => false, error
 ## Learn more
 
 - [net/netip package](https://pkg.go.dev/net/netip)
-- [net/netip package docs](https://pkg.go.dev/net/netip)
 - [Amazon VPC: IP addressing](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-ip-addressing.html)

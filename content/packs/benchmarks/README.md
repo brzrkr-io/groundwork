@@ -92,9 +92,10 @@ If you tell `Grow` the total number of bytes first, it allocates once.
 
 ### How Groundwork grades your benchmark
 
-- `TestGrader` runs `BenchmarkFormatTags` once. It must pass and print
-  `allocs/op`. Then it runs it with a *mutant* `FormatTags` that panics; your
-  benchmark must crash, which proves it really calls `FormatTags`.
+- `TestGrader` runs `BenchmarkFormatTags` for three loop passes. It must pass
+  and print `allocs/op`. Then it runs it with a *mutant* `FormatTags` that
+  panics on its third call; your benchmark must crash, which proves it calls
+  `FormatTags` inside the loop.
 - `TestFormatTagsAllocs` uses `testing.AllocsPerRun`, which calls a function
   many times and returns the average allocations per call.
 - `TestFormatTags` checks that `FormatTags` still gives the right answer.

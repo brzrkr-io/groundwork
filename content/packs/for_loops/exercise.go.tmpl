@@ -8,8 +8,8 @@ func TotalBackoff(attempts, baseSeconds int) int {
 	return 0
 }
 
-// ProgressBar draws a bar like "[##---]": done '#' characters followed by
-// total-done '-' characters.
+// ProgressBar draws a bar like "[##---]": done copies of "#" followed by
+// total-done copies of "-".
 func ProgressBar(done, total int) string {
 	// TODO(2): Build the bar with loops and a strings.Builder. Add
 	// import "strings" below the package line.

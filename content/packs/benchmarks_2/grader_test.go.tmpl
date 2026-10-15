@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -23,17 +24,39 @@ const learnerBenchmark = "BenchmarkPorts"
 // subBenchmarks are the sub-benchmarks it must run.
 var subBenchmarks = []string{"BenchmarkPorts/10", "BenchmarkPorts/1000"}
 
-// mutants are the bugs your benchmark must catch.
+// mutants are the bugs your benchmark must catch. Each panics on the third
+// call with one size, so it catches only a benchmark whose sub-benchmark for
+// that size calls Ports inside its for b.Loop() loop.
 var mutants = []mutant{
 	{
-		name: "panics",
-		bug:  `Ports panicked`,
+		name: "panics_on_third_call_with_10",
+		bug:  `Ports panicked on its third call with 10 services`,
 		install: func() {
-			ports = func(svcs []Service) []int {
-				panic("Ports was called")
-			}
+			ports = panicOnThirdCall(10)
 		},
 	},
+	{
+		name: "panics_on_third_call_with_1000",
+		bug:  `Ports panicked on its third call with 1000 services`,
+		install: func() {
+			ports = panicOnThirdCall(1000)
+		},
+	},
+}
+
+// panicOnThirdCall returns a Ports that works, except that it panics the
+// third time it is called with exactly n services.
+func panicOnThirdCall(n int) func(svcs []Service) []int {
+	calls := 0
+	return func(svcs []Service) []int {
+		if len(svcs) == n {
+			calls++
+			if calls == 3 {
+				panic("Ports was called a third time with " + strconv.Itoa(n) + " services")
+			}
+		}
+		return realPorts(svcs)
+	}
 }
 
 func TestGrader(t *testing.T) {
@@ -53,16 +76,18 @@ func TestGrader(t *testing.T) {
 	for _, mu := range mutants {
 		t.Run(mu.name, func(t *testing.T) {
 			if _, err := runLearnerBenchmark(mu.name); err == nil {
-				t.Errorf("your benchmark didn't notice when %s, so it never calls Ports inside its for b.Loop() loops", mu.bug)
+				t.Errorf("your benchmark didn't notice when %s. Does each sub-benchmark build n services and call Ports inside its for b.Loop() loop?", mu.bug)
 			}
 		})
 	}
 }
 
 // runLearnerBenchmark re-runs this test binary with no tests and only your
-// benchmark selected, and the named mutant installed. -test.benchtime=1x runs
-// each b.Loop body just once, which is enough to grade it. An empty name
-// means the real code.
+// benchmark selected, and the named mutant installed. -test.benchtime=3x runs
+// each b.Loop body three times, which is enough to grade it. A call outside
+// the loop runs only twice per sub-benchmark (go test calls a benchmark
+// function once to warm up and once to measure), so it never reaches a
+// mutant's third call. An empty name means the real code.
 //
 // On a busy machine b.Loop occasionally reports 0 iterations without running
 // the body at all, so such a run proves nothing and is repeated (up to 10 times).
@@ -73,7 +98,7 @@ func runLearnerBenchmark(mutant string) (string, error) {
 		cmd := exec.Command(os.Args[0],
 			"-test.run=^$",
 			"-test.bench=^"+learnerBenchmark+"$",
-			"-test.benchtime=1x",
+			"-test.benchtime=3x",
 		)
 		cmd.Env = append(os.Environ(), mutantEnv+"="+mutant)
 		out, err = cmd.CombinedOutput()

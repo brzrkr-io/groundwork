@@ -29,7 +29,8 @@ the caller sees:
 
 ```go
 func resetWrong(count *int) {
-	count = new(int) // only this function's copy of the address changes
+	zero := 0
+	count = &zero // only this function's copy of the address changes
 }
 
 func resetRight(count *int) {
@@ -158,10 +159,13 @@ copy. This task has two edits, both marked `TODO(3)`:
 2. change the call in `DrainHost` so it passes the address of the element inside `hosts`.
 
 ```go
-hosts := []Host{{"node-1", false, 12}, {"node-2", false, 3}}
+hosts := []Host{
+	{Name: "node-1", Sessions: 12},
+	{Name: "node-2", Sessions: 3},
+}
 DrainHost(hosts, "node-2")
 // => true
-// hosts[1] is now {"node-2", true, 0}
+// hosts[1] is now {Name:node-2 Drained:true Sessions:0}
 
 DrainHost(hosts, "node-9")
 // => false

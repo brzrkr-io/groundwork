@@ -134,7 +134,7 @@ A limit of 0 means the very first `Take` returns `ErrExhausted`.
 
 **Think it through:**
 - Check *before* you count. Where does the `if` go relative to `q.used++`?
-- Which comparison is true both when `used` equals the limit and when the limit is 0?
+- "Used up" means `used` has reached the limit. `==` passes these tests, but `>=` also refuses if a caller passes a negative limit to `New`. Which one do you want?
 
 ## Learn more
 

@@ -25,7 +25,7 @@ and `testdata/data.sql` (the rows), then runs your query. Save the file and
 the result appears: when a test fails, it prints every row your query
 returned next to the rows it wanted. Use that to explore.
 
-Open `testdata/data.sql` now: it's the whole table, 14 deploys.
+Open `testdata/data.sql` now: it's the whole table, 15 deploys.
 
 ### Tables, rows and columns
 
@@ -126,7 +126,7 @@ Rows may come back in any order; the tests sort them before comparing.
 **Goal:** in `1_all_deploys.sql`, return the `service`, `version` and
 `environment` of every deploy, in that column order.
 
-All 14 rows come back. The first few:
+All 15 rows come back. The first few:
 
 ```text
 api      | v1.4.0 | staging

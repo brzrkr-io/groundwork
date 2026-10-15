@@ -52,7 +52,9 @@ part can go.
 
 Delete `ARG GITHUB_TOKEN` and the `git config ... &&` part. Put the mount
 flag between `RUN` and the command:
-`RUN --mount=type=secret,id=...,target=... go mod download`.
+`RUN --mount=type=secret,id=...,target=... go mod download`. In the
+comment at the top, swap `--build-arg GITHUB_TOKEN=...` for the
+`--secret id=netrc,src=$HOME/.netrc` command from the README.
 
 ### Answer
 

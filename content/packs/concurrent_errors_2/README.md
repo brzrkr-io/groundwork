@@ -56,8 +56,10 @@ The `Group` struct is already written for you:
   needs no mutex.
 
 > **Why is it written like this?**
-> - **Go requires** a pointer receiver (`g *Group`) here: `WaitGroup` and
->   `Once` must never be copied, and methods must change the real group.
+> - **Needed, not style:** a pointer receiver (`g *Group`). The compiler
+>   would accept `g Group`, but each call would then work on a copy:
+>   `WaitGroup` and `Once` must never be copied (`go vet` warns), and the
+>   methods must change the real group.
 > - **Convention:** constructors that also give a context return it last, and
 >   the caller usually *shadows* its `ctx` with it: `g, ctx := WithContext(ctx)`.
 > - **Author's choice:** the field names, copied from `errgroup`.

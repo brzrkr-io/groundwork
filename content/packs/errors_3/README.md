@@ -116,7 +116,7 @@ ParseCheck("api 8080 healthz")
 **Think it through:**
 - Every message starts with the same `check <line>: ` part. Which parameter fills it?
 - In the port messages, is the bad value the text field or the converted number?
-- The `"/"` at the end of the last message is fixed text, quotes included.
+- The `"/"` at the end of the last message is fixed text, quotes included. Since it isn't a value, type those quotes yourself as `\"` escapes (from *The strings package*).
 
 ### 2. Parse the whole file
 

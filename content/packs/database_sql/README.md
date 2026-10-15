@@ -41,8 +41,8 @@ require (
 - The first `go test` downloads the dependencies into a shared cache (Go's
   *module cache*); later runs reuse them.
 
-You don't change these files here. *Packages and imports* covers packages
-and modules properly.
+You don't change these files here. *Packages and imports*, later in the
+course, covers packages and modules properly.
 
 ### database/sql and drivers
 

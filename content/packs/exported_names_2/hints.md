@@ -52,7 +52,7 @@ Check before you count. If the quota is already used up, say no and leave the co
 
 ### Closer
 
-`if q.used >= q.limit { return ErrExhausted }`, then `q.used++` and `return nil`. Using `>=` also handles a limit of 0.
+`if q.used >= q.limit { return ErrExhausted }`, then `q.used++` and `return nil`. A limit of 0 works with either `==` or `>=`, but only `>=` still refuses when someone calls `New(-1)`.
 
 ### Answer
 

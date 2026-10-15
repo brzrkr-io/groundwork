@@ -35,7 +35,7 @@ Each nested `if` says "keep going only if...". Invert each one into "skip this h
 
 ### Closer
 
-`if !host.Up { continue }`, then the tag check without the `!`, then the disk check inverted: `< 90` becomes `>= 90`. The `append` goes last, at depth 1 inside the loop.
+`if !host.Up { continue }`, then the tag check without the `!`, then the disk check inverted: `< 90` becomes `>= 90`. The `append` goes last, directly in the loop body, after all three guards.
 
 ### Answer
 

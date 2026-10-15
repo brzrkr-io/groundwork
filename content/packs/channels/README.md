@@ -135,6 +135,9 @@ for line := range ch {
 }
 ```
 
+If the tests hang and then fail with `panic: test timed out after 60s`, a
+send is stuck waiting for a receiver that never comes.
+
 **Think it through:**
 - Why would the sends get stuck if they ran in `StreamLines` itself, before
   `return`?

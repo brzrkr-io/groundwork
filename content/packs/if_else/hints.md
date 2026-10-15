@@ -61,6 +61,10 @@ Return `"no replicas"` when `replicas < 1`. Then write the short statement:
 
 ### Answer
 
+This replaces everything inside `ScaleAdvice`, including the starter's
+`return "steady"`. Keep that line as well and `go vet` reports
+`unreachable code`.
+
 ```go
 if replicas < 1 {
 	return "no replicas"

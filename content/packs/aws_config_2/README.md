@@ -97,7 +97,9 @@ Right now it only uses `region` when nothing else set one, so
 `--region us-west-1` silently runs against the profile's region. An empty
 `region` changes nothing. An unknown profile still returns an error.
 
-With the files in `testdata/`:
+The tests point the SDK at the files in `testdata/` through the
+`AWS_CONFIG_FILE` and `AWS_SHARED_CREDENTIALS_FILE` environment variables, so
+`LoadProfile` needs no file options. With those files:
 
 | Profile | `region` | `AWS_REGION` | Region you get |
 |---|---|---|---|

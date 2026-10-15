@@ -44,7 +44,7 @@ Three natural options: keep fewer days on the node, ship logs off the node, or b
 
 ### Closer
 
-Use the shape from the README for each: `### Option A: ...`, a description sentence, then `- Pro:` and `- Con:` lines. Shorter local retention breaks the 90-day rule; bigger disks cost five times as much; shipping logs costs a little and adds a moving part.
+Use the shape from the README for each: `### Option A: ...`, a description sentence, then `- Pro:` and `- Con:` lines. Shorter local retention breaks the 90-day rule; bigger disks (say 500 GB, enough for 14 days with room to spare) cost far more than the 10% budget; shipping logs costs a little and adds a moving part.
 
 ### Answer
 

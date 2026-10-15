@@ -60,7 +60,7 @@ Loop over `[]int{50, 89}`. In each pass, make a new fake, call `CheckDisk`, and 
 
 ```go
 for _, used := range []int{50, 89} {
-	f = &fakeNotifier{}
+	f := &fakeNotifier{}
 	CheckDisk(f, "web-1", used)
 	if len(f.messages) != 0 {
 		t.Errorf("CheckDisk(web-1, %d) sent %q, want no messages", used, f.messages)

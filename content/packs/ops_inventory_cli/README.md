@@ -31,9 +31,12 @@ $ go run ./cmd/inventory -env qa
 inventory: -env must be one of dev, staging, prod, got "qa"
 Usage of inventory:
 ...
-$ echo $?
-2
+exit status 2
 ```
+
+The last line is `go run` reporting the program's exit code, `2`. (`go run`
+itself then exits with `1`, so `echo $?` after it shows `1`; a built
+`inventory` binary exits with `2` directly.)
 
 The inventory file is a JSON array. A sample `inventory.json` sits in the
 exercise folder:
@@ -247,6 +250,9 @@ Filter{}.Match(anyHost)                                                         
 ```
 
 `Apply` already uses `Match` to keep the matching hosts.
+
+If you use `slices.Contains` for the tags, add `import "slices"` at the top of
+`filter.go` (it has no imports yet).
 
 **Think it through:**
 - `f` is the filter and `h` is the host. For each rule, which field of each do you compare?

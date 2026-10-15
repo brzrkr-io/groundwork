@@ -80,7 +80,7 @@ bash -x count.sh
 # wc: release: No such file or directory
 # ...
 # + wc -l 'release notes.txt'        <- one word: correct
-# 2 release notes.txt
+# 3 release notes.txt
 ```
 
 The `+` lines are what the command **really** got, not what you typed.

@@ -13,5 +13,6 @@ INSERT INTO deploys (id, service, version, environment, status, started_at, dura
     (12, 'search',   'v3.1.1',        'production', 'succeeded',   '2026-03-05 07:30:00', 61),
     (13, 'api',      'v1.4.1-hotfix', 'production', 'succeeded',   '2026-03-05 22:10:00', 77),
     (14, 'checkout', 'v2.8.0',        'production', 'failed',      '2026-03-06 10:00:00', 455),
-    (15, 'search',   'v3.2.0',        'staging',    'rolled_back', '2026-03-06 15:30:00', 130),
-    (16, 'billing',  'v1.1.0-rc.1',   'staging',    'succeeded',   '2026-03-06 17:05:00', 96);
+    (15, 'api',      'v1.5.0',        'production', 'succeeded',   '2026-03-06 12:00:00', 300),
+    (16, 'search',   'v3.2.0',        'staging',    'rolled_back', '2026-03-06 15:30:00', 130),
+    (17, 'billing',  'v1.1.0-rc.1',   'staging',    'succeeded',   '2026-03-06 17:05:00', 96);

@@ -11,8 +11,9 @@ Add `"encoding/json"` and `"fmt"` to the imports. Call
 
 ### Answer
 
+These lines replace the TODO, below the `var cfg Config` that's already there:
+
 ```go
-var cfg Config
 if err := json.Unmarshal(data, &cfg); err != nil {
 	return Config{}, fmt.Errorf("parse config: %w", err)
 }
@@ -37,11 +38,11 @@ decoder does.
 
 ### Answer
 
+These lines replace the TODO, below the `var cfg Config` that's already there:
+
 ```go
 dec := json.NewDecoder(r)
 dec.DisallowUnknownFields()
-
-var cfg Config
 if err := dec.Decode(&cfg); err != nil {
 	return Config{}, fmt.Errorf("load config: %w", err)
 }

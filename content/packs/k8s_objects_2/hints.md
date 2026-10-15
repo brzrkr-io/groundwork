@@ -54,10 +54,12 @@ template's value for that key.
 ### Closer
 
 The empty check is `d.Spec.Selector == nil || len(d.Spec.Selector.MatchLabels) == 0`.
-Loop over sorted keys with `slices.Sorted(maps.Keys(want))` (import `"maps"`,
-`"slices"` and `"fmt"`). Reading a missing key from a map gives `""`.
+Keep the selector labels in a short variable, `want := d.Spec.Selector.MatchLabels`,
+and loop over its sorted keys with `slices.Sorted(maps.Keys(want))` (import
+`"maps"`, `"slices"` and `"fmt"`). Reading a missing key from a map gives `""`.
 
 ```go
+want := d.Spec.Selector.MatchLabels
 for _, key := range slices.Sorted(maps.Keys(want)) {
 	if got := d.Spec.Template.Labels[key]; got != want[key] {
 		// return the error

@@ -69,11 +69,14 @@ func TestConfigureForProduction(t *testing.T) {
 	checkFrom(t, file, instructions, "statusd:dev")
 
 	env := envVars(instructions)
-	if got := env["APP_ENV"]; got != "production" {
-		t.Errorf("%s: ENV sets APP_ENV to %q, want %q", file, got, "production")
-	}
-	if got := env["PORT"]; got != "8080" {
-		t.Errorf("%s: ENV sets PORT to %q, want %q", file, got, "8080")
+	for _, want := range [][2]string{{"APP_ENV", "production"}, {"PORT", "8080"}} {
+		key, value := want[0], want[1]
+		got, ok := env[key]
+		if !ok {
+			t.Errorf("%s: no ENV sets %s; want ENV %s=%s", file, key, key, value)
+		} else if got != value {
+			t.Errorf("%s: ENV sets %s to %q, want ENV %s=%s", file, key, got, key, value)
+		}
 	}
 
 	exposed := false

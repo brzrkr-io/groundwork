@@ -42,19 +42,28 @@ something to type. A `#` line under a command shows what it prints.
 | `cd FOLDER` | moves into FOLDER; `cd ..` moves up one |
 | `cat FILE` | prints a file |
 
-Groundwork's `edit` line shows the file to work on, inside this exercise's
-folder. From your course folder (where you ran `groundwork init`; an editor
-terminal starts there), `cd` into that folder, which is the path without the
-file name:
+Every exercise has its own folder inside your course folder: `exercises/`,
+then the module, then the exercise, for example
+`exercises/08_shell/145_shell_commands/`. Groundwork shows the file to work
+on under **Edit** (or on its `edit` line in a narrow window); the folder is
+that path without the file name.
+
+To get a terminal there, right-click the exercise folder in your editor's
+file list and choose **Open in Integrated Terminal** (VS Code). Or `cd`
+there yourself: `pwd` shows where you are, `ls` what's around you, and you
+go down one folder at a time.
 
 ```bash
-cd exercises/07_shell/144_shell_commands   # use the path on your edit line
+pwd
+# /home/sam/groundwork/course        (your course folder; yours will differ)
+cd exercises/08_shell/145_shell_commands   # use the folder Groundwork shows
 ls
 # 1_deploy_line.sh  2_reminder.sh  3_status_table.sh  README.md ...
 ```
 
-**Tab** finishes a name for you: type `cd exercises/07` and press Tab. Use
-it all the time; it saves typing and typos.
+**Tab** finishes a name for you: type `cd exer` and press Tab, and bash
+fills in `exercises/`. Press Tab twice to list the choices. Use it all the
+time; it saves typing and typos.
 
 ### A script is a list of commands
 

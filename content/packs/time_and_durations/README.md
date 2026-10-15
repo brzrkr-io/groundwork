@@ -23,14 +23,15 @@ it's an `int64` counting nanoseconds. Build one from unit constants such as
 
 ```go
 d := 150 * time.Minute
-fmt.Println(d)             // 2h30m0s  (Duration has a String method)
-fmt.Println(d / time.Hour) // 2        (integer division drops the rest)
-fmt.Println(d % time.Hour) // 30m0s    (the remainder)
+fmt.Println(d)                  // 2h30m0s  (Duration has a String method)
+fmt.Println(int(d / time.Hour)) // 2        (integer division drops the rest)
+fmt.Println(d % time.Hour)      // 30m0s    (the remainder)
 ```
 
-Duration ÷ duration gives a plain count. Like all integer division in Go, it
-*truncates toward zero*: `-36h / 24h` is `-1`, not `-2`. Wrap it in
-`int(...)` when you need an `int`.
+Duration ÷ duration gives a count, but its type is still `time.Duration`:
+without `int(...)`, the line above would print `2ns`. Wrap it in `int(...)`
+whenever you want the number. Like all integer division in Go, it
+*truncates toward zero*: `-36h / 24h` is `-1`, not `-2`.
 
 > **Why is it written like this?** `150 * time.Minute` works because `150`
 > is an untyped constant and adopts the `Duration` type (a Go rule). A name

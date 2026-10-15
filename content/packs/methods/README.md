@@ -111,8 +111,16 @@ to use every variable you declare, and `_` means "throw this away".
 Your inventory tool describes hosts and deployments. Give the types some
 methods so the rest of the tool can ask them questions.
 
-The starter file has no imports yet. You'll need `fmt` and `strings`, so add
-this under the `package` line:
+The starter file has no imports yet. Task 1 needs `fmt`, so add this under
+the `package` line:
+
+```go
+import "fmt"
+```
+
+Task 3 also needs `strings`. Add it only when you reach Task 3: Go refuses to
+compile a file with an unused import (`"strings" imported and not used`).
+With both, the list becomes:
 
 ```go
 import (

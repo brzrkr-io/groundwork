@@ -62,6 +62,10 @@ process won't go:
 | `kill -KILL 812` | SIGKILL (9) | is ended by the kernel at once; it can't refuse |
 | `kill -0 812` | nothing | exit status 0 while the process exists, 1 after |
 
+Once the process is gone, `kill -0` also complains on stderr:
+`kill: (812) - No such process`. When that's the answer you're waiting for,
+hide it with `2> /dev/null`, as in *Redirection: >, >>, 2> and here-docs*.
+
 A process stopped by a signal has no exit code of its own: its parent sees
 128 plus the signal number. That's the 143 (128 + 15) and 137 (128 + 9)
 you meet in `systemctl status`, CI logs and `kubectl describe pod`.
@@ -192,8 +196,8 @@ processes in the background:
 
 Run `bash setup.sh` again for a fresh start; it stops the old practice
 processes first. The tests don't use them: they start their own, with names
-like `export-48213`, and stop them afterwards. Tasks 1–3 read `/proc`, so
-they need Linux; elsewhere their tests are skipped.
+like `sync-48213` and `resync-48213`, and stop them afterwards. Tasks 1–3
+read `/proc`, so they need Linux; elsewhere their tests are skipped.
 
 ### 1. Find the runaway
 

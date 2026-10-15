@@ -11,7 +11,8 @@ Copy the body of `Slugify` into `func Make(s string) string` in `slug.go`. It us
 ```go
 import "strings"
 
-// Make turns s into a lower-case name made of letters, digits and dashes.
+// Make lower-cases s and replaces every character that isn't a letter or
+// digit with "-".
 func Make(s string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(s) {

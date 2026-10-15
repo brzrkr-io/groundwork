@@ -123,7 +123,7 @@ billing  | v1.1.0-rc.1
 14 | checkout | failed
 ```
 
-Right now it also returns deploy 15, a staging rollback.
+Right now it also returns deploy 16, a staging rollback.
 
 **Think it through:**
 - Which runs first, `AND` or `OR`? Write the condition out with brackets the

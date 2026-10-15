@@ -66,7 +66,9 @@ logs[:6]  // panic: slice bounds out of range [:6] with capacity 5
 | `s[:b]` | from the start up to (not incl.) `b` |
 
 `a` and `b` can be anything from `0` to `len(s)`, with `a` not bigger than
-`b`. Anything else panics. Both may be expressions, like `s[i+1:]`.
+`b`. Anything else panics. Both may be expressions, like `s[i+1:]`. (The
+panic message above says *capacity*; for the slices in this exercise that is
+the same number as the length. *append and copy* explains the difference.)
 
 > **Why is it written like this?** The colon and square brackets are required
 > syntax. "Up to but not including" is a Go rule; it makes `s[:k]` have

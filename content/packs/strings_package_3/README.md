@@ -52,7 +52,9 @@ fine even at `0/1`.
 ## Your task
 
 Your team's chat bot runs `kubectl get pods` and posts a one-line health
-summary. Add `"slices"` and `"strings"` to the imports in `exercise.go`.
+summary. Add imports to `exercise.go` as you need them: `"strings"` for task 1,
+`"slices"` once task 2 sorts. Go refuses to compile an import you don't use
+yet.
 
 ### 1. Read the READY column
 
@@ -92,7 +94,7 @@ NotReadyPods(output) // the example above
 // => ["cache-0" "web-5f6b8d7c9-k8s2m"]
 ```
 
-No pods, or all fine: return an empty slice.
+No pods, or all fine: return an empty slice (`nil` is fine).
 
 **Think it through:**
 - The pod name is the 1st column. What index is that?

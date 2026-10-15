@@ -15,8 +15,8 @@ pulls it, all on your own machine and without an account anywhere.
 
 - `bash setup.sh` rebuilds `sandbox/`. This time the sandbox is a folder
   **holding** repositories, and your scripts run in that folder:
-  `cd sandbox && bash ../1_clone.sh`. Each script starts with `cd` into the
-  repo it works on, as in *Files and folders: paths, mkdir, cp, mv and rm*.
+  `cd sandbox && bash ../1_clone.sh`. Each script `cd`s into the repo it
+  works on, as in *Files and folders: paths, mkdir, cp, mv and rm*.
 - `git merge --ff-only` moves a branch forward and refuses anything else,
   as in *Rebase: catch a branch up with main*.
 
@@ -122,8 +122,8 @@ branch to review it, and finally pulls the merged result. Run
 `bash setup.sh`, then `cd sandbox`, `ls`, and `git -C alex log --oneline`
 (`-C` runs git as if inside that folder).
 
-Every script runs in `sandbox/`, so each one starts with `cd web` or
-`cd alex`.
+Every script runs in `sandbox/`. Task 1 creates `web`, so it can only `cd`
+into it after the clone; tasks 2 to 4 start with `cd web` or `cd alex`.
 
 ### 1. Clone the repository
 

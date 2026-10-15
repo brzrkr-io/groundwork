@@ -14,8 +14,8 @@ func TotalBackoff(attempts, baseSeconds int) int {
 	return total
 }
 
-// ProgressBar draws a bar like "[##---]": done '#' characters followed by
-// total-done '-' characters.
+// ProgressBar draws a bar like "[##---]": done copies of "#" followed by
+// total-done copies of "-".
 func ProgressBar(done, total int) string {
 	var b strings.Builder
 	b.WriteString("[")

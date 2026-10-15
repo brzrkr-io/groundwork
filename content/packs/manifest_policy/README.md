@@ -17,10 +17,12 @@ pods*) and property checks in a fuzz target (*Testing*).
 ```console
 $ kubepolicy testdata/mixed.yaml
 kubepolicy: skipped testdata/mixed.yaml#1: unsupported kind "ConfigMap"
-LOCATION               OBJECT                        RULE       SEVERITY  MESSAGE
-testdata/mixed.yaml#3  production/StatefulSet/cache  resources  error     container "redis": missing limits.cpu, limits.memory
-testdata/mixed.yaml#3  production/StatefulSet/cache  labels     warning   missing labels: team
+LOCATION               OBJECT                        RULE              SEVERITY  MESSAGE
+testdata/mixed.yaml#3  production/StatefulSet/cache  resources         error     container "redis": missing limits.cpu, limits.memory
+testdata/mixed.yaml#3  production/StatefulSet/cache  probes            error     container "redis": missing livenessProbe, readinessProbe
 ...
+testdata/mixed.yaml#3  production/StatefulSet/cache  labels            warning   missing labels: team
+testdata/mixed.yaml#3  production/StatefulSet/cache  replicas          error     replicas is 1, want at least 2 in namespace "production"
 
 3 objects checked, 5 errors, 1 warning
 $ echo $?
@@ -69,8 +71,13 @@ paths, stdin ─► manifest.Read ─► manifest.Split ─► manifest.Decode �
 | `*grader_test.go`, `workflow_test.go` | Groundwork's checks for tasks 9–12. Delete them when you publish. | – |
 
 Work in task order: each package's tests are next to it, and the
-`internal/cli` tests skip with "finish task N first" until the packages
-below them work.
+`internal/cli` tests `TestRun` and `TestGrader` skip with "finish task N
+first" until the packages below them work. The tests for later tasks fail
+from the start, until you reach them: `FuzzSplit` and
+`TestGrader` (task 10) sit in `internal/manifest` next to tasks 1 and 2,
+`TestGolden` is task 9, and `TestWorkflow` and `TestPortfolio` in the
+exercise folder are tasks 11 and 12. To see one task's tests alone, use
+`-run`, such as `go test ./internal/manifest -run 'TestSplit|TestDecode'`.
 
 > **Why is it written like this?** Go requires `internal/` to mean "only
 > this module may import these packages". `cmd/<name>/` is community

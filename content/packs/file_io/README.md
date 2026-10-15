@@ -159,6 +159,9 @@ LoadBanner("missing.txt")
 - A last line without `"\n"` still counts.
 - If the file can't be opened, return `nil` and the error unchanged, so
   `errors.Is(err, fs.ErrNotExist)` still works for a missing file.
+- After the loop, return the scanner's error with the hosts, as the *Learn*
+  example does with `sc.Err()`, so a failed read isn't mistaken for a short
+  file.
 
 ```text
 # web tier

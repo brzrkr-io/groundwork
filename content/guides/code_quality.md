@@ -276,7 +276,7 @@ Both rules have the same root: every line of code is a liability someone has to 
 4. A disk check reads `if usedPercent < 80 { return "ok" }`, and you flip it into a guard that returns `"warning"` first. What is the guard's condition, and what mistake is easy to make?
 5. Two functions both check that a port is between 1 and 65535, with the same message format. Another two functions both happen to compare a number with 30: one for days until a certificate expires, one for seconds of request timeout. Which pair should share code, and why?
 6. What makes a change a refactoring, and why should a refactoring and a bug fix go in separate commits?
-7. A function call reads `Deploy("api", "v2", 3, true, false, true)`. Which smell is this, and which refactoring fixes it?
+7. A function call reads `Deploy("api", "api:v2", 3, true, false, true)`. Which smell is this, and which refactoring fixes it?
 8. What does YAGNI say about adding a plugin system to a log rotator that has exactly one way to rotate logs?
 
 ## Answers
@@ -287,7 +287,7 @@ Both rules have the same root: every line of code is a liability someone has to 
 4. The inverted condition is `usedPercent >= 80`. The easy mistake is writing `usedPercent > 80`, which sends exactly 80 to the wrong branch. The opposite of `<` is `>=`; check the boundary value in both versions.
 5. The port checks should share one function: they are the same rule and must change together. The two 30s only look alike; they mean different things and will change for different reasons, so merging them would be the wrong abstraction. Each gets its own named constant.
 6. A refactoring changes the structure of code without changing its behaviour, so the tests stay green throughout. Kept apart from a bug fix, each change can be reviewed on its own terms, and if something breaks, you know which change did it.
-7. A long parameter list, made worse by bare booleans that nobody can tell apart. Introduce parameter object: pass a struct like `DeployOptions{Service: "api", Tag: "v2", Replicas: 3, DryRun: true}` so every value has a label.
+7. A long parameter list, made worse by bare booleans that nobody can tell apart. Introduce parameter object: pass a struct like `DeployOptions{Service: "api", Image: "api:v2", Replicas: 3, DryRun: true}` so every value has a label.
 8. Don't build it until a second way to rotate actually exists; by then you'll know what a plugin needs to look like. Until then it's extra code to read, test and maintain for no benefit.
 
 ## Key terms

@@ -79,8 +79,9 @@ stays untouched.
 
 The platform team generates nginx upstream blocks with `WriteUpstreamConfig`.
 The code in `exercise.go` is correct. Write `TestWriteUpstreamConfig` in
-`exercise_test.go`, from the empty function up. You'll need to import `flag`,
-`os`, `path/filepath` and `strings`.
+`exercise_test.go`, from the empty function up. Tasks 1 and 2 need the
+imports `os`, `path/filepath` and `strings`; add `flag` in task 3, because Go
+rejects an import you don't use yet.
 
 `WriteUpstreamConfig(dir, name, backends)` writes the file
 `<dir>/<name>.conf`. With the name `"api"` and the backends from
@@ -135,7 +136,8 @@ the backends in reverse order.
 **Goal:** add a flag named `update`; when it is set, your test rewrites
 `testdata/api.conf.golden` with the generated output and then passes.
 
-- Declare the flag with `flag.Bool` at package level, default `false`.
+- Add `"flag"` to the imports, and declare the flag with `flag.Bool` at
+  package level (above the test function), default `false`.
 - When the flag is true, write the contents of the generated `api.conf` to
   the golden file with `os.WriteFile` (permission `0o644`).
 - Do this **before** you read the golden file, so the comparison after it

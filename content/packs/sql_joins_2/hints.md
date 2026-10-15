@@ -24,7 +24,8 @@ the `oncall` side came back empty.
 
 ### Closer
 
-Add `WHERE o.service_id IS NULL`. Not `= NULL`: that's never true.
+Add `WHERE o.service_id IS NULL`: `oncall` has no `id` column, and its key
+`service_id` is never `NULL` in a real row. Not `= NULL`: that's never true.
 
 ### Answer
 

@@ -126,7 +126,8 @@ Apply(kubectl, "")
 
 **Think it through:**
 - Set the three fields **before** `cmd.Run()`; read the buffers **after**.
-- `err` is already declared in the function line, so use `=`, not `:=`.
+- `err`, `stdout` and `stderr` are already declared in the function line.
+  Use `=` for `err`, not `:=`, and give the buffers other names.
 
 ### 3. Check that a tool is installed
 

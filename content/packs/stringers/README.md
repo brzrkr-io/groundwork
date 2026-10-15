@@ -142,8 +142,9 @@ Severity(-1).String() // => "Severity(-1)"
 
 **Think it through:**
 - The `case Debug:` lines show the pattern. What do the other four look like?
-- In `default`, which verb prints a number, and what must you pass so
-  `String` isn't called again (Trap 1)?
+- In `default`, which verb prints a number? Pass `int(s)` rather than `s`
+  (Trap 1): a plain `int` can never call `String` again, whichever verb
+  you pick.
 
 ### 2. Print a host
 

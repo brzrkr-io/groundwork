@@ -40,7 +40,8 @@ Write the `WHERE` first: staging **and** started before the first moment of
 ### Closer
 
 `DELETE FROM deploys WHERE environment = 'staging' AND started_at < ...`.
-Test it as `SELECT id FROM deploys WHERE ...` first: you should see 15 and 16.
+Read it as `SELECT id FROM deploys WHERE ...` against `testdata/data.sql`:
+it should pick only 15 and 16.
 
 ### Answer
 

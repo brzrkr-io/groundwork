@@ -95,7 +95,7 @@ each line from the action and the name.
 
 **Think it through:**
 - Which `if` decides between the two kinds of file? That one stays in `Plan`.
-- Once the helpers return just the word, how many places add `" "` and the file name?
+- Once the helpers return just the word, what does `Plan` still add to each line?
 
 ### 4. Flatten into guard clauses
 

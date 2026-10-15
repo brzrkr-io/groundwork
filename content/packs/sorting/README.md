@@ -51,8 +51,9 @@ function gets two elements, `a` and `b`, and returns an `int`:
 | positive (like `1`) | `a` goes after `b` |
 
 You rarely work out that number yourself. `cmp.Compare(x, y)` from the `cmp`
-package returns `-1` if `x < y`, `0` if equal, `+1` if `x > y`. Here, fruit
-sorted by price, cheapest first:
+package returns `-1` if `x < y`, `0` if equal, `+1` if `x > y`. It works on
+numbers and on strings (alphabetical order). Here, fruit sorted by price,
+cheapest first:
 
 ```go
 import (

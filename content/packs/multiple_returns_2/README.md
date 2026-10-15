@@ -20,17 +20,22 @@ You can give results names in the function line. They document what each
 value means, and work like variables declared at the top of the function:
 
 ```go
-// Bounds returns the lowest and highest value, and whether nums had any.
-func Bounds(nums []int) (low, high int, ok bool) {
-	...
-	return 1, 9, true
+// SplitUptime returns the whole hours and the leftover minutes.
+func SplitUptime(total int) (hours, minutes int) {
+	hours = total / 60
+	minutes = total % 60
+	return hours, minutes
 }
 ```
 
 You still write `return` with the values, just as before.
 
+Because named results already exist, set them with `=`, not `:=`. Writing
+`hours := total / 60` fails to compile with
+`no new variables on left side of :=`.
+
 > **Why is it written like this?** Names are optional (author's choice);
-> types are required. As with parameters, `low, high int` shares one type.
+> types are required. As with parameters, `hours, minutes int` shares one type.
 
 ### Trimming spaces
 

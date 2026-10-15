@@ -34,6 +34,10 @@ in one place, and the text formatting in one place. If you fix a bug in
 
 Write the three functions. Each one may call the ones before it.
 
+Each function starts with a stand-in `return 0` or `return ""`. Replace it
+with your code: a stand-in left below your own `return` makes `go vet` report
+`unreachable code`.
+
 ### 1. MiB to GiB
 
 **Goal:** make `MiBToGiB` convert a whole number of MiB into GiB, keeping the

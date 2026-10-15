@@ -45,10 +45,13 @@ readiness probe.
 - The readiness probe must reach the port podinfo listens on (part 3 has
   the log line that says which).
 
+Once task 2's ConfigMap is fixed too, both Pods become ready:
+
 ```text
 $ kubectl -n notes get pods
 NAME                     READY   STATUS    RESTARTS   AGE
 notes-59bb7b7554-bvdm8   1/1     Running   0          2m
+notes-59bb7b7554-h2wxg   1/1     Running   0          2m
 ```
 
 **Think it through:**

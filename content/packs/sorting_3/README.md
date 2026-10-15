@@ -90,7 +90,8 @@ service first.
 - The service with the **most** alerts comes first.
 - Services with the same count are in alphabetical order.
 - Return at most `n` lines. Fewer than `n` services? Return all of them.
-- `n` is `0` or negative, or `counts` is empty: return an empty slice.
+- `n` is `0` or negative, or `counts` is empty: return an empty slice (`nil`
+  is fine).
 
 ```go
 counts := map[string]int{"api": 12, "db": 3, "queue": 7, "cache": 3}

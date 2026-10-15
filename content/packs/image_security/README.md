@@ -235,6 +235,10 @@ password <a GitHub token>
 docker build -f 3_private_deps.Dockerfile --secret id=netrc,src=$HOME/.netrc -t billing:dev .
 ```
 
+Put this command in the comment at the top of the file, in place of the
+old one with `--build-arg GITHUB_TOKEN`: the test doesn't read comments,
+but the next person will copy whatever command it shows.
+
 **Think it through:**
 - Where does a build argument's value end up? Where does a mounted secret's?
 - The `git config` line only existed to hand git the token. Who hands it

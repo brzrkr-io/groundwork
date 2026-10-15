@@ -64,9 +64,15 @@ slice, assign through the index: `s[i] = ...`.
 ```go
 sizes := []int{3, 9}
 for _, v := range sizes {
-	v = 0 // changes the copy only
+	v = v * 10     // changes the copy only
+	fmt.Println(v) // 30, then 90
 }
 // sizes is still [3 9]
+
+for i := range sizes {
+	sizes[i] = sizes[i] * 10 // changes the slice itself
+}
+// sizes is now [30 90]
 ```
 
 ### Two slices, one index

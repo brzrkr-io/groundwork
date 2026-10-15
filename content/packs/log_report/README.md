@@ -203,10 +203,11 @@ For `testdata/access.log`: 16 entries (first path `/api/orders`, last
 
 ```text
 line 10: malformed line: "this line was cut in half when logrotate moved the f"
-line 19: bad time "32/Oct/2026:13:57:42 +0000": parsing time ...
+line 19: parsing time "32/Oct/2026:13:57:42 +0000": day out of range
 ```
 
-The first must match exactly; the second only has to start with `line 19: `.
+The first must match exactly; the second only has to start with `line 19: `
+(the rest is whatever your task 1 time error says).
 
 **Think it through:**
 - Where does the counter go up so blank lines still count?

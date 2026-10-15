@@ -150,7 +150,10 @@ clause. The test file next to it disagrees, so Go reports:
 found packages deploy (inventory.go) and inventory (inventory_test.go) in …/inventory
 ```
 
-Once it compiles, `TestAddress` checks the existing `Address` function:
+After the fix, this error is gone, but `inventory` still won't build: the
+test file also calls `NormalizeHost`, so Go now reports
+`undefined: NormalizeHost`. That's expected; task 3 fixes it. Once it
+compiles, `TestAddress` checks the existing `Address` function:
 
 ```go
 inventory.Address("web-1", 8080)

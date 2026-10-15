@@ -123,7 +123,8 @@ Afterwards the ids left are 1 to 14, 17 and 18.
 
 **Think it through:**
 - Two conditions. How do you write "before 2026" for a text timestamp?
-- Try your `WHERE` in a `SELECT` first: does it pick only 15 and 16?
+- Read your `WHERE` as a `SELECT id FROM deploys WHERE …` against the rows
+  in `testdata/data.sql`: does it pick only 15 and 16?
 
 ### 4. Release checkout in one transaction
 

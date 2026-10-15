@@ -35,8 +35,9 @@ Read it in three steps:
 3. Return the channel **immediately**. Don't wait for the goroutine.
 
 > **Why is it written like this?**
-> - **Go requires** that `out` gets closed (here by `defer close(out)`) if
->   receivers use `range`: a `range` over a channel only ends when it is closed.
+> - **Needed, not style:** a `range` over a channel only ends when the
+>   channel is closed, so `out` must be closed (here by `defer close(out)`).
+>   The compiler doesn't check this; a missing close makes receivers hang.
 > - **Convention:** the stage that makes `out` is the only one that sends on
 >   it and closes it. The return type `<-chan string` (receive only) lets the
 >   compiler stop callers from sending or closing.

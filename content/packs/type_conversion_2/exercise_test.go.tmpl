@@ -39,6 +39,10 @@ func TestAffordableReplicas(t *testing.T) {
 		t.Errorf(`AffordableReplicas(250, 12.5) = %d, want 20`, got)
 	}
 
+	if got := AffordableReplicas(10, 2.5); got != 4 {
+		t.Errorf(`AffordableReplicas(10, 2.5) = %d, want 4 (divide first, then drop the fraction)`, got)
+	}
+
 	if got := AffordableReplicas(29.99, 30); got != 0 {
 		t.Errorf(`AffordableReplicas(29.99, 30) = %d, want 0`, got)
 	}

@@ -30,7 +30,7 @@ An array literal is the type followed by the values in braces: `[3]string{..., .
 return [3]string{region + "a", region + "b", region + "c"}
 ```
 
-The literal lists the three names in order, so index `0` is the `a` zone.
+This replaces the whole body: the `var zones` line and `return zones` are no longer needed. The literal lists the three names in order, so index `0` is the `a` zone. Filling `zones[0]`, `zones[1]` and `zones[2]` one at a time and keeping `return zones` works too.
 
 ## Task 3: Mark a zone as down
 

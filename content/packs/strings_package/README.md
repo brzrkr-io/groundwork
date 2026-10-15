@@ -4,9 +4,9 @@ Ops work is full of text: URLs, label lists, command lines. The `strings`
 package has a small set of functions that take apart, and put back together,
 nearly any line a tool hands you.
 
-**New here:** `strings.Split`, `Fields`, `Join`, `SplitSeq`. (`Cut`,
-`TrimPrefix`, `TrimSuffix`, `TrimSpace` and `strings.Builder` are recaps
-from *Basics* and *Control flow and functions*.)
+**New here:** `strings.Split`, `Fields`, `Join`, `Index`, `EqualFold`,
+`SplitSeq`. (`Cut`, `TrimPrefix`, `TrimSuffix`, `TrimSpace` and
+`strings.Builder` are recaps from *Basics* and *Control flow and functions*.)
 
 ## Learn
 

@@ -19,7 +19,7 @@ First embed the folder the same way as in Task 1. Then, in `Kinds`, each name ne
 
 ### Closer
 
-`//go:embed templates` goes above `var templates embed.FS`. In the loop, `strings.TrimSuffix(entry.Name(), ".txt")` drops the ending. `ReadDir` already sorts by name.
+`//go:embed templates` goes above `var templates embed.FS`. In the loop, `strings.TrimSuffix(entry.Name(), ".txt")` drops the ending; add `"strings"` to the imports. `ReadDir` already sorts by name.
 
 ### Answer
 

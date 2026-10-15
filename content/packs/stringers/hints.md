@@ -6,8 +6,8 @@ its own `case`, and the `default` branch needs to put the number into the text.
 ### Closer
 
 Copy `case Debug: return "DEBUG"` once per constant. In `default`, use
-`fmt.Sprintf` with `%d`, and pass `int(s)` rather than `s`, so `Sprintf`
-doesn't call `String` again and loop forever.
+`fmt.Sprintf` with `%d`, and pass `int(s)` rather than `s`. A plain `int` has
+no `String` method, so even a later switch to `%v` can't loop forever.
 
 ### Answer
 

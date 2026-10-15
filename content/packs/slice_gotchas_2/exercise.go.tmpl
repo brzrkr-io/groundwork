@@ -13,7 +13,7 @@ func Split(hosts []string, n int) (canary, rest []string) {
 // RestartCommands returns the kubectl commands that restart the canary and
 // the main version of deployment in namespace.
 func RestartCommands(namespace, deployment string) (canaryCmd, mainCmd string) {
-	args := make([]string, 0, 8) // room for every argument, to avoid copying
+	args := make([]string, 0, 8) // spare room saves copying, but appends from args share it
 	args = append(args, "kubectl", "rollout", "restart", "-n", namespace)
 
 	// TODO(2): The second append overwrites the first one's last argument. Fix it.

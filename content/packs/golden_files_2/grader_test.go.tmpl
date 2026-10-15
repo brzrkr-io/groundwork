@@ -127,7 +127,12 @@ func TestUpdateFlag(t *testing.T) {
 	cmd := exec.Command(os.Args[0], "-test.run="+learnerTests, "-update")
 	cmd.Dir = scratch
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("go test -update failed, want it to rewrite the golden file and pass:\n%s", out)
+		if strings.Contains(string(out), "flag provided but not defined: -update") {
+			t.Fatal("go test -update failed: the update flag doesn't exist yet when go test reads " +
+				"the command line. Declare it with var at package level, outside every function.")
+		}
+		t.Fatalf("go test -update failed, want it to rewrite the golden file and pass "+
+			"(does your test write the golden file before it reads it?):\n%s", out)
 	}
 	got, err := os.ReadFile(golden)
 	if err != nil {

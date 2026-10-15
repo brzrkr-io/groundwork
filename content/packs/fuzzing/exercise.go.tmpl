@@ -21,6 +21,8 @@ func ParseTarget(s string) (host string, port int, err error) {
 // broken versions to check that your test catches them.
 var parseTarget = realParseTarget
 
+// TODO(2): Fix the crashes, so that the saved inputs "" and "[::1" return an
+// error instead of panicking.
 func realParseTarget(s string) (string, int, error) {
 	var host, portText string
 	if s[0] == '[' {

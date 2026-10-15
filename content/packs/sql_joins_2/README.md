@@ -56,7 +56,9 @@ WHERE t.id IS NULL;   -- services with no team
 > **Why is it written like this?** SQL requires `IS NULL`: `= NULL` is never
 > true, not even for a `NULL` (*NULL: fix the missing-value bugs* explains
 > why). Checking the right table's `id` is a convention: a real row always
-> has one, so `NULL` there can only mean "no match".
+> has one, so `NULL` there can only mean "no match". A table without an
+> `id` column (like `oncall`, keyed by `service_id`) works the same way:
+> check its primary key, or any `NOT NULL` column.
 
 ### COUNT(*) vs COUNT(column)
 
@@ -137,7 +139,8 @@ search
 
 **Think it through:**
 - After a left join, what do the `oncall` columns hold for those services?
-- Which operator tests for that?
+- Which operator tests for that? `oncall` has no `id` column: which of its
+  columns can you check? (`testdata/schema.sql`)
 
 ### 3. Count deploys per service, including zero
 

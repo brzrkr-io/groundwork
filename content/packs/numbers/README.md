@@ -50,8 +50,9 @@ Both parameters are `float64`, and so is the result. In the body, you use
 | `/` | divide | `7 / 2` is `3` (!) | `7.0 / 2.0` is `3.5` |
 | `%` | remainder | `7 % 2` is `1` | not allowed |
 
-`*` and `/` happen before `+` and `-`, as in school maths. Parentheses change
-the order: `(2 + 3) * 4` is 20.
+`*` and `/` happen before `+` and `-`, as in school maths. When `*` and `/`
+meet, they run left to right: `8 / 4 * 2` is `(8 / 4) * 2`, which is 4.
+Parentheses change the order: `(2 + 3) * 4` is 20.
 
 > **Why is it written like this?** **Convention:** gofmt sometimes removes
 > spaces around `*` and `/` to show they happen first, as in `a + b*c`. The
@@ -145,7 +146,8 @@ Above 100 means the container wants more than its limit and is slowed down.
 `limitMillicores` is never 0.
 
 **Think it through:**
-- These are `float64`, so `/` keeps the fraction. Does the order of `/` and `*` matter here?
+- These are `float64`, so `/` keeps the fraction: 250 / 1000 is 0.25. What
+  turns 0.25 into 25?
 
 ## Learn more
 

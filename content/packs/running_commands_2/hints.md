@@ -28,8 +28,10 @@ Set them before `cmd.Run()`, then read the buffers afterwards.
 
 ### Closer
 
-`strings.NewReader(manifest)` is a reader for stdin. A `bytes.Buffer` is a
-writer, but the fields need a pointer: `&outBuf`, not `outBuf`.
+`strings.NewReader(manifest)` is a reader for stdin. Only `*bytes.Buffer` is
+a writer, so the fields need a pointer: `&outBuf`, not `outBuf`. The names
+`stdout` and `stderr` are taken by the results, so name the buffers
+`outBuf` and `errBuf`.
 
 ### Answer
 

@@ -150,7 +150,9 @@ starting again at the first after the last.
 Lock `rr.mu` for the whole call. Return the address of the backend at
 position `rr.next` and a `nil` error, and move `rr.next` on by one, back to
 `0` after the last backend. For this task, every backend is healthy and there
-is at least one.
+is at least one. Until task 3, the `TestNoHealthy/no_backends_at_all` test
+calls `Next` with zero backends and may stop the run with a panic such as
+`index out of range`; that's expected for now.
 
 ```go
 rr := New("10.0.1.5:8080", "10.0.1.6:8080", "10.0.1.7:8080")

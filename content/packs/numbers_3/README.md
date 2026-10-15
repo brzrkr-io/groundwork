@@ -88,7 +88,8 @@ MonthlyCost(0.0625, 1) // => 45.625
 ```
 
 Cloud prices are per hour, and cost reports count a month as 730 hours. The
-constant goes where `TODO(3)` is, on line 18, outside the function.
+constant goes directly under the `// HoursPerMonth ...` comment below
+`TODO(3)` (line 21), outside the function.
 
 **Think it through:**
 - A constant is a number here, so does it need quotes?

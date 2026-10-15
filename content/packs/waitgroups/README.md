@@ -139,7 +139,8 @@ BackupAll([]string{"orders", "users"}, backup)
 **Think it through:**
 - `wg` here is a pointer to `BackupAll`'s WaitGroup. Which of its methods
   starts *and* counts a goroutine?
-- Which of the three starter lines does that one call replace?
+- That one call does the work of `wg.Add(1)`, `backup(db)` *and*
+  `wg.Done()`. Which starter lines are left once you've written it?
 
 ## Learn more
 

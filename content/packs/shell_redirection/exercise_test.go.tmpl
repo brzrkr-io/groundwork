@@ -14,6 +14,9 @@ import (
 
 func TestDeployLog(t *testing.T) {
 	dir := workdir(t)
+	// The test starts from an old log ("old run", "build failed"), as a
+	// server would have. If deploy.log still holds those lines, your script
+	// didn't replace the file with >.
 	writeFile(t, dir, "deploy.log", "old run\nbuild failed\n")
 	expectQuiet(t, dir, "1_deploy_log.sh")
 	expectFile(t, dir, "deploy.log", "deploy started\nbuild ok\n")

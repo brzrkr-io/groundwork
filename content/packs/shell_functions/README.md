@@ -201,8 +201,9 @@ bash 4_require.sh grep kubectl-groundwork sed; echo $?
 **Think it through:**
 - Which command answers "is this tool installed?", and how do you hide what
   it prints?
-- Should the function use `return 1` or `exit 1` to stop the **whole**
-  script?
+- `return 1` or `exit 1`: which one stops the **whole** script by itself?
+  (`return 1` passes here only because `set -e` then stops the script;
+  called inside an `if`, the script would carry on.)
 
 ## Learn more
 

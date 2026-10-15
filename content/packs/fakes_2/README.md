@@ -97,7 +97,9 @@ Retry(RealSleeper{}, 3, pullImage)
 // => error "gave up after 3 attempts: ..."
 ```
 
-Add the imports you need (`errors`, `slices`, `time`) to `exercise_test.go`.
+`exercise_test.go` imports only `testing` so far. Add each import when a task
+first uses it, because Go rejects an import you don't use yet: `time` in
+task 1, then `errors` and `slices` in task 2.
 
 ### 1. Write a fake sleeper
 

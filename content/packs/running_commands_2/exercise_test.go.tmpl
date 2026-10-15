@@ -101,6 +101,9 @@ func fakeApply() int {
 func fakeKubectl(t *testing.T) string {
 	t.Helper()
 	t.Setenv("TOOLRUN_HELPER", "1")
+	// Under -race, every program pauses 1s before exiting; skip that pause
+	// so each fake-kubectl run is quick.
+	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	return os.Args[0]
 }
 

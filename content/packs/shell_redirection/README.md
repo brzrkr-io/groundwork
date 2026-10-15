@@ -13,8 +13,8 @@ from inside the script.
 ### Recap
 
 - Every program has three streams: *stdin* (0) for input, *stdout* (1) for
-  results and *stderr* (2) for messages, as in *The operating system for
-  programmers*.
+  results and *stderr* (2) for messages, as in the guide *The operating
+  system for programmers*.
 - `< FILE` feeds a file to stdin, as in *Shell variables*;
   `echo "..." >&2` sends one line to stderr, as in *Exit codes, && and ||*.
 

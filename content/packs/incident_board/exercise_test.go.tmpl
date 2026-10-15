@@ -150,11 +150,11 @@ func TestOpenAndFind(t *testing.T) {
 	}
 	want := Incident{ID: 2, Title: "disk full on db-1", Severity: Major, State: StateOpen}
 	if *got != want {
-		t.Errorf("Find(2) points at %+v, want %+v", *got, want)
+		t.Errorf("Find(2) points at %#v, want %#v", *got, want)
 	}
 
 	if got := b.Find(99); got != nil {
-		t.Errorf("Find(99) = %+v, want nil", *got)
+		t.Errorf("Find(99) = %#v, want nil", *got)
 	}
 
 	// A change made through Find's pointer must reach the board itself.

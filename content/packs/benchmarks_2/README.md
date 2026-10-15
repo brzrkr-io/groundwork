@@ -71,9 +71,11 @@ names := make([]string, 0, len(hosts)) // length 0, room for len(hosts)
 
 ### Grading
 
-`TestGrader` runs `BenchmarkPorts` once and checks that both sub-benchmarks
-run, print `allocs/op`, and crash when `Ports` is swapped for a *mutant* that
-panics.
+`TestGrader` runs `BenchmarkPorts` for three loop passes per size and checks
+that both sub-benchmarks run and print `allocs/op`. Then it swaps `Ports` for
+*mutants* that panic on their third call with 10 services, or with 1000. Each
+must crash your benchmark, which proves that each sub-benchmark builds `n`
+services and calls `Ports` inside its loop.
 
 ## Your task
 

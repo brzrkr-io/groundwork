@@ -39,8 +39,9 @@ The deadline only helps reads that happen *after* you set it.
 
 Network errors implement the `net.Error` *interface*, which has a
 `Timeout() bool` method. Errors often arrive wrapped (`read banner: i/o
-timeout`), so use `errors.As` to dig one out, as you did with your own error
-types. `errors.As` takes a *pointer* to a variable of the type you want:
+timeout`), so dig one out with `errors.As`: the older form of `errors.AsType`
+from *Wrapping errors*, also used in *CSV files: fix the TSV DNS export*.
+`errors.As` takes a *pointer* to a variable of the type you want:
 
 ```go
 var pathErr *fs.PathError

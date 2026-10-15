@@ -9,6 +9,13 @@ Build the path with `filepath.Join(t.TempDir(), "hosts.txt")`, write it with `os
 ### Answer
 
 ```go
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+)
+
 func writeFile(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "hosts.txt")

@@ -126,7 +126,7 @@ When you save, your fuzz target **fails**. That's it doing its job: `go test`
 replays `empty_target`, and the output shows
 `--- FAIL: FuzzParseTarget/empty_target`, the panic, and the line in
 `exercise.go` where it happened. A panic stops the run, so you see one crash
-at a time.
+at a time. `TestParseTarget` fails too, until you fix the crashes in task 2.
 
 **Think it through:**
 - Which `TODO(1)` is outside `f.Fuzz`, and which is inside?

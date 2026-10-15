@@ -14,7 +14,7 @@ for i := range len(hours) {
 }
 ```
 
-`range len(hours)` starts at `0`, so midnight is counted too.
+`range len(hours)` starts at `0`, so midnight is counted too. Changing `i := 1` to `i := 0` in the old loop is an equally correct fix.
 
 ## Task 2: Find the peak hour
 

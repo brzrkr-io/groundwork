@@ -102,7 +102,11 @@ func wantFile(t *testing.T, sandbox, name, want string) {
 	t.Helper()
 	got, err := os.ReadFile(filepath.Join(sandbox, name))
 	if errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("%s doesn't exist, want a file holding %q", name, want)
+		if want == "" {
+			t.Errorf("%s doesn't exist, want an empty file there", name)
+		} else {
+			t.Errorf("%s doesn't exist, want a file holding %q", name, want)
+		}
 		return
 	}
 	if err != nil {

@@ -25,9 +25,14 @@ This exercise uses only what you've already learned:
 
 ### Recap: grouped imports
 
-The file starts with no imports. You'll need `strings` and `fmt`, so group
-them in one `import ( ... )` block, one quoted path per line, as in *Reading
-Go code: the parts of a file*. gofmt sorts them A–Z for you.
+The file starts with no imports. You'll need `strings` (task 1) and `fmt`
+(tasks 3 and 4). In the end they share one `import ( ... )` block, one quoted
+path per line, as in *Reading Go code: the parts of a file*. gofmt sorts them
+A–Z for you.
+
+Add each one when you first use it: Go stops the build on an unused import
+(`"fmt" imported and not used`). So in task 1 the block holds only
+`"strings"`; in task 3 you add `"fmt"` as a second line.
 
 ### Expressions as arguments
 
@@ -40,8 +45,12 @@ fmt.Sprintf("%d jobs, %s", workers*perWorker, strings.ToUpper(state))
 
 ## Your task
 
-Write the four helpers. Later ones may call earlier ones. Add the imports on
-line 4, where `TODO(1)` says.
+Write the four helpers. Later ones may call earlier ones. The imports go on
+line 4, where the first `TODO` says.
+
+Each function starts with a stand-in `return` (`return ""` or `return 0`).
+Replace it with your code: a stand-in left below your own `return` makes
+`go vet` report `unreachable code`.
 
 ### 1. Name the release
 

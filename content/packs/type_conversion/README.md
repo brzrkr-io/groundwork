@@ -109,6 +109,11 @@ When you see that, use `strconv.Itoa` instead.
 
 Write the health and networking helpers for a small status page.
 
+Each function starts with a stand-in `return` (`return 0`, `return host` or
+`return ""`). Replace that line with your code. If you leave it below your own
+`return`, the tests pass but `go vet` reports `unreachable code`: Go never gets
+past the first `return`, so the line after it is dead. Delete the old line.
+
 ### 1. Healthy percentage
 
 **Goal:** make `HealthyPercent` return healthy divided by total, times 100,

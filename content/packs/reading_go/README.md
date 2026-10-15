@@ -5,7 +5,8 @@ for. You'll also learn which parts Go insists on, which parts are just the way
 everyone writes them, and which parts are up to you.
 
 **New here:** how a Go file is laid out; grouped imports; writing a whole
-function yourself; calling a function vs naming it; constants at the top level.
+function yourself; calling a function vs naming it; joining text with `+`;
+constants at the top level.
 
 ## Learn
 
@@ -100,6 +101,15 @@ Inside a function you work with *values*. There are three ways to get one:
 "hello "            // fixed text: whatever is in the quotes, letter for letter
 name                // a name: the value stored under it (here, a parameter)
 Greet("sam")        // a call: run Greet with "sam" and use what it returns
+```
+
+To glue pieces of text into one, put `+` between them. Go adds no spaces, so
+any space you want goes inside the quotes:
+
+```go
+"hello " + name           // with name = "sam": "hello sam"
+"v" + "2"                 // "v2"
+Greet("sam") + "!"        // "hello SAM!"
 ```
 
 Two mix-ups catch almost everyone at first:

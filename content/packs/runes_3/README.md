@@ -41,8 +41,9 @@ lower-case letter sits a fixed distance after its upper-case one, and that
 distance is `'a' - 'A'`:
 
 ```go
-r := 'b'
-r -= 'a' - 'A'   // r is now 'B'
+r := 'B'
+r += 'a' - 'A'   // upper to lower: r is now 'b'
+r -= 'a' - 'A'   // lower to upper: r is 'B' again
 ```
 
 ### Remember, then act later

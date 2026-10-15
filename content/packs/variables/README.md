@@ -4,14 +4,16 @@ A *variable* is a named box that holds a value. Ops code is full of them: the
 service name, the environment, the image tag. Here you glue those values
 together into labels and image references a deploy pipeline uses.
 
-**New here:** parameters, joining strings with `+`, `var`, `:=`, `=`.
+**New here:** `var`, `:=`, `=`; a closer look at parameters and `+`.
 
 ## Learn
 
 ### Parameters: a function's inputs
 
-In *Hello, Go* your functions took no inputs. Most functions do. The inputs,
-called *parameters*, go inside the parentheses, each with a name and a type:
+You wrote `Shout` in *Reading Go code: the parts of a file*. Here it is
+again, because parameters are what most of this exercise builds on. A
+function's inputs, called *parameters*, go inside the parentheses, each with
+a name and a type:
 
 ```go
 // Shout returns word followed by an exclamation mark.

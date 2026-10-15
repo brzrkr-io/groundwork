@@ -55,7 +55,10 @@ Smaller image, fewer CVEs, faster pulls on every node.
 ## Your task
 
 The scanner and the on-call log flagged four images. Each `TODO` quotes what
-they saw. Fix each Dockerfile; keep its two stages and the build line.
+they saw. Fix each Dockerfile; keep its two stages and the build line. You
+don't need Docker: the tests read your Dockerfiles. This folder holds only
+the Dockerfiles, not the services' code, so the `docker build` lines in
+their comments show how CI builds them and won't work here.
 
 ### 1. Shrink the 900 MB image
 

@@ -68,7 +68,7 @@ func TestSetLogLevel(t *testing.T) {
 
 // expectEdit does what the README shows: cp fixture copy.env, then
 // bash 4_set_log_level.sh copy.env level. It checks that only the LOG_LEVEL
-// line of copy.env changed.
+// line of copy.env changed, and that the script printed nothing.
 func expectEdit(t *testing.T, fixture, level string) {
 	t.Helper()
 	dir := workdir(t)
@@ -83,8 +83,14 @@ func expectEdit(t *testing.T, fixture, level string) {
 		return
 	}
 	want := strings.Replace(original, "\nLOG_LEVEL=info\n", "\nLOG_LEVEL="+level+"\n", 1)
-	if got := readFile(t, filepath.Join(dir, "copy.env")); got != want {
+	switch got := readFile(t, filepath.Join(dir, "copy.env")); {
+	case got == original:
+		t.Errorf("%s left copy.env unchanged, want its LOG_LEVEL line to say LOG_LEVEL=%s. Without -i, sed only prints the result.", command, level)
+	case got != want:
 		t.Errorf("%s (copy.env is a copy of %s) left copy.env holding:\n%s\nwant:\n%s", command, fixture, got, want)
+	}
+	if stdout != "" {
+		t.Errorf("%s printed:\n%s\nwant it to print nothing: with -i, sed writes into the file instead.", command, stdout)
 	}
 }
 

@@ -22,11 +22,16 @@ const learnerBenchmark = "BenchmarkFormatTags"
 // mutants are the bugs your benchmark must catch.
 var mutants = []mutant{
 	{
-		name: "panics",
-		bug:  `FormatTags panicked`,
+		name: "panics_on_third_call",
+		bug:  `FormatTags panicked on its third call`,
 		install: func() {
+			calls := 0
 			formatTags = func(tags []Tag) string {
-				panic("FormatTags was called")
+				calls++
+				if calls == 3 {
+					panic("FormatTags was called a third time")
+				}
+				return realFormatTags(tags)
 			}
 		},
 	},
@@ -54,9 +59,11 @@ func TestGrader(t *testing.T) {
 }
 
 // runLearnerBenchmark re-runs this test binary with no tests and only your
-// benchmark selected, and the named mutant installed. -test.benchtime=1x runs
-// the b.Loop body just once, which is enough to grade it. An empty name
-// means the real code.
+// benchmark selected, and the named mutant installed. -test.benchtime=3x runs
+// the b.Loop body three times, which is enough to grade it. A call outside
+// the loop runs only twice (go test calls a benchmark function once to warm
+// up and once to measure), so it never reaches the mutant's third call. An
+// empty name means the real code.
 //
 // On a busy machine b.Loop occasionally reports 0 iterations without running
 // the body at all, so such a run proves nothing and is repeated (up to 10 times).
@@ -67,7 +74,7 @@ func runLearnerBenchmark(mutant string) (string, error) {
 		cmd := exec.Command(os.Args[0],
 			"-test.run=^$",
 			"-test.bench=^"+learnerBenchmark+"$",
-			"-test.benchtime=1x",
+			"-test.benchtime=3x",
 		)
 		cmd.Env = append(os.Environ(), mutantEnv+"="+mutant)
 		out, err = cmd.CombinedOutput()

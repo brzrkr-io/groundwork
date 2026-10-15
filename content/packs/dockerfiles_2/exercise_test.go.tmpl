@@ -72,7 +72,7 @@ func TestOneStepAptInstall(t *testing.T) {
 
 	update := strings.Index(install.Rest, "apt-get update")
 	if update < 0 || update > strings.Index(install.Rest, "apt-get install") {
-		t.Errorf("%s line %d: %s, want apt-get update first, joined with && to apt-get install in the same RUN as apt-get install", file, install.Line, show(*install))
+		t.Errorf("%s line %d: %s, want apt-get update at the start of this same RUN: apt-get update && apt-get install ...", file, install.Line, show(*install))
 	}
 	var words []string // the RUN's words, without a trailing ; after them
 	for _, word := range install.Args {

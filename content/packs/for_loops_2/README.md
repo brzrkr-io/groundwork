@@ -18,7 +18,8 @@ This exercise has three loops with exactly those bugs.
 
 `continue` skips to the next round; `break` leaves the loop for good. A
 `strings.Builder` collects text with `b.WriteString(...)`, and `b.String()`
-returns the result. `strconv.Itoa(n)` turns a number into text.
+returns the result. `strconv.Itoa(n)` turns a number into text. Like `+=`,
+`x -= 3` is short for `x = x - 3`.
 
 ### Where do off-by-one bugs hide?
 

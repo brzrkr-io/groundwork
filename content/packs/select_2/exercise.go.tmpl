@@ -27,6 +27,7 @@ func CollectFor(events <-chan string, window time.Duration) []string {
 func Heartbeat(interval time.Duration, stop <-chan struct{}, beat func()) int {
 	beats := 0
 	// TODO(2): Make a ticker and stop it with defer. Loop: on every tick call
-	// beat and count it; when stop is closed, return the count.
+	// beat and count it; when stop is closed, return the count. The loop
+	// returns from inside, so delete the return below.
 	return beats
 }

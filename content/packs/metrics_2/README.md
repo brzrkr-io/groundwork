@@ -4,8 +4,8 @@
 Counters can't answer it. Here you finish a latency *histogram*, the metric
 type Prometheus uses for request durations.
 
-**New here:** histogram buckets, cumulative counts, `time.Time.Sub`,
-injecting a clock.
+**New here:** histogram buckets, cumulative counts, `uint64`,
+`time.Time.Sub`, injecting a clock.
 
 ## Learn
 
@@ -65,6 +65,12 @@ counts:  [1,   1,   1]     <- the last slot is the overflow
 ```
 
 `Write` turns these into cumulative numbers while printing.
+
+`counts` and `count` are `uint64`: a whole-number type that can't go
+negative (*unsigned*), a natural fit for counting. Go never mixes number
+types in one expression, so adding a `uint64` to an `int` doesn't compile.
+A variable you add counts to must be a `uint64` as well:
+`var seen uint64`.
 
 > **Why is it written like this?** Storing plain counts is the author's
 > choice: `Observe` then touches one slot. `range` over a slice gives you
@@ -151,7 +157,8 @@ See the text format example in Learn. A histogram with no observations
 prints `0` everywhere.
 
 **Think it through:**
-- Which variable carries the running total between loop iterations?
+- Which variable carries the running total between loop iterations, and
+  which type must it have so you can add `h.counts[i]` to it?
 - Which field already holds the total count for `+Inf`?
 
 ### 3. Time every request

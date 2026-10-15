@@ -61,7 +61,7 @@ func TestInRegion(t *testing.T) {
 			got := tc.inv.InRegion(tc.region)
 			// slices.Equal treats nil and an empty slice as equal.
 			if !slices.Equal(got, tc.want) {
-				t.Errorf("InRegion(%q) = %v, want %v", tc.region, got, tc.want)
+				t.Errorf("InRegion(%q) = %+v, want %+v", tc.region, got, tc.want)
 			}
 		})
 	}
@@ -85,7 +85,7 @@ func TestFind(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, found := tc.inv.Find(tc.host)
 			if got != tc.wantHost || found != tc.wantFound {
-				t.Errorf("Find(%q) = %v, %v, want %v, %v", tc.host, got, found, tc.wantHost, tc.wantFound)
+				t.Errorf("Find(%q) = %+v, %v, want %+v, %v", tc.host, got, found, tc.wantHost, tc.wantFound)
 			}
 		})
 	}

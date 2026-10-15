@@ -85,6 +85,8 @@ ParseImage("")                 // => "", "", (an error)
 **Think it through:**
 - Which of the three values from `strings.Cut` tells you "no `:` at all"?
 - `"redis"` and `"nginx:"` both have an empty tag. What tells them apart?
+- The starter has no `import` yet. Add an `import ( ... )` block under the
+  `package` line with the packages you use (`strings`, and `errors` or `fmt`).
 
 ### 2. Parse a cache TTL
 
@@ -119,7 +121,7 @@ ParseTTL("")    // => 0, (an error)
 - Find the unit first: which tool tells you whether a string ends with `"m"`?
 - Once the unit is gone, what's left is the number text. Which tool turns
   it into an `int`, and what does it return for `"x"`?
-- Remember to add the packages you use to the `import` block.
+- Add `strconv` to your `import` block.
 
 ## Learn more
 

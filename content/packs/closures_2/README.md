@@ -51,7 +51,7 @@ port := 8080
 ```
 
 `fmt.Sprintf("listening on %d", port)` does the same. Whichever you use, add
-its package to the `import` line at the top of the file.
+an `import` line for its package under the `package` line; the starter has none yet.
 
 ## Your task
 

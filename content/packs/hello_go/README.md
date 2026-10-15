@@ -17,8 +17,12 @@ Each exercise folder holds a few files:
 | `exercise_test.go` | Tests that check your code. Read them, but don't change them. |
 | `README.md` | These instructions. |
 
-Groundwork shows each test as ✓ (passing) or ✗ (failing). A failure message
-reads "you returned X, the test wanted Y".
+Groundwork shows each test as ✓ (passing) or ✗ (failing). A failing test
+prints what your code returned, then what the test wanted:
+
+```text
+Greeting() = "hello world", want "Hello, Gopher!"
+```
 
 Look for `// TODO(1)`, `// TODO(2)` and so on in `exercise.go`. Each one marks
 the spot for the task with that number.

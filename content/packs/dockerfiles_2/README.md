@@ -137,7 +137,10 @@ until you change the version.
 
 Three of the team's Dockerfiles work but waste CI time or fail at random.
 Each `TODO` says what CI is seeing. Change the order and the steps, not
-what the image ends up containing.
+what the image ends up containing. You don't need Docker: the tests read
+your Dockerfiles. This folder holds only the Dockerfiles, not the services'
+code, so the `docker build` lines in their comments show how CI builds them
+and won't work here.
 
 ### 1. Download modules before copying the code
 

@@ -103,7 +103,10 @@ holds one program, `ENTRYPOINT` is the usual choice.
 ## Your task
 
 The team is moving every service to small images. Write the stages each
-`TODO` asks for; the comments at the top say what each image is for.
+`TODO` asks for; the comments at the top say what each image is for. You
+don't need Docker: the tests read your Dockerfiles. This folder holds only
+the Dockerfiles, not the services' code, so the `docker build` lines in
+their comments show how CI builds them and won't work here.
 
 ### 1. Add a runtime stage
 

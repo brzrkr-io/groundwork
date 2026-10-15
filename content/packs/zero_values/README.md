@@ -4,14 +4,15 @@ In Go, a variable never holds garbage. If you don't give it a value, it gets
 its type's *zero value*. Config code leans on this all the time: "the user
 left this field empty, so use the default".
 
-**New here:** `var` without a value, zero values.
+**New here:** the zero value of each basic type.
 
 ## Learn
 
 ### Declaring without a value
 
-So far you made variables with `:=`, which always needs a value. With `var`
-you write the name and the *type*, and leave the value out:
+As in *Variables*, `:=` always needs a value, but `var` lets you write the
+name and the *type* and leave the value out. Go then fills in the type's
+zero value:
 
 ```go
 var replicas int     // replicas is 0

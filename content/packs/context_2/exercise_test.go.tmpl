@@ -125,7 +125,7 @@ func TestFetchWithTimeout(t *testing.T) {
 			results <- result{body, err}
 		}()
 
-		got := waitFor(t, results, "FetchWithTimeout(/slow, 20ms) to give up")
+		got := waitFor(t, results, "FetchWithTimeout(/slow, 20ms) to give up; does it pass Fetch a context from context.WithTimeout?")
 		if !errors.Is(got.err, context.DeadlineExceeded) {
 			t.Errorf("FetchWithTimeout(/slow, 20ms) = %q, %v, want an error matching context.DeadlineExceeded", got.body, got.err)
 		}

@@ -127,8 +127,8 @@ hash matches its line in the checksums file.
 
 `got` is the file's actual hash; `want` is the one from the checksums file.
 Build the messages with `%w` first, then the rest, e.g. `"%w for %s"`.
-Errors from opening or hashing are returned unchanged. Add `"bufio"`, `"fmt"`
-and `"strings"` to the imports.
+Errors from opening, reading (`scanner.Err()` after the loop) or hashing are
+returned unchanged. Add `"bufio"`, `"fmt"` and `"strings"` to the imports.
 
 **Think it through:**
 - Find the expected hash first. Only then hash the file and compare.

@@ -81,14 +81,17 @@ Once task 1 compiles, `go vet` reports this line. You'll need to add
 AffordableReplicas(100, 30)   // => 3   (3.33 replicas)
 AffordableReplicas(90, 30)    // => 3
 AffordableReplicas(250, 12.5) // => 20
+AffordableReplicas(10, 2.5)   // => 4
 AffordableReplicas(29.99, 30) // => 0
 ```
 
 You can't run part of a replica, so drop any fraction. `costPerReplica` is
-never 0.
+never 0. Replace the starter's `return 0` line: if you leave it below your own
+`return`, `go vet` reports `unreachable code`.
 
 **Think it through:**
 - The parameters are `float64`, but the function returns `int`. Which conversion chops the fraction?
+- Do you drop the fraction before or after dividing? With `10` and `2.5`, the answer is 4 (`10 / 2.5`), not 5 (`10 / 2`).
 
 ## Learn more
 

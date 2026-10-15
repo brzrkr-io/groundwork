@@ -41,7 +41,9 @@ return Entry{
 }, nil
 ```
 
-Also wrap the time error, e.g. `fmt.Errorf("bad time %q: %w", group("time"), err)`.
+Optionally, wrap the time error too, e.g.
+`fmt.Errorf("bad time %q: %w", group("time"), err)`; the tests accept any
+message there.
 
 ## Task 2: Read a whole log
 
@@ -159,7 +161,6 @@ sorted := slices.Clone(durations)
 slices.Sort(sorted)
 
 rank := (p*len(sorted) + 99) / 100
-rank = max(rank, 1)
 return sorted[rank-1]
 ```
 

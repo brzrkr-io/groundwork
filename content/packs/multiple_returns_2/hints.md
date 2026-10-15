@@ -34,8 +34,9 @@ Otherwise return the key, the trimmed value `strings.TrimSpace(v)`, and `true`.
 
 ### Answer
 
+Below the starter's `strings.Cut` line, replace the TODO and the old `return`:
+
 ```go
-k, v, found := strings.Cut(label, "=")
 k = strings.TrimSpace(k)
 if !found || k == "" {
 	return "", "", false

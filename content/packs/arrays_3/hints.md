@@ -42,7 +42,7 @@ First check if the two weeks are exactly equal; arrays can be compared with `==`
 
 ### Closer
 
-A small helper that adds up a week saves typing:
+A small helper that adds up a week saves typing. Put it at the top level of `exercise.go` (for example at the end of the file), not inside `WeekSummary`:
 
 ```go
 func sum(pages [7]int) int {

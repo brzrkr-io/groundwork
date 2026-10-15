@@ -51,7 +51,9 @@ the package; that's a Go rule.
 
 ## Your task
 
-Each function takes one or two weeks of page counts, Monday first.
+Each function takes one or two weeks of page counts, Monday first. When there
+are two, the **first argument is last week** and the second is this week:
+`DailyChange(last, this)`, `WeekSummary(last, this)`.
 
 ### 1. Day-by-day change
 

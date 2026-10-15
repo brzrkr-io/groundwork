@@ -165,6 +165,9 @@ DefaultConfig()
 // => Config{Channel: "#deploys", Username: "deploy-bot", Retries: 3}, nil
 ```
 
+Until the directive is in place, `defaultConfig` is empty, so the test shows
+`unexpected end of JSON input`.
+
 **Think it through:**
 - Which line does the directive go above? Look for `TODO(1)`.
 - The file already imports `embed`. Do you still need a blank import?
@@ -188,7 +191,8 @@ the tests show that error.
 - This time the directive names a folder, not a file. Which variable has the
   type for that?
 - The starter loop already appends `entry.Name()`. What should happen to
-  each name before it's appended?
+  each name before it's appended? (The section on cutting an ending off a
+  name shows the function; add `"strings"` to the imports for it.)
 
 ### 3. Render a notification
 
@@ -210,7 +214,8 @@ Render("deploy", Deploy{Service: "payments", Version: "v1.4.2", Env: "production
 - The result ends with a newline, because the template file does.
 - For an unknown kind such as `"party"`, return `""` and a non-nil error.
   `template.ParseFS` already returns an error when no file matches the path.
-- Add `"strings"` and `"text/template"` to the imports when you need them.
+- Add `"text/template"` to the imports. `"strings"` is already there from
+  task 2.
 
 **Think it through:**
 - The path has three parts: the fixed text `templates/`, the parameter

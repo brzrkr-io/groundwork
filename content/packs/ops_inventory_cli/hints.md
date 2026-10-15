@@ -50,7 +50,7 @@ if h.Name != "" {
 	if first, ok := firstSeen[h.Name]; ok {
 		errs = append(errs, fmt.Errorf("%s: duplicate name, first seen at host %d", where, first))
 	} else {
-		firstSeen[h.Name] = n
+		firstSeen[h.Name] = i + 1
 	}
 }
 ```

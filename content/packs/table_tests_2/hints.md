@@ -39,7 +39,7 @@ for _, tc := range tests {
 
 ## Task 2: Reject bad units
 
-These rows must fail, so set `wantErr` to `true`. What goes in `want` when there's no valid answer?
+These rows go in your table, after the `"2Gi"` row. They must fail, so set `wantErr` to `true`. What goes in `want` when there's no valid answer?
 
 ### Closer
 

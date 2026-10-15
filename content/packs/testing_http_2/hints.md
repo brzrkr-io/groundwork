@@ -1,7 +1,8 @@
 ## Task 1: Finish the happy-path test
 
 Two more checks: one header and the decoded body. The `json.Unmarshal`
-example in Learn already decodes into a `DeployResponse` and compares it.
+example in Learn shows the pattern; decode into a `DeployResponse` instead of
+a `User`.
 
 ### Closer
 

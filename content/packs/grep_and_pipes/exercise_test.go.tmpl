@@ -91,7 +91,9 @@ func exitFailure(t *testing.T, command string, code int, stdout, stderr string) 
 		msg += "\nbash said:\n" + stderr
 	} else {
 		msg += "\nbash said nothing: a command failed without a message " +
-			"(grep does that when nothing matches), and set -e stopped the script there."
+			"(grep does that when nothing matches, or when it got no file name, such as \"$1\", and had nothing to read), " +
+			"and set -e stopped the script there. " +
+			"Run " + strings.Replace(command, "bash ", "bash -x ", 1) + " to see which command it was."
 	}
 	t.Error(msg)
 }

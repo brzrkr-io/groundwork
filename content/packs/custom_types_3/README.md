@@ -90,8 +90,12 @@ name, found = strings.CutSuffix("report.txt", ".csv")
 
 Your cluster capacity tool reads pod memory requests and node sizes. The
 `Bytes` type and its constants `KiB`, `MiB`, `GiB` are in `exercise.go`.
-You'll need `fmt`, `strconv` and `strings`, so add them below the `package`
-line:
+The starter file has no imports yet. Task 1 needs `fmt`, so add
+`import "fmt"` below the `package` line.
+
+Task 2 also needs `strconv` and `strings`. Add them only when you reach
+Task 2: Go refuses to compile a file with an unused import (`"strconv"
+imported and not used`). With all three, the list becomes:
 
 ```go
 import (

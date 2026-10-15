@@ -87,3 +87,5 @@ func Teams() []string {
 	return teams
 }
 ```
+
+`unknownRoute` is the default route from Task 1's Answer. If you wrote the default as `return "platform", "info"` instead, start the list with `[]string{"platform"}`, or declare `unknownRoute` so `"platform"` lives in one place.

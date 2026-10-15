@@ -99,7 +99,7 @@ the part that fetches the Pods:
 
 - Build the selector text from the `team` parameter, with the fixed key `team`.
 - List with `LabelSelector` and `metav1.NamespaceAll`. If `List` fails, return
-  `nil` and the error.
+  `nil` and the error, wrapped with `%w` like the errors in `PodsForService`.
 - Loop over the listed Pods (`.Items`) instead of the empty `pods` slice. Then
   delete that slice and the unused `corev1` import.
 - When the team has no Pods, return an empty map (not `nil`).

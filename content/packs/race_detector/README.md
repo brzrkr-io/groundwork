@@ -122,8 +122,8 @@ report. Keep the work concurrent: don't remove the goroutines.
 **Goal:** make `TotalBytes(files, size)` add up `size(file)` for every file
 without a race.
 
-Many goroutines update `total` at once. Use an `atomic.Int64` or a
-`sync.Mutex`.
+Many goroutines update `total` at once. Use an `atomic.Int64` (add
+`"sync/atomic"` to the imports) or a `sync.Mutex`.
 
 ```go
 TotalBytes([]string{"app.log", "error.log"}, size) // => 1500  (1200 + 300)

@@ -46,8 +46,8 @@ if bytes >= GiB {
 }
 ```
 
-Repeat for `MiB` and `KiB`. If none matched, return the number followed by
-the fixed text `" B"`: `fmt.Sprintf("%d B", bytes)`.
+Repeat for `MiB` and `KiB`. Put them above the starter's last line,
+`return fmt.Sprintf("%d B", bytes)`, which handles everything smaller.
 
 ### Answer
 
@@ -63,3 +63,6 @@ if bytes >= KiB {
 }
 return fmt.Sprintf("%d B", bytes)
 ```
+
+The last line is the starter's own: keep one copy, or `go vet` reports
+`unreachable code`.

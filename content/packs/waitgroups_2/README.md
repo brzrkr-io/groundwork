@@ -70,7 +70,8 @@ saves you writing the loop twice. You choose its name and parameters.
 
 ## Your task
 
-Every patch, checksum or deploy in the tests takes 1 (fake) second.
+Every checksum or deploy in the tests takes 1 (fake) second. Patches return
+at once; a hung `PatchAll` fails its test after 2 seconds.
 
 ### 1. Fix the hang
 

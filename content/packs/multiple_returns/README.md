@@ -123,7 +123,7 @@ SplitUptime(1441) // => 24, 1
 ```
 
 **Think it through:**
-- Which operator from *Variables* gives whole hours, and which gives the remainder?
+- Which operator from *Numbers and arithmetic* gives whole hours, and which gives the remainder?
 - One `return` line, two values, separated by a comma.
 
 ### 2. Split a host and a port

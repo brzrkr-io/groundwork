@@ -23,8 +23,8 @@ ls
 # app  old-release
 ```
 
-Each script runs **inside** the sandbox. Try one like this (`..` is
-explained below):
+Each script runs **inside** the sandbox. From the exercise folder, try one
+like this (`..` is explained below):
 
 ```bash
 cd sandbox
@@ -191,10 +191,12 @@ everything in it, then print the absolute path of `backup/app`.
 ```bash
 cd sandbox
 bash ../4_clean_up.sh
-# /home/sam/groundwork/exercises/07_shell/145_shell_files/sandbox/backup/app
+# /home/sam/groundwork/course/exercises/08_shell/146_shell_files/sandbox/backup/app
 ```
 
 Your path will differ: it's wherever your sandbox is. Print nothing else.
+`backup/app` comes from script 2, so on a fresh sandbox run scripts 1 to 3
+before this one, as the test does.
 
 **Think it through:**
 - Plain `rm` refuses folders. Which option deletes one with its contents?

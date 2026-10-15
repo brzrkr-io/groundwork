@@ -1,8 +1,8 @@
 ## Task 1: Name the release
 
 First clean up the service name: remove the spaces at both ends, then make
-it lowercase. Then add a space and the version. Remember to add
-`import "strings"`.
+it lowercase. Then add a space and the version. Remember to import
+`"strings"` on line 4.
 
 ### Closer
 
@@ -36,8 +36,8 @@ return (peakRPS + rpsPerReplica - 1) / rpsPerReplica
 ## Task 3: Write the summary line
 
 Use one `fmt.Sprintf` call with the README's line as the format. Each `<...>`
-slot becomes a verb, and the values follow in the same order. Add
-`import "fmt"`.
+slot becomes a verb, and the values follow in the same order. Add `"fmt"`
+to your imports.
 
 ### Closer
 

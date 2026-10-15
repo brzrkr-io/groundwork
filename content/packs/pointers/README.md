@@ -53,6 +53,9 @@ func describe(port *int) string {
 }
 ```
 
+A function with no return values can stop early with a plain `return`, as
+in *Structs: changes that vanish*: `if p == nil { return }`.
+
 ### Why functions need pointers
 
 Go passes every argument as a **copy**. A function that changes its
@@ -163,7 +166,7 @@ The pointer must point **into** `ds`, so a change made through it shows up
 in the slice. The tests check this. An empty or `nil` `ds` gives `nil`.
 
 ```go
-ds := []Deployment{{"api", 2}, {"web", 3}}
+ds := []Deployment{{Name: "api", Replicas: 2}, {Name: "web", Replicas: 3}}
 p := FindDeployment(ds, "web")
 p.Replicas = 10
 // ds[1].Replicas is now 10

@@ -1,9 +1,11 @@
 # Functions: SLO error budget report
 
-An *SLA* (service level agreement) promises uptime, like 99.9%. The
-leftover 0.1% is your *error budget*: the downtime you're allowed. SRE teams
-track it to decide when to slow down releases. You'll build a small budget
-report out of three functions, each one using the one before it.
+An *SLO* (service level objective) is an uptime target, like 99.9%; when
+it's promised to customers it's called an *SLA* (service level agreement),
+which is why the code names it `slaPercent`. The leftover 0.1% is your
+*error budget*: the downtime you're allowed. SRE teams track it to decide
+when to slow down releases. You'll build a small budget report out of three
+functions, each one using the one before it.
 
 **New here:** nothing; practice with functions, `float64` and `%.1f`.
 

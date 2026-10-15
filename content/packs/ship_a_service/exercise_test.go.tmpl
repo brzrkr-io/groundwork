@@ -67,7 +67,7 @@ func TestRun(t *testing.T) {
 		}
 		select {
 		case err := <-r.done:
-			t.Fatalf("run returned %v while a request was still in flight; Shutdown should wait for it", err)
+			t.Fatalf("run returned %v while a request was still in flight; Shutdown should wait for it%s", err, cancelledHint(err))
 		case <-time.After(20 * time.Millisecond):
 		}
 		close(release)
@@ -95,7 +95,7 @@ func TestRun(t *testing.T) {
 		r.cancel()
 		err := r.wait(t)
 		if err == nil || !strings.HasPrefix(err.Error(), "forced shutdown: ") || !errors.Is(err, context.DeadlineExceeded) {
-			t.Errorf("run returned %v while a request was stuck past grace; want Shutdown's error wrapped as \"forced shutdown: %%w\"", err)
+			t.Errorf("run returned %v while a request was stuck past grace; want Shutdown's error wrapped as \"forced shutdown: %%w\"%s", err, cancelledHint(err))
 		}
 		select {
 		case <-status:
@@ -202,6 +202,17 @@ func eventually(cond func() bool) bool {
 		time.Sleep(5 * time.Millisecond)
 	}
 	return cond()
+}
+
+// cancelledHint explains a context.Canceled error from run: Shutdown was
+// given a context that was already cancelled, so it gave up at once instead
+// of waiting up to s.grace.
+func cancelledHint(err error) string {
+	if !errors.Is(err, context.Canceled) {
+		return ""
+	}
+	return "; Shutdown got a context that was already cancelled (ctx is, by then), so it gave up at once. " +
+		"Give it context.WithTimeout(context.Background(), s.grace)"
 }
 
 // syncBuffer collects log output from several goroutines safely.

@@ -71,9 +71,11 @@ resp, err := m.Client.Do(req)
 result.Latency = time.Since(start)
 ```
 
-After a successful `Do`, call `resp.Body.Close()` and set `result.Status`.
-A status outside 200–299 gets `fmt.Errorf("unexpected status %d", ...)`.
-Add `"fmt"`, `"net/http"` and `"time"` to the imports.
+If `NewRequestWithContext` returns an error, put it in `result.Err` and
+return. After a successful `Do`, call `resp.Body.Close()` and set
+`result.Status`. A status outside 200–299 gets
+`fmt.Errorf("unexpected status %d", ...)`. Add `"fmt"`, `"net/http"` and
+`"time"` to the imports.
 
 ### Answer
 

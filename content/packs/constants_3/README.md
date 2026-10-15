@@ -23,8 +23,11 @@ The starter has an empty block: `const ()`. To fill it, put the `)` on its
 own line and add your constants between the brackets:
 
 ```go
+// Backup settings.
 const (
+	// Bucket is the S3 bucket backups go to.
 	Bucket = "acme-backups"
+	// Prefix starts the name of every backup file.
 	Prefix = "nightly/"
 )
 ```

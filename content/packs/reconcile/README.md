@@ -115,7 +115,9 @@ container.
 
 - `Replicas`: the `"replicas"` value parsed into an `int32`. `"0"` is fine.
 - `Image`: the `"image"` value, copied as it is.
-- Check `"replicas"` first, then `"image"`.
+- Check `"replicas"` completely (present, then a valid number) before you
+  look at `"image"`, so a bad replicas value is reported even when the image
+  is missing too.
 
 On a problem, return `Desired{}` and an error wrapping one of the provided
 sentinel errors with `%w`:

@@ -227,6 +227,8 @@ request through it, then write **one** log line with `s.logger`:
 {"time":"…","level":"INFO","msg":"request","request_id":"req-1","method":"GET","path":"/hosts","status":200}
 ```
 
+Add `"log/slog"` to the imports in `middleware.go`.
+
 **Think it through:**
 - `requestID` touches two different headers: the request's (read) and the response's (write).
 - In `observe`, pass the recorder to `next`, not `w`, or you can't see the status.
@@ -241,8 +243,10 @@ In `internal/server/metrics.go`:
 - `Inc(method, code)` locks `m.mu` and adds one to the count stored under
   `requestKey{Method: method, Code: code}` in `m.requests`.
 - `Write(w)` already prints the HELP and TYPE lines. After them, print one
-  line per key, **sorted by method and then by code**, in exactly this
-  format. Hold the lock while you read the map.
+  line per key, **sorted by method and then by code** (use the
+  `slices.SortedFunc` and `cmp.Or` pattern from *New pieces*), in exactly
+  this format. Hold the lock while you read the map. Add `"cmp"`, `"maps"`
+  and `"slices"` to the imports in `metrics.go`.
 
 ```text
 # HELP inventory_http_requests_total HTTP requests handled, by method and status code.
@@ -317,6 +321,8 @@ It already builds `srv := s.newHTTPServer()`, but then serves forever.
 3. If `Shutdown` returns an error (the grace period ran out), call
    `srv.Close()` and return the error wrapped as `graceful shutdown: <err>`
    (with `%w`). Otherwise return `nil`.
+
+Add `"fmt"` to the imports in `run.go`.
 
 `Shutdown` stops accepting new connections at once and waits for in-flight
 requests. In Kubernetes, failing `/readyz` takes the pod out of the

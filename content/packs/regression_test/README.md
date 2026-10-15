@@ -19,8 +19,9 @@ return. This is a *regression test*.
 
 ### Recap: table tests with error cases
 
-Use a table-driven test with subtests, as in *Table-driven tests* and
-*Subtests and helpers*. Cases that should fail get a `wantErr bool` field:
+Use a table-driven test with subtests, as in
+*Table-driven tests: error cases* and *Subtests and helpers*. Cases that
+should fail get a `wantErr bool` field:
 
 ```go
 tests := []struct {
@@ -38,6 +39,12 @@ tests := []struct {
 > choice, but they let you leave out fields you don't need: a missing field
 > gets its zero value, so `wantErr` is `false` unless you set it. Calling the
 > fields `want` and `wantErr` is convention.
+
+The loop checks each row along the same two paths as in
+*Table-driven tests: error cases*, but inside `t.Run`. The subtest's body
+is a function, not the loop itself, so `continue` doesn't compile there.
+Use `return` instead: it ends this subtest, and the loop moves on to the
+next row.
 
 A good fix also mustn't go too far, so add cases showing that bad input is
 still rejected.

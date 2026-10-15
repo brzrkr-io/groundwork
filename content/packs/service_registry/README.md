@@ -29,7 +29,7 @@ CheckAll(hc) ──asks──▶ HealthChecker.Check(address) ──▶ sets Sta
 
 | File | What's in it | Do you edit it? |
 |---|---|---|
-| `exercise.go` | `Status`, `Service`, `HealthChecker`, `Registry`, and the methods with `TODO(n)` markers | Yes: the method bodies and the `import` block |
+| `exercise.go` | `Status`, `Service`, `HealthChecker`, `Registry`, and the methods with `TODO(n)` markers | Yes: the method bodies, plus an `import` block you add under `package registry` (the starter has none yet) |
 | `exercise_test.go` | The tests, including the fake health checker | No, read it if you're curious |
 
 The types, `NewRegistry` and every method signature are already written.

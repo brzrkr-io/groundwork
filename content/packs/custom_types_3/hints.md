@@ -1,6 +1,6 @@
 ## Task 1: Print a size for humans
 
-Check the biggest unit first, then smaller ones, and fall back to plain bytes. Don't forget to add the `fmt`, `strconv` and `strings` imports.
+Check the biggest unit first, then smaller ones, and fall back to plain bytes. Don't forget to add `import "fmt"`.
 
 ### Closer
 
@@ -33,7 +33,7 @@ Checking `GiB` first makes sure the largest fitting unit wins.
 
 ## Task 2: Parse a quantity
 
-Split the job in two: strip a known suffix (remembering its unit), then turn what's left into a number. Start by assuming there is no suffix and the unit is `1`.
+Split the job in two: strip a known suffix (remembering its unit), then turn what's left into a number. Start by assuming there is no suffix and the unit is `1`. Add the `strconv` and `strings` imports now.
 
 ### Closer
 

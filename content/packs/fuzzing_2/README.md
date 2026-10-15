@@ -90,6 +90,16 @@ string("héllo")
 int(2)
 ```
 
+The same folder holds two more inputs the fuzzer generated, and a plain
+`go test` replays them too. In a Go string, `\x` plus two hex digits is one
+raw byte. Neither input is valid UTF-8: the byte `\xff` is never part of a
+character, and `\x80` is only ever a later byte of one.
+
+| File | `msg` | `limit` |
+|---|---|---|
+| `invalid_message` | `"\xffdisk full"` | `20` |
+| `starts_mid_character` | `"\x80\x80 down"` | `1` |
+
 ```go
 Truncate("disk 92% full on db-1", 10) // => "disk 92% f"
 Truncate("héllo", 2)                  // => "h" (é doesn't fit, so it is dropped)
@@ -107,7 +117,8 @@ with `t.Errorf` when the result is too long or isn't the start of `msg`.
 - Report when the result is not a prefix of `msg`.
 
 The negative seed catches a `Truncate` that panics on negative limits. Add
-`"strings"` to the imports.
+`"strings"` to the imports. `TestTruncate` fails until you fix `Truncate` in
+task 3.
 
 **Think it through:**
 - Which property only makes sense for a non-negative limit?
@@ -119,7 +130,8 @@ The negative seed catches a `Truncate` that panics on negative limits. Add
 result is not.
 
 Add `"unicode/utf8"` to the imports. Your fuzz target now fails on
-`FuzzTruncate/cut_in_character`: it found the bug.
+`FuzzTruncate/cut_in_character`: it found the bug. It must still pass on
+`invalid_message`, whose `msg` isn't valid to begin with.
 
 **Think it through:**
 - Which two strings do you check, and which one must be valid for the check
@@ -150,6 +162,8 @@ ends on a whole character when `msg[cut]` is the first byte of one. Add
 - Which line in `realTruncate` does the cut right now?
 - How many steps back might you need? (A character is up to 4 bytes.) What
   loop keeps stepping while a condition holds?
+- In `starts_mid_character`, `msg` itself begins inside a character. What
+  stops your loop before it steps past the start of `msg`?
 
 The exercise is done when `FuzzTruncate` and `TestTruncate` pass and
 `TestGrader` reports that every mutant was caught.

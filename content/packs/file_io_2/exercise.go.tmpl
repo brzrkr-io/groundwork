@@ -34,8 +34,9 @@ func AppendAudit(dir, entry string) error {
 // has no entries.
 func ReadAudit(dir string) ([]string, error) {
 	f, err := os.Open(filepath.Join(dir, LogName))
+	// TODO(3): A missing log means no entries: return an empty slice and nil.
+	// Check for that here, before the general error check below.
 	if err != nil {
-		// TODO(3): A missing log means no entries: return an empty slice and nil.
 		return nil, err
 	}
 	defer f.Close()

@@ -22,13 +22,14 @@ import (
 func TestFindRunaway(t *testing.T) {
 	needLinux(t)
 	// The names end in the test's own PID, so two test runs at the same
-	// time never see each other's processes.
+	// time never see each other's processes. "resync-" contains "sync-", so
+	// only an exact name match finds just one of them.
 	me := strconv.Itoa(os.Getpid())
-	exporter := startNamed(t, "export-"+me)
-	indexer := startNamed(t, "indexer-"+me)
+	syncer := startNamed(t, "sync-"+me)
+	resyncer := startNamed(t, "resync-"+me)
 
-	expectPIDs(t, "export-"+me, exporter.pid, os.Getpid())
-	expectPIDs(t, "indexer-"+me, indexer.pid, os.Getpid())
+	expectPIDs(t, "sync-"+me, syncer.pid, os.Getpid(), "resync-"+me)
+	expectPIDs(t, "resync-"+me, resyncer.pid, os.Getpid(), "sync-"+me)
 }
 
 func TestStop(t *testing.T) {
@@ -149,19 +150,24 @@ func startNamed(t *testing.T, name string) *helper {
 }
 
 // expectPIDs runs 1_find_runaway.sh name and checks that it prints pid and
-// then ppid.
-func expectPIDs(t *testing.T, name string, pid, ppid int) {
+// then ppid. other is the name of the other test process, running too.
+func expectPIDs(t *testing.T, name string, pid, ppid int, other string) {
 	t.Helper()
 	got, stderr, code := run(t, ".", "1_find_runaway.sh", name)
 	command := commandLine("1_find_runaway.sh", name)
-	if code != 0 {
-		exitFailure(t, command, code, got, stderr)
+	want := []string{strconv.Itoa(pid), strconv.Itoa(ppid)}
+	if code == 0 && slices.Equal(strings.Fields(got), want) {
 		return
 	}
-	want := []string{strconv.Itoa(pid), strconv.Itoa(ppid)}
-	if !slices.Equal(strings.Fields(got), want) {
+	if code != 0 {
+		exitFailure(t, command, code, got, stderr)
+	} else {
 		t.Errorf("%s printed %q, want %q: the PID, then the parent PID",
 			command, got, strings.Join(want, " ")+"\n")
+	}
+	if strings.Contains(other, name) && (code != 0 || len(strings.Fields(got)) > len(want)) {
+		t.Errorf("a test process called %s is running too, and its name contains %s: "+
+			"match the whole name, or your script finds both", other, name)
 	}
 }
 
